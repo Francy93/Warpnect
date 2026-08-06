@@ -14,12 +14,11 @@ internal object NativeBridge {
     @JvmStatic
     private external fun nativeProtocolAbiVersion(): Int
 
-    fun sclInfo(): NativeSclInfo =
-        NativeSclInfo(
-            protocolName = nativeProtocolName(),
-            protocolVersion = nativeProtocolVersion(),
-            nativeBridgeAbiVersion = nativeProtocolAbiVersion(),
-        )
+    fun sclInfo(): NativeSclInfo = NativeSclInfo(
+        protocolName = nativeProtocolName(),
+        protocolVersion = nativeProtocolVersion(),
+        nativeBridgeAbiVersion = nativeProtocolAbiVersion(),
+    )
 }
 
 internal data class NativeSclInfo(

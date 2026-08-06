@@ -51,4 +51,3 @@ sealed interface InputReceiveResult {
         val reason: String,
     ) : InputReceiveResult
 }
-

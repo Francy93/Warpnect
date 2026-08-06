@@ -40,4 +40,3 @@ sealed interface WarpnectRole {
         override val displayName: String = "Transmitter"
     }
 }
-

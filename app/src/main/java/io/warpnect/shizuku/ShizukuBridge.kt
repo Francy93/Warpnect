@@ -3,17 +3,15 @@
 class ShizukuBridge {
     fun accessState(): PrivilegedAccessState = PrivilegedAccessState.Unknown
 
-    fun requestBinding(): PrivilegedOperationResult =
-        PrivilegedOperationResult.NotImplemented(
-            reason = "Shizuku binding is reserved for a later phase.",
-            recoveryPrompt = "Enable Wireless Debugging or Shizuku before privileged Warpnect features are added.",
-        )
+    fun requestBinding(): PrivilegedOperationResult = PrivilegedOperationResult.NotImplemented(
+        reason = "Shizuku binding is reserved for a later phase.",
+        recoveryPrompt = "Enable Wireless Debugging or Shizuku before privileged Warpnect features are added.",
+    )
 
-    fun prepareSessionService(): PrivilegedOperationResult =
-        PrivilegedOperationResult.NotImplemented(
-            reason = "Privileged session orchestration is reserved for a later phase.",
-            recoveryPrompt = "Receiver mode can run without privileged actions during Phase 0.",
-        )
+    fun prepareSessionService(): PrivilegedOperationResult = PrivilegedOperationResult.NotImplemented(
+        reason = "Privileged session orchestration is reserved for a later phase.",
+        recoveryPrompt = "Receiver mode can run without privileged actions during Phase 0.",
+    )
 
     fun executeShellPrivilegedOperation(operation: PrivilegedShellOperation): PrivilegedOperationResult =
         PrivilegedOperationResult.NotImplemented(
@@ -60,4 +58,3 @@ sealed interface PrivilegedOperationResult {
         val recoveryPrompt: String,
     ) : PrivilegedOperationResult
 }
-

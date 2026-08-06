@@ -30,4 +30,3 @@ sealed interface InputInjectionResult {
         val reason: String,
     ) : InputInjectionResult
 }
-

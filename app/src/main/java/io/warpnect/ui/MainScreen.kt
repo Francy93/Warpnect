@@ -27,7 +27,8 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier
+        modifier =
+        modifier
             .fillMaxSize()
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -74,4 +75,3 @@ fun MainScreen(
         }
     }
 }
-

@@ -20,4 +20,3 @@ data class VideoDecoderConfiguration(
     val width: Int,
     val height: Int,
 )
-
