@@ -2,7 +2,7 @@
 
 This directory contains native test infrastructure.
 
-Current coverage includes a public-header compile smoke test, packet foundation tests, UDP transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, and clock synchronization/network telemetry tests.
+Current coverage includes a public-header compile smoke test, packet foundation tests, UDP transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, and Phase 1 full-pipeline integration tests.
 
 The packet foundation tests compile the real production packet codec sources used by the Android `scl_core` target.
 
@@ -17,3 +17,7 @@ The recovery tests compile the real production sequence, loss detector, NACK cod
 The FEC tests compile the real production GF(256), Reed-Solomon, FEC parity control, FEC encoder, and FEC recovery sources. They cover primitive-polynomial table behavior, matrix inversion, systematic matrices, golden parity vectors, recoverable and unrecoverable erasures, variable-length encoded datagram shards, sequence wraparound, parity payload golden vectors, malformed parity payloads, fragmentation plus FEC recovery, LossDetector integration, UDP FEC recovery, UDP NACK fallback, and deterministic property-style FEC recovery.
 
 The timing and telemetry tests compile the real production clock sync control, clock synchronizer, and telemetry sources. They cover request/response golden vectors, malformed clock payloads, pending exchange tracking, known offset and processing-time calculations, invalid timing, midpoint overflow safety, model fitting, drift limits, stale state, timestamp conversion, one-way-delay gating, rolling statistics, jitter, counter saturation, loss/FEC telemetry recording, observational no-feedback behavior, and UDP loopback clock sync composition.
+
+The Phase 1 integration tests compose the real production packet, UDP, fragmentation, loss recovery, FEC, clock, and telemetry primitives through a deterministic host-only impairment harness. They cover zero loss, reordering, duplicates, FEC recovery, NACK recovery, FEC-to-NACK fallback, sequence wrap, workspace reuse, unrecoverable failure reporting, clock-sync exchange, and telemetry consistency.
+
+Host-only benchmark support lives outside this directory in `native/benchmarks/`. The `scl_phase1_benchmarks` executable is explicit/manual and reports CSV output for packet, UDP, fragmentation, recovery, FEC, timing, telemetry, and end-to-end pipeline scenarios.

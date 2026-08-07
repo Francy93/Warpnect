@@ -182,9 +182,15 @@ No future phase should collapse SCL protocol logic into Kotlin or Android lifecy
 app/src/test/
 app/src/androidTest/
 native/tests/
+native/test_support/
+native/benchmarks/
 ```
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, and clock synchronization/network telemetry tests.
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, and Phase 1 full-pipeline integration tests.
+
+`native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
+
+`native/benchmarks/` contains the host-only Phase 1 benchmark runner and the `scl_phase1_benchmarks` executable. Benchmarks are explicit/manual and are not part of Android production builds.
 
 ## CI Layout
 

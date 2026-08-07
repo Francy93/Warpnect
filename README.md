@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline plus the first SCL Phase 1 foundations.
+This repository contains the frozen architecture baseline plus the complete SCL Phase 1 core networking foundation.
 
 Present:
 
@@ -24,14 +24,16 @@ Present:
 - SCL loss detection, NACK, and retransmission cache primitives.
 - SCL Reed-Solomon FEC primitives.
 - SCL clock synchronization and bounded network telemetry primitives.
+- SCL Phase 1 integration tests and reproducible host-native benchmarks.
 - JNI bridge skeleton.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
-- Adaptive RTT-driven transport policy, pacing, congestion control, or bitrate control.
-- Video, audio, discovery, telemetry UI/wire streaming, rendering, or input injection.
+- Adaptive RTT-driven transport policy, pacing, congestion control, automatic MTU selection, or bitrate control.
+- Media streaming: video capture/encode/decode/rendering and audio capture/playback are not implemented yet.
+- Discovery, session negotiation, telemetry UI/wire streaming, rendering pipeline integration, or input injection.
 
 ## Repository Layout
 
@@ -126,6 +128,14 @@ cmake --build native/build --config Debug
 ctest --test-dir native/build -C Debug --output-on-failure
 ```
 
+Native Release benchmarks:
+
+```powershell
+cmake -S native -B native/build-release -DCMAKE_BUILD_TYPE=Release
+cmake --build native/build-release --config Release
+.\native\build-release\Release\scl_phase1_benchmarks.exe --standard --iterations 500 --output native\build-release\phase1-baseline.csv
+```
+
 ## Native Build Overview
 
 The Android native library target is:
@@ -162,6 +172,8 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-001D Loss, NACK and Recovery](docs/rfc/RFC-001D-SCL-Loss-NACK-Recovery.md)
 - [RFC-001E Reed-Solomon FEC](docs/rfc/RFC-001E-SCL-Reed-Solomon-FEC.md)
 - [RFC-001F Clock Synchronization and Network Telemetry](docs/rfc/RFC-001F-SCL-Clock-Synchronization-Network-Telemetry.md)
+- [RFC-001G Phase 1 Integration and Benchmarks](docs/rfc/RFC-001G-SCL-Phase1-Integration-Benchmarks.md)
+- [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
 - [State Management](docs/StateManagement.md)
 - [Thread Model](docs/ThreadModel.md)
@@ -170,10 +182,10 @@ The produced Android shared library is `libscl_core.so`.
 
 ## Roadmap Summary
 
-The next RFC is:
+Phase 1 is complete. The next implementation phase is:
 
 ```text
-RFC-001G - Phase 1 Integration & Benchmarks
+Phase 2 - Video Pipeline
 ```
 
 Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

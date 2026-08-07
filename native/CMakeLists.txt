@@ -30,20 +30,28 @@ else()
     list(APPEND SCL_NATIVE_SOURCES "${SCL_CPP_ROOT}/src/internal/socket_platform_posix.cpp")
 endif()
 
-add_library(
-    scl_native_core
-    STATIC
-    ${SCL_NATIVE_SOURCES}
-)
+function(configure_native_target target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_20)
+    set_target_properties(
+        ${target_name}
+        PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS NO
+    )
+    target_compile_options(
+        ${target_name}
+        PRIVATE
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
+    )
+endfunction()
 
-target_compile_features(scl_native_core PUBLIC cxx_std_20)
-set_target_properties(
-    scl_native_core
-    PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED YES
-    CXX_EXTENSIONS NO
-)
+add_library(scl_native_core STATIC ${SCL_NATIVE_SOURCES})
+configure_native_target(scl_native_core)
 
 target_include_directories(
     scl_native_core
@@ -52,122 +60,71 @@ target_include_directories(
     "${SCL_CPP_ROOT}/src"
 )
 
-target_compile_options(
-    scl_native_core
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 if(WIN32)
     target_link_libraries(scl_native_core PUBLIC ws2_32)
 endif()
 
-add_executable(scl_header_compile_test tests/scl_header_compile_test.cpp)
+add_library(
+    scl_native_test_support
+    STATIC
+    test_support/simulated_network.cpp
+)
+configure_native_target(scl_native_test_support)
 
-target_compile_features(scl_header_compile_test PRIVATE cxx_std_20)
-set_target_properties(
-    scl_header_compile_test
-    PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED YES
-    CXX_EXTENSIONS NO
+target_include_directories(
+    scl_native_test_support
+    PUBLIC
+    "${CMAKE_CURRENT_LIST_DIR}/test_support"
 )
 
+add_executable(scl_header_compile_test tests/scl_header_compile_test.cpp)
+configure_native_target(scl_header_compile_test)
 target_include_directories(
     scl_header_compile_test
     PRIVATE
-    "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp/include"
-)
-
-target_compile_options(
-    scl_header_compile_test
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+    "${SCL_CPP_ROOT}/include"
 )
 
 add_executable(scl_packet_tests tests/scl_packet_tests.cpp)
-
+configure_native_target(scl_packet_tests)
 target_link_libraries(scl_packet_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_packet_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 add_executable(scl_udp_tests tests/scl_udp_tests.cpp)
-
+configure_native_target(scl_udp_tests)
 target_link_libraries(scl_udp_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_udp_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 add_executable(scl_fragmentation_tests tests/scl_fragmentation_tests.cpp)
-
+configure_native_target(scl_fragmentation_tests)
 target_link_libraries(scl_fragmentation_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_fragmentation_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 add_executable(scl_recovery_tests tests/scl_recovery_tests.cpp)
-
+configure_native_target(scl_recovery_tests)
 target_link_libraries(scl_recovery_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_recovery_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 add_executable(scl_fec_tests tests/scl_fec_tests.cpp)
-
+configure_native_target(scl_fec_tests)
 target_link_libraries(scl_fec_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_fec_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
-
 add_executable(scl_timing_telemetry_tests tests/scl_timing_telemetry_tests.cpp)
-
+configure_native_target(scl_timing_telemetry_tests)
 target_link_libraries(scl_timing_telemetry_tests PRIVATE scl_native_core)
 
-target_compile_options(
-    scl_timing_telemetry_tests
-    PRIVATE
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wextra>
-    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wpedantic>
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
+add_executable(scl_phase1_integration_tests tests/scl_phase1_integration_tests.cpp)
+configure_native_target(scl_phase1_integration_tests)
+target_link_libraries(scl_phase1_integration_tests PRIVATE scl_native_core scl_native_test_support)
+
+add_executable(
+    scl_phase1_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/scl_phase1_benchmarks.cpp
 )
+configure_native_target(scl_phase1_benchmarks)
+target_include_directories(
+    scl_phase1_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(scl_phase1_benchmarks PRIVATE scl_native_core scl_native_test_support)
 
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
@@ -176,3 +133,4 @@ add_test(NAME scl_fragmentation_tests COMMAND scl_fragmentation_tests)
 add_test(NAME scl_recovery_tests COMMAND scl_recovery_tests)
 add_test(NAME scl_fec_tests COMMAND scl_fec_tests)
 add_test(NAME scl_timing_telemetry_tests COMMAND scl_timing_telemetry_tests)
+add_test(NAME scl_phase1_integration_tests COMMAND scl_phase1_integration_tests)

@@ -25,6 +25,8 @@
 #include "udp_result.h"
 #include "udp_socket.h"
 
+static_assert(__cplusplus >= 202002L, "Warpnect native host targets require C++20 or newer.");
+
 int main() {
     return 0;
 }

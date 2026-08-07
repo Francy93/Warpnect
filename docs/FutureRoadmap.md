@@ -2,11 +2,13 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This roadmap is architectural context. Only the current stabilization and documentation phase is complete here.
+This roadmap is architectural context. Phase 1 core networking is complete; Phase 2 is the next implementation phase.
 
 ## Phase 1 - SCL Core Networking Engine
 
-Implement the platform-independent C++20 networking core:
+Status: Complete.
+
+Implemented the platform-independent C++20 networking core:
 
 - UDP transport.
 - Binary packet protocol.
@@ -16,8 +18,12 @@ Implement the platform-independent C++20 networking core:
 - Reed-Solomon FEC.
 - NACK and packet recovery.
 - Clock synchronization.
+- Deterministic integration testing.
+- Reproducible host-native benchmarks.
 
 ## Phase 2 - Video Streaming Pipeline
+
+Status: Next.
 
 Implement:
 
