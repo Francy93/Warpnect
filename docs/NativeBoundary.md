@@ -60,6 +60,10 @@ SCL C++ owns protocol, timing, telemetry, and future transport interfaces.
 
 SCL must not include Android lifecycle, Compose, Activity, Shizuku, or application UI concepts.
 
+Android display capture remains entirely on the Kotlin/Android platform side. RFC-002A does not add native capture entry points, and `NativeBridge.kt` does not expose `startCapture`, `stopCapture`, or capture-surface JNI methods.
+
+Android hardware video encoding remains a Kotlin/Android `MediaCodec` platform responsibility. RFC-002B does not add video JNI entry points, encoded-video transport calls, or native bridge ABI changes.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

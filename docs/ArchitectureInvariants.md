@@ -34,6 +34,20 @@ Clock synchronization MUST remain independent from UDP sockets. It operates on e
 
 Telemetry MUST remain observational. It may record SCL events and expose snapshots, but it MUST NOT change transport, loss recovery, FEC, pacing, congestion, bitrate, datagram sizing, or application behavior.
 
+Android video capture MUST remain outside the SCL C++ core. The Android application/platform layer owns capture orchestration, privileged service binding, display APIs, and lifecycle.
+
+Android video capture uses a caller-owned `android.view.Surface` as the media data-plane boundary. Capture may borrow the Surface for a running session, but it MUST NOT own or release it.
+
+Warpnect MUST NOT silently fall back from privileged display capture to MediaProjection. If privileged capture is unavailable, the app must report an explicit typed state.
+
+Video frame pixels MUST NOT traverse Binder, JNI, Kotlin callbacks, or application-owned CPU buffers in the production capture path. Binder is a control plane; `Surface` is the video data plane.
+
+Raw video MUST travel from Android capture to the hardware encoder through a `Surface` path without mandatory application CPU pixel readback.
+
+MediaCodec encoded output buffers are borrowed and consumed synchronously. RFC-002B MUST NOT maintain an unbounded encoded-frame queue or require a mandatory per-access-unit `ByteArray` copy.
+
+Warpnect MUST NOT silently replace a verified hardware encoding requirement with a software encoder. If hardware AVC encoding cannot be confirmed, the transmitter path must report an explicit typed unavailable state.
+
 ## JNI Rules
 
 JNI is only a bridge.
@@ -166,6 +180,8 @@ Loss detectors and retransmission caches are not internally threaded. Each recov
 FEC encoders and recovery blocks are not internally threaded. Each FEC object has one owning execution context; concurrent use requires external coordination.
 
 Clock synchronizers, pending exchange trackers, rolling statistics windows, and telemetry collectors are not internally threaded. Each object has one owning execution context; concurrent use requires external coordination.
+
+Android capture controllers may use Android control-plane callbacks for display lifecycle and Binder state, but MUST NOT introduce a per-frame application thread, screenshot polling loop, or CPU pixel-copy loop for production capture.
 
 ## Failure Rules
 

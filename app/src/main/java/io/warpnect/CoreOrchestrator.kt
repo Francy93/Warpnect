@@ -1,10 +1,15 @@
-﻿package io.warpnect
+package io.warpnect
 
+import io.warpnect.capture.VideoCaptureController
+import io.warpnect.video.encoder.VideoEncoderController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class CoreOrchestrator {
+class CoreOrchestrator(
+    val transmitterVideoCaptureController: VideoCaptureController? = null,
+    val transmitterVideoEncoderController: VideoEncoderController? = null,
+) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
 
@@ -21,6 +26,8 @@ class CoreOrchestrator {
     }
 
     fun shutdown() {
+        transmitterVideoCaptureController?.close()
+        transmitterVideoEncoderController?.close()
         enterIdle()
     }
 }

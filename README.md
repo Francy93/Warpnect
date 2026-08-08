@@ -10,14 +10,14 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline plus the complete SCL Phase 1 core networking foundation.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the RFC-002A Android video-capture foundation, and the RFC-002B Android hardware AVC encoder foundation.
 
 Present:
 
 - Android Kotlin application skeleton.
 - Compose entry surface.
 - Warpnect role state machine.
-- Shizuku bridge stub.
+- Shizuku bridge and privileged capture UserService integration.
 - SCL C++20 packet codec foundation.
 - SCL UDP transport engine.
 - SCL fragmentation and reassembly primitives.
@@ -25,6 +25,8 @@ Present:
 - SCL Reed-Solomon FEC primitives.
 - SCL clock synchronization and bounded network telemetry primitives.
 - SCL Phase 1 integration tests and reproducible host-native benchmarks.
+- Privileged Android display capture foundation that writes to a caller-owned `Surface`.
+- Android hardware AVC encoder foundation using `MediaCodec` Surface input and borrowed encoded output buffers.
 - JNI bridge skeleton.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
@@ -32,7 +34,7 @@ Present:
 Not implemented:
 
 - Adaptive RTT-driven transport policy, pacing, congestion control, automatic MTU selection, or bitrate control.
-- Media streaming: video capture/encode/decode/rendering and audio capture/playback are not implemented yet.
+- Encoded video transport, video decoding, rendering, and audio capture/playback are not implemented yet.
 - Discovery, session negotiation, telemetry UI/wire streaming, rendering pipeline integration, or input injection.
 
 ## Repository Layout
@@ -173,6 +175,8 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-001E Reed-Solomon FEC](docs/rfc/RFC-001E-SCL-Reed-Solomon-FEC.md)
 - [RFC-001F Clock Synchronization and Network Telemetry](docs/rfc/RFC-001F-SCL-Clock-Synchronization-Network-Telemetry.md)
 - [RFC-001G Phase 1 Integration and Benchmarks](docs/rfc/RFC-001G-SCL-Phase1-Integration-Benchmarks.md)
+- [RFC-002A Android Privileged Video Capture Foundation](docs/rfc/RFC-002A-Android-Privileged-Video-Capture-Foundation.md)
+- [RFC-002B Android Hardware Video Encoder Pipeline](docs/rfc/RFC-002B-Android-Hardware-Video-Encoder-Pipeline.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
 - [State Management](docs/StateManagement.md)
@@ -182,10 +186,10 @@ The produced Android shared library is `libscl_core.so`.
 
 ## Roadmap Summary
 
-Phase 1 is complete. The next implementation phase is:
+Phase 1 networking is complete. RFC-002A privileged Android capture and RFC-002B hardware AVC encoding are implemented. The next implementation RFC is:
 
 ```text
-Phase 2 - Video Pipeline
+RFC-002C - Encoded Video to SCL Transport Integration
 ```
 
 Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

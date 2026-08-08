@@ -2,7 +2,7 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This roadmap is architectural context. Phase 1 core networking is complete; Phase 2 is the next implementation phase.
+This roadmap is architectural context. Phase 1 core networking is complete; Phase 2 video implementation is in progress.
 
 ## Phase 1 - SCL Core Networking Engine
 
@@ -23,12 +23,19 @@ Implemented the platform-independent C++20 networking core:
 
 ## Phase 2 - Video Streaming Pipeline
 
-Status: Next.
+Status: In progress.
 
-Implement:
+Implemented:
 
-- Screen capture.
-- Hardware MediaCodec encoder.
+- RFC-002A - Android Privileged Video Capture Foundation [complete]
+- RFC-002B - Android Hardware Video Encoder Pipeline [complete]
+
+Next:
+
+- RFC-002C - Encoded Video to SCL Transport Integration [next]
+
+Later Phase 2 work:
+
 - Hardware decoder.
 - Zero-copy rendering.
 - Adaptive bitrate.

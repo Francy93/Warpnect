@@ -2,11 +2,11 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This document defines the intended future concurrency model. It does not require or implement any threads during the current phase.
+This document defines Warpnect's concurrency model and the phase-specific execution domains that currently exist.
 
 ## Current Phase
 
-The current code has no production threading model. Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, and the SCL UDP transport is non-blocking but not internally threaded.
+Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, SCL UDP transport is non-blocking but not internally threaded, and RFC-002B uses one dedicated Android media thread for MediaCodec work.
 
 `UdpSocket` performs no background work. Its owner decides when to call `send_to()` and `receive_from()`.
 
@@ -16,6 +16,10 @@ FEC encoding and recovery perform no background work. Their owner supplies calle
 
 Clock synchronization and telemetry perform no background work. Their owner records local monotonic timestamps, registers and completes exchanges, adds accepted samples, records telemetry events, and asks for snapshots using caller-supplied `now_us`.
 
+Android privileged video capture uses Android/Shizuku Binder and display-configuration callbacks for control-plane lifecycle only. The production capture data path writes to a caller-owned `Surface`; Warpnect does not run a per-frame application thread, screenshot loop, Binder frame callback, JNI frame transfer, or CPU pixel-copy loop.
+
+Android hardware encoding uses a dedicated `WarpnectVideoEncoder` `HandlerThread` for `MediaCodec` lifecycle and asynchronous output callbacks. The encoded sink callback runs on that media execution context and must return promptly so the codec output buffer can be released. This thread has no networking, packetization, FEC, NACK, or transport responsibility.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:
@@ -23,7 +27,7 @@ Future phases should isolate real-time responsibilities into explicit execution 
 - UI thread: Compose rendering and user interaction.
 - Orchestration thread or scope: session lifecycle and role transitions.
 - Network thread: UDP receive/send, packet scheduling, loss recovery.
-- Encoder thread: video capture handoff and MediaCodec encode coordination.
+- Encoder thread: `WarpnectVideoEncoder` owns MediaCodec configuration, start/stop, output format changes, encoded output callbacks, EOS/drain, and codec cleanup.
 - Decoder thread: decode and render handoff.
 - Audio capture thread: microphone/system audio capture.
 - Audio render thread: playback scheduling.

@@ -8,17 +8,17 @@ This document defines the current repository layout and intended responsibility 
 
 ```text
 .
-├── .github/
-├── app/
-├── docs/
-├── gradle/
-├── native/
-├── build.gradle.kts
-├── gradlew
-├── gradlew.bat
-├── settings.gradle.kts
-├── gradle.properties
-└── .gitignore
+|-- .github/
+|-- app/
+|-- docs/
+|-- gradle/
+|-- native/
+|-- build.gradle.kts
+|-- gradlew
+|-- gradlew.bat
+|-- settings.gradle.kts
+|-- gradle.properties
+`-- .gitignore
 ```
 
 Root Gradle files declare the Android application build. The root does not contain application logic.
@@ -29,13 +29,14 @@ The Gradle wrapper pins the build runtime to Gradle 8.12.
 
 ```text
 app/
-├── build.gradle.kts
-├── proguard-rules.pro
-└── src/main/
-    ├── AndroidManifest.xml
-    ├── cpp/
-    ├── java/io/warpnect/
-    └── res/
+|-- build.gradle.kts
+|-- proguard-rules.pro
+`-- src/main/
+    |-- AndroidManifest.xml
+    |-- aidl/
+    |-- cpp/
+    |-- java/io/warpnect/
+    `-- res/
 ```
 
 The app module is the only current Gradle module. Additional modules may be introduced later only when they reduce build or ownership complexity.
@@ -44,134 +45,115 @@ The app module is the only current Gradle module. Additional modules may be intr
 
 ```text
 app/src/main/java/io/warpnect/
-├── MainActivity.kt
-├── CoreOrchestrator.kt
-├── NativeBridge.kt
-├── audio/
-├── codec/
-├── input/
-├── network/
-├── shizuku/
-└── ui/
+|-- MainActivity.kt
+|-- CoreOrchestrator.kt
+|-- NativeBridge.kt
+|-- audio/
+|-- capture/
+|-- codec/
+|-- input/
+|-- network/
+|-- platform/capture/
+|-- platform/video/encoder/
+|-- shizuku/
+|-- video/encoder/
+`-- ui/
 ```
 
 Responsibilities:
 
 - `MainActivity.kt`: Android entry point.
-- `CoreOrchestrator.kt`: Warpnect role state machine.
+- `CoreOrchestrator.kt`: Warpnect role state machine and app-level service ownership.
 - `NativeBridge.kt`: Kotlin-side JNI boundary, not protocol logic.
+- `capture/`: app-facing privileged video capture contracts, typed state/errors, request/result values, snapshots, and pure geometry helpers.
+- `platform/capture/`: Android Shizuku/UserService capture integration, display configuration monitoring, and hidden framework adapter ownership.
+- `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
+- `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
 - `ui/`: Compose UI.
-- `shizuku/`: future privileged access bridge.
+- `shizuku/`: app-level Shizuku availability and permission helper.
 - `network/`: future discovery/session bootstrap stubs, not UDP transport implementation.
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
 - `input/`: future reverse-input stubs.
 
-## Native Source Tree
+## Android Capture Source Tree
 
 ```text
-app/src/main/cpp/
-├── CMakeLists.txt
-├── jni_bridge.cpp
-├── include/
-│   ├── datagram_limits.h
-│   ├── fragment_result.h
-│   ├── fragmentation.h
-│   ├── loss_detector.h
-│   ├── monotonic_time.h
-│   ├── native_bridge.h
-│   ├── packet_codec.h
-│   ├── packet_result.h
-│   ├── protocol.h
-│   ├── reassembly.h
-│   ├── recovery_control.h
-│   ├── recovery_result.h
-│   ├── retransmission_cache.h
-│   ├── sequence_number.h
-│   ├── telemetry.h
-│   ├── udp_endpoint.h
-│   ├── udp_engine.h
-│   ├── udp_result.h
-│   └── udp_socket.h
-└── src/
-    ├── fragmentation.cpp
-    ├── loss_detector.cpp
-    ├── internal/
-    │   ├── byte_order.h
-    │   ├── socket_platform.h
-    │   ├── socket_platform_posix.cpp
-    │   └── socket_platform_windows.cpp
-    ├── monotonic_time.cpp
-    ├── packet_codec.cpp
-    ├── reassembly.cpp
-    ├── recovery_control.cpp
-    ├── retransmission_cache.cpp
-    ├── udp_endpoint.cpp
-    ├── udp_socket.cpp
-    └── native_stub.cpp
+app/src/main/aidl/io/warpnect/platform/capture/privileged/
+app/src/main/java/io/warpnect/capture/
+app/src/main/java/io/warpnect/platform/capture/
+app/src/main/java/io/warpnect/platform/capture/privileged/
 ```
 
 Responsibilities:
 
-- `datagram_limits.h`: shared structural datagram size limits used by transport and fragmentation planning.
-- `clock_sync.h`: bounded pending exchange tracking, clock sample calculation, affine clock model fitting, timestamp conversion, and one-way-delay estimation.
-- `clock_sync_control.h`: Version 1 SessionControl clock sync request and response payload codec.
-- `fec.h`: bounded FEC block encoder and recovery block APIs over encoded SCL datagrams.
-- `fec_control.h`: Version 1 SessionControl FEC parity payload codec.
-- `fec_result.h`: typed FEC and Reed-Solomon result values.
-- `protocol.h`: SCL packet structures and protocol constants.
-- `fragment_result.h`: typed fragmentation and reassembly result values.
-- `fragmentation.h`: zero-copy fragmentation planning and cursor API.
-- `loss_detector.h`: bounded caller-driven sequence gap tracking and NACK scheduling.
-- `reassembly.h`: bounded caller-owned reassembly slot API.
-- `recovery_control.h`: Version 1 SessionControl NACK payload codec and requested sequence cursor.
-- `recovery_result.h`: typed recovery, sequence, NACK, and retransmission result values.
-- `reed_solomon.h`: systematic Reed-Solomon codec API over caller-owned equal-size shards.
-- `retransmission_cache.h`: bounded caller-owned exact-datagram retransmission cache.
-- `sequence_number.h`: wrap-safe 32-bit sequence arithmetic helpers.
-- `timing_result.h`: typed timing, clock synchronization, and telemetry result values.
-- `packet_codec.h`: SCL packet validation, serialization, and decoding API.
-- `packet_result.h`: typed packet result and error values.
-- `monotonic_time.h`: local monotonic timestamp value helper.
-- `telemetry.h`: SCL timing structures, saturating telemetry counters, rolling sample windows, jitter, and immutable snapshots.
-- `udp_endpoint.h`: fixed-size platform-neutral IP address and UDP endpoint values.
-- `udp_result.h`: typed UDP transport status and result values.
-- `udp_socket.h`: move-only non-blocking UDP socket abstraction.
-- `udp_engine.h`: compatibility umbrella for the public UDP transport headers.
-- `native_bridge.h`: native bridge surface for Kotlin/JNI.
-- `jni_bridge.cpp`: JNI glue only.
-- `native_stub.cpp`: compileable Phase 0 native definitions.
-- `src/internal/byte_order.h`: private endian-safe byte-order helpers.
-- `src/internal/gf256.h`: private GF(256) arithmetic tables using primitive polynomial `0x11D`.
-- `src/internal/gf256_matrix.h`: private bounded matrix helpers for Reed-Solomon coding and recovery.
-- `src/internal/socket_platform.h`: private platform socket adapter boundary.
-- `src/internal/socket_platform_posix.cpp`: POSIX/Android UDP backend.
-- `src/internal/socket_platform_windows.cpp`: Windows host-native UDP backend for tests.
-- `src/packet_codec.cpp`: SCL packet foundation implementation.
-- `src/clock_sync.cpp`: SCL clock sample calculation, pending exchange tracking, affine model fitting, and timestamp conversion implementation.
-- `src/clock_sync_control.cpp`: SCL clock sync request and response payload encoding and decoding.
-- `src/fragmentation.cpp`: SCL fragmentation planning and cursor implementation.
-- `src/reassembly.cpp`: SCL bounded reassembly implementation.
-- `src/loss_detector.cpp`: SCL loss detection and NACK scheduling implementation.
-- `src/recovery_control.cpp`: SCL NACK payload encoding, decoding, and sequence iteration.
-- `src/reed_solomon.cpp`: systematic Reed-Solomon encoding and erasure recovery implementation.
-- `src/fec_control.cpp`: FEC parity control payload encoding, decoding, and datagram budget helpers.
-- `src/fec.cpp`: SCL FEC block assembly and recovery implementation.
-- `src/retransmission_cache.cpp`: SCL bounded retransmission cache implementation.
-- `src/monotonic_time.cpp`: local monotonic timestamp helper implementation.
-- `src/telemetry.cpp`: SCL rolling statistics, telemetry counters, snapshots, and legacy media timing helper implementation.
-- `src/udp_endpoint.cpp`: numeric address parsing dispatch.
-- `src/udp_socket.cpp`: public UDP socket lifecycle and validation.
+- `IPrivilegedCaptureService.aidl`: Binder control plane for capabilities, start, update, stop, and state. It passes a setup-time `Surface`, never frame bytes.
+- `VideoCaptureController.kt`: app-facing capture lifecycle abstraction.
+- `CaptureRequest.kt`, `CaptureResult.kt`, `CaptureState.kt`, `CaptureError.kt`, `CaptureCapabilities.kt`, `CaptureSessionSnapshot.kt`: typed capture model.
+- `CaptureGeometry.kt`: pure aspect-preserving projection helper.
+- `AndroidVideoCaptureController.kt`: app-process lifecycle facade.
+- `ShizukuCaptureGateway.kt`: Shizuku permission, UserService binding, remote service calls, and binder death mapping.
+- `DisplayConfigurationMonitor.kt`: low-frequency display change/removal monitoring.
+- `PrivilegedCaptureUserService.kt`: Shizuku UserService Binder endpoint.
+- `SurfaceControlDisplayCaptureApi.kt`: isolated hidden Android display API reflection for continuous Surface capture.
+
+Production capture is Android/Kotlin platform integration only. It is not part of the C++ SCL core and does not use JNI.
+
+## Android Video Encoder Source Tree
+
+```text
+app/src/main/java/io/warpnect/video/encoder/
+app/src/main/java/io/warpnect/platform/video/encoder/
+```
+
+Responsibilities:
+
+- `VideoEncoderController.kt`: app-facing encoder lifecycle abstraction.
+- `EncodedVideoSink.kt`: synchronous borrowed `ByteBuffer` output contract.
+- `VideoEncoderRequest.kt`, `VideoCodec.kt`, `VideoEncoderResult.kt`, `VideoEncoderError.kt`, `VideoEncoderSnapshot.kt`: typed AVC encoder model.
+- `VideoEncoderCandidate.kt`, `VideoEncoderCapabilities.kt`: hardware AVC capability and deterministic selection model.
+- `VideoEncoderFormatPlan.kt`: pure low-latency AVC Surface-input MediaFormat planning.
+- `VideoEncoderControllerCore.kt`: testable lifecycle, counters, output-format state, PTS ordering, and control precondition logic.
+- `AndroidVideoEncoderDiscovery.kt`: Android `MediaCodecList`/`MediaCodecInfo` discovery and capability extraction.
+- `AndroidVideoEncoderFormatFactory.kt`: thin Android `MediaFormat` translation for Surface input, CBR, realtime priority, latency, no-B-frame, and max-FPS hints.
+- `AndroidMediaCodecVideoEncoder.kt`: asynchronous `MediaCodec` controller running on `WarpnectVideoEncoder`.
+- `VideoEncoderOutputFormatExtractor.kt`: output format and CSD extraction.
+
+Production encoding is Android/Kotlin platform integration only. It consumes raw frames through a `MediaCodec` input `Surface` and exposes encoded access units as borrowed codec buffers. It does not use JNI, SCL packetization, UDP, a decoder, or a renderer.
+
+## Native Source Tree
+
+```text
+app/src/main/cpp/
+|-- CMakeLists.txt
+|-- jni_bridge.cpp
+|-- include/
+`-- src/
+```
 
 The native shared library target is `scl_core`.
+
+Native responsibilities:
+
+- `protocol.h`, `packet_codec.h`, `packet_result.h`: SCL packet constants, runtime structures, validation, encoding, and decoding.
+- `udp_endpoint.h`, `udp_socket.h`, `udp_engine.h`, `udp_result.h`: platform-neutral UDP values and non-blocking socket abstraction.
+- `fragmentation.h`, `fragment_result.h`, `reassembly.h`, `datagram_limits.h`: fragmentation planning and bounded reassembly.
+- `sequence_number.h`, `loss_detector.h`, `recovery_control.h`, `recovery_result.h`, `retransmission_cache.h`: bounded loss detection, NACK payloads, and exact-datagram retransmission cache.
+- `reed_solomon.h`, `fec.h`, `fec_control.h`, `fec_result.h`: systematic Reed-Solomon FEC and SessionControl parity payloads.
+- `clock_sync.h`, `clock_sync_control.h`, `timing_result.h`: four-timestamp synchronization, affine clock model, timestamp conversion, and clock control payloads.
+- `telemetry.h`: bounded counters, rolling statistics, jitter, and immutable snapshots.
+- `native_bridge.h`, `jni_bridge.cpp`: JNI glue only.
+- `src/internal/`: private byte-order, socket-platform, GF(256), and matrix helpers.
+
+SCL C++ owns protocol, timing, telemetry, and transport primitives. It does not own Android display capture, Shizuku integration, Compose, or app lifecycle.
 
 ## Future Expansion Points
 
 Future code should expand along existing responsibility boundaries:
 
 - SCL transport implementation below `app/src/main/cpp/src`.
-- SCL tests in a separate native test target when introduced.
-- Android platform adapters in Kotlin packages with clear ownership.
+- SCL tests in host-native targets under `native/`.
+- Android capture, codec, renderer, audio, and input adapters in Kotlin packages with clear ownership.
 - Cross-platform SCL extraction into a standalone native module only when desktop work begins.
 
 No future phase should collapse SCL protocol logic into Kotlin or Android lifecycle logic into C++.
@@ -185,6 +167,14 @@ native/tests/
 native/test_support/
 native/benchmarks/
 ```
+
+Current JVM tests include capture state-machine, validation, rollback, binder death, capability mapping, and geometry coverage.
+
+Current JVM tests also include encoder candidate selection, format planning, lifecycle/core state, output metadata, keyframe metadata, bitrate/keyframe control preconditions, codec diagnostics, and drain-timeout coverage.
+
+Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
+
+Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, and Phase 1 full-pipeline integration tests.
 
