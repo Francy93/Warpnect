@@ -55,8 +55,10 @@ app/src/main/java/io/warpnect/
 |-- network/
 |-- platform/capture/
 |-- platform/video/encoder/
+|-- platform/video/decoder/
 |-- platform/video/transport/
 |-- shizuku/
+|-- video/decoder/
 |-- video/encoder/
 |-- video/transport/
 `-- ui/
@@ -71,6 +73,8 @@ Responsibilities:
 - `platform/capture/`: Android Shizuku/UserService capture integration, display configuration monitoring, and hidden framework adapter ownership.
 - `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
+- `video/decoder/`: app-facing hardware AVC decoder contracts, pull-based input source, output Surface policy values, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
+- `platform/video/decoder/`: Android `MediaCodec` AVC decoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-output decoder controller.
 - `video/transport/`: app-facing encoded-video transport contracts, typed errors/results, snapshots, and `SclEncodedVideoSink`.
 - `platform/video/transport/`: native-backed SCL video transport controller that owns the opaque native sender handle.
 - `ui/`: Compose UI.
@@ -142,6 +146,29 @@ Responsibilities:
 
 Production transport does not copy a complete access unit into a Kotlin `ByteArray`, does not serialize SCL video wire format in Kotlin, and does not create an unbounded video queue.
 
+## Android Video Decoder Source Tree
+
+```text
+app/src/main/java/io/warpnect/video/decoder/
+app/src/main/java/io/warpnect/platform/video/decoder/
+```
+
+Responsibilities:
+
+- `VideoDecoderController.kt` / `VideoDecoderResult.kt`: app-facing decoder lifecycle abstraction and typed result values.
+- `VideoDecoderConfig.kt`: AVC decoder configuration, active configuration generation, exact CSD entries, and optional max input size.
+- `VideoDecoderInput.kt`: pull-based source contract invoked with MediaCodec-owned input buffers.
+- `DecodedVideoOutput.kt`: decoded frame metadata and immediate render/drop/scheduled-release decisions. It never carries raw pixels.
+- `VideoDecoderCandidate.kt`, `VideoDecoderCapabilities.kt`: hardware AVC capability and deterministic selection model.
+- `VideoDecoderFormatPlan.kt`: pure decoder MediaFormat planning for MIME, dimensions, CSD, optional max input size, and optional low-latency request.
+- `VideoDecoderControllerCore.kt`, `AvailableInputSlotTracker.kt`: testable lifecycle, telemetry, generation validation, output counters, and bounded input-index retention.
+- `AndroidVideoDecoderDiscovery.kt`: Android `MediaCodecList`/`MediaCodecInfo` decoder discovery and hardware/low-latency capability extraction.
+- `AndroidVideoDecoderFormatFactory.kt`: thin Android `MediaFormat` translation for exact CSD, optional max input size, and `KEY_LOW_LATENCY` when supported.
+- `AndroidMediaCodecVideoDecoder.kt`: asynchronous `MediaCodec` controller running on `WarpnectVideoDecoder`.
+- `VideoDecoderOutputFormatExtractor.kt`: output format diagnostics.
+
+Production decoding is Android/Kotlin platform integration only. It consumes complete compressed AVC access units through MediaCodec-owned input buffers and emits decoded frames to a caller-owned `Surface`. It does not parse SCL packets, perform FEC/NACK, use JNI, keep an encoded payload queue, read raw output pixels, or implement renderer policy.
+
 ## Native Source Tree
 
 ```text
@@ -198,9 +225,13 @@ Current JVM tests also include encoder candidate selection, format planning, lif
 
 Current JVM tests also include encoded-video transport sink validation for output-format submission, direct-buffer requirements, buffer ranges, keyframe metadata, PTS forwarding, transport error propagation, and ByteBuffer position/limit preservation.
 
+Current JVM tests also include decoder candidate selection, format planning, CSD validation, lifecycle/core state, config-generation checks, input-size checks, PTS preservation, output-action accounting, codec diagnostics, drain-timeout handling, bounded input-index retention, and output-release mapping.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
+
+Current Android instrumentation tests also include a synthetic RFC-002B encoder-to-RFC-002D decoder round trip that renders to a test `SurfaceTexture` Surface and skips explicitly when hardware codec prerequisites are unavailable.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, and RFC-002C video protocol/transport tests.
 

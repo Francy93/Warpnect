@@ -56,6 +56,14 @@ SCL video packetization MUST NOT parse, normalize, merge, split, or otherwise re
 
 Video recovery MUST compose the existing SCL fragmentation, retransmission/NACK, and Reed-Solomon FEC primitives. RFC-002C MUST NOT introduce a parallel video-specific recovery protocol.
 
+RFC-002D decodes compressed AVC access units directly into a caller-owned `Surface`. Decoded raw pixels MUST NOT traverse an application CPU pipeline, `ImageReader`, `Bitmap`, raw output `ByteBuffer`, or YUV/RGBA conversion path in production.
+
+Decoder input is driven by MediaCodec-owned input slots. RFC-002D MUST NOT maintain a hidden encoded-access-unit payload queue; it may retain only bounded MediaCodec input indices.
+
+Every decoded access unit MUST match the decoder session's active codec configuration generation. A generation mismatch must surface an explicit reconfiguration-required state rather than decoding against stale CSD.
+
+Video rendering policy is outside RFC-002D. The decoder may expose render/drop/scheduled-release mechanisms, but frame pacing, jitter-buffer scheduling, late-frame policy, and renderer ownership belong to later RFCs.
+
 ## JNI Rules
 
 JNI is only a bridge.

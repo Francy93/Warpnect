@@ -83,6 +83,22 @@ Kotlin owns the `MediaCodec` output buffer lifetime. JNI borrows the direct-buff
 
 Codec-specific data is submitted on output-format changes and may be copied as cold-path configuration data. This is distinct from the per-access-unit media hot path.
 
+RFC-002D hardware decoding remains entirely on the Android/Kotlin platform side and introduces no decoder JNI API. Decoder production input is pull-based from MediaCodec-owned input buffers, and decoder output is a caller-owned Android `Surface`.
+
+The intended future RFC-002F receive boundary is:
+
+```text
+native reassembled encoded AU
+        |
+copy directly into codec-owned decoder input ByteBuffer
+        |
+MediaCodec decoder
+        |
+caller-owned Surface
+```
+
+That direct native-reassembly to decoder-input handoff is not implemented in RFC-002D. `NativeBridge.kt` remains unchanged for decoder purposes, and Native Bridge ABI Version 1 remains valid.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

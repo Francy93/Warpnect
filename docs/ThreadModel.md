@@ -6,7 +6,7 @@ This document defines Warpnect's concurrency model and the phase-specific execut
 
 ## Current Phase
 
-Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, SCL UDP/video transport is non-blocking but not internally threaded, and RFC-002B uses one dedicated Android media thread for MediaCodec work.
+Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, SCL UDP/video transport is non-blocking but not internally threaded, and the Android codec foundations use dedicated media threads for MediaCodec work.
 
 `UdpSocket` performs no background work. Its owner decides when to call `send_to()` and `receive_from()`.
 
@@ -22,6 +22,8 @@ Android hardware encoding uses a dedicated `WarpnectVideoEncoder` `HandlerThread
 
 RFC-002C adds no native networking worker thread. `SclEncodedVideoSink` may synchronously invoke native transport from the `WarpnectVideoEncoder` callback context. Native submission must remain bounded and use non-blocking socket calls because holding a borrowed codec output buffer for excessive time can stall the encoder. RFC-002C does not add pacing, polling, sleep-based draining, or an unbounded video queue.
 
+Android hardware decoding uses a dedicated `WarpnectVideoDecoder` `HandlerThread` for `MediaCodec` lifecycle, input callbacks, output callbacks, output-format changes, frame-rendered diagnostics, EOS/drain, and codec cleanup. The decoder input source is invoked on this thread only when a codec-owned input buffer is available. It must return promptly and must not block on networking, sleep, or disk I/O. RFC-002D retains only bounded MediaCodec input indices when the source reports `NoData`; it does not retain encoded payloads.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:
@@ -30,7 +32,7 @@ Future phases should isolate real-time responsibilities into explicit execution 
 - Orchestration thread or scope: session lifecycle and role transitions.
 - Network thread: future UDP receive/send scheduling, packet pacing if ever adopted, and session-owned loss recovery.
 - Encoder thread: `WarpnectVideoEncoder` owns MediaCodec configuration, start/stop, output format changes, encoded output callbacks, EOS/drain, and codec cleanup.
-- Decoder thread: decode and render handoff.
+- Decoder thread: `WarpnectVideoDecoder` owns decoder MediaCodec state and output-Surface release decisions, but not networking or final rendering policy.
 - Audio capture thread: microphone/system audio capture.
 - Audio render thread: playback scheduling.
 - Input thread: reverse input receive and injection coordination.

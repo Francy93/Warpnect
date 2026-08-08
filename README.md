@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the RFC-002A Android video-capture foundation, the RFC-002B Android hardware AVC encoder foundation, and the RFC-002C encoded AVC to SCL transport integration.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the RFC-002A Android video-capture foundation, the RFC-002B Android hardware AVC encoder foundation, the RFC-002C encoded AVC to SCL transport integration, and the RFC-002D Android hardware AVC decoder foundation.
 
 Present:
 
@@ -30,13 +30,14 @@ Present:
 - Version 1 SCL video payload contract for StreamConfig and AccessUnit messages.
 - Native encoded-video packetization, UDP sending, retransmission/NACK handling, optional FEC, and receive-side video payload parsing.
 - Kotlin transport sink that forwards borrowed direct `MediaCodec` output buffers through `NativeBridge`.
+- Android hardware AVC decoder foundation using pull-based `MediaCodec` input slots and caller-owned `Surface` output.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive RTT-driven transport policy, pacing, congestion control, automatic MTU selection, or bitrate control.
-- Video decoding, rendering, and audio capture/playback are not implemented yet.
+- Final rendering policy and audio capture/playback are not implemented yet.
 - Complete end-to-end video streaming orchestration is not implemented yet.
 - Discovery, session negotiation, telemetry UI/wire streaming, rendering pipeline integration, or input injection.
 
@@ -181,6 +182,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-002A Android Privileged Video Capture Foundation](docs/rfc/RFC-002A-Android-Privileged-Video-Capture-Foundation.md)
 - [RFC-002B Android Hardware Video Encoder Pipeline](docs/rfc/RFC-002B-Android-Hardware-Video-Encoder-Pipeline.md)
 - [RFC-002C Encoded Video to SCL Transport Integration](docs/rfc/RFC-002C-Encoded-Video-SCL-Transport-Integration.md)
+- [RFC-002D Android Hardware Video Decoder Pipeline](docs/rfc/RFC-002D-Android-Hardware-Video-Decoder-Pipeline.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
 - [State Management](docs/StateManagement.md)
@@ -190,10 +192,10 @@ The produced Android shared library is `libscl_core.so`.
 
 ## Roadmap Summary
 
-Phase 1 networking is complete. RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, and RFC-002C encoded AVC transport over SCL are implemented. The next implementation RFC is:
+Phase 1 networking is complete. RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, and RFC-002D hardware AVC decoding are implemented. The next implementation RFC is:
 
 ```text
-RFC-002D - Android Hardware Video Decoder Pipeline
+RFC-002E - Low-Latency Rendering Pipeline
 ```
 
 Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

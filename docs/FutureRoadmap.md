@@ -30,10 +30,11 @@ Implemented:
 - RFC-002A - Android Privileged Video Capture Foundation [complete]
 - RFC-002B - Android Hardware Video Encoder Pipeline [complete]
 - RFC-002C - Encoded Video to SCL Transport Integration [complete]
+- RFC-002D - Android Hardware Video Decoder Pipeline [complete]
 
 Next:
 
-- RFC-002D - Android Hardware Video Decoder Pipeline [next]
+- RFC-002E - Low-Latency Rendering Pipeline [next]
 
 Later Phase 2 work:
 
