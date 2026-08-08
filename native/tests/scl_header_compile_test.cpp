@@ -24,6 +24,10 @@
 #include "udp_engine.h"
 #include "udp_result.h"
 #include "udp_socket.h"
+#include "video_packetizer.h"
+#include "video_protocol.h"
+#include "video_result.h"
+#include "video_transport.h"
 
 static_assert(__cplusplus >= 202002L, "Warpnect native host targets require C++20 or newer.");
 

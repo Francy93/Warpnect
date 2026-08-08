@@ -54,6 +54,18 @@ kNativeBridgeAbiVersion
 
 Breaking JNI/native entry point or bridge result changes require explicit ABI documentation and version handling.
 
+## Video Payload Version
+
+Current value:
+
+```text
+1
+```
+
+Video Payload Version describes the logical payload layout carried inside existing `PayloadType::Video` packets.
+
+It is independent from SCL Protocol Version and Native ABI Version. RFC-002C defines Version 1 `StreamConfig` and `AccessUnit` messages without changing the 21-byte SCL `PacketHeader` or adding a new payload type.
+
 ## Application Version
 
 Current value:

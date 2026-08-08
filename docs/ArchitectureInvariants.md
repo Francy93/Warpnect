@@ -48,6 +48,14 @@ MediaCodec encoded output buffers are borrowed and consumed synchronously. RFC-0
 
 Warpnect MUST NOT silently replace a verified hardware encoding requirement with a software encoder. If hardware AVC encoding cannot be confirmed, the transmitter path must report an explicit typed unavailable state.
 
+Encoded video MUST cross Kotlin/JNI as a borrowed direct `ByteBuffer`. RFC-002C MUST NOT require a complete access-unit `ByteArray` copy before native packetization.
+
+The logical Video payload is versioned independently inside `PayloadType::Video`. Adding or changing video payload layout must not change the 21-byte SCL `PacketHeader` or add a new payload type without a protocol RFC.
+
+SCL video packetization MUST NOT parse, normalize, merge, split, or otherwise rewrite AVC NAL units. RFC-002C transports framework-provided CSD and encoded access-unit bytes exactly.
+
+Video recovery MUST compose the existing SCL fragmentation, retransmission/NACK, and Reed-Solomon FEC primitives. RFC-002C MUST NOT introduce a parallel video-specific recovery protocol.
+
 ## JNI Rules
 
 JNI is only a bridge.
@@ -65,6 +73,7 @@ JNI MAY contain:
 - Type conversion.
 - Native call dispatch.
 - Explicit error/status mapping.
+- Direct `ByteBuffer` validation and address/capacity lookup for synchronous native calls.
 
 ## Naming Rules
 

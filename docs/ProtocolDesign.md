@@ -236,6 +236,200 @@ Reassembly supports out-of-order fragments, final-slice-first arrival, duplicate
 
 Reassembly does not implement loss detection, NACK, retransmission, timeout eviction, FEC, pacing, RTT, or clock synchronization. RFC-001D recovery primitives compose with reassembly through packet sequence numbers and decoded packet views.
 
+## Video Payload Version 1
+
+RFC-002C defines the Version 1 logical payload carried inside `PayloadType::Video`.
+
+This payload version is independent from:
+
+- SCL Protocol Version.
+- Native Bridge ABI Version.
+- NACK Control Payload Version.
+- FEC Parity Control Version.
+- Clock Sync Control Version.
+
+Constants:
+
+```cpp
+kVideoPayloadVersion == 1
+PayloadType::Video == 1
+```
+
+The 21-byte SCL `PacketHeader` is unchanged. RFC-002C does not add a new `PayloadType`.
+
+### Video Message Types
+
+| Value | Message type |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `StreamConfig` |
+| 2 | `AccessUnit` |
+
+Only `StreamConfig` and `AccessUnit` are emitted by Version 1 encoders.
+
+### Video Codec IDs
+
+| Value | Codec |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Avc` |
+
+RFC-002C implements AVC/H.264 only. Android `MediaCodecInfo.CodecProfileLevel` constants are not protocol codec IDs.
+
+### Common Video Message Header
+
+Every Version 1 video logical payload begins with this exact 12-byte header:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 1 | `video_version` |
+| 1 | 1 | `message_type` |
+| 2 | 1 | `codec` |
+| 3 | 1 | `flags` |
+| 4 | 4 | `config_generation` |
+| 8 | 4 | `item_id` |
+
+Constants:
+
+```cpp
+kVideoMessageHeaderWireSize == 12
+```
+
+All multi-byte video payload fields use big-endian byte order.
+
+### Configuration Generation
+
+`config_generation` identifies the decoder configuration required by an access unit.
+
+Rules:
+
+```text
+0 = invalid / no active configuration
+first accepted configuration = 1
+subsequent format change = previous + 1
+UINT32_MAX + 1 wraps to 1, skipping 0
+```
+
+Every `AccessUnit` must reference a successfully emitted non-zero configuration generation.
+
+### Item ID
+
+For `StreamConfig`:
+
+```text
+item_id = 0
+```
+
+For `AccessUnit`:
+
+```text
+item_id = frame_id
+```
+
+The frame ID is a 32-bit wrapping access-unit counter. It is independent from SCL packet sequence numbers.
+
+### StreamConfig
+
+`StreamConfig.flags` must be zero in Version 1.
+
+After the 12-byte common header, a `StreamConfig` contains:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 12 | 2 | `width` |
+| 14 | 2 | `height` |
+| 16 | 1 | `csd_count` |
+| 17 | 3 | reserved, zero |
+
+The fixed StreamConfig prefix is exactly 20 bytes.
+
+After the prefix, exactly `csd_count` codec-specific-data entries follow. Each entry is:
+
+```text
+uint32 big-endian length
+exact CSD bytes
+```
+
+AVC Version 1 accepts 1 through 4 CSD entries. CSD bytes are preserved exactly. SCL does not parse SPS/PPS, rewrite start codes, convert Annex B to AVCC, convert AVCC to Annex B, merge NAL units, or split NAL units.
+
+### AccessUnit
+
+An `AccessUnit` payload is:
+
+```text
+12-byte common video header
+exact encoded access-unit bytes
+```
+
+There is no additional fixed access-unit metadata header.
+
+For `AccessUnit.flags`:
+
+```text
+bit 0 = KeyFrame
+bits 1..7 = reserved, zero
+```
+
+Reserved flag bits are rejected by the parser. SCL does not parse AVC NAL units to infer keyframes.
+
+### Video Timestamps
+
+For Version 1 `AccessUnit` SCL packets:
+
+```text
+PacketHeader::timestamp_us = MediaCodec BufferInfo.presentationTimeUs
+```
+
+All fragments of one access unit carry the same timestamp.
+
+This timestamp is the encoder presentation timestamp supplied by RFC-002B. It is not automatically interpreted as UDP send time, network time, synchronized cross-device monotonic time, or wall-clock time. Later video orchestration and latency RFCs will define how media PTS relates to synchronized endpoint clocks.
+
+Negative Kotlin `presentationTimeUs` values are rejected before unsigned native conversion.
+
+### Video Fragmentation
+
+The logical payload being fragmented is:
+
+```text
+StreamConfig:
+20-byte StreamConfig prefix + length-prefixed CSD entries
+
+AccessUnit:
+12-byte VideoMessageHeader + encoded AU bytes
+```
+
+Fragmentation uses RFC-001C unchanged. Each fragment has its own unique SCL packet sequence number, and the fragment group base remains:
+
+```text
+base_sequence_number = sequence_number - slice_index modulo 2^32
+```
+
+When FEC is disabled:
+
+```text
+fragmentation datagram budget = max_wire_datagram_size
+```
+
+When FEC is enabled:
+
+```text
+fragmentation datagram budget =
+max_wire_datagram_size - 21 - 16 - 2
+```
+
+No global MTU is frozen by RFC-002C.
+
+### Segmented Packetization
+
+RFC-002C packetizes access units as segmented logical payloads:
+
+```text
+segment 0 = 12-byte video header
+segment 1 = borrowed MediaCodec encoded AU bytes
+```
+
+The native packetizer copies only the bytes intersecting each SCL fragment into the outgoing datagram scratch buffer. It does not allocate or require a complete temporary `12 + AU size` staging buffer.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

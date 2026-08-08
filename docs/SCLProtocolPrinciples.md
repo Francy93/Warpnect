@@ -133,6 +133,14 @@ FEC is erasure-only. It can reconstruct missing shards when enough valid shards 
 
 FEC primitives are bounded, caller-driven, and UDP-independent. They do not generate NACKs, retransmit parity, create threads, own sockets, tune parity ratios, or implement congestion control.
 
+## Encoded Video Payload Contract
+
+Video uses existing `PayloadType::Video` and an inner Video Payload Version. RFC-002C defines Video Payload Version 1 without changing the SCL packet header or adding a payload type.
+
+Version 1 video payloads carry either StreamConfig or AccessUnit messages. StreamConfig preserves codec-specific data exactly. AccessUnit preserves encoded AVC bytes, keyframe flag, frame ID, configuration generation, and the RFC-002B MediaCodec presentation timestamp carried in `PacketHeader::timestamp_us`.
+
+SCL video packetization must not parse or normalize AVC NAL units. Video recovery must reuse existing SCL fragmentation, exact-datagram retransmission/NACK, and FEC primitives rather than introducing a second recovery protocol.
+
 ## Clock Synchronization Contract
 
 Latency and ordering decisions must use monotonic clocks.

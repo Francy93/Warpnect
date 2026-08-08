@@ -20,6 +20,9 @@ set(SCL_CORE_SOURCES
     src/telemetry.cpp
     src/udp_endpoint.cpp
     src/udp_socket.cpp
+    src/video_packetizer.cpp
+    src/video_protocol.cpp
+    src/video_transport.cpp
 )
 
 if(WIN32)

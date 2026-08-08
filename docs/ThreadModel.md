@@ -6,7 +6,7 @@ This document defines Warpnect's concurrency model and the phase-specific execut
 
 ## Current Phase
 
-Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, SCL UDP transport is non-blocking but not internally threaded, and RFC-002B uses one dedicated Android media thread for MediaCodec work.
+Compose runs on the Android UI thread, `CoreOrchestrator` exposes simple state transitions, SCL UDP/video transport is non-blocking but not internally threaded, and RFC-002B uses one dedicated Android media thread for MediaCodec work.
 
 `UdpSocket` performs no background work. Its owner decides when to call `send_to()` and `receive_from()`.
 
@@ -18,7 +18,9 @@ Clock synchronization and telemetry perform no background work. Their owner reco
 
 Android privileged video capture uses Android/Shizuku Binder and display-configuration callbacks for control-plane lifecycle only. The production capture data path writes to a caller-owned `Surface`; Warpnect does not run a per-frame application thread, screenshot loop, Binder frame callback, JNI frame transfer, or CPU pixel-copy loop.
 
-Android hardware encoding uses a dedicated `WarpnectVideoEncoder` `HandlerThread` for `MediaCodec` lifecycle and asynchronous output callbacks. The encoded sink callback runs on that media execution context and must return promptly so the codec output buffer can be released. This thread has no networking, packetization, FEC, NACK, or transport responsibility.
+Android hardware encoding uses a dedicated `WarpnectVideoEncoder` `HandlerThread` for `MediaCodec` lifecycle and asynchronous output callbacks. The encoded sink callback runs on that media execution context and must return promptly so the codec output buffer can be released.
+
+RFC-002C adds no native networking worker thread. `SclEncodedVideoSink` may synchronously invoke native transport from the `WarpnectVideoEncoder` callback context. Native submission must remain bounded and use non-blocking socket calls because holding a borrowed codec output buffer for excessive time can stall the encoder. RFC-002C does not add pacing, polling, sleep-based draining, or an unbounded video queue.
 
 ## Future Thread Responsibilities
 
@@ -26,7 +28,7 @@ Future phases should isolate real-time responsibilities into explicit execution 
 
 - UI thread: Compose rendering and user interaction.
 - Orchestration thread or scope: session lifecycle and role transitions.
-- Network thread: UDP receive/send, packet scheduling, loss recovery.
+- Network thread: future UDP receive/send scheduling, packet pacing if ever adopted, and session-owned loss recovery.
 - Encoder thread: `WarpnectVideoEncoder` owns MediaCodec configuration, start/stop, output format changes, encoded output callbacks, EOS/drain, and codec cleanup.
 - Decoder thread: decode and render handoff.
 - Audio capture thread: microphone/system audio capture.

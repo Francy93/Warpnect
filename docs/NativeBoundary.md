@@ -27,7 +27,8 @@ It may:
 
 - Load `scl_core`.
 - Expose simple bridge metadata.
-- Later call stable native SCL entry points.
+- Call stable native SCL entry points through `NativeBridge.kt`.
+- Forward RFC-002B encoded direct `ByteBuffer` access units synchronously into native RFC-002C transport.
 
 It must not:
 
@@ -45,6 +46,8 @@ It may:
 - Convert JNI parameters and return values.
 - Call native bridge functions.
 - Report native errors in a structured way later.
+- Validate direct-buffer address, capacity, offset, and size for borrowed encoded access units.
+- Copy cold-path codec-specific-data byte arrays during output-format submission.
 
 It must not:
 
@@ -63,6 +66,22 @@ SCL must not include Android lifecycle, Compose, Activity, Shizuku, or applicati
 Android display capture remains entirely on the Kotlin/Android platform side. RFC-002A does not add native capture entry points, and `NativeBridge.kt` does not expose `startCapture`, `stopCapture`, or capture-surface JNI methods.
 
 Android hardware video encoding remains a Kotlin/Android `MediaCodec` platform responsibility. RFC-002B does not add video JNI entry points, encoded-video transport calls, or native bridge ABI changes.
+
+RFC-002C adds encoded-video transport entry points as additive Native Bridge ABI Version 1 calls. The hot path is:
+
+```text
+MediaCodec encoded bytes
+        |
+borrowed DirectByteBuffer
+        |
+NativeBridge JNI
+        |
+portable SCL video transport
+```
+
+Kotlin owns the `MediaCodec` output buffer lifetime. JNI borrows the direct-buffer pointer only for the duration of the native call. C++ must finish video header generation, fragmentation, packet encoding, cache storage, optional FEC acceptance, and UDP submission before returning. It must not retain the direct-buffer pointer.
+
+Codec-specific data is submitted on output-format changes and may be copied as cold-path configuration data. This is distinct from the per-access-unit media hot path.
 
 ## Error Handling
 

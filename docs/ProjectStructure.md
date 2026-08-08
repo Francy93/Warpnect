@@ -55,8 +55,10 @@ app/src/main/java/io/warpnect/
 |-- network/
 |-- platform/capture/
 |-- platform/video/encoder/
+|-- platform/video/transport/
 |-- shizuku/
 |-- video/encoder/
+|-- video/transport/
 `-- ui/
 ```
 
@@ -69,6 +71,8 @@ Responsibilities:
 - `platform/capture/`: Android Shizuku/UserService capture integration, display configuration monitoring, and hidden framework adapter ownership.
 - `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
+- `video/transport/`: app-facing encoded-video transport contracts, typed errors/results, snapshots, and `SclEncodedVideoSink`.
+- `platform/video/transport/`: native-backed SCL video transport controller that owns the opaque native sender handle.
 - `ui/`: Compose UI.
 - `shizuku/`: app-level Shizuku availability and permission helper.
 - `network/`: future discovery/session bootstrap stubs, not UDP transport implementation.
@@ -121,6 +125,23 @@ Responsibilities:
 
 Production encoding is Android/Kotlin platform integration only. It consumes raw frames through a `MediaCodec` input `Surface` and exposes encoded access units as borrowed codec buffers. It does not use JNI, SCL packetization, UDP, a decoder, or a renderer.
 
+## Android Video Transport Source Tree
+
+```text
+app/src/main/java/io/warpnect/video/transport/
+app/src/main/java/io/warpnect/platform/video/transport/
+```
+
+Responsibilities:
+
+- `VideoTransportConfig.kt`: explicit numeric endpoint, datagram budget, sequence, retransmission-cache, and optional FEC configuration.
+- `VideoTransportError.kt`, `VideoTransportResult.kt`, `VideoTransportState.kt`, `VideoTransportSnapshot.kt`: typed local transport model.
+- `EncodedVideoTransportBackend.kt`: synchronous boundary used by the encoded sink.
+- `SclEncodedVideoSink.kt`: RFC-002B `EncodedVideoSink` implementation that forwards output formats and borrowed direct `ByteBuffer` access units to SCL transport.
+- `NativeSclVideoTransportController.kt`: platform controller that creates/destroys the native sender handle through `NativeBridge.kt`.
+
+Production transport does not copy a complete access unit into a Kotlin `ByteArray`, does not serialize SCL video wire format in Kotlin, and does not create an unbounded video queue.
+
 ## Native Source Tree
 
 ```text
@@ -142,6 +163,9 @@ Native responsibilities:
 - `reed_solomon.h`, `fec.h`, `fec_control.h`, `fec_result.h`: systematic Reed-Solomon FEC and SessionControl parity payloads.
 - `clock_sync.h`, `clock_sync_control.h`, `timing_result.h`: four-timestamp synchronization, affine clock model, timestamp conversion, and clock control payloads.
 - `telemetry.h`: bounded counters, rolling statistics, jitter, and immutable snapshots.
+- `video_protocol.h`, `video_result.h`: Version 1 video payload constants, StreamConfig/AccessUnit parsing, CSD cursor, and typed video transport errors.
+- `video_packetizer.h`: segmented video logical-payload packetizer for header-plus-borrowed-AU sources.
+- `video_transport.h`: caller-driven SCL video sender composed from packetization, UDP, retransmission cache, optional FEC, and telemetry.
 - `native_bridge.h`, `jni_bridge.cpp`: JNI glue only.
 - `src/internal/`: private byte-order, socket-platform, GF(256), and matrix helpers.
 
@@ -172,11 +196,13 @@ Current JVM tests include capture state-machine, validation, rollback, binder de
 
 Current JVM tests also include encoder candidate selection, format planning, lifecycle/core state, output metadata, keyframe metadata, bitrate/keyframe control preconditions, codec diagnostics, and drain-timeout coverage.
 
+Current JVM tests also include encoded-video transport sink validation for output-format submission, direct-buffer requirements, buffer ranges, keyframe metadata, PTS forwarding, transport error propagation, and ByteBuffer position/limit preservation.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, and Phase 1 full-pipeline integration tests.
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, and RFC-002C video protocol/transport tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 
