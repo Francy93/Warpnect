@@ -64,6 +64,14 @@ Every decoded access unit MUST match the decoder session's active codec configur
 
 Video rendering policy is outside RFC-002D. The decoder may expose render/drop/scheduled-release mechanisms, but frame pacing, jitter-buffer scheduling, late-frame policy, and renderer ownership belong to later RFCs.
 
+Decoded video MUST be presented through a `SurfaceView`/`Surface` pipeline without mandatory decoded-pixel CPU readback. RFC-002E MUST NOT use a production `ImageReader`, `Bitmap`, raw YUV/RGBA buffer, `TextureView` fallback, OpenGL layer, Vulkan layer, or PixelCopy path to present decoded frames.
+
+RFC-002E MUST NOT maintain a decoded-frame queue, presentation queue, or jitter buffer. The renderer supplies an immediate render/drop/scheduled decision and MediaCodec output indices must be released promptly.
+
+Remote media presentation timestamps MUST NOT be directly interpreted as receiver-local render deadlines. Scheduled rendering requires an explicit receiver-local monotonic nanosecond timestamp.
+
+Default rendering favors immediate presentation. It MUST NOT add an intentional application frame delay, per-frame main-thread hop, or dedicated renderer worker loop.
+
 ## JNI Rules
 
 JNI is only a bridge.

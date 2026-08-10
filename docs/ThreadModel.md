@@ -24,6 +24,8 @@ RFC-002C adds no native networking worker thread. `SclEncodedVideoSink` may sync
 
 Android hardware decoding uses a dedicated `WarpnectVideoDecoder` `HandlerThread` for `MediaCodec` lifecycle, input callbacks, output callbacks, output-format changes, frame-rendered diagnostics, EOS/drain, and codec cleanup. The decoder input source is invoked on this thread only when a codec-owned input buffer is available. It must return promptly and must not block on networking, sleep, or disk I/O. RFC-002D retains only bounded MediaCodec input indices when the source reports `NoData`; it does not retain encoded payloads.
 
+RFC-002E SurfaceHolder lifecycle callbacks run on the Android View/window thread and must remain lightweight. Render decisions run synchronously on the `WarpnectVideoDecoder` callback thread through the renderer's `DecodedVideoSink`. The default path does not hop to the main thread per frame, launch a coroutine per frame, or create a dedicated renderer worker thread.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:
@@ -32,7 +34,8 @@ Future phases should isolate real-time responsibilities into explicit execution 
 - Orchestration thread or scope: session lifecycle and role transitions.
 - Network thread: future UDP receive/send scheduling, packet pacing if ever adopted, and session-owned loss recovery.
 - Encoder thread: `WarpnectVideoEncoder` owns MediaCodec configuration, start/stop, output format changes, encoded output callbacks, EOS/drain, and codec cleanup.
-- Decoder thread: `WarpnectVideoDecoder` owns decoder MediaCodec state and output-Surface release decisions, but not networking or final rendering policy.
+- Decoder thread: `WarpnectVideoDecoder` owns decoder MediaCodec state and invokes renderer decisions for output-Surface release, but not networking or session orchestration.
+- Surface lifecycle: Android View/window thread owns SurfaceHolder callbacks and render-target publication.
 - Audio capture thread: microphone/system audio capture.
 - Audio render thread: playback scheduling.
 - Input thread: reverse input receive and injection coordination.

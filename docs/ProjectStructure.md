@@ -56,10 +56,12 @@ app/src/main/java/io/warpnect/
 |-- platform/capture/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
+|-- platform/video/render/
 |-- platform/video/transport/
 |-- shizuku/
 |-- video/decoder/
 |-- video/encoder/
+|-- video/render/
 |-- video/transport/
 `-- ui/
 ```
@@ -75,6 +77,8 @@ Responsibilities:
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
 - `video/decoder/`: app-facing hardware AVC decoder contracts, pull-based input source, output Surface policy values, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/decoder/`: Android `MediaCodec` AVC decoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-output decoder controller.
+- `video/render/`: app-facing low-latency renderer contracts, aspect-fit geometry, Surface target values, render policy, frame-rate hint planning, lifecycle state, snapshots, and controller-core logic.
+- `platform/video/render/`: Android `SurfaceView` render target, SurfaceHolder lifecycle controller, and Surface frame-rate hint application.
 - `video/transport/`: app-facing encoded-video transport contracts, typed errors/results, snapshots, and `SclEncodedVideoSink`.
 - `platform/video/transport/`: native-backed SCL video transport controller that owns the opaque native sender handle.
 - `ui/`: Compose UI.
@@ -169,6 +173,30 @@ Responsibilities:
 
 Production decoding is Android/Kotlin platform integration only. It consumes complete compressed AVC access units through MediaCodec-owned input buffers and emits decoded frames to a caller-owned `Surface`. It does not parse SCL packets, perform FEC/NACK, use JNI, keep an encoded payload queue, read raw output pixels, or implement renderer policy.
 
+## Android Video Render Source Tree
+
+```text
+app/src/main/java/io/warpnect/video/render/
+app/src/main/java/io/warpnect/platform/video/render/
+app/src/main/java/io/warpnect/ui/WarpnectVideoSurface.kt
+```
+
+Responsibilities:
+
+- `VideoRenderController.kt`: app-facing render lifecycle abstraction and RFC-002D `DecodedVideoSink` exposure.
+- `VideoRenderGeometry.kt`: pure aspect-fit rectangle calculation.
+- `VideoRenderPolicy.kt`: immediate, drop, and receiver-local scheduled render decisions.
+- `VideoFrameRateHint.kt`: pure preferred-frame-rate validation and planning.
+- `VideoRenderTarget.kt`: borrowed Surface target and listener events.
+- `VideoRenderSnapshot.kt`, `VideoRenderError.kt`, `VideoRenderState.kt`, `VideoRenderResult.kt`: typed renderer model.
+- `VideoRenderControllerCore.kt`: testable Surface generation, state, telemetry, geometry, and decision accounting.
+- `AndroidVideoRenderController.kt`: Android SurfaceHolder lifecycle and `DecodedVideoSink` adapter.
+- `WarpnectVideoSurfaceView.kt`: production `SurfaceView` render target with aspect-aware measurement.
+- `AndroidFrameRateHintApplier.kt`: public Android `Surface.setFrameRate` API usage with non-disruptive strategy where available.
+- `WarpnectVideoSurface.kt`: minimal Compose `AndroidView` adapter.
+
+Production rendering presents decoded MediaCodec output through a `SurfaceView` Surface. It does not use TextureView fallback, ImageReader, Bitmap/YUV conversion, OpenGL/Vulkan, decoded-frame queues, SCL parsing, or JNI.
+
 ## Native Source Tree
 
 ```text
@@ -227,11 +255,15 @@ Current JVM tests also include encoded-video transport sink validation for outpu
 
 Current JVM tests also include decoder candidate selection, format planning, CSD validation, lifecycle/core state, config-generation checks, input-size checks, PTS preservation, output-action accounting, codec diagnostics, drain-timeout handling, bounded input-index retention, and output-release mapping.
 
+Current JVM tests also include renderer aspect-fit geometry, Surface generation/state, close behavior, immediate/scheduled render policy, frame-rate validation/planning, and render-decision telemetry.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic RFC-002B encoder-to-RFC-002D decoder round trip that renders to a test `SurfaceTexture` Surface and skips explicitly when hardware codec prerequisites are unavailable.
+
+Current Android instrumentation tests also include RFC-002E `SurfaceView` lifecycle coverage that publishes a valid Surface target and observes Surface destruction when a device/emulator is available.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, and RFC-002C video protocol/transport tests.
 

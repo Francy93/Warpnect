@@ -99,6 +99,20 @@ caller-owned Surface
 
 That direct native-reassembly to decoder-input handoff is not implemented in RFC-002D. `NativeBridge.kt` remains unchanged for decoder purposes, and Native Bridge ABI Version 1 remains valid.
 
+RFC-002E rendering is entirely Android/Kotlin-side and adds no JNI rendering API. The intended future receiver path is:
+
+```text
+native SCL receiver
+        |
+complete encoded AU handoff
+        |
+RFC-002D decoder
+        |
+RFC-002E SurfaceView
+```
+
+RFC-002F will connect those stages. RFC-002E only owns the SurfaceView render target, lifecycle, geometry, and render policy.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.
