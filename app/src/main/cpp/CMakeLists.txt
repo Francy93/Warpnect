@@ -23,6 +23,7 @@ set(SCL_CORE_SOURCES
     src/video_packetizer.cpp
     src/video_protocol.cpp
     src/video_receiver_runtime.cpp
+    src/video_resync_control.cpp
     src/video_transport.cpp
 )
 

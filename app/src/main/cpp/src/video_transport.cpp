@@ -1,8 +1,10 @@
 #include "video_transport.h"
 
 #include <algorithm>
+#include <array>
 
 #include "fec_control.h"
+#include "monotonic_time.h"
 #include "packet_codec.h"
 
 namespace warpnect::scl {
@@ -122,18 +124,25 @@ VideoStatus VideoTransportSender::submit_stream_config(std::uint16_t width, std:
 
     const std::uint32_t next_generation =
         next_video_config_generation(snapshot_.current_config_generation);
-    datagrams_emitted_in_message_ = 0;
-    const PacketizedVideoResult emitted = packetizer_.emit_stream_config(
-        packetizer_config(), snapshot_.next_video_sequence, next_generation, width, height,
-        csd_entries, *this);
-
-    snapshot_.next_video_sequence += emitted.datagrams_emitted;
-    snapshot_.video_datagrams_generated += emitted.datagrams_emitted;
+    const VideoStatus emitted =
+        emit_stream_config_generation(next_generation, width, height, csd_entries);
     if (!emitted.ok()) {
-        remember(emitted.error == VideoError::None ? VideoError::PartialEmission : emitted.error);
-        return status(snapshot_.last_error);
+        return emitted;
     }
 
+    cached_csd_.clear();
+    cached_csd_.reserve(csd_entries.size());
+    for (const CsdEntryView& entry : csd_entries) {
+        cached_csd_.emplace_back(entry.bytes.begin(), entry.bytes.end());
+    }
+    cached_csd_views_.clear();
+    cached_csd_views_.reserve(cached_csd_.size());
+    for (const auto& entry : cached_csd_) {
+        cached_csd_views_.push_back(
+            CsdEntryView{.bytes = std::span<const std::byte>(entry.data(), entry.size())});
+    }
+    cached_width_ = width;
+    cached_height_ = height;
     snapshot_.current_config_generation = next_generation;
     ++snapshot_.configs_submitted;
     remember(VideoError::None);
@@ -191,13 +200,41 @@ VideoStatus VideoTransportSender::handle_control_datagram(std::span<const std::b
         return status(snapshot_.last_error);
     }
 
-    const NackDecodeResult nack = decode_nack(decoded.packet.payload);
-    if (!nack.ok()) {
+    if (decoded.packet.payload.empty()) {
         remember(VideoError::NackDecodeFailed);
         return status(snapshot_.last_error);
     }
 
-    return handle_nack(nack.request);
+    const auto control_type =
+        static_cast<SessionControlType>(static_cast<std::uint8_t>(decoded.packet.payload[0]));
+    if (control_type == SessionControlType::Nack) {
+        const NackDecodeResult nack = decode_nack(decoded.packet.payload);
+        if (!nack.ok()) {
+            remember(VideoError::NackDecodeFailed);
+            return status(snapshot_.last_error);
+        }
+        return handle_nack(nack.request);
+    }
+    if (control_type == SessionControlType::VideoResyncRequest) {
+        const VideoResyncDecodeResult resync = decode_video_resync_request(decoded.packet.payload);
+        if (!resync.ok()) {
+            remember(resync.error);
+            return status(snapshot_.last_error);
+        }
+        return handle_video_resync_request(resync.request, monotonic_time_now_us().value);
+    }
+    if (control_type == SessionControlType::ClockSyncRequest) {
+        const ClockSyncRequestDecodeResult request =
+            decode_clock_sync_request(decoded.packet.payload);
+        if (!request.ok()) {
+            remember(VideoError::ClockSyncUnavailable);
+            return status(snapshot_.last_error);
+        }
+        return handle_clock_sync_request(request.request, monotonic_time_now_us().value);
+    }
+
+    remember(VideoError::None);
+    return status(VideoError::None);
 }
 
 VideoStatus VideoTransportSender::pump_control_datagram(std::span<std::byte> receive_buffer,
@@ -254,6 +291,73 @@ VideoStatus VideoTransportSender::handle_nack(const NackRequest& request) noexce
         }
     }
 
+    remember(VideoError::None);
+    return status(VideoError::None);
+}
+
+VideoStatus
+VideoTransportSender::handle_video_resync_request(const VideoResyncRequest& request,
+                                                  std::uint64_t now_us) noexcept {
+    const VideoStatus ready = ensure_ready();
+    if (!ready.ok()) {
+        return ready;
+    }
+    ++snapshot_.resync_requests_received;
+    snapshot_.last_resync_reason = request.reason;
+
+    if (config_.resync_request_cooldown_us != 0U && last_resync_request_us_ != 0U &&
+        now_us >= last_resync_request_us_ &&
+        now_us - last_resync_request_us_ < config_.resync_request_cooldown_us) {
+        ++snapshot_.resync_requests_suppressed;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
+    last_resync_request_us_ = now_us;
+
+    if (snapshot_.current_config_generation == 0 || cached_csd_.empty() || cached_width_ == 0 ||
+        cached_height_ == 0) {
+        ++snapshot_.resync_requests_without_config;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
+
+    const VideoStatus resent = resend_current_stream_config();
+    if (!resent.ok()) {
+        remember(VideoError::ResyncRequestFailed);
+        return status(snapshot_.last_error);
+    }
+
+    ++snapshot_.stream_config_resends;
+    ++snapshot_.keyframe_requests_received;
+    remember(VideoError::None);
+    return status(VideoError::None);
+}
+
+VideoStatus VideoTransportSender::handle_clock_sync_request(const ClockSyncRequest& request,
+                                                            std::uint64_t now_us) noexcept {
+    const VideoStatus ready = ensure_ready();
+    if (!ready.ok()) {
+        return ready;
+    }
+
+    std::array<std::byte, kClockSyncResponseWireSize> payload{};
+    const ClockSyncResponse response{
+        .exchange_id = request.exchange_id,
+        .t0_us = request.t0_us,
+        .t1_us = now_us,
+        .t2_us = now_us,
+    };
+    const auto encoded = encode_clock_sync_response(response, payload);
+    if (!encoded.ok()) {
+        remember(VideoError::ClockSyncUnavailable);
+        return status(snapshot_.last_error);
+    }
+    const VideoStatus sent = send_session_control_payload(payload);
+    if (!sent.ok()) {
+        return sent;
+    }
+    ++snapshot_.clock_sync_requests_received;
+    ++snapshot_.clock_sync_responses_sent;
     remember(VideoError::None);
     return status(VideoError::None);
 }
@@ -407,6 +511,60 @@ VideoStatus VideoTransportSender::send_parity(const FecParityView& parity) noexc
 
     ++snapshot_.next_control_sequence;
     ++snapshot_.fec_parity_packets;
+    telemetry_.record_datagram_sent(datagram.size());
+    return status(VideoError::None);
+}
+
+VideoStatus VideoTransportSender::resend_current_stream_config() noexcept {
+    return emit_stream_config_generation(snapshot_.current_config_generation, cached_width_,
+                                         cached_height_, cached_csd_views_);
+}
+
+VideoStatus VideoTransportSender::emit_stream_config_generation(
+    std::uint32_t generation,
+    std::uint16_t width,
+    std::uint16_t height,
+    std::span<const CsdEntryView> csd_entries) noexcept {
+    datagrams_emitted_in_message_ = 0;
+    const PacketizedVideoResult emitted = packetizer_.emit_stream_config(
+        packetizer_config(), snapshot_.next_video_sequence, generation, width, height,
+        csd_entries, *this);
+
+    snapshot_.next_video_sequence += emitted.datagrams_emitted;
+    snapshot_.video_datagrams_generated += emitted.datagrams_emitted;
+    if (!emitted.ok()) {
+        remember(emitted.error == VideoError::None ? VideoError::PartialEmission : emitted.error);
+        return status(snapshot_.last_error);
+    }
+    return status(VideoError::None);
+}
+
+VideoStatus
+VideoTransportSender::send_session_control_payload(std::span<const std::byte> payload) noexcept {
+    PacketHeader header{
+        .protocol_version = kSclProtocolVersion,
+        .flags = 0,
+        .sequence_number = snapshot_.next_control_sequence,
+        .timestamp_us = 0,
+        .payload_type = PayloadType::SessionControl,
+        .slice_index = 0,
+        .total_slices = 1,
+    };
+    const PacketEncodeResult encoded =
+        encode_packet(header, payload, workspace_.datagram_scratch);
+    const VideoError packet_error = map_packet_error(encoded.error);
+    if (packet_error != VideoError::None) {
+        remember(packet_error);
+        return status(snapshot_.last_error);
+    }
+    const auto datagram =
+        std::span<const std::byte>(workspace_.datagram_scratch.data(), encoded.bytes_written);
+    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
+    if (!sent.ok()) {
+        remember(map_udp_send_error(sent.status.error));
+        return status(snapshot_.last_error);
+    }
+    ++snapshot_.next_control_sequence;
     telemetry_.record_datagram_sent(datagram.size());
     return status(VideoError::None);
 }

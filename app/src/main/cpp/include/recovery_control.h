@@ -27,6 +27,7 @@ enum class SessionControlType : std::uint8_t {
     FecParity = 2,
     ClockSyncRequest = 3,
     ClockSyncResponse = 4,
+    VideoResyncRequest = 5,
 };
 
 struct NackRequest final {
@@ -88,6 +89,7 @@ static_assert(static_cast<std::uint8_t>(SessionControlType::Nack) == 1);
 static_assert(static_cast<std::uint8_t>(SessionControlType::FecParity) == 2);
 static_assert(static_cast<std::uint8_t>(SessionControlType::ClockSyncRequest) == 3);
 static_assert(static_cast<std::uint8_t>(SessionControlType::ClockSyncResponse) == 4);
+static_assert(static_cast<std::uint8_t>(SessionControlType::VideoResyncRequest) == 5);
 
 } // namespace warpnect::scl
 

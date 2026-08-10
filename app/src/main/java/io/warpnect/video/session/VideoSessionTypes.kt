@@ -86,11 +86,13 @@ data class VideoTransmitterSessionConfig(
     val encoderRequest: VideoEncoderRequest,
     val transportConfig: VideoTransportConfig,
     val senderControlPumpTimeoutUs: Long = 20_000L,
+    val performanceConfig: VideoPerformanceConfig = VideoPerformanceConfig.UltraLowLatency,
 )
 
 data class VideoReceiverSessionConfig(
     val receiverRuntimeConfig: VideoReceiverRuntimeConfig,
     val maxDecoderInputSizeBytes: Int? = receiverRuntimeConfig.maxLogicalPayloadSize,
+    val performanceConfig: VideoPerformanceConfig = VideoPerformanceConfig.UltraLowLatency,
 )
 
 data class VideoTransmitterSessionSnapshot(
@@ -124,7 +126,11 @@ data class VideoSenderControlSnapshot(
     val running: Boolean = false,
     val pumpIterations: Long = 0,
     val transportErrors: Long = 0,
+    val keyFrameRequestsObserved: Long = 0,
+    val keyFrameRequestsForwarded: Long = 0,
+    val keyFrameRequestFailures: Long = 0,
     val lastError: VideoTransportError = VideoTransportError.None,
+    val lastSessionFailure: VideoSessionFailure = VideoSessionFailure(),
 )
 
 internal fun VideoReceiverSessionConfig.toDecoderConfig(

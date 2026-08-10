@@ -123,7 +123,7 @@ bool BenchmarkRunner::write_csv_file(std::string_view path) const {
 }
 
 void BenchmarkRunner::print_summary(std::ostream& output) const {
-    output << "SCL Phase 1 benchmarks completed: " << rows_.size() << " CSV row(s), sink=" << sink_
+    output << "SCL benchmarks completed: " << rows_.size() << " CSV row(s), sink=" << sink_
            << '\n';
     if (!options_.output_path.empty()) {
         output << "CSV: " << options_.output_path << '\n';

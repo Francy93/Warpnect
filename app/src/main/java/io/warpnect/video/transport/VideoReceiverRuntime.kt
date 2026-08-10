@@ -20,6 +20,10 @@ data class VideoReceiverRuntimeConfig(
     val initialControlSequence: Long = 0,
     val fec: VideoTransportFecConfig = VideoTransportFecConfig.Disabled,
     val reassemblyTimeoutUs: Long,
+    val maxFrameRecoveryAgeUs: Long = reassemblyTimeoutUs,
+    val resyncRequestCooldownUs: Long = 250_000L,
+    val clockSyncIntervalUs: Long = 1_000_000L,
+    val clockSyncSampleCapacity: Int = 16,
 )
 
 enum class VideoReceiverRuntimeState {
@@ -84,12 +88,40 @@ data class VideoReceiverRuntimeSnapshot(
     val reassemblyTimeouts: Long = 0,
     val reassemblyWindowFull: Long = 0,
     val readyWindowFull: Long = 0,
+    val staleFramesReleased: Long = 0,
+    val resyncRequestsSent: Long = 0,
+    val resyncRequestsSuppressed: Long = 0,
+    val lastResyncReason: VideoResyncReason = VideoResyncReason.Unknown,
+    val clockSyncRequestsSent: Long = 0,
+    val clockSyncResponsesReceived: Long = 0,
+    val latestRttUs: Long = 0,
+    val bestRttUs: Long = 0,
+    val clockSyncState: VideoClockSyncState = VideoClockSyncState.Unsynchronized,
     val reassemblySlotsUsed: Long = 0,
     val readyAccessUnits: Long = 0,
+    val reassemblySlotsHighWater: Long = 0,
+    val readyAccessUnitsHighWater: Long = 0,
+    val lastReassemblyLatencyUs: Long = 0,
+    val maxReassemblyLatencyUs: Long = 0,
+    val lastReadyWaitUs: Long = 0,
+    val maxReadyWaitUs: Long = 0,
     val lastPresentationTimeUs: Long = 0,
     val lastFrameId: Long = 0,
     val lastError: VideoTransportError = VideoTransportError.None,
 )
+
+enum class VideoClockSyncState {
+    Unsynchronized,
+    WarmingUp,
+    Synchronized,
+    Degraded,
+    Stale,
+    ;
+
+    companion object {
+        fun fromNativeCode(code: Int): VideoClockSyncState = entries.getOrElse(code) { Unsynchronized }
+    }
+}
 
 data class VideoReceiverRuntimeResult(
     val error: VideoTransportError,
@@ -121,6 +153,8 @@ interface VideoReceiverRuntimeController : AutoCloseable {
     fun activateConfigGeneration(generation: Long): VideoTransportError
 
     fun setAwaitingKeyFrame(awaiting: Boolean)
+
+    fun requestResync(reason: VideoResyncReason, generation: Long): VideoTransportError
 
     fun stop(): VideoReceiverRuntimeResult
 

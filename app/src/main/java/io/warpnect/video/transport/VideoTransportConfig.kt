@@ -10,6 +10,7 @@ data class VideoTransportConfig(
     val initialControlSequence: Long = 0,
     val initialFrameId: Long = 0,
     val fec: VideoTransportFecConfig = VideoTransportFecConfig.Disabled,
+    val resyncRequestCooldownUs: Long = 250_000L,
 )
 
 data class VideoTransportFecConfig(

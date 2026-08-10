@@ -5,13 +5,16 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
+#include "clock_sync_control.h"
 #include "fec.h"
 #include "recovery_control.h"
 #include "retransmission_cache.h"
 #include "telemetry.h"
 #include "udp_socket.h"
 #include "video_packetizer.h"
+#include "video_resync_control.h"
 
 namespace warpnect::scl {
 
@@ -30,6 +33,7 @@ struct VideoTransportSenderConfig final {
     std::uint32_t initial_frame_id = 0;
     std::size_t retransmission_cache_slots = 0;
     VideoTransportFecConfig fec{};
+    std::uint64_t resync_request_cooldown_us = 250'000;
 };
 
 struct VideoTransportSenderWorkspace final {
@@ -57,6 +61,14 @@ struct VideoTransportSnapshot final {
     std::uint64_t video_bytes_sent = 0;
     std::uint64_t fec_parity_packets = 0;
     std::uint64_t retransmissions = 0;
+    std::uint64_t resync_requests_received = 0;
+    std::uint64_t resync_requests_suppressed = 0;
+    std::uint64_t resync_requests_without_config = 0;
+    std::uint64_t stream_config_resends = 0;
+    std::uint64_t keyframe_requests_received = 0;
+    VideoResyncReason last_resync_reason = VideoResyncReason::Unknown;
+    std::uint64_t clock_sync_requests_received = 0;
+    std::uint64_t clock_sync_responses_sent = 0;
     std::uint64_t last_presentation_time_us = 0;
     VideoError last_error = VideoError::None;
     bool opened = false;
@@ -82,6 +94,10 @@ class VideoTransportSender final : private DatagramSink {
     [[nodiscard]] VideoStatus pump_control_datagram(std::span<std::byte> receive_buffer,
                                                     std::uint64_t timeout_us) noexcept;
     [[nodiscard]] VideoStatus handle_nack(const NackRequest& request) noexcept;
+    [[nodiscard]] VideoStatus handle_video_resync_request(const VideoResyncRequest& request,
+                                                          std::uint64_t now_us) noexcept;
+    [[nodiscard]] VideoStatus handle_clock_sync_request(const ClockSyncRequest& request,
+                                                        std::uint64_t now_us) noexcept;
     [[nodiscard]] VideoTransportSnapshot snapshot() const noexcept;
     void close() noexcept;
 
@@ -91,6 +107,13 @@ class VideoTransportSender final : private DatagramSink {
     [[nodiscard]] VideoStatus maybe_accept_fec_data(std::span<const std::byte> datagram) noexcept;
     [[nodiscard]] VideoStatus flush_fec_if_ready() noexcept;
     [[nodiscard]] VideoStatus send_parity(const FecParityView& parity) noexcept;
+    [[nodiscard]] VideoStatus resend_current_stream_config() noexcept;
+    [[nodiscard]] VideoStatus emit_stream_config_generation(std::uint32_t generation,
+                                                            std::uint16_t width,
+                                                            std::uint16_t height,
+                                                            std::span<const CsdEntryView>
+                                                                csd_entries) noexcept;
+    [[nodiscard]] VideoStatus send_session_control_payload(std::span<const std::byte> payload) noexcept;
     [[nodiscard]] VideoStatus ensure_ready() noexcept;
     [[nodiscard]] VideoPacketizerConfig packetizer_config() const noexcept;
     [[nodiscard]] FecBlockConfig current_fec_block_config(std::uint32_t base_sequence) const noexcept;
@@ -105,6 +128,11 @@ class VideoTransportSender final : private DatagramSink {
     VideoPacketizer packetizer_;
     VideoTransportSnapshot snapshot_{};
     std::optional<FecBlockEncoder> fec_encoder_{};
+    std::vector<std::vector<std::byte>> cached_csd_{};
+    std::vector<CsdEntryView> cached_csd_views_{};
+    std::uint16_t cached_width_ = 0;
+    std::uint16_t cached_height_ = 0;
+    std::uint64_t last_resync_request_us_ = 0;
     std::uint32_t fec_block_base_sequence_ = 0;
     std::uint16_t datagrams_emitted_in_message_ = 0;
 };

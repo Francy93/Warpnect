@@ -32,6 +32,14 @@ The receiver decoder input source runs on `WarpnectVideoDecoder`. It never waits
 
 RFC-002F does not add a rendering worker thread, decoded-frame jitter buffer, unbounded Kotlin event channel, or UDP operation on the UI thread.
 
+RFC-002G adds no metrics thread. Performance counters, recovery age checks, queue high-water marks, and timing fields are recorded inside the existing sender, receiver, decoder, and renderer execution contexts.
+
+The receiver runtime uses `WarpnectVideoReceiver` for recovery deadline expiry, VideoResyncRequest emission, low-frequency RFC-001F clock-sync request emission, and ClockSyncResponse processing. These operations remain bounded and are driven by the receiver event pump.
+
+The sender control context uses `WarpnectVideoSenderControl` for incoming NACK, VideoResyncRequest, and ClockSyncRequest traffic. A valid resync request may notify Kotlin session orchestration to call the existing encoder keyframe request API on `WarpnectVideoEncoder`; it does not move encoded media payloads through the control thread.
+
+RFC-002G keeps render decisions on `WarpnectVideoDecoder` and does not introduce a per-frame UI hop, per-frame coroutine launch, dedicated renderer worker loop, or polling metrics loop.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

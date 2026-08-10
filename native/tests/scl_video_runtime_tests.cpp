@@ -281,8 +281,10 @@ void test_reassembly_timeout_marks_discontinuity() {
     const auto event = runtime.pump(0);
     expect_equal(event.type, VideoReceiverEventType::Discontinuity,
                  "timeout publishes discontinuity");
-    expect_equal(event.error, VideoError::ReassemblyTimeout, "timeout error is preserved");
+    expect_equal(event.error, VideoError::RecoveryDeadlineExceeded,
+                 "freshness deadline error is preserved");
     expect_equal(runtime.snapshot().reassembly_timeouts, 1ULL, "timeout is counted");
+    expect_equal(runtime.snapshot().stale_frames_released, 1ULL, "stale release is counted");
 }
 
 int run_all_tests() {

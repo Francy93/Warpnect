@@ -15,11 +15,19 @@ data class VideoTransportSnapshot(
     val videoBytesSent: Long = 0,
     val fecParityPackets: Long = 0,
     val retransmissions: Long = 0,
+    val resyncRequestsReceived: Long = 0,
+    val resyncRequestsSuppressed: Long = 0,
+    val resyncRequestsWithoutConfig: Long = 0,
+    val streamConfigResends: Long = 0,
+    val keyFrameRequestsReceived: Long = 0,
+    val lastResyncReason: VideoResyncReason = VideoResyncReason.Unknown,
+    val clockSyncRequestsReceived: Long = 0,
+    val clockSyncResponsesSent: Long = 0,
     val lastPresentationTimeUs: Long = 0,
     val lastError: VideoTransportError = VideoTransportError.None,
 ) {
     companion object {
-        private const val NATIVE_SNAPSHOT_VALUES = 17
+        private const val NATIVE_SNAPSHOT_VALUES = 25
 
         fun fromNative(values: LongArray): VideoTransportSnapshot {
             if (values.size < NATIVE_SNAPSHOT_VALUES) {
@@ -52,6 +60,14 @@ data class VideoTransportSnapshot(
                 videoBytesSent = values[10],
                 fecParityPackets = values[11],
                 retransmissions = values[12],
+                resyncRequestsReceived = values[17],
+                resyncRequestsSuppressed = values[18],
+                resyncRequestsWithoutConfig = values[19],
+                streamConfigResends = values[20],
+                keyFrameRequestsReceived = values[21],
+                lastResyncReason = VideoResyncReason.fromNativeCode(values[22].toInt()),
+                clockSyncRequestsReceived = values[23],
+                clockSyncResponsesSent = values[24],
                 lastPresentationTimeUs = values[13],
                 lastError = error,
             )

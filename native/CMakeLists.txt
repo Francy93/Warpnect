@@ -25,6 +25,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/video_packetizer.cpp"
     "${SCL_CPP_ROOT}/src/video_protocol.cpp"
     "${SCL_CPP_ROOT}/src/video_receiver_runtime.cpp"
+    "${SCL_CPP_ROOT}/src/video_resync_control.cpp"
     "${SCL_CPP_ROOT}/src/video_transport.cpp"
 )
 
@@ -125,6 +126,10 @@ add_executable(scl_video_runtime_tests tests/scl_video_runtime_tests.cpp)
 configure_native_target(scl_video_runtime_tests)
 target_link_libraries(scl_video_runtime_tests PRIVATE scl_native_core)
 
+add_executable(scl_video_resync_tests tests/scl_video_resync_tests.cpp)
+configure_native_target(scl_video_resync_tests)
+target_link_libraries(scl_video_resync_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -138,6 +143,19 @@ target_include_directories(
 )
 target_link_libraries(scl_phase1_benchmarks PRIVATE scl_native_core scl_native_test_support)
 
+add_executable(
+    scl_phase2_video_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/scl_phase2_video_benchmarks.cpp
+)
+configure_native_target(scl_phase2_video_benchmarks)
+target_include_directories(
+    scl_phase2_video_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(scl_phase2_video_benchmarks PRIVATE scl_native_core scl_native_test_support)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)
@@ -148,3 +166,4 @@ add_test(NAME scl_timing_telemetry_tests COMMAND scl_timing_telemetry_tests)
 add_test(NAME scl_phase1_integration_tests COMMAND scl_phase1_integration_tests)
 add_test(NAME scl_video_transport_tests COMMAND scl_video_transport_tests)
 add_test(NAME scl_video_runtime_tests COMMAND scl_video_runtime_tests)
+add_test(NAME scl_video_resync_tests COMMAND scl_video_resync_tests)

@@ -1,5 +1,6 @@
 package io.warpnect.platform.video.transport
 
+import io.warpnect.video.session.VideoKeyFrameRequestHandler
 import io.warpnect.video.session.VideoSenderControlRuntime
 import io.warpnect.video.session.VideoSenderControlRuntimeFactory
 import io.warpnect.video.session.VideoSenderControlSnapshot
@@ -12,12 +13,14 @@ import io.warpnect.video.transport.VideoTransportError
 
 class NativeVideoSenderControlRuntime(
     private val transportController: NativeSclVideoTransportController,
+    private val keyFrameRequestHandler: VideoKeyFrameRequestHandler,
 ) : VideoSenderControlRuntime {
     @Volatile
     private var running = false
 
     private var worker: Thread? = null
     private var localSnapshot = VideoSenderControlSnapshot()
+    private var observedKeyFrameRequests = 0L
 
     override fun start(timeoutUs: Long): VideoSessionControlResult {
         if (timeoutUs < 0L) {
@@ -38,6 +41,7 @@ class NativeVideoSenderControlRuntime(
                     )
                     running = false
                 } else {
+                    observeKeyFrameRequests()
                     localSnapshot = localSnapshot.copy(
                         running = true,
                         pumpIterations = localSnapshot.pumpIterations + 1,
@@ -63,6 +67,28 @@ class NativeVideoSenderControlRuntime(
 
     override fun snapshot(): VideoSenderControlSnapshot = localSnapshot.copy(running = running)
 
+    private fun observeKeyFrameRequests() {
+        val transportSnapshot = transportController.snapshot()
+        val pending = transportSnapshot.keyFrameRequestsReceived - observedKeyFrameRequests
+        if (pending <= 0L) {
+            return
+        }
+        observedKeyFrameRequests = transportSnapshot.keyFrameRequestsReceived
+        val result = keyFrameRequestHandler.onKeyFrameRequested()
+        localSnapshot = if (result.isSuccess) {
+            localSnapshot.copy(
+                keyFrameRequestsObserved = localSnapshot.keyFrameRequestsObserved + pending,
+                keyFrameRequestsForwarded = localSnapshot.keyFrameRequestsForwarded + 1,
+            )
+        } else {
+            localSnapshot.copy(
+                keyFrameRequestsObserved = localSnapshot.keyFrameRequestsObserved + pending,
+                keyFrameRequestFailures = localSnapshot.keyFrameRequestFailures + 1,
+                lastSessionFailure = result.failure,
+            )
+        }
+    }
+
     private fun failure(error: VideoTransportError): VideoSessionControlResult = VideoSessionControlResult(
         error = VideoSessionError.TransportFailed,
         failure = VideoSessionFailure(
@@ -76,9 +102,11 @@ class NativeVideoSenderControlRuntime(
         private const val THREAD_NAME = "WarpnectVideoSenderControl"
         private const val STOP_JOIN_TIMEOUT_MS = 250L
 
-        override fun create(transportController: VideoTransportController): VideoSenderControlRuntime? =
-            (transportController as? NativeSclVideoTransportController)?.let {
-                NativeVideoSenderControlRuntime(it)
-            }
+        override fun create(
+            transportController: VideoTransportController,
+            keyFrameRequestHandler: VideoKeyFrameRequestHandler,
+        ): VideoSenderControlRuntime? = (transportController as? NativeSclVideoTransportController)?.let {
+            NativeVideoSenderControlRuntime(it, keyFrameRequestHandler)
+        }
     }
 }

@@ -80,6 +80,14 @@ A complete reassembled encoded AU MUST be copied directly from native receiver s
 
 Default end-to-end rendering MUST NOT introduce an application jitter buffer.
 
+Warpnect video recovery MUST be freshness-bounded. Incomplete stale video frames are abandoned rather than recovered indefinitely, and stale predictive frames MUST NOT block receiver progress.
+
+Completed in-order encoded access units MUST be delivered toward the decoder promptly when a codec input slot is available. Warpnect MUST NOT add an intentional complete-AU playback buffer.
+
+Video resynchronization requests MAY trigger current StreamConfig resend and a hardware encoder sync-frame request, but they MUST NOT require retaining media access units outside the existing exact-datagram retransmission cache.
+
+Performance telemetry MUST be bounded. Counters, high-water marks, fixed histograms, and fixed sample rings are allowed; unbounded per-frame diagnostic history is not.
+
 ## JNI Rules
 
 JNI is only a bridge.

@@ -1,6 +1,7 @@
 #include "video_receiver_runtime.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 
 #include "fec_control.h"
@@ -9,6 +10,7 @@
 #include "recovery_control.h"
 #include "reed_solomon.h"
 #include "sequence_number.h"
+#include "video_resync_control.h"
 
 namespace warpnect::scl {
 namespace {
@@ -71,6 +73,13 @@ namespace {
     return order.ok() && order.order == SequenceOrder::Older;
 }
 
+[[nodiscard]] std::uint64_t recovery_deadline_us(const VideoReceiverConfig& config) noexcept {
+    if (config.max_frame_recovery_age_us != 0U) {
+        return config.max_frame_recovery_age_us;
+    }
+    return config.reassembly_timeout_us;
+}
+
 } // namespace
 
 VideoSizeResult video_receiver_fragment_datagram_budget(std::size_t max_wire_datagram_size,
@@ -83,7 +92,10 @@ VideoReceiverRuntime::VideoReceiverRuntime(VideoReceiverConfig config)
       loss_detector_(config.loss, std::span<LossSlot>(loss_slots_.data(), loss_slots_.size())),
       nack_scratch_(config.max_nacks_per_pump), datagram_buffer_(config.max_wire_datagram_size),
       control_datagram_scratch_(config.max_wire_datagram_size),
-      ready_ring_(config.ready_slot_count), latest_csd_(kMaxVideoCsdEntriesV1) {
+      ready_ring_(config.ready_slot_count),
+      clock_sync_samples_(config.clock_sync_sample_capacity),
+      clock_exchange_storage_(4),
+      latest_csd_(kMaxVideoCsdEntriesV1) {
     const VideoSizeResult budget =
         video_receiver_fragment_datagram_budget(config_.max_wire_datagram_size,
                                                 config_.fec.enabled);
@@ -147,6 +159,14 @@ VideoReceiverRuntime::VideoReceiverRuntime(VideoReceiverConfig config)
     }
 
     snapshot_.next_control_sequence = config_.initial_control_sequence;
+    if (!clock_sync_samples_.empty()) {
+        clock_exchange_tracker_.emplace(
+            std::span<PendingClockExchange>(clock_exchange_storage_.data(),
+                                            clock_exchange_storage_.size()));
+        clock_synchronizer_.emplace(
+            config_.clock_sync,
+            std::span<ClockSyncSample>(clock_sync_samples_.data(), clock_sync_samples_.size()));
+    }
 }
 
 VideoReceiverRuntime::~VideoReceiverRuntime() noexcept {
@@ -175,6 +195,10 @@ VideoStatus VideoReceiverRuntime::open() noexcept {
         (!fec_recovery_.has_value() || config_.fec.data_shards == 0 ||
          config_.fec.parity_shards == 0)) {
         remember(VideoError::FecConfigurationInvalid);
+        return status(snapshot_.last_error);
+    }
+    if (config_.clock_sync_interval_us != 0U && !clock_synchronizer_.has_value()) {
+        remember(VideoError::ClockSyncUnavailable);
         return status(snapshot_.last_error);
     }
 
@@ -211,6 +235,7 @@ VideoReceiverEvent VideoReceiverRuntime::pump(std::uint64_t timeout_us) noexcept
     const std::uint64_t now_us = monotonic_time_now_us().value;
     expire_reassembly_slots(now_us);
     collect_and_send_nacks(now_us);
+    maybe_send_clock_sync_request(now_us);
     if (VideoReceiverEvent pending = poll_pending_event();
         pending.type != VideoReceiverEventType::None) {
         return pending;
@@ -268,7 +293,8 @@ VideoReceiverRuntime::fill_decoder_input(std::span<std::byte> destination) noexc
         if (snapshot_.active_config_generation != 0 &&
             au.config_generation != snapshot_.active_config_generation) {
             reset_slot(slot);
-            mark_discontinuity(VideoError::InvalidConfigGeneration);
+            mark_discontinuity(VideoError::InvalidConfigGeneration,
+                               VideoResyncReason::Discontinuity);
             continue;
         }
         if (snapshot_.awaiting_keyframe && !au.is_key_frame) {
@@ -282,6 +308,12 @@ VideoReceiverRuntime::fill_decoder_input(std::span<std::byte> destination) noexc
             }
             remember(VideoError::InputBufferTooSmall);
             return VideoReceiverFillResult{.error = VideoError::InputBufferTooSmall};
+        }
+        const std::uint64_t now_us = monotonic_time_now_us().value;
+        if (slot.completed_at_us != 0U && now_us >= slot.completed_at_us) {
+            snapshot_.last_ready_wait_us = now_us - slot.completed_at_us;
+            snapshot_.max_ready_wait_us =
+                std::max(snapshot_.max_ready_wait_us, snapshot_.last_ready_wait_us);
         }
         if (!au.encoded_bytes.empty()) {
             std::memmove(destination.data(), au.encoded_bytes.data(), au.encoded_bytes.size());
@@ -343,6 +375,55 @@ void VideoReceiverRuntime::set_awaiting_keyframe(bool awaiting) noexcept {
     snapshot_.awaiting_keyframe = awaiting;
 }
 
+VideoStatus
+VideoReceiverRuntime::request_video_resync(VideoResyncReason reason,
+                                           std::uint32_t receiver_config_generation,
+                                           std::uint64_t now_us) noexcept {
+    if (snapshot_.closed) {
+        return status(VideoError::Closed);
+    }
+    const UdpEndpoint remote = learned_remote_.value_or(config_.remote_endpoint);
+    if (!endpoint_is_valid_remote(remote)) {
+        ++snapshot_.resync_requests_suppressed;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
+    if (!video_resync_reason_is_defined(reason)) {
+        remember(VideoError::ResyncRequestMalformed);
+        return status(snapshot_.last_error);
+    }
+    if (config_.resync_request_cooldown_us != 0U && last_resync_request_us_ != 0U &&
+        now_us >= last_resync_request_us_ &&
+        now_us - last_resync_request_us_ < config_.resync_request_cooldown_us) {
+        ++snapshot_.resync_requests_suppressed;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
+
+    std::array<std::byte, kVideoResyncRequestWireSize> payload{};
+    const VideoStatus encoded = encode_video_resync_request(
+        VideoResyncRequest{
+            .reason = reason,
+            .receiver_config_generation = receiver_config_generation,
+        },
+        payload);
+    if (!encoded.ok()) {
+        remember(encoded.error);
+        return status(snapshot_.last_error);
+    }
+    const VideoStatus sent = send_session_control_payload(payload, remote);
+    if (!sent.ok()) {
+        remember(VideoError::ResyncRequestFailed);
+        return status(snapshot_.last_error);
+    }
+
+    last_resync_request_us_ = now_us;
+    ++snapshot_.resync_requests_sent;
+    snapshot_.last_resync_reason = reason;
+    remember(VideoError::None);
+    return status(VideoError::None);
+}
+
 void VideoReceiverRuntime::close() noexcept {
     socket_.close();
     snapshot_.opened = false;
@@ -362,6 +443,16 @@ VideoReceiverSnapshot VideoReceiverRuntime::snapshot() const noexcept {
         if (slot.reassembly->is_started()) {
             ++output.reassembly_slots_used;
         }
+    }
+    output.reassembly_slots_high_water =
+        std::max(output.reassembly_slots_high_water, output.reassembly_slots_used);
+    output.ready_access_units_high_water =
+        std::max(output.ready_access_units_high_water, output.ready_access_units);
+    if (clock_synchronizer_.has_value()) {
+        const auto clock = clock_synchronizer_->snapshot(monotonic_time_now_us().value);
+        output.clock_sync_state = clock.state;
+        output.latest_rtt_us = clock.latest_rtt_us;
+        output.best_rtt_us = clock.best_rtt_us;
     }
     return output;
 }
@@ -485,7 +576,7 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
     const LossObservationResult observed =
         loss_detector_.observe(packet.header.sequence_number, now_us);
     if (!observed.ok()) {
-        mark_discontinuity(VideoError::Discontinuity);
+        mark_discontinuity(VideoError::Discontinuity, VideoResyncReason::Discontinuity);
     }
     if (!from_fec_recovery) {
         const VideoStatus fec = accept_fec_data(datagram);
@@ -508,7 +599,7 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
         return status(snapshot_.last_error);
     }
     if (accepted.complete) {
-        const VideoStatus completed = accept_complete_slot(*slot);
+        const VideoStatus completed = accept_complete_slot(*slot, now_us);
         if (!completed.ok()) {
             remember(completed.error);
             return completed;
@@ -529,6 +620,38 @@ VideoStatus VideoReceiverRuntime::process_session_control_packet(const PacketVie
     if (control_type == SessionControlType::FecParity) {
         return accept_fec_parity(packet.payload, now_us);
     }
+    if (control_type == SessionControlType::ClockSyncResponse) {
+        return process_clock_sync_response(packet.payload, now_us);
+    }
+    return status(VideoError::None);
+}
+
+VideoStatus VideoReceiverRuntime::process_clock_sync_response(std::span<const std::byte> payload,
+                                                              std::uint64_t now_us) noexcept {
+    if (!clock_exchange_tracker_.has_value() || !clock_synchronizer_.has_value()) {
+        return status(VideoError::None);
+    }
+    const auto decoded = decode_clock_sync_response(payload);
+    if (!decoded.ok()) {
+        remember(VideoError::ClockSyncUnavailable);
+        return status(snapshot_.last_error);
+    }
+    const ClockExchangeResult exchanged =
+        clock_exchange_tracker_->complete_response(decoded.response, now_us);
+    if (!exchanged.ok()) {
+        remember(VideoError::ClockSyncUnavailable);
+        return status(snapshot_.last_error);
+    }
+    const ClockModelUpdateResult updated = clock_synchronizer_->add_sample(exchanged.sample);
+    if (!updated.ok()) {
+        remember(VideoError::ClockSyncUnavailable);
+        return status(snapshot_.last_error);
+    }
+    ++snapshot_.clock_sync_responses_received;
+    snapshot_.latest_rtt_us = updated.snapshot.latest_rtt_us;
+    snapshot_.best_rtt_us = updated.snapshot.best_rtt_us;
+    snapshot_.clock_sync_state = updated.snapshot.state;
+    remember(VideoError::None);
     return status(VideoError::None);
 }
 
@@ -597,7 +720,8 @@ VideoStatus VideoReceiverRuntime::accept_fec_parity(std::span<const std::byte> p
     return status(VideoError::None);
 }
 
-VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot) noexcept {
+VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot,
+                                                       std::uint64_t now_us) noexcept {
     const ReassembledPayloadResult payload = slot.reassembly->result();
     if (!payload.ok()) {
         return status(VideoError::MalformedVideoPayload);
@@ -627,6 +751,12 @@ VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot) noexc
             return status(access_unit.error);
         }
         slot.complete_access_unit = true;
+        slot.completed_at_us = now_us;
+        if (slot.started_at_us != 0U && now_us >= slot.started_at_us) {
+            snapshot_.last_reassembly_latency_us = now_us - slot.started_at_us;
+            snapshot_.max_reassembly_latency_us = std::max(snapshot_.max_reassembly_latency_us,
+                                                           snapshot_.last_reassembly_latency_us);
+        }
         ++snapshot_.access_units_completed;
         return status(VideoError::None);
     }
@@ -672,8 +802,10 @@ VideoReceiverRuntime::find_or_allocate_slot(const PacketHeader& header,
     for (ReceiverSlot& slot : slots_) {
         if (!slot.reassembly->is_started()) {
             slot.started_at_us = now_us;
+            slot.completed_at_us = 0;
             slot.queued = false;
             slot.complete_access_unit = false;
+            update_occupancy_high_water();
             return &slot;
         }
     }
@@ -706,6 +838,7 @@ bool VideoReceiverRuntime::push_ready_slot(std::size_t slot_index) noexcept {
     ready_ring_[tail] = slot_index;
     ++ready_count_;
     slots_[slot_index].queued = true;
+    update_occupancy_high_water();
     return true;
 }
 
@@ -739,6 +872,19 @@ void VideoReceiverRuntime::publish_ordered_ready_access_units() noexcept {
             break;
         }
     }
+}
+
+void VideoReceiverRuntime::update_occupancy_high_water() noexcept {
+    std::size_t used = 0;
+    for (const ReceiverSlot& slot : slots_) {
+        if (slot.reassembly->is_started()) {
+            ++used;
+        }
+    }
+    snapshot_.reassembly_slots_high_water =
+        std::max(snapshot_.reassembly_slots_high_water, used);
+    snapshot_.ready_access_units_high_water =
+        std::max(snapshot_.ready_access_units_high_water, ready_count_);
 }
 
 void VideoReceiverRuntime::collect_and_send_nacks(std::uint64_t now_us) noexcept {
@@ -791,8 +937,72 @@ void VideoReceiverRuntime::send_nack(const NackRequest& request) noexcept {
     }
 }
 
+void VideoReceiverRuntime::maybe_send_clock_sync_request(std::uint64_t now_us) noexcept {
+    if (config_.clock_sync_interval_us == 0U || !clock_exchange_tracker_.has_value() ||
+        !clock_synchronizer_.has_value()) {
+        return;
+    }
+    const UdpEndpoint remote = learned_remote_.value_or(config_.remote_endpoint);
+    if (!endpoint_is_valid_remote(remote)) {
+        return;
+    }
+    if (last_clock_sync_request_us_ != 0U && now_us >= last_clock_sync_request_us_ &&
+        now_us - last_clock_sync_request_us_ < config_.clock_sync_interval_us) {
+        return;
+    }
+
+    std::array<std::byte, kClockSyncRequestWireSize> payload{};
+    const ClockSyncRequest request{
+        .exchange_id = next_clock_exchange_id_,
+        .t0_us = now_us,
+    };
+    const auto encoded = encode_clock_sync_request(request, payload);
+    if (!encoded.ok()) {
+        return;
+    }
+    if (!clock_exchange_tracker_->register_request(request.exchange_id, request.t0_us).ok()) {
+        return;
+    }
+    const VideoStatus sent = send_session_control_payload(payload, remote);
+    if (!sent.ok()) {
+        return;
+    }
+    ++next_clock_exchange_id_;
+    last_clock_sync_request_us_ = now_us;
+    ++snapshot_.clock_sync_requests_sent;
+}
+
+VideoStatus
+VideoReceiverRuntime::send_session_control_payload(std::span<const std::byte> payload,
+                                                   const UdpEndpoint& remote) noexcept {
+    PacketHeader header{
+        .protocol_version = kSclProtocolVersion,
+        .flags = 0,
+        .sequence_number = snapshot_.next_control_sequence,
+        .timestamp_us = 0,
+        .payload_type = PayloadType::SessionControl,
+        .slice_index = 0,
+        .total_slices = 1,
+    };
+    const PacketEncodeResult encoded = encode_packet(
+        header, payload,
+        std::span<std::byte>(control_datagram_scratch_.data(), control_datagram_scratch_.size()));
+    if (!encoded.ok()) {
+        return status(VideoError::PacketEncodeFailed);
+    }
+    const UdpSendResult sent = socket_.send_to(
+        std::span<const std::byte>(control_datagram_scratch_.data(), encoded.bytes_written),
+        remote);
+    if (!sent.ok()) {
+        return status(VideoError::UdpSendFailed);
+    }
+    ++snapshot_.next_control_sequence;
+    return status(VideoError::None);
+}
+
 void VideoReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcept {
-    if (config_.reassembly_timeout_us == 0) {
+    const std::uint64_t deadline_us = recovery_deadline_us(config_);
+    if (deadline_us == 0) {
         return;
     }
     bool expired = false;
@@ -801,27 +1011,33 @@ void VideoReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcep
             continue;
         }
         if (now_us >= slot.started_at_us &&
-            now_us - slot.started_at_us > config_.reassembly_timeout_us) {
+            now_us - slot.started_at_us >= deadline_us) {
             reset_slot(slot);
             expired = true;
             ++snapshot_.reassembly_timeouts;
+            ++snapshot_.stale_frames_released;
         }
     }
     if (expired) {
-        mark_discontinuity(VideoError::ReassemblyTimeout);
+        mark_discontinuity(VideoError::RecoveryDeadlineExceeded,
+                           VideoResyncReason::Discontinuity);
     }
 }
 
-void VideoReceiverRuntime::mark_discontinuity(VideoError error) noexcept {
+void VideoReceiverRuntime::mark_discontinuity(VideoError error,
+                                              VideoResyncReason reason) noexcept {
     snapshot_.awaiting_keyframe = true;
     ++snapshot_.discontinuities;
     pending_event_ = make_event(VideoReceiverEventType::Discontinuity, error);
+    (void)request_video_resync(reason, snapshot_.active_config_generation,
+                               monotonic_time_now_us().value);
     remember(error);
 }
 
 void VideoReceiverRuntime::reset_slot(ReceiverSlot& slot) noexcept {
     slot.reassembly->reset();
     slot.started_at_us = 0;
+    slot.completed_at_us = 0;
     slot.queued = false;
     slot.complete_access_unit = false;
 }

@@ -5,6 +5,8 @@ import io.warpnect.video.encoder.VideoEncoderController
 import io.warpnect.video.encoder.VideoEncoderError
 import io.warpnect.video.transport.SclEncodedVideoSink
 import io.warpnect.video.transport.VideoTransportController
+import io.warpnect.video.transport.VideoTransportError
+import kotlinx.coroutines.runBlocking
 
 interface VideoTransmitterSessionController : AutoCloseable {
     suspend fun start(config: VideoTransmitterSessionConfig): VideoSessionControlResult
@@ -36,6 +38,9 @@ class DefaultVideoTransmitterSessionController(
             return remember(sessionFailure(VideoSessionError.AlreadyRunning))
         }
         if (config.senderControlPumpTimeoutUs < 0L) {
+            return remember(sessionFailure(VideoSessionError.InvalidConfiguration))
+        }
+        if (config.performanceConfig.validate() != VideoTransportError.None) {
             return remember(sessionFailure(VideoSessionError.InvalidConfiguration))
         }
 
@@ -88,7 +93,10 @@ class DefaultVideoTransmitterSessionController(
         }
         encoderStarted = true
 
-        controlRuntime = senderControlRuntimeFactory.create(transportController)
+        controlRuntime = senderControlRuntimeFactory.create(
+            transportController,
+            VideoKeyFrameRequestHandler { requestEncoderKeyFrameBlocking() },
+        )
         val controlStart = controlRuntime?.start(config.senderControlPumpTimeoutUs)
             ?: VideoSessionControlResult.Success
         if (!controlStart.isSuccess) {
@@ -184,4 +192,20 @@ class DefaultVideoTransmitterSessionController(
         source = VideoSessionErrorSource.Session,
         error = error,
     )
+
+    private fun requestEncoderKeyFrameBlocking(): VideoSessionControlResult = runBlocking {
+        val requested = encoderController.requestKeyFrame()
+        if (requested.isSuccess) {
+            VideoSessionControlResult.Success
+        } else {
+            VideoSessionControlResult(
+                error = VideoSessionError.EncoderFailed,
+                failure = VideoSessionFailure(
+                    source = VideoSessionErrorSource.Encoder,
+                    error = VideoSessionError.EncoderFailed,
+                    encoderError = requested.error,
+                ),
+            )
+        }
+    }
 }

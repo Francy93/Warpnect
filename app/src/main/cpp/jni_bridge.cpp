@@ -15,6 +15,7 @@
 #include "retransmission_cache.h"
 #include "udp_endpoint.h"
 #include "video_receiver_runtime.h"
+#include "video_resync_control.h"
 #include "video_transport.h"
 
 namespace {
@@ -29,16 +30,17 @@ using warpnect::scl::VideoError;
 using warpnect::scl::VideoReceiverConfig;
 using warpnect::scl::VideoReceiverEventType;
 using warpnect::scl::VideoReceiverRuntime;
+using warpnect::scl::VideoResyncReason;
 using warpnect::scl::VideoStatus;
 using warpnect::scl::VideoTransportFecConfig;
 using warpnect::scl::VideoTransportSender;
 using warpnect::scl::VideoTransportSenderConfig;
 using warpnect::scl::VideoTransportSenderWorkspace;
 
-inline constexpr jsize kNativeVideoTransportSnapshotValues = 17;
+inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
 inline constexpr jsize kNativeVideoReceiverFillValues = 7;
-inline constexpr jsize kNativeVideoReceiverSnapshotValues = 24;
+inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 
 [[nodiscard]] constexpr jint error_code(VideoError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
@@ -218,11 +220,13 @@ create_handle(JNIEnv* env,
               jint retransmission_cache_slots,
               jboolean fec_enabled,
               jint fec_data_shards,
-              jint fec_parity_shards) {
+              jint fec_parity_shards,
+              jlong resync_request_cooldown_us) {
     if (remote_address == nullptr || !valid_port(remote_port, false) ||
         !valid_port(local_port, true) || max_wire_datagram_size <= 0 ||
         retransmission_cache_slots <= 0 || !valid_u32(initial_video_sequence) ||
-        !valid_u32(initial_control_sequence) || !valid_u32(initial_frame_id)) {
+        !valid_u32(initial_control_sequence) || !valid_u32(initial_frame_id) ||
+        resync_request_cooldown_us < 0) {
         return nullptr;
     }
     const bool fec_is_enabled = fec_enabled == JNI_TRUE;
@@ -266,6 +270,7 @@ create_handle(JNIEnv* env,
                     fec_is_enabled ? static_cast<std::uint8_t>(fec_parity_shards)
                                    : std::uint8_t{0},
             },
+        .resync_request_cooldown_us = static_cast<std::uint64_t>(resync_request_cooldown_us),
     };
 
     if (!allocate_workspaces(*handle)) {
@@ -301,13 +306,19 @@ create_receiver_handle(JNIEnv* env,
                        jboolean fec_enabled,
                        jint fec_data_shards,
                        jint fec_parity_shards,
-                       jlong reassembly_timeout_us) {
+                       jlong reassembly_timeout_us,
+                       jlong max_frame_recovery_age_us,
+                       jlong resync_request_cooldown_us,
+                       jlong clock_sync_interval_us,
+                       jint clock_sync_sample_capacity) {
     if (local_address == nullptr || !valid_port(local_port, true) ||
         !valid_port(remote_port, true) || max_wire_datagram_size <= 0 ||
         max_logical_payload_size <= 0 || reassembly_slot_count <= 0 ||
         ready_slot_count <= 0 || loss_slot_count <= 0 || max_nacks_per_pump <= 0 ||
         reorder_delay_us < 0 || renack_interval_us < 0 || max_nack_attempts <= 0 ||
-        !valid_u32(initial_control_sequence) || reassembly_timeout_us < 0) {
+        !valid_u32(initial_control_sequence) || reassembly_timeout_us < 0 ||
+        max_frame_recovery_age_us < 0 || resync_request_cooldown_us < 0 ||
+        clock_sync_interval_us < 0 || clock_sync_sample_capacity < 0) {
         return nullptr;
     }
     const bool fec_is_enabled = fec_enabled == JNI_TRUE;
@@ -378,8 +389,14 @@ create_receiver_handle(JNIEnv* env,
                     .parity_shards =
                         fec_is_enabled ? static_cast<std::uint8_t>(fec_parity_shards)
                                        : std::uint8_t{0},
-                },
+            },
             .reassembly_timeout_us = static_cast<std::uint64_t>(reassembly_timeout_us),
+            .max_frame_recovery_age_us =
+                static_cast<std::uint64_t>(max_frame_recovery_age_us),
+            .resync_request_cooldown_us =
+                static_cast<std::uint64_t>(resync_request_cooldown_us),
+            .clock_sync_interval_us = static_cast<std::uint64_t>(clock_sync_interval_us),
+            .clock_sync_sample_capacity = static_cast<std::size_t>(clock_sync_sample_capacity),
         });
     if (!runtime->open().ok()) {
         return nullptr;
@@ -422,13 +439,14 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportCreate(
     jint retransmission_cache_slots,
     jboolean fec_enabled,
     jint fec_data_shards,
-    jint fec_parity_shards) {
+    jint fec_parity_shards,
+    jlong resync_request_cooldown_us) {
     try {
         auto handle = create_handle(env, remote_address, remote_port, local_port,
                                     max_wire_datagram_size, initial_video_sequence,
                                     initial_control_sequence, initial_frame_id,
                                     retransmission_cache_slots, fec_enabled, fec_data_shards,
-                                    fec_parity_shards);
+                                    fec_parity_shards, resync_request_cooldown_us);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -602,6 +620,15 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportSnapshot(JNIEnv* env,
         values[14] = error_code(snapshot.last_error);
         values[15] = snapshot.opened ? 1 : 0;
         values[16] = snapshot.closed ? 1 : 0;
+        values[17] = static_cast<jlong>(snapshot.resync_requests_received);
+        values[18] = static_cast<jlong>(snapshot.resync_requests_suppressed);
+        values[19] = static_cast<jlong>(snapshot.resync_requests_without_config);
+        values[20] = static_cast<jlong>(snapshot.stream_config_resends);
+        values[21] = static_cast<jlong>(snapshot.keyframe_requests_received);
+        values[22] =
+            static_cast<jlong>(static_cast<std::uint8_t>(snapshot.last_resync_reason));
+        values[23] = static_cast<jlong>(snapshot.clock_sync_requests_received);
+        values[24] = static_cast<jlong>(snapshot.clock_sync_responses_sent);
     }
     jlongArray array = env->NewLongArray(kNativeVideoTransportSnapshotValues);
     if (array != nullptr) {
@@ -632,18 +659,45 @@ Java_io_warpnect_NativeBridge_nativeVideoReceiverCreate(
     jboolean fec_enabled,
     jint fec_data_shards,
     jint fec_parity_shards,
-    jlong reassembly_timeout_us) {
+    jlong reassembly_timeout_us,
+    jlong max_frame_recovery_age_us,
+    jlong resync_request_cooldown_us,
+    jlong clock_sync_interval_us,
+    jint clock_sync_sample_capacity) {
     try {
         auto handle = create_receiver_handle(
             env, local_address, local_port, remote_address, remote_port,
             restrict_remote_endpoint, max_wire_datagram_size, max_logical_payload_size,
             reassembly_slot_count, ready_slot_count, loss_slot_count, max_nacks_per_pump,
             reorder_delay_us, renack_interval_us, max_nack_attempts, initial_control_sequence,
-            fec_enabled, fec_data_shards, fec_parity_shards, reassembly_timeout_us);
+            fec_enabled, fec_data_shards, fec_parity_shards, reassembly_timeout_us,
+            max_frame_recovery_age_us, resync_request_cooldown_us, clock_sync_interval_us,
+            clock_sync_sample_capacity);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
     }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverRequestResync(JNIEnv* /* env */,
+                                                               jclass /* clazz */,
+                                                               jlong handle,
+                                                               jint reason,
+                                                               jlong generation,
+                                                               jlong now_us) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_u32(generation) ||
+        now_us < 0 || reason < 0 || reason > 255) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return error_code(
+        native_handle->runtime
+            ->request_video_resync(static_cast<VideoResyncReason>(static_cast<std::uint8_t>(reason)),
+                                   static_cast<std::uint32_t>(generation),
+                                   static_cast<std::uint64_t>(now_us))
+            .error);
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -823,6 +877,22 @@ Java_io_warpnect_NativeBridge_nativeVideoReceiverSnapshot(JNIEnv* env,
         values[21] = static_cast<jlong>(snapshot.last_presentation_time_us);
         values[22] = static_cast<jlong>(snapshot.last_frame_id);
         values[23] = error_code(snapshot.last_error);
+        values[24] = static_cast<jlong>(snapshot.stale_frames_released);
+        values[25] = static_cast<jlong>(snapshot.resync_requests_sent);
+        values[26] = static_cast<jlong>(snapshot.resync_requests_suppressed);
+        values[27] = static_cast<jlong>(
+            static_cast<std::uint8_t>(snapshot.last_resync_reason));
+        values[28] = static_cast<jlong>(snapshot.clock_sync_requests_sent);
+        values[29] = static_cast<jlong>(snapshot.clock_sync_responses_received);
+        values[30] = static_cast<jlong>(snapshot.latest_rtt_us);
+        values[31] = static_cast<jlong>(snapshot.best_rtt_us);
+        values[32] = static_cast<jlong>(static_cast<std::uint8_t>(snapshot.clock_sync_state));
+        values[33] = static_cast<jlong>(snapshot.reassembly_slots_high_water);
+        values[34] = static_cast<jlong>(snapshot.ready_access_units_high_water);
+        values[35] = static_cast<jlong>(snapshot.last_reassembly_latency_us);
+        values[36] = static_cast<jlong>(snapshot.max_reassembly_latency_us);
+        values[37] = static_cast<jlong>(snapshot.last_ready_wait_us);
+        values[38] = static_cast<jlong>(snapshot.max_ready_wait_us);
     }
     jlongArray array = env->NewLongArray(kNativeVideoReceiverSnapshotValues);
     if (array != nullptr) {

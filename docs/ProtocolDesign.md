@@ -2,7 +2,7 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This document records the SCL packet foundation, UDP transport boundary, Version 1 fragmentation semantics, Version 1 NACK recovery control payload, Version 1 Reed-Solomon FEC parity control payload, and Version 1 clock synchronization control payloads. It does not define discovery, encryption, codecs, audio, video, input injection, or session negotiation.
+This document records the SCL packet foundation, UDP transport boundary, Version 1 fragmentation semantics, Version 1 NACK recovery control payload, Version 1 Reed-Solomon FEC parity control payload, Version 1 clock synchronization control payloads, Video Payload Version 1, and VideoResyncRequest Version 1. It does not define discovery, encryption, audio, input injection, or session negotiation.
 
 ## Protocol Purpose
 
@@ -696,6 +696,50 @@ J(i) = J(i-1) + (abs(d(i) - d(i-1)) - J(i-1)) / 16
 ```
 
 Telemetry is observational. It must not alter FEC ratios, NACK timing, congestion behavior, datagram sizing, pacing, bitrate, packet bytes, or transport behavior.
+
+## Video Resynchronization Control
+
+RFC-002G adds a compact video resynchronization request as a `SessionControl` payload subtype. It does not change the 21-byte SCL `PacketHeader`, does not add a new `PayloadType`, and does not change Video Payload Version 1.
+
+Constants:
+
+```cpp
+SessionControlType::VideoResyncRequest == 5
+kVideoResyncControlVersion == 1
+kVideoResyncRequestWireSize == 8
+```
+
+The 8-byte VideoResyncRequest V1 payload is:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 1 | `control_type = VideoResyncRequest` |
+| 1 | 1 | `control_version = 1` |
+| 2 | 1 | `reason` |
+| 3 | 1 | reserved, zero |
+| 4 | 4 | `receiver_config_generation` |
+
+All multi-byte fields use big-endian byte order.
+
+Version 1 reason values are:
+
+| Value | Reason |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `NeedConfiguration` |
+| 2 | `NeedKeyFrame` |
+| 3 | `Discontinuity` |
+| 4 | `DecoderRestart` |
+| 5 | `SurfaceRecreated` |
+| 6 | `ReceiverOverflow` |
+
+Validation rejects wrong payload size, wrong control type, unsupported control version, undefined reason values, and nonzero reserved bytes.
+
+`receiver_config_generation == 0` means the receiver has no usable configuration. A nonzero value reports the receiver's currently known generation and must not be interpreted as proof that it matches the sender's latest generation.
+
+On a valid request, the transmitter may resend its current StreamConfig and ask the hardware encoder for a sync frame through the existing encoder control mechanism. The transmitter must not retain encoded media access units for resynchronization.
+
+Unsupported peers that do not recognize subtype `5` must reject or ignore it safely rather than reinterpret it as NACK, FEC, clock sync, or another control.
 
 ## Stability
 

@@ -46,6 +46,7 @@ class NativeSclVideoTransportController : VideoTransportController {
             fecEnabled = config.fec.enabled,
             fecDataShards = config.fec.dataShards,
             fecParityShards = config.fec.parityShards,
+            resyncRequestCooldownUs = config.resyncRequestCooldownUs,
         )
         if (nativeHandle == 0L) {
             localSnapshot = localSnapshot.copy(
@@ -203,6 +204,9 @@ class NativeSclVideoTransportController : VideoTransportController {
         }
         if (config.fec.enabled && (config.fec.dataShards <= 0 || config.fec.parityShards <= 0)) {
             return VideoTransportError.FecConfigurationInvalid
+        }
+        if (config.resyncRequestCooldownUs < 0L) {
+            return VideoTransportError.PerformanceConfigInvalid
         }
         return VideoTransportError.None
     }

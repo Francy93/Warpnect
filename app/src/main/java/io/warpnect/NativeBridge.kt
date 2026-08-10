@@ -29,6 +29,7 @@ internal object NativeBridge {
         fecEnabled: Boolean,
         fecDataShards: Int,
         fecParityShards: Int,
+        resyncRequestCooldownUs: Long,
     ): Long
 
     @JvmStatic
@@ -87,6 +88,10 @@ internal object NativeBridge {
         fecDataShards: Int,
         fecParityShards: Int,
         reassemblyTimeoutUs: Long,
+        maxFrameRecoveryAgeUs: Long,
+        resyncRequestCooldownUs: Long,
+        clockSyncIntervalUs: Long,
+        clockSyncSampleCapacity: Int,
     ): Long
 
     @JvmStatic
@@ -94,6 +99,14 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeVideoReceiverPump(handle: Long, timeoutUs: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeVideoReceiverRequestResync(
+        handle: Long,
+        reason: Int,
+        generation: Long,
+        nowUs: Long,
+    ): Int
 
     @JvmStatic
     private external fun nativeVideoReceiverReadStreamConfigCsd(handle: Long): Array<ByteArray>?
@@ -132,6 +145,7 @@ internal object NativeBridge {
         fecEnabled: Boolean,
         fecDataShards: Int,
         fecParityShards: Int,
+        resyncRequestCooldownUs: Long,
     ): Long = nativeVideoTransportCreate(
         remoteAddress,
         remotePort,
@@ -144,6 +158,7 @@ internal object NativeBridge {
         fecEnabled,
         fecDataShards,
         fecParityShards,
+        resyncRequestCooldownUs,
     )
 
     fun videoTransportDestroy(handle: Long): Int = nativeVideoTransportDestroy(handle)
@@ -195,6 +210,10 @@ internal object NativeBridge {
         fecDataShards: Int,
         fecParityShards: Int,
         reassemblyTimeoutUs: Long,
+        maxFrameRecoveryAgeUs: Long,
+        resyncRequestCooldownUs: Long,
+        clockSyncIntervalUs: Long,
+        clockSyncSampleCapacity: Int,
     ): Long = nativeVideoReceiverCreate(
         localAddress,
         localPort,
@@ -215,11 +234,18 @@ internal object NativeBridge {
         fecDataShards,
         fecParityShards,
         reassemblyTimeoutUs,
+        maxFrameRecoveryAgeUs,
+        resyncRequestCooldownUs,
+        clockSyncIntervalUs,
+        clockSyncSampleCapacity,
     )
 
     fun videoReceiverDestroy(handle: Long): Int = nativeVideoReceiverDestroy(handle)
 
     fun videoReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeVideoReceiverPump(handle, timeoutUs)
+
+    fun videoReceiverRequestResync(handle: Long, reason: Int, generation: Long, nowUs: Long): Int =
+        nativeVideoReceiverRequestResync(handle, reason, generation, nowUs)
 
     fun videoReceiverReadStreamConfigCsd(handle: Long): Array<ByteArray>? {
         return nativeVideoReceiverReadStreamConfigCsd(handle)

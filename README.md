@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the RFC-002A Android video-capture foundation, the RFC-002B Android hardware AVC encoder foundation, the RFC-002C encoded AVC to SCL transport integration, the RFC-002D Android hardware AVC decoder foundation, the RFC-002E low-latency Surface rendering foundation, and the RFC-002F integrated Android end-to-end video streaming pipeline.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, and the complete Phase 2 Android video pipeline through RFC-002G.
 
 Present:
 
@@ -33,13 +33,13 @@ Present:
 - Android hardware AVC decoder foundation using pull-based `MediaCodec` input slots and caller-owned `Surface` output.
 - Low-latency Android `SurfaceView` rendering foundation with aspect-fit layout, Surface lifecycle tracking, render/drop/scheduled release policy, and frame-rate hinting.
 - End-to-end Android video session orchestration from privileged capture/encode through SCL transport to bounded receive/recovery, decoder input fill, and SurfaceView rendering.
+- Phase 2 latency/recovery tuning with bounded recovery deadlines, VideoResyncRequest control, live clock-sync/RTT telemetry hooks, optional loss-reactive bitrate policy, and host-native video benchmarks.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
-- Adaptive RTT-driven transport policy, pacing, congestion control, automatic MTU selection, or bitrate control.
-- Latency/recovery/performance tuning, adaptive bitrate, adaptive FEC, packet pacing, congestion control, or automatic MTU selection.
+- Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Audio capture/playback is not implemented yet.
 - Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, authentication/encryption, or input injection.
 
@@ -142,6 +142,7 @@ Native Release benchmarks:
 cmake -S native -B native/build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build native/build-release --config Release
 .\native\build-release\Release\scl_phase1_benchmarks.exe --standard --iterations 500 --output native\build-release\phase1-baseline.csv
+.\native\build-release\Release\scl_phase2_video_benchmarks.exe --standard --output native\build-release\phase2-video-standard.csv
 ```
 
 ## Native Build Overview
@@ -187,7 +188,9 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-002D Android Hardware Video Decoder Pipeline](docs/rfc/RFC-002D-Android-Hardware-Video-Decoder-Pipeline.md)
 - [RFC-002E Android Low-Latency Rendering Pipeline](docs/rfc/RFC-002E-Android-Low-Latency-Rendering-Pipeline.md)
 - [RFC-002F End-to-End Video Streaming](docs/rfc/RFC-002F-End-to-End-Video-Streaming.md)
+- [RFC-002G Video Latency, Recovery and Performance Tuning](docs/rfc/RFC-002G-Video-Latency-Recovery-Performance-Tuning.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
+- [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
 - [State Management](docs/StateManagement.md)
 - [Thread Model](docs/ThreadModel.md)
@@ -196,10 +199,12 @@ The produced Android shared library is `libscl_core.so`.
 
 ## Roadmap Summary
 
-Phase 1 networking is complete. RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, and RFC-002F end-to-end video session orchestration are implemented. The next implementation RFC is:
+Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, RFC-002F end-to-end video session orchestration, and RFC-002G latency/recovery/performance tuning are implemented.
+
+The next phase is:
 
 ```text
-RFC-002G - Video Latency, Recovery and Performance Tuning
+Phase 3 - Audio Pipeline
 ```
 
-Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.
+Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

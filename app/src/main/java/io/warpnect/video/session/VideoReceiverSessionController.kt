@@ -8,10 +8,12 @@ import io.warpnect.video.transport.VideoReceiverAccessUnitReady
 import io.warpnect.video.transport.VideoReceiverRuntimeController
 import io.warpnect.video.transport.VideoReceiverRuntimeListener
 import io.warpnect.video.transport.VideoReceiverStreamConfig
+import io.warpnect.video.transport.VideoResyncReason
 import io.warpnect.video.transport.VideoTransportError
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -40,6 +42,7 @@ class DefaultVideoReceiverSessionController(
     private var framesDelivered = 0L
     private var nonKeyframesDroppedAwaitingKeyframe = 0L
     private var discontinuities = 0L
+    private var surfaceRecreatedRequiresKeyFrame = false
 
     override suspend fun start(config: VideoReceiverSessionConfig): VideoSessionControlResult {
         synchronized(lock) {
@@ -48,6 +51,9 @@ class DefaultVideoReceiverSessionController(
             }
             if (core.state != VideoSessionState.Idle && core.state != VideoSessionState.Error) {
                 return rememberLocked(sessionFailure(VideoSessionError.AlreadyRunning))
+            }
+            if (config.performanceConfig.validate() != VideoTransportError.None) {
+                return rememberLocked(sessionFailure(VideoSessionError.InvalidConfiguration))
             }
             currentConfig = config
             currentRenderTarget = renderController.currentTarget()
@@ -82,6 +88,7 @@ class DefaultVideoReceiverSessionController(
             }
         }
         prepareDecoderIfReady()
+        scheduleConfigResyncIfNeeded(config)
         return VideoSessionControlResult.Success
     }
 
@@ -106,6 +113,7 @@ class DefaultVideoReceiverSessionController(
             if (currentRenderTarget?.surfaceGeneration == surfaceGeneration) {
                 currentRenderTarget = null
             }
+            surfaceRecreatedRequiresKeyFrame = true
             core.onSurfaceDestroyed()
             true
         }
@@ -234,6 +242,14 @@ class DefaultVideoReceiverSessionController(
             if (start.isSuccess) {
                 core.onDecoderPrepared()
                 lastError = VideoSessionFailure()
+                val reason = if (surfaceRecreatedRequiresKeyFrame) {
+                    surfaceRecreatedRequiresKeyFrame = false
+                    VideoResyncReason.SurfaceRecreated
+                } else {
+                    VideoResyncReason.DecoderRestart
+                }
+                requestResyncLocked(reason)
+                scheduleKeyFrameResyncIfNeeded(config)
             } else {
                 core.onError()
                 rememberLocked(
@@ -280,12 +296,14 @@ class DefaultVideoReceiverSessionController(
             receiverRuntimeController.setAwaitingKeyFrame(true)
             synchronized(lock) {
                 core.onDiscontinuity()
+                requestResyncLocked(VideoResyncReason.Discontinuity)
                 lastError = VideoSessionFailure(
                     source = VideoSessionErrorSource.Receiver,
                     error = VideoSessionError.KeyFrameRequired,
                     transportError = error,
                 )
             }
+            currentConfig?.let(::scheduleKeyFrameResyncIfNeeded)
         }
 
         override fun onRuntimeError(error: VideoTransportError) {
@@ -309,4 +327,48 @@ class DefaultVideoReceiverSessionController(
         source = VideoSessionErrorSource.Session,
         error = error,
     )
+
+    private fun scheduleConfigResyncIfNeeded(config: VideoReceiverSessionConfig) {
+        scope.launch {
+            delay(millisForUs(config.performanceConfig.startupConfigRequestDelayUs))
+            synchronized(lock) {
+                if (core.state == VideoSessionState.WaitingForConfig) {
+                    requestResyncLocked(VideoResyncReason.NeedConfiguration)
+                }
+            }
+        }
+    }
+
+    private fun scheduleKeyFrameResyncIfNeeded(config: VideoReceiverSessionConfig) {
+        scope.launch {
+            delay(millisForUs(config.performanceConfig.keyFrameWaitRequestDelayUs))
+            synchronized(lock) {
+                if (core.state == VideoSessionState.WaitingForKeyFrame) {
+                    requestResyncLocked(VideoResyncReason.NeedKeyFrame)
+                }
+            }
+        }
+    }
+
+    private fun requestResyncLocked(reason: VideoResyncReason) {
+        val generation = latestStreamConfig?.configGeneration ?: 0L
+        val error = receiverRuntimeController.requestResync(reason, generation)
+        if (error != VideoTransportError.None) {
+            lastError = VideoSessionFailure(
+                source = VideoSessionErrorSource.Receiver,
+                error = VideoSessionError.ReceiverFailed,
+                transportError = error,
+            )
+        }
+    }
+
+    private fun millisForUs(valueUs: Long): Long = if (valueUs <= 0L) {
+        0L
+    } else {
+        (valueUs + MICROS_PER_MILLI - 1L) / MICROS_PER_MILLI
+    }
+
+    private companion object {
+        const val MICROS_PER_MILLI = 1_000L
+    }
 }

@@ -119,6 +119,22 @@ RFC-002E SurfaceView
 
 Native owns the completed AU until a successful fill. MediaCodec owns the destination input buffer. JNI borrows the destination pointer only during the fill call and must not retain it. Kotlin receives only small AU metadata and never owns the complete AU payload on the receiver hot path.
 
+RFC-002G adds additive Native Bridge ABI Version 1 controls and snapshot fields for performance tuning. These include receiver resync requests, receiver freshness/queue/clock telemetry, and sender resync/clock counters.
+
+Diagnostics remain metadata and counters only. No complete encoded media payload crosses Kotlin for telemetry, resynchronization, clock sync, or performance reporting.
+
+The RFC-002G hot receiver media boundary remains:
+
+```text
+native receiver reassembly slot
+        |
+MediaCodec input DirectByteBuffer
+        |
+JNI synchronous fill
+        |
+MediaCodec decoder
+```
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

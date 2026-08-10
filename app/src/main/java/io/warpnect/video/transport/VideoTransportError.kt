@@ -50,6 +50,13 @@ enum class VideoTransportError {
 
     Closed,
     InvalidHandle,
+
+    RecoveryDeadlineExceeded,
+    ResyncRequestFailed,
+    ResyncRequestMalformed,
+    ClockSyncUnavailable,
+    PerformanceConfigInvalid,
+    BitrateAdaptationFailed,
     ;
 
     companion object {

@@ -82,7 +82,7 @@ Responsibilities:
 - `platform/video/render/`: Android `SurfaceView` render target, SurfaceHolder lifecycle controller, and Surface frame-rate hint application.
 - `video/transport/`: app-facing encoded-video transport contracts, typed errors/results, snapshots, and `SclEncodedVideoSink`.
 - `platform/video/transport/`: native-backed SCL video transport/receiver controllers, sender control runtime, and opaque native handle ownership.
-- `video/session/`: RFC-002F transmitter and receiver session orchestration, lifecycle snapshots, rollback/error mapping, and receiver prerequisite/keyframe state core.
+- `video/session/`: RFC-002F/RFC-002G transmitter and receiver session orchestration, lifecycle snapshots, rollback/error mapping, receiver prerequisite/keyframe state core, performance tuning configuration, resync orchestration, and optional bounded loss-reactive bitrate policy.
 - `ui/`: Compose UI.
 - `shizuku/`: app-level Shizuku availability and permission helper.
 - `network/`: future discovery/session bootstrap stubs, not UDP transport implementation.
@@ -223,7 +223,8 @@ Native responsibilities:
 - `video_protocol.h`, `video_result.h`: Version 1 video payload constants, StreamConfig/AccessUnit parsing, CSD cursor, and typed video transport errors.
 - `video_packetizer.h`: segmented video logical-payload packetizer for header-plus-borrowed-AU sources.
 - `video_transport.h`: caller-driven SCL video sender composed from packetization, UDP, retransmission cache, optional FEC, and telemetry.
-- `video_receiver_runtime.h`: bounded SCL video receiver runtime composed from UDP receive, FEC/NACK, multi-message reassembly, Video Payload V1 parsing, ready-slot ownership, and telemetry.
+- `video_resync_control.h`: Version 1 VideoResyncRequest SessionControl wire codec.
+- `video_receiver_runtime.h`: bounded SCL video receiver runtime composed from UDP receive, FEC/NACK, multi-message reassembly, Video Payload V1 parsing, ready-slot ownership, recovery freshness deadlines, VideoResyncRequest emission, clock-sync integration, and telemetry.
 - `native_bridge.h`, `jni_bridge.cpp`: JNI glue only.
 - `src/internal/`: private byte-order, socket-platform, GF(256), and matrix helpers.
 
@@ -260,7 +261,7 @@ Current JVM tests also include decoder candidate selection, format planning, CSD
 
 Current JVM tests also include renderer aspect-fit geometry, Surface generation/state, close behavior, immediate/scheduled render policy, frame-rate validation/planning, and render-decision telemetry.
 
-Current JVM tests also include RFC-002F receiver session prerequisite/keyframe/surface state transitions and transmitter partial-start rollback coverage.
+Current JVM tests also include RFC-002F/RFC-002G receiver session prerequisite/keyframe/surface state transitions, transmitter partial-start rollback coverage, performance configuration validation, resync cooldown behavior, and optional loss-reactive bitrate policy coverage.
 
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
@@ -272,11 +273,11 @@ Current Android instrumentation tests also include RFC-002E `SurfaceView` lifecy
 
 Current Android instrumentation tests also include RFC-002F SCL loopback coverage: one sender/receiver boundary test submits StreamConfig and an encoded AU over 127.0.0.1 UDP, then fills a direct decoder-style input buffer from native receiver storage; another generic device-gated test composes synthetic encoder output, SCL loopback transport, native receiver runtime, hardware decoder, and SurfaceView renderer.
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, and RFC-002F video receiver runtime tests.
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, and RFC-002G VideoResyncRequest/recovery deadline tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 
-`native/benchmarks/` contains the host-only Phase 1 benchmark runner and the `scl_phase1_benchmarks` executable. Benchmarks are explicit/manual and are not part of Android production builds.
+`native/benchmarks/` contains host-only benchmark runners and the `scl_phase1_benchmarks` and `scl_phase2_video_benchmarks` executables. Benchmarks are explicit/manual and are not part of Android production builds.
 
 ## CI Layout
 

@@ -9,10 +9,13 @@
 #include <vector>
 
 #include "fec.h"
+#include "clock_sync.h"
+#include "clock_sync_control.h"
 #include "loss_detector.h"
 #include "reassembly.h"
 #include "udp_socket.h"
 #include "video_protocol.h"
+#include "video_resync_control.h"
 #include "video_result.h"
 #include "video_transport.h"
 
@@ -42,6 +45,11 @@ struct VideoReceiverConfig final {
     std::uint32_t initial_control_sequence = 0;
     VideoTransportFecConfig fec{};
     std::uint64_t reassembly_timeout_us = 0;
+    std::uint64_t max_frame_recovery_age_us = 0;
+    std::uint64_t resync_request_cooldown_us = 250'000;
+    std::uint64_t clock_sync_interval_us = 1'000'000;
+    ClockSyncConfig clock_sync{};
+    std::size_t clock_sync_sample_capacity = 16;
 };
 
 struct VideoReceiverEvent final {
@@ -85,8 +93,23 @@ struct VideoReceiverSnapshot final {
     std::uint64_t reassembly_timeouts = 0;
     std::uint64_t reassembly_window_full = 0;
     std::uint64_t ready_window_full = 0;
+    std::uint64_t stale_frames_released = 0;
+    std::uint64_t resync_requests_sent = 0;
+    std::uint64_t resync_requests_suppressed = 0;
+    VideoResyncReason last_resync_reason = VideoResyncReason::Unknown;
+    std::uint64_t clock_sync_requests_sent = 0;
+    std::uint64_t clock_sync_responses_received = 0;
+    std::uint64_t latest_rtt_us = 0;
+    std::uint64_t best_rtt_us = 0;
+    ClockSyncState clock_sync_state = ClockSyncState::Unsynchronized;
     std::size_t reassembly_slots_used = 0;
     std::size_t ready_access_units = 0;
+    std::size_t reassembly_slots_high_water = 0;
+    std::size_t ready_access_units_high_water = 0;
+    std::uint64_t last_reassembly_latency_us = 0;
+    std::uint64_t max_reassembly_latency_us = 0;
+    std::uint64_t last_ready_wait_us = 0;
+    std::uint64_t max_ready_wait_us = 0;
     std::uint64_t last_presentation_time_us = 0;
     std::uint32_t last_frame_id = 0;
     VideoError last_error = VideoError::None;
@@ -108,6 +131,9 @@ class VideoReceiverRuntime final {
     [[nodiscard]] VideoReceiverFillResult fill_decoder_input(std::span<std::byte> destination) noexcept;
     [[nodiscard]] VideoStatus activate_config_generation(std::uint32_t generation) noexcept;
     void set_awaiting_keyframe(bool awaiting) noexcept;
+    [[nodiscard]] VideoStatus request_video_resync(VideoResyncReason reason,
+                                                   std::uint32_t receiver_config_generation,
+                                                   std::uint64_t now_us) noexcept;
     void close() noexcept;
 
     [[nodiscard]] VideoReceiverSnapshot snapshot() const noexcept;
@@ -120,6 +146,7 @@ class VideoReceiverRuntime final {
         std::vector<std::byte> bitmap_storage{};
         std::unique_ptr<ReassemblySlot> reassembly{};
         std::uint64_t started_at_us = 0;
+        std::uint64_t completed_at_us = 0;
         bool queued = false;
         bool complete_access_unit = false;
     };
@@ -139,11 +166,14 @@ class VideoReceiverRuntime final {
                                                    bool from_fec_recovery) noexcept;
     [[nodiscard]] VideoStatus process_session_control_packet(const PacketView& packet,
                                                              std::uint64_t now_us) noexcept;
+    [[nodiscard]] VideoStatus process_clock_sync_response(std::span<const std::byte> payload,
+                                                          std::uint64_t now_us) noexcept;
     [[nodiscard]] VideoStatus accept_fec_data(std::span<const std::byte> datagram) noexcept;
     [[nodiscard]] VideoStatus accept_fec_parity(std::span<const std::byte> payload,
                                                 std::uint64_t now_us) noexcept;
     [[nodiscard]] VideoStatus process_recovered_fec() noexcept;
-    [[nodiscard]] VideoStatus accept_complete_slot(ReceiverSlot& slot) noexcept;
+    [[nodiscard]] VideoStatus accept_complete_slot(ReceiverSlot& slot,
+                                                   std::uint64_t now_us) noexcept;
     [[nodiscard]] VideoStatus store_stream_config(const VideoStreamConfigView& config) noexcept;
     [[nodiscard]] ReceiverSlot* find_or_allocate_slot(const PacketHeader& header,
                                                       std::uint64_t now_us) noexcept;
@@ -151,10 +181,14 @@ class VideoReceiverRuntime final {
     [[nodiscard]] bool push_ready_slot(std::size_t slot_index) noexcept;
     [[nodiscard]] std::optional<std::size_t> pop_ready_slot() noexcept;
     void publish_ordered_ready_access_units() noexcept;
+    void update_occupancy_high_water() noexcept;
     void collect_and_send_nacks(std::uint64_t now_us) noexcept;
     void send_nack(const NackRequest& request) noexcept;
+    void maybe_send_clock_sync_request(std::uint64_t now_us) noexcept;
+    [[nodiscard]] VideoStatus send_session_control_payload(std::span<const std::byte> payload,
+                                                           const UdpEndpoint& remote) noexcept;
     void expire_reassembly_slots(std::uint64_t now_us) noexcept;
-    void mark_discontinuity(VideoError error) noexcept;
+    void mark_discontinuity(VideoError error, VideoResyncReason reason) noexcept;
     void reset_slot(ReceiverSlot& slot) noexcept;
     void remember(VideoError error) noexcept;
 
@@ -174,12 +208,19 @@ class VideoReceiverRuntime final {
     std::vector<std::byte> fec_matrix_storage_{};
     std::vector<std::byte> fec_scratch_storage_{};
     std::optional<FecRecoveryBlock> fec_recovery_{};
+    std::vector<ClockSyncSample> clock_sync_samples_{};
+    std::vector<PendingClockExchange> clock_exchange_storage_{};
+    std::optional<ClockExchangeTracker> clock_exchange_tracker_{};
+    std::optional<ClockSynchronizer> clock_synchronizer_{};
     std::optional<UdpEndpoint> learned_remote_{};
     std::vector<std::vector<std::byte>> latest_csd_{};
     VideoReceiverSnapshot snapshot_{};
     VideoReceiverEvent pending_event_{};
     std::uint16_t latest_width_ = 0;
     std::uint16_t latest_height_ = 0;
+    std::uint64_t last_resync_request_us_ = 0;
+    std::uint64_t last_clock_sync_request_us_ = 0;
+    std::uint32_t next_clock_exchange_id_ = 1;
 };
 
 [[nodiscard]] VideoSizeResult video_receiver_fragment_datagram_budget(std::size_t max_wire_datagram_size,

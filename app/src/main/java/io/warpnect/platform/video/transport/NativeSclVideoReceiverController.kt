@@ -4,6 +4,7 @@ import io.warpnect.NativeBridge
 import io.warpnect.video.decoder.VideoDecoderError
 import io.warpnect.video.decoder.VideoDecoderInputResult
 import io.warpnect.video.decoder.VideoDecoderInputSource
+import io.warpnect.video.transport.VideoClockSyncState
 import io.warpnect.video.transport.VideoReceiverAccessUnitReady
 import io.warpnect.video.transport.VideoReceiverRuntimeConfig
 import io.warpnect.video.transport.VideoReceiverRuntimeController
@@ -14,6 +15,7 @@ import io.warpnect.video.transport.VideoReceiverRuntimeResult
 import io.warpnect.video.transport.VideoReceiverRuntimeSnapshot
 import io.warpnect.video.transport.VideoReceiverRuntimeState
 import io.warpnect.video.transport.VideoReceiverStreamConfig
+import io.warpnect.video.transport.VideoResyncReason
 import io.warpnect.video.transport.VideoTransportError
 import java.nio.ByteBuffer
 
@@ -68,6 +70,10 @@ class NativeSclVideoReceiverController(
             fecDataShards = config.fec.dataShards,
             fecParityShards = config.fec.parityShards,
             reassemblyTimeoutUs = config.reassemblyTimeoutUs,
+            maxFrameRecoveryAgeUs = config.maxFrameRecoveryAgeUs,
+            resyncRequestCooldownUs = config.resyncRequestCooldownUs,
+            clockSyncIntervalUs = config.clockSyncIntervalUs,
+            clockSyncSampleCapacity = config.clockSyncSampleCapacity,
         )
         if (nativeHandle == 0L) {
             localSnapshot = localSnapshot.copy(
@@ -151,6 +157,22 @@ class NativeSclVideoReceiverController(
         if (handle != 0L) {
             NativeBridge.videoReceiverSetAwaitingKeyFrame(handle, awaiting)
         }
+    }
+
+    override fun requestResync(reason: VideoResyncReason, generation: Long): VideoTransportError {
+        val handle = nativeHandle
+        if (handle == 0L) {
+            return remember(VideoTransportError.InvalidHandle)
+        }
+        val error = VideoTransportError.fromNativeCode(
+            NativeBridge.videoReceiverRequestResync(
+                handle = handle,
+                reason = reason.ordinal,
+                generation = generation,
+                nowUs = System.nanoTime() / NANOS_PER_MICRO,
+            ),
+        )
+        return remember(error)
     }
 
     override fun stop(): VideoReceiverRuntimeResult {
@@ -260,6 +282,10 @@ class NativeSclVideoReceiverController(
         config.maxNackAttempts <= 0 -> VideoTransportError.NackDecodeFailed
         config.initialControlSequence !in 0..UINT32_MAX -> VideoTransportError.InvalidFrameId
         config.reassemblyTimeoutUs < 0L -> VideoTransportError.ReassemblyTimeout
+        config.maxFrameRecoveryAgeUs < 0L -> VideoTransportError.PerformanceConfigInvalid
+        config.resyncRequestCooldownUs < 0L -> VideoTransportError.PerformanceConfigInvalid
+        config.clockSyncIntervalUs < 0L -> VideoTransportError.ClockSyncUnavailable
+        config.clockSyncSampleCapacity < 0 -> VideoTransportError.ClockSyncUnavailable
         config.fec.enabled && (config.fec.dataShards <= 0 || config.fec.parityShards <= 0) ->
             VideoTransportError.FecConfigurationInvalid
         else -> VideoTransportError.None
@@ -304,8 +330,23 @@ class NativeSclVideoReceiverController(
         reassemblyTimeouts = getOrElse(16) { 0L },
         reassemblyWindowFull = getOrElse(17) { 0L },
         readyWindowFull = getOrElse(18) { 0L },
+        staleFramesReleased = getOrElse(24) { 0L },
+        resyncRequestsSent = getOrElse(25) { 0L },
+        resyncRequestsSuppressed = getOrElse(26) { 0L },
+        lastResyncReason = VideoResyncReason.fromNativeCode(getOrElse(27) { 0L }.toInt()),
+        clockSyncRequestsSent = getOrElse(28) { 0L },
+        clockSyncResponsesReceived = getOrElse(29) { 0L },
+        latestRttUs = getOrElse(30) { 0L },
+        bestRttUs = getOrElse(31) { 0L },
+        clockSyncState = VideoClockSyncState.fromNativeCode(getOrElse(32) { 0L }.toInt()),
         reassemblySlotsUsed = getOrElse(19) { 0L },
         readyAccessUnits = getOrElse(20) { 0L },
+        reassemblySlotsHighWater = getOrElse(33) { 0L },
+        readyAccessUnitsHighWater = getOrElse(34) { 0L },
+        lastReassemblyLatencyUs = getOrElse(35) { 0L },
+        maxReassemblyLatencyUs = getOrElse(36) { 0L },
+        lastReadyWaitUs = getOrElse(37) { 0L },
+        maxReadyWaitUs = getOrElse(38) { 0L },
         lastPresentationTimeUs = getOrElse(21) { 0L },
         lastFrameId = getOrElse(22) { 0L },
         lastError = VideoTransportError.fromNativeCode(getOrElse(23) { 0L }.toInt()),
@@ -316,6 +357,7 @@ class NativeSclVideoReceiverController(
         const val THREAD_NAME = "WarpnectVideoReceiver"
         const val DEFAULT_PUMP_TIMEOUT_US = 20_000L
         const val STOP_JOIN_TIMEOUT_MS = 250L
+        const val NANOS_PER_MICRO = 1_000L
         const val U16_MAX = 65_535
         const val UINT32_MAX = 0xFFFF_FFFFL
     }

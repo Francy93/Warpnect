@@ -47,6 +47,12 @@ enum class VideoError : std::uint8_t {
     InputBufferTooSmall,
     Closed,
     InvalidHandle,
+    RecoveryDeadlineExceeded,
+    ResyncRequestFailed,
+    ResyncRequestMalformed,
+    ClockSyncUnavailable,
+    PerformanceConfigInvalid,
+    BitrateAdaptationFailed,
 };
 
 [[nodiscard]] constexpr std::string_view video_error_name(VideoError error) noexcept {
@@ -127,6 +133,18 @@ enum class VideoError : std::uint8_t {
         return "Closed";
     case VideoError::InvalidHandle:
         return "InvalidHandle";
+    case VideoError::RecoveryDeadlineExceeded:
+        return "RecoveryDeadlineExceeded";
+    case VideoError::ResyncRequestFailed:
+        return "ResyncRequestFailed";
+    case VideoError::ResyncRequestMalformed:
+        return "ResyncRequestMalformed";
+    case VideoError::ClockSyncUnavailable:
+        return "ClockSyncUnavailable";
+    case VideoError::PerformanceConfigInvalid:
+        return "PerformanceConfigInvalid";
+    case VideoError::BitrateAdaptationFailed:
+        return "BitrateAdaptationFailed";
     }
 
     return "UnknownVideoError";

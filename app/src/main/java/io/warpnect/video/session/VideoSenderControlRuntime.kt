@@ -14,10 +14,21 @@ interface VideoSenderControlRuntime : AutoCloseable {
     }
 }
 
-fun interface VideoSenderControlRuntimeFactory {
-    fun create(transportController: VideoTransportController): VideoSenderControlRuntime?
+fun interface VideoKeyFrameRequestHandler {
+    fun onKeyFrameRequested(): VideoSessionControlResult
 
     companion object {
-        val None = VideoSenderControlRuntimeFactory { null }
+        val None = VideoKeyFrameRequestHandler { VideoSessionControlResult.Success }
+    }
+}
+
+fun interface VideoSenderControlRuntimeFactory {
+    fun create(
+        transportController: VideoTransportController,
+        keyFrameRequestHandler: VideoKeyFrameRequestHandler,
+    ): VideoSenderControlRuntime?
+
+    companion object {
+        val None = VideoSenderControlRuntimeFactory { _, _ -> null }
     }
 }
