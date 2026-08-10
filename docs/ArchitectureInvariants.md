@@ -98,6 +98,16 @@ Audio capture MUST prioritize freshness over accumulating PCM backlog. When boun
 
 Audio capture timestamps MUST use a monotonic clock domain suitable for later A/V synchronization. Wall-clock time MUST NOT drive audio media timing.
 
+Audio codec framing MAY retain at most one incomplete PCM codec frame. RFC-003B MUST NOT maintain a PCM playback queue, PCM work queue, encoded-packet queue, or multi-frame audio buffer.
+
+Aligned PCM input MAY be encoded directly from its borrowed direct buffer. Partial capture/code-frame mismatch MUST use only a single fixed accumulator sized for one Opus frame.
+
+Encoded Opus packets MUST be borrowed bounded-lifetime views from preallocated native output storage. They MUST NOT be materialized as per-frame Kotlin `ByteArray` values.
+
+Audio codec implementation MUST remain separate from SCL transport/protocol responsibilities. Codec logic belongs under `warpnect::audio`, not `warpnect::scl`.
+
+PCM discontinuities MUST NOT be concealed by concatenating non-contiguous capture samples. Partial codec-frame state must be discarded when capture frame positions reveal a gap.
+
 ## JNI Rules
 
 JNI is only a bridge.

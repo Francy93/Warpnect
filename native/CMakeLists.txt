@@ -1,12 +1,29 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(warpnect_native_tests LANGUAGES CXX)
+project(warpnect_native_tests LANGUAGES C CXX)
 
 enable_testing()
 
 set(SCL_CPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp")
+set(WARPNNECT_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/../third_party")
+
+set(WARPNNECT_BUILD_TESTING "${BUILD_TESTING}")
+set(BUILD_TESTING OFF)
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${WARPNNECT_THIRD_PARTY_DIR}/opus-1.6.1"
+    "${CMAKE_CURRENT_BINARY_DIR}/opus-1.6.1"
+    EXCLUDE_FROM_ALL
+)
+if(MSVC)
+    target_compile_options(opus PRIVATE /FS)
+endif()
+set(BUILD_TESTING "${WARPNNECT_BUILD_TESTING}")
 
 set(SCL_NATIVE_SOURCES
+    "${SCL_CPP_ROOT}/src/audio_opus_encoder.cpp"
     "${SCL_CPP_ROOT}/src/clock_sync.cpp"
     "${SCL_CPP_ROOT}/src/clock_sync_control.cpp"
     "${SCL_CPP_ROOT}/src/fec.cpp"
@@ -69,6 +86,8 @@ if(WIN32)
     target_link_libraries(scl_native_core PUBLIC ws2_32)
 endif()
 
+target_link_libraries(scl_native_core PUBLIC Opus::opus)
+
 add_library(
     scl_native_test_support
     STATIC
@@ -130,6 +149,10 @@ add_executable(scl_video_resync_tests tests/scl_video_resync_tests.cpp)
 configure_native_target(scl_video_resync_tests)
 target_link_libraries(scl_video_resync_tests PRIVATE scl_native_core)
 
+add_executable(opus_audio_encoder_tests tests/opus_audio_encoder_tests.cpp)
+configure_native_target(opus_audio_encoder_tests)
+target_link_libraries(opus_audio_encoder_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -156,6 +179,19 @@ target_include_directories(
 )
 target_link_libraries(scl_phase2_video_benchmarks PRIVATE scl_native_core scl_native_test_support)
 
+add_executable(
+    opus_audio_encoder_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/opus_audio_encoder_benchmarks.cpp
+)
+configure_native_target(opus_audio_encoder_benchmarks)
+target_include_directories(
+    opus_audio_encoder_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(opus_audio_encoder_benchmarks PRIVATE scl_native_core)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)
@@ -167,3 +203,4 @@ add_test(NAME scl_phase1_integration_tests COMMAND scl_phase1_integration_tests)
 add_test(NAME scl_video_transport_tests COMMAND scl_video_transport_tests)
 add_test(NAME scl_video_runtime_tests COMMAND scl_video_runtime_tests)
 add_test(NAME scl_video_resync_tests COMMAND scl_video_resync_tests)
+add_test(NAME opus_audio_encoder_tests COMMAND opus_audio_encoder_tests)

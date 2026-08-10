@@ -42,14 +42,14 @@ Status: In progress.
 Implemented:
 
 - RFC-003A - Android Low-Latency Audio Capture Foundation [complete]
+- RFC-003B - Portable Ultra-Low-Latency Opus Encoder [complete]
 
 Next:
 
-- RFC-003B - Low-Latency Audio Encoder Pipeline [next]
+- RFC-003C - SCL Audio Payload and Transport Integration [next]
 
 Planned:
 
-- RFC-003C - SCL Audio Payload and Transport Integration.
 - RFC-003D - Android Audio Decoder Pipeline.
 - RFC-003E - Low-Latency Audio Playback Pipeline.
 - RFC-003F - End-to-End Audio Streaming.

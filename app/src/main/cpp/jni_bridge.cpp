@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "audio_opus_encoder.h"
 #include "fec.h"
 #include "native_bridge.h"
 #include "retransmission_cache.h"
@@ -37,12 +38,28 @@ using warpnect::scl::VideoTransportSender;
 using warpnect::scl::VideoTransportSenderConfig;
 using warpnect::scl::VideoTransportSenderWorkspace;
 
+using warpnect::audio::AudioBitrateMode;
+using warpnect::audio::AudioCaptureSource;
+using warpnect::audio::AudioCodec;
+using warpnect::audio::AudioEncoderError;
+using warpnect::audio::AudioEncoderSubmitStatus;
+using warpnect::audio::AudioTimestampQuality;
+using warpnect::audio::OpusAudioEncoder;
+using warpnect::audio::OpusAudioEncoderConfig;
+
+inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
+inline constexpr jsize kNativeAudioEncoderStopValues = 2;
+inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
 inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
 inline constexpr jsize kNativeVideoReceiverFillValues = 7;
 inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 
 [[nodiscard]] constexpr jint error_code(VideoError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+[[nodiscard]] constexpr jint audio_error_code(AudioEncoderError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
 }
 
@@ -54,6 +71,11 @@ struct DirectBufferSpanResult final {
 struct MutableDirectBufferSpanResult final {
     VideoError error = VideoError::None;
     std::span<std::byte> bytes{};
+};
+
+struct AudioDirectBufferSpanResult final {
+    AudioEncoderError error = AudioEncoderError::None;
+    std::span<const std::byte> bytes{};
 };
 
 struct NativeVideoTransportHandle final {
@@ -89,6 +111,11 @@ struct NativeVideoReceiverHandle final {
     std::unique_ptr<VideoReceiverRuntime> runtime{};
 };
 
+struct NativeAudioEncoderHandle final {
+    std::mutex lock{};
+    std::unique_ptr<OpusAudioEncoder> encoder{};
+};
+
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
     if (handle == 0) {
         return nullptr;
@@ -101,6 +128,13 @@ struct NativeVideoReceiverHandle final {
         return nullptr;
     }
     return reinterpret_cast<NativeVideoReceiverHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativeAudioEncoderHandle* audio_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeAudioEncoderHandle*>(static_cast<std::intptr_t>(handle));
 }
 
 [[nodiscard]] bool valid_port(jint port, bool allow_zero) noexcept {
@@ -205,6 +239,33 @@ struct NativeVideoReceiverHandle final {
     }
     return MutableDirectBufferSpanResult{
         .bytes = std::span<std::byte>(base, static_cast<std::size_t>(capacity)),
+    };
+}
+
+[[nodiscard]] AudioDirectBufferSpanResult audio_direct_buffer_span(JNIEnv* env,
+                                                                   jobject buffer,
+                                                                   jint offset,
+                                                                   jint size) noexcept {
+    if (buffer == nullptr) {
+        return AudioDirectBufferSpanResult{.error = AudioEncoderError::NonDirectPcmBuffer};
+    }
+    if (offset < 0 || size <= 0) {
+        return AudioDirectBufferSpanResult{.error = AudioEncoderError::InvalidPcmRange};
+    }
+
+    auto* const base = static_cast<std::byte*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (base == nullptr || capacity < 0) {
+        return AudioDirectBufferSpanResult{.error = AudioEncoderError::NonDirectPcmBuffer};
+    }
+    const auto safe_offset = static_cast<std::size_t>(offset);
+    const auto safe_size = static_cast<std::size_t>(size);
+    const auto safe_capacity = static_cast<std::size_t>(capacity);
+    if (safe_offset > safe_capacity || safe_size > safe_capacity - safe_offset) {
+        return AudioDirectBufferSpanResult{.error = AudioEncoderError::InvalidPcmRange};
+    }
+    return AudioDirectBufferSpanResult{
+        .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
     };
 }
 
@@ -405,6 +466,40 @@ create_receiver_handle(JNIEnv* env,
     return handle;
 }
 
+[[nodiscard]] std::unique_ptr<NativeAudioEncoderHandle>
+create_audio_encoder_handle(jint source,
+                            jint sample_rate_hz,
+                            jint channel_count,
+                            jint frame_duration_us,
+                            jint bitrate_bps,
+                            jint bitrate_mode,
+                            jint complexity) {
+    if (source < 0 || source > 1 || sample_rate_hz <= 0 || channel_count <= 0 ||
+        channel_count > 255 || frame_duration_us <= 0 || bitrate_bps <= 0 ||
+        bitrate_mode < 0 || bitrate_mode > 1 || complexity < 0 || complexity > 255) {
+        return nullptr;
+    }
+    auto handle = std::make_unique<NativeAudioEncoderHandle>();
+    auto encoder = std::make_unique<OpusAudioEncoder>(
+        OpusAudioEncoderConfig{
+            .codec = AudioCodec::Opus,
+            .source = static_cast<AudioCaptureSource>(static_cast<std::uint8_t>(source)),
+            .sample_rate_hz = static_cast<std::uint32_t>(sample_rate_hz),
+            .channel_count = static_cast<std::uint8_t>(channel_count),
+            .frame_duration_us = static_cast<std::uint32_t>(frame_duration_us),
+            .bitrate_bps = static_cast<std::uint32_t>(bitrate_bps),
+            .bitrate_mode =
+                static_cast<AudioBitrateMode>(static_cast<std::uint8_t>(bitrate_mode)),
+            .complexity = static_cast<std::uint8_t>(complexity),
+        });
+    const auto prepared = encoder->prepare();
+    if (prepared.error != AudioEncoderError::None) {
+        return nullptr;
+    }
+    handle->encoder = std::move(encoder);
+    return handle;
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -423,6 +518,209 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeProtocolAbiVersion(JNIEnv* /* env */, jclass /* clazz */) {
     const auto info = warpnect::scl::bridge::native_core_info();
     return static_cast<jint>(info.protocol_abi_version);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderCreate(JNIEnv* /* env */,
+                                                       jclass /* clazz */,
+                                                       jint source,
+                                                       jint sample_rate_hz,
+                                                       jint channel_count,
+                                                       jint frame_duration_us,
+                                                       jint bitrate_bps,
+                                                       jint bitrate_mode,
+                                                       jint complexity) {
+    try {
+        auto handle = create_audio_encoder_handle(source, sample_rate_hz, channel_count,
+                                                 frame_duration_us, bitrate_bps, bitrate_mode,
+                                                 complexity);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderDestroy(JNIEnv* /* env */,
+                                                        jclass /* clazz */,
+                                                        jlong handle) {
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        return audio_error_code(AudioEncoderError::NotPrepared);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->encoder->close();
+    }
+    delete native_handle;
+    return audio_error_code(AudioEncoderError::None);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderOutputBuffer(JNIEnv* env,
+                                                            jclass /* clazz */,
+                                                            jlong handle) {
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        return nullptr;
+    }
+    std::lock_guard guard(native_handle->lock);
+    auto output = native_handle->encoder->output_buffer();
+    if (output.data() == nullptr || output.empty()) {
+        return nullptr;
+    }
+    return env->NewDirectByteBuffer(output.data(), static_cast<jlong>(output.size()));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderStart(JNIEnv* /* env */,
+                                                      jclass /* clazz */,
+                                                      jlong handle) {
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        return audio_error_code(AudioEncoderError::NotPrepared);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_error_code(native_handle->encoder->start().error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderSubmitPcm(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jobject buffer,
+    jint offset,
+    jint size,
+    jlong first_frame_position,
+    jlong capture_time_ns,
+    jint timestamp_quality) {
+    jlong values[kNativeAudioEncoderSubmitValues]{};
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        values[0] = audio_error_code(AudioEncoderError::NotPrepared);
+        values[1] = static_cast<jlong>(AudioEncoderSubmitStatus::Failure);
+    } else if (first_frame_position < 0 || capture_time_ns < 0 || timestamp_quality < 0 ||
+               timestamp_quality > 2) {
+        values[0] = audio_error_code(AudioEncoderError::InvalidPcmRange);
+        values[1] = static_cast<jlong>(AudioEncoderSubmitStatus::Failure);
+    } else {
+        const AudioDirectBufferSpanResult span = audio_direct_buffer_span(env, buffer, offset, size);
+        if (span.error != AudioEncoderError::None) {
+            values[0] = audio_error_code(span.error);
+            values[1] = static_cast<jlong>(AudioEncoderSubmitStatus::Failure);
+        } else {
+            std::lock_guard guard(native_handle->lock);
+            const auto result = native_handle->encoder->submit_pcm(
+                span.bytes, static_cast<std::uint64_t>(first_frame_position),
+                static_cast<std::uint64_t>(capture_time_ns),
+                static_cast<AudioTimestampQuality>(static_cast<std::uint8_t>(timestamp_quality)));
+            values[0] = audio_error_code(result.error);
+            values[1] = static_cast<jlong>(result.status);
+            values[2] = static_cast<jlong>(result.native_error);
+            values[3] = static_cast<jlong>(result.consumed_bytes);
+            values[4] = static_cast<jlong>(result.packet_size);
+            values[5] = static_cast<jlong>(result.first_frame_position);
+            values[6] = static_cast<jlong>(result.capture_time_ns);
+            values[7] = static_cast<jlong>(result.timestamp_quality);
+            values[8] = static_cast<jlong>(result.encoded_frame_index);
+            values[9] = static_cast<jlong>(result.expected_frame_position);
+            values[10] = static_cast<jlong>(result.actual_frame_position);
+            values[11] = result.direct_fast_path ? 1 : 0;
+            values[12] = result.assembler_path ? 1 : 0;
+            values[13] = 0;
+        }
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioEncoderSubmitValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioEncoderSubmitValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderUpdateBitrate(JNIEnv* /* env */,
+                                                              jclass /* clazz */,
+                                                              jlong handle,
+                                                              jint bitrate_bps) {
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        return audio_error_code(AudioEncoderError::NotPrepared);
+    }
+    if (bitrate_bps <= 0) {
+        return audio_error_code(AudioEncoderError::InvalidBitrate);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_error_code(
+        native_handle->encoder->update_bitrate(static_cast<std::uint32_t>(bitrate_bps)).error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderStop(JNIEnv* env,
+                                                     jclass /* clazz */,
+                                                     jlong handle) {
+    jlong values[kNativeAudioEncoderStopValues]{};
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        values[0] = audio_error_code(AudioEncoderError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto stopped = native_handle->encoder->stop();
+        values[0] = audio_error_code(stopped.error);
+        values[1] = static_cast<jlong>(stopped.tail_frames_dropped);
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioEncoderStopValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioEncoderStopValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioEncoderSnapshot(JNIEnv* env,
+                                                        jclass /* clazz */,
+                                                        jlong handle) {
+    jlong values[kNativeAudioEncoderSnapshotValues]{};
+    NativeAudioEncoderHandle* native_handle = audio_handle_from(handle);
+    if (native_handle == nullptr || native_handle->encoder == nullptr) {
+        values[26] = audio_error_code(AudioEncoderError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->encoder->snapshot();
+        values[0] = static_cast<jlong>(snapshot.codec);
+        values[1] = static_cast<jlong>(snapshot.source);
+        values[2] = static_cast<jlong>(snapshot.sample_rate_hz);
+        values[3] = static_cast<jlong>(snapshot.channel_count);
+        values[4] = static_cast<jlong>(snapshot.frame_duration_us);
+        values[5] = static_cast<jlong>(snapshot.samples_per_frame);
+        values[6] = static_cast<jlong>(snapshot.bitrate_bps);
+        values[7] = static_cast<jlong>(snapshot.bitrate_mode);
+        values[8] = static_cast<jlong>(snapshot.complexity);
+        values[9] = static_cast<jlong>(snapshot.lookahead_samples);
+        values[10] = static_cast<jlong>(snapshot.pcm_chunks_received);
+        values[11] = static_cast<jlong>(snapshot.pcm_frames_received);
+        values[12] = static_cast<jlong>(snapshot.encoded_frames);
+        values[13] = static_cast<jlong>(snapshot.encoded_bytes);
+        values[14] = static_cast<jlong>(snapshot.direct_fast_path_frames);
+        values[15] = static_cast<jlong>(snapshot.assembler_frames);
+        values[16] = static_cast<jlong>(snapshot.partial_frame_samples);
+        values[17] = static_cast<jlong>(snapshot.pcm_discontinuities);
+        values[18] = static_cast<jlong>(snapshot.pcm_frames_skipped);
+        values[19] = static_cast<jlong>(snapshot.tail_frames_dropped);
+        values[20] = static_cast<jlong>(snapshot.last_input_frame_position);
+        values[21] = static_cast<jlong>(snapshot.last_encoded_frame_position);
+        values[22] = static_cast<jlong>(snapshot.last_capture_time_ns);
+        values[23] = static_cast<jlong>(snapshot.last_native_error);
+        values[24] = snapshot.prepared ? 1 : 0;
+        values[25] = snapshot.running ? 1 : 0;
+        values[26] = audio_error_code(snapshot.last_error);
+        values[27] = snapshot.closed ? 1 : 0;
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioEncoderSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioEncoderSnapshotValues, values);
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT jlong JNICALL

@@ -44,6 +44,22 @@ RFC-003A adds three audio capture contexts. `WarpnectSystemAudioCapture` runs in
 
 Audio capture does not run on the UI thread, does not perform PCM per-chunk Binder calls, and does not launch a coroutine or task per PCM chunk.
 
+RFC-003B adds no encoder worker thread. Opus encoding runs synchronously on the caller-serialized PCM sink context:
+
+```text
+SystemAudio:
+WarpnectSystemAudioDrain
+        -> Opus encoder
+        -> EncodedAudioSink
+
+Microphone:
+WarpnectMicrophoneCapture
+        -> Opus encoder
+        -> EncodedAudioSink
+```
+
+The audio encoder does not introduce a PCM queue, encoder work queue, encoded-packet queue, per-frame coroutine, or per-frame main-thread hop.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

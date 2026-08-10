@@ -17,6 +17,46 @@ internal object NativeBridge {
     private external fun nativeProtocolAbiVersion(): Int
 
     @JvmStatic
+    private external fun nativeAudioEncoderCreate(
+        source: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        bitrateBps: Int,
+        bitrateMode: Int,
+        complexity: Int,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeAudioEncoderDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioEncoderOutputBuffer(handle: Long): ByteBuffer?
+
+    @JvmStatic
+    private external fun nativeAudioEncoderStart(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioEncoderSubmitPcm(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        firstFramePosition: Long,
+        captureTimeNs: Long,
+        timestampQuality: Int,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioEncoderUpdateBitrate(handle: Long, bitrateBps: Int): Int
+
+    @JvmStatic
+    private external fun nativeAudioEncoderStop(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioEncoderSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeVideoTransportCreate(
         remoteAddress: String,
         remotePort: Int,
@@ -132,6 +172,55 @@ internal object NativeBridge {
         protocolVersion = nativeProtocolVersion(),
         nativeBridgeAbiVersion = nativeProtocolAbiVersion(),
     )
+
+    fun audioEncoderCreate(
+        source: Int,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        bitrateBps: Int,
+        bitrateMode: Int,
+        complexity: Int,
+    ): Long = nativeAudioEncoderCreate(
+        source,
+        sampleRateHz,
+        channelCount,
+        frameDurationUs,
+        bitrateBps,
+        bitrateMode,
+        complexity,
+    )
+
+    fun audioEncoderDestroy(handle: Long): Int = nativeAudioEncoderDestroy(handle)
+
+    fun audioEncoderOutputBuffer(handle: Long): ByteBuffer? = nativeAudioEncoderOutputBuffer(handle)
+
+    fun audioEncoderStart(handle: Long): Int = nativeAudioEncoderStart(handle)
+
+    fun audioEncoderSubmitPcm(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        firstFramePosition: Long,
+        captureTimeNs: Long,
+        timestampQuality: Int,
+    ): LongArray = nativeAudioEncoderSubmitPcm(
+        handle,
+        buffer,
+        offset,
+        size,
+        firstFramePosition,
+        captureTimeNs,
+        timestampQuality,
+    )
+
+    fun audioEncoderUpdateBitrate(handle: Long, bitrateBps: Int): Int =
+        nativeAudioEncoderUpdateBitrate(handle, bitrateBps)
+
+    fun audioEncoderStop(handle: Long): LongArray = nativeAudioEncoderStop(handle)
+
+    fun audioEncoderSnapshot(handle: Long): LongArray = nativeAudioEncoderSnapshot(handle)
 
     fun videoTransportCreate(
         remoteAddress: String,

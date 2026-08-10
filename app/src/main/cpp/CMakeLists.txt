@@ -1,10 +1,24 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(scl_core LANGUAGES CXX)
+project(scl_core LANGUAGES C CXX)
+
+set(WARPNNECT_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../third_party")
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${WARPNNECT_THIRD_PARTY_DIR}/opus-1.6.1"
+    "${CMAKE_CURRENT_BINARY_DIR}/opus-1.6.1"
+    EXCLUDE_FROM_ALL
+)
+if(MSVC)
+    target_compile_options(opus PRIVATE /FS)
+endif()
 
 set(SCL_CORE_SOURCES
     src/clock_sync.cpp
     src/clock_sync_control.cpp
+    src/audio_opus_encoder.cpp
     src/fec.cpp
     src/fec_control.cpp
     jni_bridge.cpp
@@ -65,5 +79,7 @@ target_include_directories(
 )
 
 if(WIN32)
-    target_link_libraries(scl_core PRIVATE ws2_32)
+target_link_libraries(scl_core PRIVATE ws2_32)
 endif()
+
+target_link_libraries(scl_core PRIVATE Opus::opus)

@@ -149,6 +149,22 @@ PcmAudioSink borrowed ByteBuffer view
 
 PCM payload bytes do not cross Binder. Binder transfers setup/control metadata and descriptors only.
 
+RFC-003B adds an additive Native Bridge ABI Version 1 Opus encoder boundary:
+
+```text
+borrowed direct PCM ByteBuffer
+        |
+NativeBridge JNI
+        |
+portable warpnect::audio Opus encoder
+        |
+persistent borrowed encoded output buffer
+```
+
+Kotlin owns the RFC-003A PCM callback lifetime. JNI borrows the PCM pointer only during the synchronous submit call. Native code owns the libopus encoder state, the single incomplete-frame accumulator, and the encoded packet scratch buffer. `EncodedAudioSink` borrows the output `DirectByteBuffer` only for the duration of `onEncodedFrame()`.
+
+RFC-003B introduces no SCL audio transport JNI. No complete PCM or encoded audio media payload crosses JNI as a Kotlin `ByteArray`.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.
