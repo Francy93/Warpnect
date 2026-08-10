@@ -1,0 +1,26 @@
+package io.warpnect.audio.capture
+
+data class AudioCaptureSnapshot(
+    val state: AudioCaptureState = AudioCaptureState.Stopped,
+    val source: AudioCaptureSource? = null,
+    val sampleRateHz: Int = 0,
+    val channelCount: Int = 0,
+    val bytesPerFrame: Int = 0,
+    val targetChunkFrames: Int = 0,
+    val actualAudioRecordBufferFrames: Int = 0,
+    val chunksCaptured: Long = 0,
+    val framesCaptured: Long = 0,
+    val bytesCaptured: Long = 0,
+    val timestampSuccesses: Long = 0,
+    val timestampFallbacks: Long = 0,
+    val sinkFailures: Long = 0,
+    val ringCapacity: Int = 0,
+    val ringOccupancy: Int = 0,
+    val ringHighWaterMark: Int = 0,
+    val ringOverruns: Long = 0,
+    val chunksDropped: Long = 0,
+    val framesDropped: Long = 0,
+    val lastFramePosition: Long = 0,
+    val lastCaptureTimeNs: Long = 0,
+    val lastError: AudioCaptureError = AudioCaptureError.None,
+)

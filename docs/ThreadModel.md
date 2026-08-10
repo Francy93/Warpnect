@@ -40,6 +40,10 @@ The sender control context uses `WarpnectVideoSenderControl` for incoming NACK, 
 
 RFC-002G keeps render decisions on `WarpnectVideoDecoder` and does not introduce a per-frame UI hop, per-frame coroutine launch, dedicated renderer worker loop, or polling metrics loop.
 
+RFC-003A adds three audio capture contexts. `WarpnectSystemAudioCapture` runs in the privileged Shizuku/Sui process and owns system-audio `AudioRecord.read`, timestamp updates, shared-ring publication, and overrun accounting. `WarpnectSystemAudioDrain` runs in the ordinary app process and owns notification FD waits, borrowed PCM sink callbacks, and ACK records. `WarpnectMicrophoneCapture` runs in the ordinary app process and owns microphone `AudioRecord.read`, timestamp updates, and borrowed PCM sink callbacks.
+
+Audio capture does not run on the UI thread, does not perform PCM per-chunk Binder calls, and does not launch a coroutine or task per PCM chunk.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

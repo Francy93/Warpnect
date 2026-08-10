@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, and the complete Phase 2 Android video pipeline through RFC-002G.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, and the RFC-003A Android PCM audio-capture foundation.
 
 Present:
 
@@ -34,13 +34,16 @@ Present:
 - Low-latency Android `SurfaceView` rendering foundation with aspect-fit layout, Surface lifecycle tracking, render/drop/scheduled release policy, and frame-rate hinting.
 - End-to-end Android video session orchestration from privileged capture/encode through SCL transport to bounded receive/recovery, decoder input fill, and SurfaceView rendering.
 - Phase 2 latency/recovery tuning with bounded recovery deadlines, VideoResyncRequest control, live clock-sync/RTT telemetry hooks, optional loss-reactive bitrate policy, and host-native video benchmarks.
+- Independent PCM audio capture foundations for privileged system/game playback and microphone audio.
+- PCM Shared Ring Version 1 for privileged system-audio transfer through bounded SharedMemory and FD notification/ACK.
+- Microphone `AudioRecord` capture using preallocated direct buffers and borrowed PCM sink callbacks.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
-- Audio capture/playback is not implemented yet.
+- Audio encoding, SCL audio payload/transport, audio decoding, remote playback, and A/V synchronization are not implemented yet.
 - Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, authentication/encryption, or input injection.
 
 ## Repository Layout
@@ -189,6 +192,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-002E Android Low-Latency Rendering Pipeline](docs/rfc/RFC-002E-Android-Low-Latency-Rendering-Pipeline.md)
 - [RFC-002F End-to-End Video Streaming](docs/rfc/RFC-002F-End-to-End-Video-Streaming.md)
 - [RFC-002G Video Latency, Recovery and Performance Tuning](docs/rfc/RFC-002G-Video-Latency-Recovery-Performance-Tuning.md)
+- [RFC-003A Android Low-Latency Audio Capture Foundation](docs/rfc/RFC-003A-Android-Low-Latency-Audio-Capture-Foundation.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
@@ -201,10 +205,12 @@ The produced Android shared library is `libscl_core.so`.
 
 Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, RFC-002F end-to-end video session orchestration, and RFC-002G latency/recovery/performance tuning are implemented.
 
-The next phase is:
+Phase 3 audio has begun. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. Audio encoding, SCL audio transport, remote playback, and A/V sync remain pending.
+
+The next implementation RFC is:
 
 ```text
-Phase 3 - Audio Pipeline
+RFC-003B - Low-Latency Audio Encoder Pipeline
 ```
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

@@ -88,6 +88,16 @@ Video resynchronization requests MAY trigger current StreamConfig resend and a h
 
 Performance telemetry MUST be bounded. Counters, high-water marks, fixed histograms, and fixed sample rings are allowed; unbounded per-frame diagnostic history is not.
 
+Audio capture MUST produce bounded-lifetime PCM views. Continuous audio MUST NOT be materialized as per-chunk `ByteArray` payloads in production capture paths.
+
+Privileged system-audio PCM MUST NOT traverse Binder payloads. Binder is restricted to setup/control, SharedMemory descriptor transfer, FD transfer, status, and cold-path errors.
+
+System-audio capture SHOULD preserve local playback when the privileged Android AudioPolicy backend supports loopback-and-render operation. Warpnect MUST NOT intentionally redirect game/media audio away from local output as the default.
+
+Audio capture MUST prioritize freshness over accumulating PCM backlog. When bounded PCM capacity is exhausted, capture loss must be visible rather than hidden behind an unbounded queue.
+
+Audio capture timestamps MUST use a monotonic clock domain suitable for later A/V synchronization. Wall-clock time MUST NOT drive audio media timing.
+
 ## JNI Rules
 
 JNI is only a bridge.

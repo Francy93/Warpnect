@@ -135,6 +135,20 @@ JNI synchronous fill
 MediaCodec decoder
 ```
 
+RFC-003A introduces no SCL audio JNI transport and no NativeBridge audio entry points. System audio crosses an Android IPC boundary, not the native SCL boundary:
+
+```text
+privileged Shizuku/Sui process
+        |
+SharedMemory PCM ring + FD notification/ACK
+        |
+ordinary Warpnect app process
+        |
+PcmAudioSink borrowed ByteBuffer view
+```
+
+PCM payload bytes do not cross Binder. Binder transfers setup/control metadata and descriptors only.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

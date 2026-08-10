@@ -54,6 +54,7 @@ app/src/main/java/io/warpnect/
 |-- input/
 |-- network/
 |-- platform/capture/
+|-- platform/audio/capture/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
 |-- platform/video/render/
@@ -74,6 +75,9 @@ Responsibilities:
 - `NativeBridge.kt`: Kotlin-side JNI boundary, not protocol logic.
 - `capture/`: app-facing privileged video capture contracts, typed state/errors, request/result values, snapshots, and pure geometry helpers.
 - `platform/capture/`: Android Shizuku/UserService capture integration, display configuration monitoring, and hidden framework adapter ownership.
+- `audio/capture/`: app-facing PCM audio capture contracts, source model, format, synchronous borrowed sink, typed errors/results, lifecycle snapshots, chunk sizing, timestamp tracking, and controller-core logic.
+- `platform/audio/capture/`: Android `AudioRecord` microphone capture, system-audio Shizuku gateway, app-side SharedMemory drain, audio thread priority helper, and shared PCM ring layout.
+- `platform/audio/capture/privileged/`: Shizuku/Sui UserService for privileged system-audio capture, isolated AudioPolicy reflection adapter, AIDL control contract, and Bundle conversion.
 - `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
 - `video/decoder/`: app-facing hardware AVC decoder contracts, pull-based input source, output Surface policy values, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
@@ -134,6 +138,33 @@ Responsibilities:
 - `VideoEncoderOutputFormatExtractor.kt`: output format and CSD extraction.
 
 Production encoding is Android/Kotlin platform integration only. It consumes raw frames through a `MediaCodec` input `Surface` and exposes encoded access units as borrowed codec buffers. It does not use JNI, SCL packetization, UDP, a decoder, or a renderer.
+
+## Android Audio Capture Source Tree
+
+```text
+app/src/main/aidl/io/warpnect/platform/audio/capture/privileged/
+app/src/main/java/io/warpnect/audio/capture/
+app/src/main/java/io/warpnect/platform/audio/capture/
+app/src/main/java/io/warpnect/platform/audio/capture/privileged/
+app/src/main/java/io/warpnect/platform/audio/capture/shared/
+```
+
+Responsibilities:
+
+- `AudioCaptureController.kt`: app-facing source-specific audio capture lifecycle abstraction.
+- `PcmAudioSink.kt`: synchronous borrowed PCM chunk contract.
+- `AudioCaptureRequest.kt`, `AudioCaptureFormat.kt`, `AudioCaptureSnapshot.kt`, `AudioCaptureError.kt`: typed PCM capture model.
+- `AudioChunkPlanner.kt`: pure target-chunk frame and byte calculation.
+- `AudioCaptureTimestampTracker.kt`: monotonic first-frame timestamp tracking and fallback estimation.
+- `AudioCaptureControllerCore.kt`: testable lifecycle and counter state.
+- `AndroidMicrophoneAudioCaptureController.kt`: ordinary-process `AudioRecord` microphone capture using preallocated direct buffers.
+- `AndroidSystemAudioCaptureController.kt`: ordinary-process system-audio controller and app-side SharedMemory drain ownership.
+- `SharedPcmAudioRingLayout.kt`: internal PCM Shared Ring Version 1 layout, slot metadata, fixed slot lifecycle, and payload slicing.
+- `IPrivilegedAudioCaptureService.aidl`: setup/control-only privileged audio AIDL contract.
+- `PrivilegedAudioCaptureUserService.kt`: privileged process system-audio producer loop.
+- `ReflectivePrivilegedAudioPolicyCaptureApi.kt`: isolated hidden AudioPolicy loopback+render adapter.
+
+Production audio capture emits PCM only. It does not encode audio, define an SCL audio payload, perform UDP audio transport, play remote audio, calculate A/V sync, move PCM through Binder payloads, allocate per-chunk PCM `ByteArray` values, or maintain an unbounded PCM queue.
 
 ## Android Video Transport Source Tree
 
@@ -263,6 +294,8 @@ Current JVM tests also include renderer aspect-fit geometry, Surface generation/
 
 Current JVM tests also include RFC-002F/RFC-002G receiver session prerequisite/keyframe/surface state transitions, transmitter partial-start rollback coverage, performance configuration validation, resync cooldown behavior, and optional loss-reactive bitrate policy coverage.
 
+Current JVM tests also include RFC-003A audio chunk sizing, monotonic timestamp tracking, controller lifecycle/counter behavior, fixed SharedMemory ring layout, slot publication/release, overrun behavior, and fixed notification record coverage.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -272,6 +305,8 @@ Current Android instrumentation tests also include a synthetic RFC-002B encoder-
 Current Android instrumentation tests also include RFC-002E `SurfaceView` lifecycle coverage that publishes a valid Surface target and observes Surface destruction when a device/emulator is available.
 
 Current Android instrumentation tests also include RFC-002F SCL loopback coverage: one sender/receiver boundary test submits StreamConfig and an encoded AU over 127.0.0.1 UDP, then fills a direct decoder-style input buffer from native receiver storage; another generic device-gated test composes synthetic encoder output, SCL loopback transport, native receiver runtime, hardware decoder, and SurfaceView renderer.
+
+Current Android instrumentation tests also include RFC-003A SharedMemory PCM ring lifecycle coverage. Privileged system-audio and microphone hardware capture remain device/prerequisite-gated.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, and RFC-002G VideoResyncRequest/recovery deadline tests.
 

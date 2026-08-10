@@ -35,19 +35,26 @@ Implemented:
 - RFC-002F - End-to-End Video Streaming [complete]
 - RFC-002G - Video Latency, Recovery and Performance Tuning [complete]
 
-Next:
-
-- Phase 3 - Audio Pipeline.
-
 ## Phase 3 - Audio Pipeline
 
-Implement:
+Status: In progress.
 
-- System audio streaming.
-- Microphone return channel.
-- Opus encoder and decoder.
-- Synchronization with video.
-- Low-latency playback and render pipeline.
+Implemented:
+
+- RFC-003A - Android Low-Latency Audio Capture Foundation [complete]
+
+Next:
+
+- RFC-003B - Low-Latency Audio Encoder Pipeline [next]
+
+Planned:
+
+- RFC-003C - SCL Audio Payload and Transport Integration.
+- RFC-003D - Android Audio Decoder Pipeline.
+- RFC-003E - Low-Latency Audio Playback Pipeline.
+- RFC-003F - End-to-End Audio Streaming.
+- RFC-003G - Audio/Video Synchronization.
+- RFC-003H - Audio Latency, Recovery and Performance Tuning.
 
 ## Phase 4 - Reverse Input
 
