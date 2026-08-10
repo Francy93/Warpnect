@@ -41,6 +41,13 @@ enum class VideoTransportError {
     FecConfigurationInvalid,
     FecEncodingFailed,
 
+    ReassemblyWindowFull,
+    ReadyWindowFull,
+    ReassemblyTimeout,
+    Discontinuity,
+    NoData,
+    InputBufferTooSmall,
+
     Closed,
     InvalidHandle,
     ;

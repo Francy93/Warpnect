@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -255,6 +256,32 @@ UdpReceiveResult receive_udp_datagram(NativeSocketHandle socket,
         .status = status(UdpError::None),
         .bytes_received = bytes_received,
         .source = source.endpoint,
+    };
+}
+
+UdpReadinessResult wait_udp_socket_readable(NativeSocketHandle socket,
+                                            std::uint64_t timeout_us) noexcept {
+    fd_set read_set;
+    FD_ZERO(&read_set);
+    const int fd = static_cast<int>(socket);
+    FD_SET(fd, &read_set);
+
+    timeval timeout{
+        .tv_sec = static_cast<time_t>(timeout_us / 1'000'000ULL),
+        .tv_usec = static_cast<suseconds_t>(timeout_us % 1'000'000ULL),
+    };
+
+    const int result = ::select(fd + 1, &read_set, nullptr, nullptr, &timeout);
+    if (result < 0) {
+        return UdpReadinessResult{
+            .status = status(UdpError::ReceiveFailed, errno),
+            .readable = false,
+        };
+    }
+
+    return UdpReadinessResult{
+        .status = status(UdpError::None),
+        .readable = result > 0 && FD_ISSET(fd, &read_set),
     };
 }
 

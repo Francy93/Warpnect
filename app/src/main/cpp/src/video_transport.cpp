@@ -200,6 +200,29 @@ VideoStatus VideoTransportSender::handle_control_datagram(std::span<const std::b
     return handle_nack(nack.request);
 }
 
+VideoStatus VideoTransportSender::pump_control_datagram(std::span<std::byte> receive_buffer,
+                                                        std::uint64_t timeout_us) noexcept {
+    const VideoStatus ready = ensure_ready();
+    if (!ready.ok()) {
+        return ready;
+    }
+    const UdpReadinessResult readable = socket_.wait_readable(timeout_us);
+    if (!readable.ok()) {
+        remember(VideoError::UdpSendFailed);
+        return status(snapshot_.last_error);
+    }
+    if (!readable.readable) {
+        return status(VideoError::NoData);
+    }
+    const UdpReceiveResult received = socket_.receive_from(receive_buffer);
+    if (!received.ok()) {
+        remember(received.status.error == UdpError::WouldBlock ? VideoError::NoData
+                                                               : VideoError::NackDecodeFailed);
+        return status(snapshot_.last_error);
+    }
+    return handle_control_datagram(receive_buffer.first(received.bytes_received));
+}
+
 VideoStatus VideoTransportSender::handle_nack(const NackRequest& request) noexcept {
     const VideoStatus ready = ensure_ready();
     if (!ready.ok()) {

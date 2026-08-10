@@ -136,6 +136,18 @@ UdpReceiveResult UdpSocket::receive_from(std::span<std::byte> destination) noexc
     return internal::receive_udp_datagram(socket_handle_, destination);
 }
 
+UdpReadinessResult UdpSocket::wait_readable(std::uint64_t timeout_us) noexcept {
+    if (!is_open()) {
+        return UdpReadinessResult{.status = status(UdpError::NotOpen), .readable = false};
+    }
+
+    if (!bound_) {
+        return UdpReadinessResult{.status = status(UdpError::NotBound), .readable = false};
+    }
+
+    return internal::wait_udp_socket_readable(socket_handle_, timeout_us);
+}
+
 UdpEndpointResult UdpSocket::local_endpoint() const noexcept {
     if (!is_open()) {
         return UdpEndpointResult{.status = status(UdpError::NotOpen), .endpoint = {}};

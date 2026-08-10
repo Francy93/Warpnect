@@ -30,6 +30,8 @@ class UdpSocket final {
 
     [[nodiscard]] UdpReceiveResult receive_from(std::span<std::byte> destination) noexcept;
 
+    [[nodiscard]] UdpReadinessResult wait_readable(std::uint64_t timeout_us) noexcept;
+
     [[nodiscard]] UdpEndpointResult local_endpoint() const noexcept;
     [[nodiscard]] bool is_open() const noexcept;
 

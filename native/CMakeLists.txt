@@ -24,6 +24,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/udp_socket.cpp"
     "${SCL_CPP_ROOT}/src/video_packetizer.cpp"
     "${SCL_CPP_ROOT}/src/video_protocol.cpp"
+    "${SCL_CPP_ROOT}/src/video_receiver_runtime.cpp"
     "${SCL_CPP_ROOT}/src/video_transport.cpp"
 )
 
@@ -120,6 +121,10 @@ add_executable(scl_video_transport_tests tests/scl_video_transport_tests.cpp)
 configure_native_target(scl_video_transport_tests)
 target_link_libraries(scl_video_transport_tests PRIVATE scl_native_core)
 
+add_executable(scl_video_runtime_tests tests/scl_video_runtime_tests.cpp)
+configure_native_target(scl_video_runtime_tests)
+target_link_libraries(scl_video_runtime_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -142,3 +147,4 @@ add_test(NAME scl_fec_tests COMMAND scl_fec_tests)
 add_test(NAME scl_timing_telemetry_tests COMMAND scl_timing_telemetry_tests)
 add_test(NAME scl_phase1_integration_tests COMMAND scl_phase1_integration_tests)
 add_test(NAME scl_video_transport_tests COMMAND scl_video_transport_tests)
+add_test(NAME scl_video_runtime_tests COMMAND scl_video_runtime_tests)

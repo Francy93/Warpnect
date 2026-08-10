@@ -72,6 +72,14 @@ Remote media presentation timestamps MUST NOT be directly interpreted as receive
 
 Default rendering favors immediate presentation. It MUST NOT add an intentional application frame delay, per-frame main-thread hop, or dedicated renderer worker loop.
 
+End-to-end video orchestration MUST compose RFC-002A through RFC-002E rather than duplicating their subsystem responsibilities inside a monolithic controller.
+
+Native receiver buffering MUST be strictly bounded and represents transport/reassembly ownership, not a hidden decoder payload queue.
+
+A complete reassembled encoded AU MUST be copied directly from native receiver storage into a MediaCodec-owned decoder input buffer without an intermediate full-access-unit Kotlin `ByteArray`.
+
+Default end-to-end rendering MUST NOT introduce an application jitter buffer.
+
 ## JNI Rules
 
 JNI is only a bridge.

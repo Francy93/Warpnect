@@ -26,13 +26,19 @@ Android hardware decoding uses a dedicated `WarpnectVideoDecoder` `HandlerThread
 
 RFC-002E SurfaceHolder lifecycle callbacks run on the Android View/window thread and must remain lightweight. Render decisions run synchronously on the `WarpnectVideoDecoder` callback thread through the renderer's `DecodedVideoSink`. The default path does not hop to the main thread per frame, launch a coroutine per frame, or create a dedicated renderer worker thread.
 
+RFC-002F adds end-to-end session runtime contexts. `WarpnectVideoSenderControl` waits for incoming sender-side SessionControl/NACK datagrams and dispatches them to the native video sender's exact retransmission path. `WarpnectVideoReceiver` owns receiver UDP reads, FEC/NACK/reassembly processing, Video Payload V1 parsing, and coarse runtime events. Neither context processes Android raw frames or decoded pixels.
+
+The receiver decoder input source runs on `WarpnectVideoDecoder`. It never waits for UDP; when no native ready AU exists, it returns `NoData`. When an AU is ready, JNI synchronously fills the codec-owned direct input `ByteBuffer` from bounded native receiver storage.
+
+RFC-002F does not add a rendering worker thread, decoded-frame jitter buffer, unbounded Kotlin event channel, or UDP operation on the UI thread.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:
 
 - UI thread: Compose rendering and user interaction.
 - Orchestration thread or scope: session lifecycle and role transitions.
-- Network thread: future UDP receive/send scheduling, packet pacing if ever adopted, and session-owned loss recovery.
+- Network thread: `WarpnectVideoReceiver` owns current receiver UDP receive/recovery; packet pacing, if ever adopted, remains future work.
 - Encoder thread: `WarpnectVideoEncoder` owns MediaCodec configuration, start/stop, output format changes, encoded output callbacks, EOS/drain, and codec cleanup.
 - Decoder thread: `WarpnectVideoDecoder` owns decoder MediaCodec state and invokes renderer decisions for output-Surface release, but not networking or session orchestration.
 - Surface lifecycle: Android View/window thread owns SurfaceHolder callbacks and render-target publication.

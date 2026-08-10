@@ -4,6 +4,8 @@ import io.warpnect.capture.VideoCaptureController
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.encoder.VideoEncoderController
 import io.warpnect.video.render.VideoRenderController
+import io.warpnect.video.session.VideoReceiverSessionController
+import io.warpnect.video.session.VideoTransmitterSessionController
 import io.warpnect.video.transport.VideoTransportController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,8 +15,10 @@ class CoreOrchestrator(
     val transmitterVideoCaptureController: VideoCaptureController? = null,
     val transmitterVideoEncoderController: VideoEncoderController? = null,
     val transmitterVideoTransportController: VideoTransportController? = null,
+    val videoTransmitterSessionController: VideoTransmitterSessionController? = null,
     val receiverVideoDecoderController: VideoDecoderController? = null,
     val receiverVideoRenderController: VideoRenderController? = null,
+    val videoReceiverSessionController: VideoReceiverSessionController? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
@@ -32,6 +36,8 @@ class CoreOrchestrator(
     }
 
     fun shutdown() {
+        videoTransmitterSessionController?.close()
+        videoReceiverSessionController?.close()
         transmitterVideoCaptureController?.close()
         transmitterVideoEncoderController?.close()
         transmitterVideoTransportController?.close()

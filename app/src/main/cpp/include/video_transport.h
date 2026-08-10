@@ -79,6 +79,8 @@ class VideoTransportSender final : private DatagramSink {
                                                  std::uint64_t presentation_time_us,
                                                  bool keyframe) noexcept;
     [[nodiscard]] VideoStatus handle_control_datagram(std::span<const std::byte> datagram) noexcept;
+    [[nodiscard]] VideoStatus pump_control_datagram(std::span<std::byte> receive_buffer,
+                                                    std::uint64_t timeout_us) noexcept;
     [[nodiscard]] VideoStatus handle_nack(const NackRequest& request) noexcept;
     [[nodiscard]] VideoTransportSnapshot snapshot() const noexcept;
     void close() noexcept;

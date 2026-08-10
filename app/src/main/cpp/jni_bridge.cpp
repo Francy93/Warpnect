@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <span>
 #include <string_view>
@@ -13,6 +14,7 @@
 #include "native_bridge.h"
 #include "retransmission_cache.h"
 #include "udp_endpoint.h"
+#include "video_receiver_runtime.h"
 #include "video_transport.h"
 
 namespace {
@@ -24,6 +26,9 @@ using warpnect::scl::RetransmissionCacheConfig;
 using warpnect::scl::RetransmissionEntry;
 using warpnect::scl::UdpEndpoint;
 using warpnect::scl::VideoError;
+using warpnect::scl::VideoReceiverConfig;
+using warpnect::scl::VideoReceiverEventType;
+using warpnect::scl::VideoReceiverRuntime;
 using warpnect::scl::VideoStatus;
 using warpnect::scl::VideoTransportFecConfig;
 using warpnect::scl::VideoTransportSender;
@@ -31,6 +36,9 @@ using warpnect::scl::VideoTransportSenderConfig;
 using warpnect::scl::VideoTransportSenderWorkspace;
 
 inline constexpr jsize kNativeVideoTransportSnapshotValues = 17;
+inline constexpr jsize kNativeVideoReceiverEventValues = 9;
+inline constexpr jsize kNativeVideoReceiverFillValues = 7;
+inline constexpr jsize kNativeVideoReceiverSnapshotValues = 24;
 
 [[nodiscard]] constexpr jint error_code(VideoError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
@@ -39,6 +47,11 @@ inline constexpr jsize kNativeVideoTransportSnapshotValues = 17;
 struct DirectBufferSpanResult final {
     VideoError error = VideoError::None;
     std::span<const std::byte> bytes{};
+};
+
+struct MutableDirectBufferSpanResult final {
+    VideoError error = VideoError::None;
+    std::span<std::byte> bytes{};
 };
 
 struct NativeVideoTransportHandle final {
@@ -51,6 +64,8 @@ struct NativeVideoTransportHandle final {
     std::vector<std::byte> fec_matrix_storage{};
     std::vector<std::byte> fec_scratch_storage{};
     std::vector<std::byte> fec_parity_payload_scratch{};
+    std::vector<std::byte> control_receive_scratch{};
+    std::mutex lock{};
     std::unique_ptr<VideoTransportSender> sender{};
 
     [[nodiscard]] VideoTransportSenderWorkspace workspace() noexcept {
@@ -67,11 +82,23 @@ struct NativeVideoTransportHandle final {
     }
 };
 
+struct NativeVideoReceiverHandle final {
+    std::mutex lock{};
+    std::unique_ptr<VideoReceiverRuntime> runtime{};
+};
+
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
     if (handle == 0) {
         return nullptr;
     }
     return reinterpret_cast<NativeVideoTransportHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativeVideoReceiverHandle* receiver_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeVideoReceiverHandle*>(static_cast<std::intptr_t>(handle));
 }
 
 [[nodiscard]] bool valid_port(jint port, bool allow_zero) noexcept {
@@ -160,6 +187,25 @@ struct NativeVideoTransportHandle final {
     };
 }
 
+[[nodiscard]] MutableDirectBufferSpanResult mutable_direct_buffer_span(JNIEnv* env,
+                                                                       jobject buffer,
+                                                                       jint capacity) noexcept {
+    if (buffer == nullptr || capacity <= 0) {
+        return MutableDirectBufferSpanResult{.error = VideoError::NonDirectBuffer};
+    }
+    auto* const base = static_cast<std::byte*>(env->GetDirectBufferAddress(buffer));
+    const jlong native_capacity = env->GetDirectBufferCapacity(buffer);
+    if (base == nullptr || native_capacity < 0) {
+        return MutableDirectBufferSpanResult{.error = VideoError::NonDirectBuffer};
+    }
+    if (static_cast<jlong>(capacity) > native_capacity) {
+        return MutableDirectBufferSpanResult{.error = VideoError::InvalidBufferRange};
+    }
+    return MutableDirectBufferSpanResult{
+        .bytes = std::span<std::byte>(base, static_cast<std::size_t>(capacity)),
+    };
+}
+
 [[nodiscard]] std::unique_ptr<NativeVideoTransportHandle>
 create_handle(JNIEnv* env,
               jstring remote_address,
@@ -227,10 +273,118 @@ create_handle(JNIEnv* env,
     }
 
     handle->sender = std::make_unique<VideoTransportSender>(handle->config, handle->workspace());
+    handle->control_receive_scratch.resize(handle->config.max_wire_datagram_size);
     const VideoStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
     }
+    return handle;
+}
+
+[[nodiscard]] std::unique_ptr<NativeVideoReceiverHandle>
+create_receiver_handle(JNIEnv* env,
+                       jstring local_address,
+                       jint local_port,
+                       jstring remote_address,
+                       jint remote_port,
+                       jboolean restrict_remote_endpoint,
+                       jint max_wire_datagram_size,
+                       jint max_logical_payload_size,
+                       jint reassembly_slot_count,
+                       jint ready_slot_count,
+                       jint loss_slot_count,
+                       jint max_nacks_per_pump,
+                       jlong reorder_delay_us,
+                       jlong renack_interval_us,
+                       jint max_nack_attempts,
+                       jlong initial_control_sequence,
+                       jboolean fec_enabled,
+                       jint fec_data_shards,
+                       jint fec_parity_shards,
+                       jlong reassembly_timeout_us) {
+    if (local_address == nullptr || !valid_port(local_port, true) ||
+        !valid_port(remote_port, true) || max_wire_datagram_size <= 0 ||
+        max_logical_payload_size <= 0 || reassembly_slot_count <= 0 ||
+        ready_slot_count <= 0 || loss_slot_count <= 0 || max_nacks_per_pump <= 0 ||
+        reorder_delay_us < 0 || renack_interval_us < 0 || max_nack_attempts <= 0 ||
+        !valid_u32(initial_control_sequence) || reassembly_timeout_us < 0) {
+        return nullptr;
+    }
+    const bool fec_is_enabled = fec_enabled == JNI_TRUE;
+    if (fec_is_enabled &&
+        (fec_data_shards <= 0 || fec_data_shards > 255 || fec_parity_shards <= 0 ||
+         fec_parity_shards > 255)) {
+        return nullptr;
+    }
+
+    const char* local_chars = env->GetStringUTFChars(local_address, nullptr);
+    if (local_chars == nullptr) {
+        return nullptr;
+    }
+    const auto parsed_local =
+        warpnect::scl::parse_numeric_ip_address(std::string_view(local_chars));
+    env->ReleaseStringUTFChars(local_address, local_chars);
+    if (!parsed_local.ok()) {
+        return nullptr;
+    }
+
+    UdpEndpoint remote{};
+    if (remote_address != nullptr) {
+        const char* remote_chars = env->GetStringUTFChars(remote_address, nullptr);
+        if (remote_chars == nullptr) {
+            return nullptr;
+        }
+        const auto parsed_remote =
+            warpnect::scl::parse_numeric_ip_address(std::string_view(remote_chars));
+        env->ReleaseStringUTFChars(remote_address, remote_chars);
+        if (!parsed_remote.ok()) {
+            return nullptr;
+        }
+        remote = UdpEndpoint{
+            .address = parsed_remote.address,
+            .port = static_cast<std::uint16_t>(remote_port),
+        };
+    }
+
+    auto handle = std::make_unique<NativeVideoReceiverHandle>();
+    auto runtime = std::make_unique<VideoReceiverRuntime>(
+        VideoReceiverConfig{
+            .local_endpoint =
+                UdpEndpoint{
+                    .address = parsed_local.address,
+                    .port = static_cast<std::uint16_t>(local_port),
+                },
+            .remote_endpoint = remote,
+            .restrict_remote_endpoint = restrict_remote_endpoint == JNI_TRUE,
+            .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
+            .max_logical_payload_size = static_cast<std::size_t>(max_logical_payload_size),
+            .reassembly_slot_count = static_cast<std::size_t>(reassembly_slot_count),
+            .ready_slot_count = static_cast<std::size_t>(ready_slot_count),
+            .loss =
+                warpnect::scl::LossRecoveryConfig{
+                    .reorder_delay_us = static_cast<std::uint64_t>(reorder_delay_us),
+                    .renack_interval_us = static_cast<std::uint64_t>(renack_interval_us),
+                    .max_nack_attempts = static_cast<std::uint16_t>(max_nack_attempts),
+                },
+            .loss_slot_count = static_cast<std::size_t>(loss_slot_count),
+            .max_nacks_per_pump = static_cast<std::size_t>(max_nacks_per_pump),
+            .initial_control_sequence = static_cast<std::uint32_t>(initial_control_sequence),
+            .fec =
+                VideoTransportFecConfig{
+                    .enabled = fec_is_enabled,
+                    .data_shards =
+                        fec_is_enabled ? static_cast<std::uint8_t>(fec_data_shards)
+                                       : std::uint8_t{0},
+                    .parity_shards =
+                        fec_is_enabled ? static_cast<std::uint8_t>(fec_parity_shards)
+                                       : std::uint8_t{0},
+                },
+            .reassembly_timeout_us = static_cast<std::uint64_t>(reassembly_timeout_us),
+        });
+    if (!runtime->open().ok()) {
+        return nullptr;
+    }
+    handle->runtime = std::move(runtime);
     return handle;
 }
 
@@ -289,7 +443,10 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportDestroy(JNIEnv* /* env */,
     if (native_handle == nullptr) {
         return error_code(VideoError::InvalidHandle);
     }
-    native_handle->sender->close();
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->sender->close();
+    }
     delete native_handle;
     return error_code(VideoError::None);
 }
@@ -305,6 +462,7 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportSubmitConfig(JNIEnv* env,
     if (native_handle == nullptr || native_handle->sender == nullptr) {
         return error_code(VideoError::InvalidHandle);
     }
+    std::lock_guard guard(native_handle->lock);
     if (width <= 0 || width > std::numeric_limits<std::uint16_t>::max() || height <= 0 ||
         height > std::numeric_limits<std::uint16_t>::max()) {
         return error_code(VideoError::InvalidDimensions);
@@ -364,6 +522,7 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportSubmitAccessUnit(
     if (native_handle == nullptr || native_handle->sender == nullptr) {
         return error_code(VideoError::InvalidHandle);
     }
+    std::lock_guard guard(native_handle->lock);
     if (presentation_time_us < 0) {
         return error_code(VideoError::InvalidPresentationTimestamp);
     }
@@ -388,11 +547,29 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportHandleControlDatagram(JNIEnv* 
     if (native_handle == nullptr || native_handle->sender == nullptr) {
         return error_code(VideoError::InvalidHandle);
     }
+    std::lock_guard guard(native_handle->lock);
     const DirectBufferSpanResult span = direct_buffer_span(env, buffer, offset, size);
     if (span.error != VideoError::None) {
         return error_code(span.error);
     }
     const VideoStatus handled = native_handle->sender->handle_control_datagram(span.bytes);
+    return error_code(handled.error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoTransportPumpControl(JNIEnv* /* env */,
+                                                              jclass /* clazz */,
+                                                              jlong handle,
+                                                              jlong timeout_us) {
+    NativeVideoTransportHandle* native_handle = handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr || timeout_us < 0) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    std::lock_guard guard(native_handle->lock);
+    const VideoStatus handled = native_handle->sender->pump_control_datagram(
+        std::span<std::byte>(native_handle->control_receive_scratch.data(),
+                             native_handle->control_receive_scratch.size()),
+        static_cast<std::uint64_t>(timeout_us));
     return error_code(handled.error);
 }
 
@@ -406,6 +583,7 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportSnapshot(JNIEnv* env,
         values[14] = error_code(VideoError::InvalidHandle);
         values[16] = 1;
     } else {
+        std::lock_guard guard(native_handle->lock);
         const auto snapshot = native_handle->sender->snapshot();
         values[0] = static_cast<jlong>(snapshot.current_config_generation);
         values[1] = static_cast<jlong>(snapshot.next_frame_id);
@@ -428,6 +606,227 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportSnapshot(JNIEnv* env,
     jlongArray array = env->NewLongArray(kNativeVideoTransportSnapshotValues);
     if (array != nullptr) {
         env->SetLongArrayRegion(array, 0, kNativeVideoTransportSnapshotValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverCreate(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jstring local_address,
+    jint local_port,
+    jstring remote_address,
+    jint remote_port,
+    jboolean restrict_remote_endpoint,
+    jint max_wire_datagram_size,
+    jint max_logical_payload_size,
+    jint reassembly_slot_count,
+    jint ready_slot_count,
+    jint loss_slot_count,
+    jint max_nacks_per_pump,
+    jlong reorder_delay_us,
+    jlong renack_interval_us,
+    jint max_nack_attempts,
+    jlong initial_control_sequence,
+    jboolean fec_enabled,
+    jint fec_data_shards,
+    jint fec_parity_shards,
+    jlong reassembly_timeout_us) {
+    try {
+        auto handle = create_receiver_handle(
+            env, local_address, local_port, remote_address, remote_port,
+            restrict_remote_endpoint, max_wire_datagram_size, max_logical_payload_size,
+            reassembly_slot_count, ready_slot_count, loss_slot_count, max_nacks_per_pump,
+            reorder_delay_us, renack_interval_us, max_nack_attempts, initial_control_sequence,
+            fec_enabled, fec_data_shards, fec_parity_shards, reassembly_timeout_us);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverDestroy(JNIEnv* /* env */,
+                                                         jclass /* clazz */,
+                                                         jlong handle) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->runtime->close();
+    }
+    delete native_handle;
+    return error_code(VideoError::None);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverPump(JNIEnv* env,
+                                                      jclass /* clazz */,
+                                                      jlong handle,
+                                                      jlong timeout_us) {
+    jlong values[kNativeVideoReceiverEventValues]{};
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || timeout_us < 0) {
+        values[0] = static_cast<jlong>(VideoReceiverEventType::TransportError);
+        values[1] = error_code(VideoError::InvalidHandle);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto event =
+            native_handle->runtime->pump(static_cast<std::uint64_t>(timeout_us));
+        values[0] = static_cast<jlong>(event.type);
+        values[1] = error_code(event.error);
+        values[2] = static_cast<jlong>(event.config_generation);
+        values[3] = static_cast<jlong>(event.frame_id);
+        values[4] = static_cast<jlong>(event.presentation_time_us);
+        values[5] = static_cast<jlong>(event.width);
+        values[6] = static_cast<jlong>(event.height);
+        values[7] = event.keyframe ? 1 : 0;
+        values[8] = 0;
+    }
+    jlongArray array = env->NewLongArray(kNativeVideoReceiverEventValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeVideoReceiverEventValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverReadStreamConfigCsd(JNIEnv* env,
+                                                                     jclass /* clazz */,
+                                                                     jlong handle) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return nullptr;
+    }
+    std::lock_guard guard(native_handle->lock);
+    const auto config = native_handle->runtime->latest_stream_config();
+    jclass byte_array_class = env->FindClass("[B");
+    if (byte_array_class == nullptr) {
+        return nullptr;
+    }
+    jobjectArray output = env->NewObjectArray(config.csd_count, byte_array_class, nullptr);
+    if (output == nullptr) {
+        return nullptr;
+    }
+    for (jsize i = 0; i < static_cast<jsize>(config.csd_count); ++i) {
+        const auto entry = native_handle->runtime->latest_csd_entry(static_cast<std::size_t>(i));
+        jbyteArray bytes = env->NewByteArray(static_cast<jsize>(entry.size()));
+        if (bytes == nullptr) {
+            return nullptr;
+        }
+        env->SetByteArrayRegion(bytes, 0, static_cast<jsize>(entry.size()),
+                                reinterpret_cast<const jbyte*>(entry.data()));
+        env->SetObjectArrayElement(output, i, bytes);
+        env->DeleteLocalRef(bytes);
+    }
+    return output;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverFillDecoderInput(JNIEnv* env,
+                                                                  jclass /* clazz */,
+                                                                  jlong handle,
+                                                                  jobject buffer,
+                                                                  jint capacity) {
+    jlong values[kNativeVideoReceiverFillValues]{};
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        values[0] = error_code(VideoError::InvalidHandle);
+    } else {
+        const MutableDirectBufferSpanResult target =
+            mutable_direct_buffer_span(env, buffer, capacity);
+        if (target.error != VideoError::None) {
+            values[0] = error_code(target.error);
+        } else {
+            std::lock_guard guard(native_handle->lock);
+            const auto filled = native_handle->runtime->fill_decoder_input(target.bytes);
+            values[0] = error_code(filled.error);
+            values[1] = filled.has_access_unit ? 1 : 0;
+            values[2] = static_cast<jlong>(filled.size);
+            values[3] = static_cast<jlong>(filled.presentation_time_us);
+            values[4] = static_cast<jlong>(filled.config_generation);
+            values[5] = static_cast<jlong>(filled.frame_id);
+            values[6] = filled.keyframe ? 1 : 0;
+        }
+    }
+    jlongArray array = env->NewLongArray(kNativeVideoReceiverFillValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeVideoReceiverFillValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverActivateConfigGeneration(JNIEnv* /* env */,
+                                                                         jclass /* clazz */,
+                                                                         jlong handle,
+                                                                         jlong generation) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_u32(generation)) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return error_code(
+        native_handle->runtime
+            ->activate_config_generation(static_cast<std::uint32_t>(generation))
+            .error);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverSetAwaitingKeyFrame(JNIEnv* /* env */,
+                                                                     jclass /* clazz */,
+                                                                     jlong handle,
+                                                                     jboolean awaiting) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return;
+    }
+    std::lock_guard guard(native_handle->lock);
+    native_handle->runtime->set_awaiting_keyframe(awaiting == JNI_TRUE);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverSnapshot(JNIEnv* env,
+                                                         jclass /* clazz */,
+                                                         jlong handle) {
+    jlong values[kNativeVideoReceiverSnapshotValues]{};
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        values[23] = error_code(VideoError::InvalidHandle);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->runtime->snapshot();
+        values[0] = snapshot.opened ? 1 : 0;
+        values[1] = snapshot.closed ? 1 : 0;
+        values[2] = snapshot.awaiting_keyframe ? 1 : 0;
+        values[3] = static_cast<jlong>(snapshot.active_config_generation);
+        values[4] = static_cast<jlong>(snapshot.latest_config_generation);
+        values[5] = static_cast<jlong>(snapshot.next_control_sequence);
+        values[6] = static_cast<jlong>(snapshot.datagrams_received);
+        values[7] = static_cast<jlong>(snapshot.video_datagrams_received);
+        values[8] = static_cast<jlong>(snapshot.fec_parity_received);
+        values[9] = static_cast<jlong>(snapshot.fec_recoveries);
+        values[10] = static_cast<jlong>(snapshot.nacks_sent);
+        values[11] = static_cast<jlong>(snapshot.stream_configs_received);
+        values[12] = static_cast<jlong>(snapshot.access_units_completed);
+        values[13] = static_cast<jlong>(snapshot.access_units_delivered);
+        values[14] = static_cast<jlong>(snapshot.non_keyframes_dropped_awaiting_keyframe);
+        values[15] = static_cast<jlong>(snapshot.discontinuities);
+        values[16] = static_cast<jlong>(snapshot.reassembly_timeouts);
+        values[17] = static_cast<jlong>(snapshot.reassembly_window_full);
+        values[18] = static_cast<jlong>(snapshot.ready_window_full);
+        values[19] = static_cast<jlong>(snapshot.reassembly_slots_used);
+        values[20] = static_cast<jlong>(snapshot.ready_access_units);
+        values[21] = static_cast<jlong>(snapshot.last_presentation_time_us);
+        values[22] = static_cast<jlong>(snapshot.last_frame_id);
+        values[23] = error_code(snapshot.last_error);
+    }
+    jlongArray array = env->NewLongArray(kNativeVideoReceiverSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeVideoReceiverSnapshotValues, values);
     }
     return array;
 }

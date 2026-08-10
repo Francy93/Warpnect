@@ -430,6 +430,12 @@ segment 1 = borrowed MediaCodec encoded AU bytes
 
 The native packetizer copies only the bytes intersecting each SCL fragment into the outgoing datagram scratch buffer. It does not allocate or require a complete temporary `12 + AU size` staging buffer.
 
+### RFC-002F Runtime Composition
+
+RFC-002F adds end-to-end sender/receiver runtime orchestration for Video Payload Version 1. It does not change the Video V1 wire layout, the 21-byte SCL `PacketHeader`, `PayloadType::Video`, NACK payloads, FEC parity payloads, or clock-sync payloads.
+
+The receiver runtime uses existing SCL packet decode, loss detection, NACK generation, Reed-Solomon FEC recovery, RFC-001C reassembly, and Video V1 parsing. Completed AccessUnit payload bytes remain owned by bounded native receiver storage until JNI synchronously fills a MediaCodec-owned direct input buffer. No complete access-unit Kotlin payload representation is part of the protocol contract.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

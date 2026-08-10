@@ -292,6 +292,31 @@ UdpReceiveResult receive_udp_datagram(NativeSocketHandle socket,
     };
 }
 
+UdpReadinessResult wait_udp_socket_readable(NativeSocketHandle socket,
+                                            std::uint64_t timeout_us) noexcept {
+    fd_set read_set;
+    FD_ZERO(&read_set);
+    FD_SET(native_socket(socket), &read_set);
+
+    timeval timeout{
+        .tv_sec = static_cast<long>(timeout_us / 1'000'000ULL),
+        .tv_usec = static_cast<long>(timeout_us % 1'000'000ULL),
+    };
+
+    const int result = ::select(0, &read_set, nullptr, nullptr, &timeout);
+    if (result == SOCKET_ERROR) {
+        return UdpReadinessResult{
+            .status = status(UdpError::ReceiveFailed, ::WSAGetLastError()),
+            .readable = false,
+        };
+    }
+
+    return UdpReadinessResult{
+        .status = status(UdpError::None),
+        .readable = result > 0 && FD_ISSET(native_socket(socket), &read_set),
+    };
+}
+
 UdpEndpointResult query_local_endpoint(NativeSocketHandle socket) noexcept {
     sockaddr_storage storage{};
     int length = sizeof(storage);

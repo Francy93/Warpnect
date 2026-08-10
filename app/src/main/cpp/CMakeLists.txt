@@ -22,6 +22,7 @@ set(SCL_CORE_SOURCES
     src/udp_socket.cpp
     src/video_packetizer.cpp
     src/video_protocol.cpp
+    src/video_receiver_runtime.cpp
     src/video_transport.cpp
 )
 

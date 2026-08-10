@@ -38,6 +38,9 @@ void close_socket(NativeSocketHandle socket) noexcept;
 [[nodiscard]] UdpReceiveResult receive_udp_datagram(NativeSocketHandle socket,
                                                     std::span<std::byte> destination) noexcept;
 
+[[nodiscard]] UdpReadinessResult wait_udp_socket_readable(NativeSocketHandle socket,
+                                                          std::uint64_t timeout_us) noexcept;
+
 [[nodiscard]] UdpEndpointResult query_local_endpoint(NativeSocketHandle socket) noexcept;
 
 [[nodiscard]] IpAddressParseResult

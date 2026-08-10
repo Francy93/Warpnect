@@ -134,6 +134,26 @@ class NativeSclVideoTransportController : VideoTransportController {
         return VideoTransportSubmitResult(error, localSnapshot)
     }
 
+    fun pumpControl(timeoutUs: Long): VideoTransportSubmitResult {
+        val handle = nativeHandle
+        if (handle == 0L) {
+            val error = remember(VideoTransportError.InvalidHandle)
+            return VideoTransportSubmitResult(error, localSnapshot)
+        }
+        if (timeoutUs < 0L) {
+            val error = remember(VideoTransportError.InvalidBufferRange)
+            return VideoTransportSubmitResult(error, localSnapshot)
+        }
+        val nativeError = VideoTransportError.fromNativeCode(
+            NativeBridge.videoTransportPumpControl(handle, timeoutUs),
+        )
+        if (nativeError == VideoTransportError.NoData) {
+            return VideoTransportSubmitResult(VideoTransportError.None, snapshot())
+        }
+        val error = remember(nativeError)
+        return VideoTransportSubmitResult(error, localSnapshot)
+    }
+
     override fun snapshot(): VideoTransportSnapshot {
         val handle = nativeHandle
         if (handle == 0L) {

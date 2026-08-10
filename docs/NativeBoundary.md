@@ -99,19 +99,25 @@ caller-owned Surface
 
 That direct native-reassembly to decoder-input handoff is not implemented in RFC-002D. `NativeBridge.kt` remains unchanged for decoder purposes, and Native Bridge ABI Version 1 remains valid.
 
-RFC-002E rendering is entirely Android/Kotlin-side and adds no JNI rendering API. The intended future receiver path is:
+RFC-002E rendering is entirely Android/Kotlin-side and adds no JNI rendering API.
+
+RFC-002F adds an additive Native Bridge ABI Version 1 receiver runtime boundary:
 
 ```text
 native SCL receiver
         |
-complete encoded AU handoff
+bounded reassembly slot owning complete encoded AU
+        |
+MediaCodec-owned direct input ByteBuffer
+        |
+JNI synchronous fill
         |
 RFC-002D decoder
         |
 RFC-002E SurfaceView
 ```
 
-RFC-002F will connect those stages. RFC-002E only owns the SurfaceView render target, lifecycle, geometry, and render policy.
+Native owns the completed AU until a successful fill. MediaCodec owns the destination input buffer. JNI borrows the destination pointer only during the fill call and must not retain it. Kotlin receives only small AU metadata and never owns the complete AU payload on the receiver hot path.
 
 ## Error Handling
 

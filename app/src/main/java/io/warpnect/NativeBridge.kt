@@ -61,7 +61,58 @@ internal object NativeBridge {
     ): Int
 
     @JvmStatic
+    private external fun nativeVideoTransportPumpControl(handle: Long, timeoutUs: Long): Int
+
+    @JvmStatic
     private external fun nativeVideoTransportSnapshot(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeVideoReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        remoteAddress: String?,
+        remotePort: Int,
+        restrictRemoteEndpoint: Boolean,
+        maxWireDatagramSize: Int,
+        maxLogicalPayloadSize: Int,
+        reassemblySlotCount: Int,
+        readySlotCount: Int,
+        lossSlotCount: Int,
+        maxNacksPerPump: Int,
+        reorderDelayUs: Long,
+        renackIntervalUs: Long,
+        maxNackAttempts: Int,
+        initialControlSequence: Long,
+        fecEnabled: Boolean,
+        fecDataShards: Int,
+        fecParityShards: Int,
+        reassemblyTimeoutUs: Long,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeVideoReceiverDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeVideoReceiverPump(handle: Long, timeoutUs: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeVideoReceiverReadStreamConfigCsd(handle: Long): Array<ByteArray>?
+
+    @JvmStatic
+    private external fun nativeVideoReceiverFillDecoderInput(
+        handle: Long,
+        buffer: ByteBuffer,
+        capacity: Int,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeVideoReceiverActivateConfigGeneration(handle: Long, generation: Long): Int
+
+    @JvmStatic
+    private external fun nativeVideoReceiverSetAwaitingKeyFrame(handle: Long, awaiting: Boolean)
+
+    @JvmStatic
+    private external fun nativeVideoReceiverSnapshot(handle: Long): LongArray
 
     fun sclInfo(): NativeSclInfo = NativeSclInfo(
         protocolName = nativeProtocolName(),
@@ -119,7 +170,71 @@ internal object NativeBridge {
     fun videoTransportHandleControlDatagram(handle: Long, buffer: ByteBuffer, offset: Int, size: Int): Int =
         nativeVideoTransportHandleControlDatagram(handle, buffer, offset, size)
 
+    fun videoTransportPumpControl(handle: Long, timeoutUs: Long): Int =
+        nativeVideoTransportPumpControl(handle, timeoutUs)
+
     fun videoTransportSnapshot(handle: Long): LongArray = nativeVideoTransportSnapshot(handle)
+
+    fun videoReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        remoteAddress: String?,
+        remotePort: Int,
+        restrictRemoteEndpoint: Boolean,
+        maxWireDatagramSize: Int,
+        maxLogicalPayloadSize: Int,
+        reassemblySlotCount: Int,
+        readySlotCount: Int,
+        lossSlotCount: Int,
+        maxNacksPerPump: Int,
+        reorderDelayUs: Long,
+        renackIntervalUs: Long,
+        maxNackAttempts: Int,
+        initialControlSequence: Long,
+        fecEnabled: Boolean,
+        fecDataShards: Int,
+        fecParityShards: Int,
+        reassemblyTimeoutUs: Long,
+    ): Long = nativeVideoReceiverCreate(
+        localAddress,
+        localPort,
+        remoteAddress,
+        remotePort,
+        restrictRemoteEndpoint,
+        maxWireDatagramSize,
+        maxLogicalPayloadSize,
+        reassemblySlotCount,
+        readySlotCount,
+        lossSlotCount,
+        maxNacksPerPump,
+        reorderDelayUs,
+        renackIntervalUs,
+        maxNackAttempts,
+        initialControlSequence,
+        fecEnabled,
+        fecDataShards,
+        fecParityShards,
+        reassemblyTimeoutUs,
+    )
+
+    fun videoReceiverDestroy(handle: Long): Int = nativeVideoReceiverDestroy(handle)
+
+    fun videoReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeVideoReceiverPump(handle, timeoutUs)
+
+    fun videoReceiverReadStreamConfigCsd(handle: Long): Array<ByteArray>? {
+        return nativeVideoReceiverReadStreamConfigCsd(handle)
+    }
+
+    fun videoReceiverFillDecoderInput(handle: Long, buffer: ByteBuffer, capacity: Int): LongArray =
+        nativeVideoReceiverFillDecoderInput(handle, buffer, capacity)
+
+    fun videoReceiverActivateConfigGeneration(handle: Long, generation: Long): Int =
+        nativeVideoReceiverActivateConfigGeneration(handle, generation)
+
+    fun videoReceiverSetAwaitingKeyFrame(handle: Long, awaiting: Boolean) =
+        nativeVideoReceiverSetAwaitingKeyFrame(handle, awaiting)
+
+    fun videoReceiverSnapshot(handle: Long): LongArray = nativeVideoReceiverSnapshot(handle)
 }
 
 internal data class NativeSclInfo(

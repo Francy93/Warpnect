@@ -105,6 +105,15 @@ struct [[nodiscard]] UdpReceiveResult final {
     }
 };
 
+struct [[nodiscard]] UdpReadinessResult final {
+    UdpStatus status{};
+    bool readable = false;
+
+    [[nodiscard]] constexpr bool ok() const noexcept {
+        return status.ok();
+    }
+};
+
 struct [[nodiscard]] UdpEndpointResult final {
     UdpStatus status{};
     UdpEndpoint endpoint{};

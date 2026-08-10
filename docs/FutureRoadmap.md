@@ -32,10 +32,11 @@ Implemented:
 - RFC-002C - Encoded Video to SCL Transport Integration [complete]
 - RFC-002D - Android Hardware Video Decoder Pipeline [complete]
 - RFC-002E - Low-Latency Rendering Pipeline [complete]
+- RFC-002F - End-to-End Video Streaming [complete]
 
 Next:
 
-- RFC-002F - End-to-End Video Streaming [next]
+- RFC-002G - Video Latency, Recovery and Tuning [next]
 
 Later Phase 2 work:
 

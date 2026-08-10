@@ -39,6 +39,12 @@ enum class VideoError : std::uint8_t {
     RetransmissionFailed,
     FecConfigurationInvalid,
     FecEncodingFailed,
+    ReassemblyWindowFull,
+    ReadyWindowFull,
+    ReassemblyTimeout,
+    Discontinuity,
+    NoData,
+    InputBufferTooSmall,
     Closed,
     InvalidHandle,
 };
@@ -105,6 +111,18 @@ enum class VideoError : std::uint8_t {
         return "FecConfigurationInvalid";
     case VideoError::FecEncodingFailed:
         return "FecEncodingFailed";
+    case VideoError::ReassemblyWindowFull:
+        return "ReassemblyWindowFull";
+    case VideoError::ReadyWindowFull:
+        return "ReadyWindowFull";
+    case VideoError::ReassemblyTimeout:
+        return "ReassemblyTimeout";
+    case VideoError::Discontinuity:
+        return "Discontinuity";
+    case VideoError::NoData:
+        return "NoData";
+    case VideoError::InputBufferTooSmall:
+        return "InputBufferTooSmall";
     case VideoError::Closed:
         return "Closed";
     case VideoError::InvalidHandle:
