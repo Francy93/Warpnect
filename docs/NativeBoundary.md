@@ -203,6 +203,30 @@ Kotlin owns the encoded packet lifetime. JNI borrows the encoded pointer only du
 
 RFC-003D introduces no SCL parser, network receive runtime, AudioTrack playback, audio jitter buffer, encoded packet queue, decoded PCM queue, per-frame encoded `ByteArray`, or per-frame PCM `ByteArray`.
 
+RFC-003E adds an additive Native Bridge ABI Version 1 Android playback boundary:
+
+```text
+RFC-003D native PCM scratch
+        |
+borrowed DirectByteBuffer
+        |
+Kotlin DecodedPcmAudioSink
+        |
+NativeBridge JNI
+        |
+native playback ring
+        |
+Oboe callback
+        |
+Android audio device
+```
+
+The decoded PCM pointer is borrowed only during synchronous JNI submission. Native playback owns one fixed-capacity SPSC PCM ring and performs one necessary ownership copy into that ring because Oboe consumes output asynchronously on the hardware audio clock. Kotlin does not own or copy PCM payload bytes, and no PCM payload crosses JNI as a `ByteArray`.
+
+The Oboe data callback is entirely native. It must not invoke JNI, call Kotlin/Java, allocate, block on a mutex/condition variable, perform network or file I/O, log per burst, query timestamps, or decode codecs.
+
+RFC-003E introduces no SCL protocol change, SCL parser, network receive runtime, `AudioTrack` fallback, playback worker queue, network jitter buffer, per-frame coroutine, sample-rate conversion, channel mixer, effects, or A/V synchronization.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

@@ -75,6 +75,51 @@ internal object NativeBridge {
     private external fun nativeAudioDecoderSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeAudioPlaybackCreate(
+        source: Int,
+        configGeneration: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        framesPerCodecFrame: Int,
+        ringCapacityCodecFrames: Int,
+        startThresholdCodecFrames: Int,
+        sharingPolicy: Int,
+        requestedBufferBursts: Int,
+        requireLowLatencyPerformanceMode: Boolean,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackSubmitPcm(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        frameCount: Int,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+        frameKind: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackStart(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackStop(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackPresentationTimestamp(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeAudioEncoderDestroy(handle: Long): Int
 
     @JvmStatic
@@ -339,6 +384,68 @@ internal object NativeBridge {
     fun audioDecoderStop(handle: Long): Int = nativeAudioDecoderStop(handle)
 
     fun audioDecoderSnapshot(handle: Long): LongArray = nativeAudioDecoderSnapshot(handle)
+
+    fun audioPlaybackCreate(
+        source: Int,
+        configGeneration: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        framesPerCodecFrame: Int,
+        ringCapacityCodecFrames: Int,
+        startThresholdCodecFrames: Int,
+        sharingPolicy: Int,
+        requestedBufferBursts: Int,
+        requireLowLatencyPerformanceMode: Boolean,
+    ): LongArray = nativeAudioPlaybackCreate(
+        source,
+        configGeneration,
+        sampleRateHz,
+        channelCount,
+        frameDurationUs,
+        framesPerCodecFrame,
+        ringCapacityCodecFrames,
+        startThresholdCodecFrames,
+        sharingPolicy,
+        requestedBufferBursts,
+        requireLowLatencyPerformanceMode,
+    )
+
+    fun audioPlaybackDestroy(handle: Long): Int = nativeAudioPlaybackDestroy(handle)
+
+    fun audioPlaybackSubmitPcm(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        frameCount: Int,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+        frameKind: Int,
+    ): Int = nativeAudioPlaybackSubmitPcm(
+        handle,
+        buffer,
+        offset,
+        size,
+        frameCount,
+        configGeneration,
+        firstFramePosition,
+        captureTimeUs,
+        timestampQuality,
+        discontinuityBefore,
+        frameKind,
+    )
+
+    fun audioPlaybackStart(handle: Long): Int = nativeAudioPlaybackStart(handle)
+
+    fun audioPlaybackStop(handle: Long): Int = nativeAudioPlaybackStop(handle)
+
+    fun audioPlaybackPresentationTimestamp(handle: Long): LongArray = nativeAudioPlaybackPresentationTimestamp(handle)
+
+    fun audioPlaybackSnapshot(handle: Long): LongArray = nativeAudioPlaybackSnapshot(handle)
 
     fun audioEncoderDestroy(handle: Long): Int = nativeAudioEncoderDestroy(handle)
 

@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "audio_oboe_playback.h"
 #include "audio_opus_decoder.h"
 #include "audio_opus_encoder.h"
 #include "audio_transport.h"
@@ -50,21 +51,29 @@ using warpnect::audio::AudioCaptureSource;
 using warpnect::audio::AudioCodec;
 using warpnect::audio::AudioDecoderError;
 using warpnect::audio::DecodedAudioFrameKind;
+using warpnect::audio::DecodedPcmPlaybackMetadata;
 using warpnect::audio::EncodedAudioFrameMetadata;
 using warpnect::audio::AudioEncoderError;
 using warpnect::audio::AudioEncoderSubmitStatus;
+using warpnect::audio::AudioPlaybackError;
 using warpnect::audio::AudioTimestampQuality;
 using warpnect::audio::MissingAudioFrameMetadata;
 using warpnect::audio::OpusAudioDecoder;
 using warpnect::audio::OpusAudioDecoderConfig;
 using warpnect::audio::OpusAudioEncoder;
 using warpnect::audio::OpusAudioEncoderConfig;
+using warpnect::audio::android::AudioPlaybackSharingPolicy;
+using warpnect::audio::android::OboeAudioPlayback;
+using warpnect::audio::android::OboeAudioPlaybackConfig;
 
 inline constexpr jsize kNativeAudioDecoderDecodeValues = 10;
 inline constexpr jsize kNativeAudioDecoderSnapshotValues = 26;
 inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
+inline constexpr jsize kNativeAudioPlaybackCreateValues = 2;
+inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 48;
+inline constexpr jsize kNativeAudioPlaybackTimestampValues = 5;
 inline constexpr jsize kNativeAudioTransportSnapshotValues = 21;
 inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
@@ -84,6 +93,10 @@ inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 }
 
 [[nodiscard]] constexpr jint audio_transport_error_code(AudioTransportError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+[[nodiscard]] constexpr jint audio_playback_error_code(AudioPlaybackError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
 }
 
@@ -109,6 +122,11 @@ struct AudioTransportDirectBufferSpanResult final {
 
 struct AudioDecoderDirectBufferSpanResult final {
     AudioDecoderError error = AudioDecoderError::None;
+    std::span<const std::byte> bytes{};
+};
+
+struct AudioPlaybackDirectBufferSpanResult final {
+    AudioPlaybackError error = AudioPlaybackError::None;
     std::span<const std::byte> bytes{};
 };
 
@@ -155,6 +173,11 @@ struct NativeAudioDecoderHandle final {
     std::unique_ptr<OpusAudioDecoder> decoder{};
 };
 
+struct NativeAudioPlaybackHandle final {
+    std::mutex lock{};
+    std::unique_ptr<OboeAudioPlayback> playback{};
+};
+
 struct NativeAudioTransportHandle final {
     AudioTransportSenderConfig config{};
     std::vector<std::byte> datagram_scratch{};
@@ -194,6 +217,13 @@ struct NativeAudioTransportHandle final {
         return nullptr;
     }
     return reinterpret_cast<NativeAudioDecoderHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativeAudioPlaybackHandle* audio_playback_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeAudioPlaybackHandle*>(static_cast<std::intptr_t>(handle));
 }
 
 [[nodiscard]] NativeAudioTransportHandle* audio_transport_handle_from(jlong handle) noexcept {
@@ -387,6 +417,34 @@ struct NativeAudioTransportHandle final {
         return AudioDecoderDirectBufferSpanResult{.error = AudioDecoderError::InvalidBufferRange};
     }
     return AudioDecoderDirectBufferSpanResult{
+        .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
+    };
+}
+
+[[nodiscard]] AudioPlaybackDirectBufferSpanResult audio_playback_direct_buffer_span(
+    JNIEnv* env,
+    jobject buffer,
+    jint offset,
+    jint size) noexcept {
+    if (buffer == nullptr) {
+        return AudioPlaybackDirectBufferSpanResult{.error = AudioPlaybackError::NonDirectBuffer};
+    }
+    if (offset < 0 || size <= 0) {
+        return AudioPlaybackDirectBufferSpanResult{.error = AudioPlaybackError::InvalidBufferRange};
+    }
+
+    auto* const base = static_cast<std::byte*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (base == nullptr || capacity < 0) {
+        return AudioPlaybackDirectBufferSpanResult{.error = AudioPlaybackError::NonDirectBuffer};
+    }
+    const auto safe_offset = static_cast<std::size_t>(offset);
+    const auto safe_size = static_cast<std::size_t>(size);
+    const auto safe_capacity = static_cast<std::size_t>(capacity);
+    if (safe_offset > safe_capacity || safe_size > safe_capacity - safe_offset) {
+        return AudioPlaybackDirectBufferSpanResult{.error = AudioPlaybackError::InvalidBufferRange};
+    }
+    return AudioPlaybackDirectBufferSpanResult{
         .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
     };
 }
@@ -714,6 +772,55 @@ create_audio_decoder_handle(jint source,
     return handle;
 }
 
+[[nodiscard]] std::unique_ptr<NativeAudioPlaybackHandle>
+create_audio_playback_handle(jint source,
+                             jlong config_generation,
+                             jint sample_rate_hz,
+                             jint channel_count,
+                             jint frame_duration_us,
+                             jint frames_per_codec_frame,
+                             jint ring_capacity_codec_frames,
+                             jint start_threshold_codec_frames,
+                             jint sharing_policy,
+                             jint requested_buffer_bursts,
+                             jboolean require_low_latency_performance_mode,
+                             AudioPlaybackError& error) {
+    if (source < 0 || source > 1 || !valid_u32(config_generation) ||
+        config_generation == 0 || sample_rate_hz <= 0 || channel_count <= 0 ||
+        channel_count > 255 || frame_duration_us <= 0 || frames_per_codec_frame <= 0 ||
+        ring_capacity_codec_frames <= 0 || start_threshold_codec_frames <= 0 ||
+        sharing_policy < 0 || sharing_policy > 1 || requested_buffer_bursts <= 0) {
+        error = AudioPlaybackError::InvalidConfiguration;
+        return nullptr;
+    }
+    auto handle = std::make_unique<NativeAudioPlaybackHandle>();
+    auto playback = std::make_unique<OboeAudioPlayback>(
+        OboeAudioPlaybackConfig{
+            .source = static_cast<AudioCaptureSource>(static_cast<std::uint8_t>(source)),
+            .config_generation = static_cast<std::uint32_t>(config_generation),
+            .sample_rate_hz = static_cast<std::uint32_t>(sample_rate_hz),
+            .channel_count = static_cast<std::uint8_t>(channel_count),
+            .frame_duration_us = static_cast<std::uint32_t>(frame_duration_us),
+            .frames_per_codec_frame = static_cast<std::uint32_t>(frames_per_codec_frame),
+            .ring_capacity_codec_frames =
+                static_cast<std::uint32_t>(ring_capacity_codec_frames),
+            .start_threshold_codec_frames =
+                static_cast<std::uint32_t>(start_threshold_codec_frames),
+            .sharing_policy =
+                static_cast<AudioPlaybackSharingPolicy>(
+                    static_cast<std::uint8_t>(sharing_policy)),
+            .requested_buffer_bursts = static_cast<std::uint32_t>(requested_buffer_bursts),
+            .require_low_latency_performance_mode =
+                require_low_latency_performance_mode == JNI_TRUE,
+        });
+    error = playback->prepare();
+    if (error != AudioPlaybackError::None) {
+        return nullptr;
+    }
+    handle->playback = std::move(playback);
+    return handle;
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -732,6 +839,217 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeProtocolAbiVersion(JNIEnv* /* env */, jclass /* clazz */) {
     const auto info = warpnect::scl::bridge::native_core_info();
     return static_cast<jint>(info.protocol_abi_version);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackCreate(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jint source,
+    jlong config_generation,
+    jint sample_rate_hz,
+    jint channel_count,
+    jint frame_duration_us,
+    jint frames_per_codec_frame,
+    jint ring_capacity_codec_frames,
+    jint start_threshold_codec_frames,
+    jint sharing_policy,
+    jint requested_buffer_bursts,
+    jboolean require_low_latency_performance_mode) {
+    jlong values[kNativeAudioPlaybackCreateValues]{};
+    try {
+        AudioPlaybackError error = AudioPlaybackError::None;
+        auto handle = create_audio_playback_handle(
+            source, config_generation, sample_rate_hz, channel_count, frame_duration_us,
+            frames_per_codec_frame, ring_capacity_codec_frames, start_threshold_codec_frames,
+            sharing_policy, requested_buffer_bursts, require_low_latency_performance_mode, error);
+        values[0] = reinterpret_cast<jlong>(handle.release());
+        values[1] = audio_playback_error_code(error);
+    } catch (...) {
+        values[0] = 0;
+        values[1] = audio_playback_error_code(AudioPlaybackError::StreamOpenFailed);
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioPlaybackCreateValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioPlaybackCreateValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackDestroy(JNIEnv* /* env */,
+                                                         jclass /* clazz */,
+                                                         jlong handle) {
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        return audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->playback->close();
+    }
+    delete native_handle;
+    return audio_playback_error_code(AudioPlaybackError::None);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackSubmitPcm(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jobject buffer,
+    jint offset,
+    jint size,
+    jint frame_count,
+    jlong config_generation,
+    jlong first_frame_position,
+    jlong capture_time_us,
+    jint timestamp_quality,
+    jboolean discontinuity_before,
+    jint frame_kind) {
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        return audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    }
+    if (frame_count <= 0 || !valid_u32(config_generation) || config_generation == 0 ||
+        first_frame_position < 0 || capture_time_us < 0 || timestamp_quality < 0 ||
+        timestamp_quality > 2 || frame_kind < 0 || frame_kind > 1) {
+        return audio_playback_error_code(AudioPlaybackError::InvalidFrameCount);
+    }
+    const AudioPlaybackDirectBufferSpanResult span =
+        audio_playback_direct_buffer_span(env, buffer, offset, size);
+    if (span.error != AudioPlaybackError::None) {
+        return audio_playback_error_code(span.error);
+    }
+    std::lock_guard guard(native_handle->lock);
+    const AudioPlaybackError error = native_handle->playback->submit_pcm(
+        span.bytes, static_cast<std::uint32_t>(frame_count),
+        DecodedPcmPlaybackMetadata{
+            .config_generation = static_cast<std::uint32_t>(config_generation),
+            .first_frame_position = static_cast<std::uint64_t>(first_frame_position),
+            .capture_time_us = static_cast<std::uint64_t>(capture_time_us),
+            .timestamp_quality =
+                static_cast<AudioTimestampQuality>(static_cast<std::uint8_t>(timestamp_quality)),
+            .discontinuity_before = discontinuity_before == JNI_TRUE,
+            .frame_kind =
+                static_cast<DecodedAudioFrameKind>(static_cast<std::uint8_t>(frame_kind)),
+        });
+    return audio_playback_error_code(error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackStart(JNIEnv* /* env */,
+                                                       jclass /* clazz */,
+                                                       jlong handle) {
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        return audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_playback_error_code(native_handle->playback->start());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackStop(JNIEnv* /* env */,
+                                                      jclass /* clazz */,
+                                                      jlong handle) {
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        return audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_playback_error_code(native_handle->playback->stop());
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackPresentationTimestamp(JNIEnv* env,
+                                                                       jclass /* clazz */,
+                                                                       jlong handle) {
+    jlong values[kNativeAudioPlaybackTimestampValues]{};
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        values[0] = audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto timestamp = native_handle->playback->query_presentation_timestamp();
+        values[0] = audio_playback_error_code(timestamp.error);
+        values[1] = timestamp.valid ? 1 : 0;
+        values[2] = static_cast<jlong>(timestamp.frame_position);
+        values[3] = static_cast<jlong>(timestamp.presentation_time_ns);
+        values[4] = static_cast<jlong>(timestamp.latency_us);
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioPlaybackTimestampValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioPlaybackTimestampValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackSnapshot(JNIEnv* env,
+                                                          jclass /* clazz */,
+                                                          jlong handle) {
+    jlong values[kNativeAudioPlaybackSnapshotValues]{};
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        values[38] = audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->playback->snapshot();
+        values[0] = static_cast<jlong>(snapshot.source);
+        values[1] = static_cast<jlong>(snapshot.config_generation);
+        values[2] = static_cast<jlong>(snapshot.requested_sample_rate_hz);
+        values[3] = static_cast<jlong>(snapshot.actual_sample_rate_hz);
+        values[4] = static_cast<jlong>(snapshot.requested_channel_count);
+        values[5] = static_cast<jlong>(snapshot.actual_channel_count);
+        values[6] = static_cast<jlong>(snapshot.frame_duration_us);
+        values[7] = static_cast<jlong>(snapshot.frames_per_codec_frame);
+        values[8] = static_cast<jlong>(snapshot.requested_performance_mode);
+        values[9] = static_cast<jlong>(snapshot.actual_performance_mode);
+        values[10] = static_cast<jlong>(snapshot.requested_sharing_mode);
+        values[11] = static_cast<jlong>(snapshot.actual_sharing_mode);
+        values[12] = static_cast<jlong>(snapshot.audio_api);
+        values[13] = static_cast<jlong>(snapshot.requested_buffer_bursts);
+        values[14] = static_cast<jlong>(snapshot.frames_per_burst);
+        values[15] = static_cast<jlong>(snapshot.requested_buffer_frames);
+        values[16] = static_cast<jlong>(snapshot.actual_buffer_frames);
+        values[17] = static_cast<jlong>(snapshot.buffer_capacity_frames);
+        values[18] = static_cast<jlong>(snapshot.hardware_sample_rate);
+        values[19] = static_cast<jlong>(snapshot.hardware_channel_count);
+        values[20] = static_cast<jlong>(snapshot.ring_capacity_frames);
+        values[21] = static_cast<jlong>(snapshot.ring_occupancy_frames);
+        values[22] = static_cast<jlong>(snapshot.ring_high_water_mark);
+        values[23] = static_cast<jlong>(snapshot.pcm_frames_submitted);
+        values[24] = static_cast<jlong>(snapshot.pcm_frames_consumed);
+        values[25] = static_cast<jlong>(snapshot.pcm_frames_rejected);
+        values[26] = static_cast<jlong>(snapshot.underrun_callbacks);
+        values[27] = static_cast<jlong>(snapshot.underrun_frames);
+        values[28] = static_cast<jlong>(snapshot.silence_frames_inserted);
+        values[29] = static_cast<jlong>(snapshot.xrun_count);
+        values[30] = static_cast<jlong>(snapshot.normal_frames);
+        values[31] = static_cast<jlong>(snapshot.plc_frames);
+        values[32] = static_cast<jlong>(snapshot.discontinuity_frames);
+        values[33] = static_cast<jlong>(snapshot.last_source_frame_position);
+        values[34] = static_cast<jlong>(snapshot.last_capture_time_us);
+        values[35] = static_cast<jlong>(snapshot.last_presentation_frame_position);
+        values[36] = static_cast<jlong>(snapshot.last_presentation_time_ns);
+        values[37] = snapshot.presentation_timestamp_valid ? 1 : 0;
+        values[38] = audio_playback_error_code(snapshot.last_error);
+        values[39] = snapshot.prepared ? 1 : 0;
+        values[40] = snapshot.running ? 1 : 0;
+        values[41] = snapshot.closed ? 1 : 0;
+        values[42] = snapshot.exclusive_request_granted ? 1 : 0;
+        values[43] = static_cast<jlong>(snapshot.actual_format);
+        values[44] = static_cast<jlong>(snapshot.hardware_format);
+        values[45] = static_cast<jlong>(snapshot.ring_residence_samples);
+        values[46] = static_cast<jlong>(snapshot.last_ring_residence_ns);
+        values[47] = static_cast<jlong>(snapshot.max_ring_residence_ns);
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioPlaybackSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioPlaybackSnapshotValues, values);
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT jlong JNICALL

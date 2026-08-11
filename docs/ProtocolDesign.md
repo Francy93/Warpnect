@@ -642,7 +642,7 @@ The native packetizer copies only the bytes intersecting each SCL fragment into 
 
 RFC-003C emits one AudioFrame per RFC-003B encoded Opus packet and creates no encoded-audio sender queue or audio worker thread. UDP sends are non-blocking. `WouldBlock` and send failures surface immediately to the caller rather than causing hidden backlog.
 
-Audio NACK, SCL FEC, Opus in-band FEC, decoder loss concealment, playback buffering, packet pacing, congestion control, automatic bitrate adaptation, and A/V synchronization are intentionally deferred to later Phase 3 RFCs.
+Audio NACK, SCL FEC, Opus in-band FEC, decoder loss policy, network jitter/playout policy, packet pacing, congestion control, automatic bitrate adaptation, and A/V synchronization are intentionally deferred to later Phase 3 RFCs. RFC-003E's bounded PCM handoff ring is a local playback ownership boundary, not an Audio Payload or SCL transport policy.
 
 ## Loss Detection, NACK, And Recovery
 

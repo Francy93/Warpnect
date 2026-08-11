@@ -128,6 +128,16 @@ Opus packet-loss concealment MUST be an explicit caller-driven decoder mechanism
 
 Encoder lookahead MUST remain visible for later timeline alignment and MUST NOT be blindly applied as pre-skip whenever a decoder instance is created.
 
+Android audio playback MUST use a high-priority native callback path. The production output callback MUST NOT require a Java/Kotlin callback for each hardware audio burst.
+
+RFC-003E MAY contain a strictly bounded PCM handoff ring to bridge decoder-production timing and the Android hardware audio clock. This ring is not a network jitter buffer and MUST NOT intentionally accumulate multiple codec frames before playback.
+
+Decoded PCM may cross the decoder/playback ownership boundary through one bounded copy into preallocated native ring storage. It MUST NOT be copied through a Kotlin PCM `ByteArray`, `ShortArray`, unbounded queue, or second application PCM staging buffer.
+
+Playback underrun MUST produce explicit PCM16 silence and counters rather than blocking the real-time audio callback.
+
+Audio presentation timestamps are receiver-local playback diagnostics. They MUST remain distinct from sender capture timestamps and be preserved separately for later A/V synchronization.
+
 ## JNI Rules
 
 JNI is only a bridge.

@@ -45,14 +45,14 @@ Implemented:
 - RFC-003B - Portable Ultra-Low-Latency Opus Encoder [complete]
 - RFC-003C - SCL Audio Payload and Transport Integration [complete]
 - RFC-003D - Portable Ultra-Low-Latency Opus Decoder [complete]
+- RFC-003E - Android Ultra-Low-Latency Audio Playback [complete]
 
 Next:
 
-- RFC-003E - Android Low-Latency Audio Playback Pipeline [next]
+- RFC-003F - End-to-End Audio Streaming [next]
 
 Planned:
 
-- RFC-003F - End-to-End Audio Streaming.
 - RFC-003G - Audio/Video Synchronization.
 - RFC-003H - Audio Latency, Recovery and Performance Tuning.
 

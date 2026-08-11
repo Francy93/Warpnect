@@ -51,6 +51,7 @@ app/src/main/java/io/warpnect/
 |-- audio/
 |-- audio/decoder/
 |-- audio/encoder/
+|-- audio/playback/
 |-- capture/
 |-- codec/
 |-- input/
@@ -59,6 +60,7 @@ app/src/main/java/io/warpnect/
 |-- platform/audio/capture/
 |-- platform/audio/decoder/
 |-- platform/audio/encoder/
+|-- platform/audio/playback/
 |-- platform/audio/transport/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
@@ -83,11 +85,13 @@ Responsibilities:
 - `audio/capture/`: app-facing PCM audio capture contracts, source model, format, synchronous borrowed sink, typed errors/results, lifecycle snapshots, chunk sizing, timestamp tracking, and controller-core logic.
 - `audio/decoder/`: app-facing Opus audio decoder contracts, decode metadata, decoded PCM sink, format/snapshot/error/state values, and validation.
 - `audio/encoder/`: app-facing Opus audio encoder contracts, request/format/snapshot/error/state values, borrowed encoded sink, capability validation, and timing helpers.
+- `audio/playback/`: app-facing low-latency PCM playback contracts, decoded PCM submission metadata, sharing policy, snapshots, presentation timestamp results, typed errors, and validation.
 - `audio/transport/`: app-facing SCL Audio Payload V1 transport contracts, typed errors/results, snapshots, and `SclEncodedAudioSink`.
 - `platform/audio/capture/`: Android `AudioRecord` microphone capture, system-audio Shizuku gateway, app-side SharedMemory drain, audio thread priority helper, and shared PCM ring layout.
 - `platform/audio/capture/privileged/`: Shizuku/Sui UserService for privileged system-audio capture, isolated AudioPolicy reflection adapter, AIDL control contract, and Bundle conversion.
 - `platform/audio/decoder/`: native-backed Opus decoder controller and fakeable JNI backend seam.
 - `platform/audio/encoder/`: native-backed Opus encoder controller, fakeable JNI backend seam, and `PcmAudioSink` adapter.
+- `platform/audio/playback/`: native-backed Oboe playback controller, fakeable JNI backend seam, and `DecodedPcmAudioSink` adapter.
 - `platform/audio/transport/`: native-backed SCL audio transport controller and source-specific opaque native sender handle ownership.
 - `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
@@ -215,6 +219,26 @@ Responsibilities:
 
 Production audio decoding uses pinned libopus 1.6.1 through portable `warpnect::audio` C++ code. It does not use Android `MediaCodec`, AAC fallback, resampling, channel remixing, SCL parsing, UDP receive orchestration, `AudioTrack`, playback buffering, A/V sync, automatic PLC policy, or a decoder worker queue.
 
+## Android Audio Playback Source Tree
+
+```text
+app/src/main/java/io/warpnect/audio/playback/
+app/src/main/java/io/warpnect/platform/audio/playback/
+```
+
+Responsibilities:
+
+- `AudioPlaybackController.kt`: app-facing PCM playback lifecycle abstraction.
+- `AudioPlaybackConfig.kt`, `DecodedPcmMetadata.kt`: source, generation, PCM format, ring capacity, startup threshold, sharing policy, and decoded-frame metadata.
+- `AudioPlaybackSnapshot.kt`, `AudioPlaybackError.kt`, `AudioPlaybackState.kt`, `AudioPlaybackResult.kt`: typed local playback model.
+- `AudioPresentationTimestampResult.kt`: receiver-local playback timestamp query result.
+- `AudioPlaybackValidation.kt`: pure sample-rate, channel, frame-duration, ring-capacity, threshold, and buffer-burst validation.
+- `NativeOboeAudioPlaybackController.kt`: synchronous Kotlin controller around the native Oboe playback backend.
+- `OboeDecodedPcmAudioSink.kt`: RFC-003D `DecodedPcmAudioSink` adapter that forwards borrowed decoded PCM into playback.
+- `OboeAudioPlaybackBackend.kt`: fakeable backend seam and NativeBridge-backed implementation.
+
+Production audio playback uses pinned Oboe 1.10.0 through Android-specific native C++ code. It accepts decoded PCM16 direct buffers, copies once into a bounded native SPSC handoff ring, and lets the Oboe data callback consume that ring. It does not use `AudioTrack`, `MediaPlayer`, `SoundPool`, sample-rate conversion, channel mixing, effects, network receive orchestration, jitter buffering, a playback worker queue, per-frame Kotlin allocation, or JNI from the Oboe callback.
+
 ## Android Audio Transport Source Tree
 
 ```text
@@ -327,10 +351,12 @@ Native responsibilities:
 - `audio_protocol.h`, `audio_transport_result.h`: Audio Payload Version 1 constants, StreamConfig/AudioFrame parsing, timestamp-quality flags, and typed audio transport errors.
 - `audio_packetizer.h`: segmented Audio Payload V1 packetizer for header-plus-borrowed-Opus sources.
 - `audio_transport.h`: caller-driven SCL audio sender composed from packetization and non-blocking UDP.
+- `audio_playback_ring.h`: portable fixed-capacity PCM playback handoff ring with partial-slot consumption, underrun silence, overrun rejection, metadata counters, and bounded residence diagnostics.
+- `audio_oboe_playback.h`: Android-only Oboe playback backend using a native callback and the portable playback ring.
 - `native_bridge.h`, `jni_bridge.cpp`: JNI glue only.
 - `src/internal/`: private byte-order, socket-platform, GF(256), and matrix helpers.
 
-SCL C++ owns protocol, timing, telemetry, and transport primitives, including Audio Payload V1. Portable audio codec code uses `warpnect::audio` and is linked beside SCL for JNI packaging, but codec logic does not pollute SCL transport/protocol responsibilities. Native code does not own Android display capture, Shizuku integration, Compose, or app lifecycle.
+SCL C++ owns protocol, timing, telemetry, and transport primitives, including Audio Payload V1. Portable audio codec and playback-ring code uses `warpnect::audio` and is linked beside SCL for JNI packaging, but codec/playback logic does not pollute SCL transport/protocol responsibilities. Android Oboe playback code is isolated to Android native builds. Native code does not own Android display capture, Shizuku integration, Compose, or app lifecycle.
 
 ## Future Expansion Points
 
@@ -373,6 +399,8 @@ Current JVM tests also include RFC-003C encoded-audio transport sink validation 
 
 Current JVM tests also include RFC-003D Opus decoder fake-backend controller lifecycle, synchronous decode forwarding, config mismatch handling, direct-buffer rejection, invalid range rejection, sink failure, explicit PLC success/failure, stop/restart, and idempotent close coverage.
 
+Current JVM tests also include RFC-003E Oboe playback fake-backend controller lifecycle, configuration validation, direct-buffer and range validation, config mismatch rejection, one-frame priming/start behavior, ring-full surfacing, presentation timestamp query mapping, stop/restart, idempotent close, and decoded PCM sink adapter forwarding.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -391,7 +419,9 @@ Current Android instrumentation tests also include RFC-003C JNI direct-buffer au
 
 Current Android instrumentation tests also include RFC-003D JNI encoder-to-decoder smoke coverage using synthetic PCM and borrowed direct buffers. It does not require audio hardware or playback.
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, and RFC-003D portable Opus decoder tests.
+Current Android instrumentation tests also include RFC-003E Oboe playback lifecycle and direct PCM submission smoke coverage for connected devices/emulators. It uses short deterministic PCM and does not require network audio.
+
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, RFC-003D portable Opus decoder tests, and RFC-003E portable playback ring tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 

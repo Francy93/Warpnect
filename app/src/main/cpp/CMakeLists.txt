@@ -15,9 +15,24 @@ if(MSVC)
     target_compile_options(opus PRIVATE /FS)
 endif()
 
+if(ANDROID)
+    set(OBOE_DISABLE_CONVERSION ON CACHE BOOL "" FORCE)
+    add_subdirectory(
+        "${WARPNNECT_THIRD_PARTY_DIR}/oboe-1.10.0"
+        "${CMAKE_CURRENT_BINARY_DIR}/oboe-1.10.0"
+        EXCLUDE_FROM_ALL
+    )
+    target_compile_options(
+        oboe
+        PRIVATE
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wno-error>
+    )
+endif()
+
 set(SCL_CORE_SOURCES
     src/clock_sync.cpp
     src/clock_sync_control.cpp
+    src/audio_playback_ring.cpp
     src/audio_opus_decoder.cpp
     src/audio_opus_encoder.cpp
     src/audio_packetizer.cpp
@@ -49,6 +64,10 @@ if(WIN32)
     list(APPEND SCL_CORE_SOURCES src/internal/socket_platform_windows.cpp)
 else()
     list(APPEND SCL_CORE_SOURCES src/internal/socket_platform_posix.cpp)
+endif()
+
+if(ANDROID)
+    list(APPEND SCL_CORE_SOURCES src/audio_oboe_playback.cpp)
 endif()
 
 add_library(
@@ -87,3 +106,7 @@ target_link_libraries(scl_core PRIVATE ws2_32)
 endif()
 
 target_link_libraries(scl_core PRIVATE Opus::opus)
+
+if(ANDROID)
+    target_link_libraries(scl_core PRIVATE oboe)
+endif()

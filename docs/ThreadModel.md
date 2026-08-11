@@ -86,6 +86,25 @@ future audio receive context
 
 The decoder does not create an encoded input queue, decoded PCM queue, playback queue, playback jitter buffer, per-frame coroutine, or per-frame UI hop.
 
+RFC-003E adds no playback worker queue. PCM submission runs synchronously on the future receive/decoder context that invokes `DecodedPcmAudioSink`, then copies once into the native playback ring:
+
+```text
+future audio receive/decoder context
+        -> DecodedPcmAudioSink
+        -> NativeBridge
+        -> native playback ring
+```
+
+The consumer is Oboe's high-priority native data callback:
+
+```text
+Oboe audio callback
+        -> consume native playback ring
+        -> fill output buffer
+```
+
+The callback does not invoke JNI, Kotlin/Java, a per-frame coroutine, UI-thread work, networking, codec decode, logging, sleeping, allocation, timestamp queries, or blocking locks. Underrun fills the remaining output with PCM16 silence and updates counters.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:
