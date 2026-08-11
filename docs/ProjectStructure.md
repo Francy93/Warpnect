@@ -57,6 +57,7 @@ app/src/main/java/io/warpnect/
 |-- capture/
 |-- codec/
 |-- input/
+|-- input/capture/
 |-- input/model/
 |-- network/
 |-- platform/capture/
@@ -65,6 +66,7 @@ app/src/main/java/io/warpnect/
 |-- platform/audio/encoder/
 |-- platform/audio/playback/
 |-- platform/audio/transport/
+|-- platform/input/capture/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
 |-- platform/video/render/
@@ -75,7 +77,8 @@ app/src/main/java/io/warpnect/
 |-- video/encoder/
 |-- video/render/
 |-- video/transport/
-`-- ui/
+|-- ui/
+`-- ui/input/
 ```
 
 Responsibilities:
@@ -114,7 +117,10 @@ Responsibilities:
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
 - `input/`: future reverse-input stubs and Phase 4 input-facing contracts.
+- `input/capture/`: RFC-004B app-facing input capture contracts, synchronous sink/result types, capture configuration, lifecycle state, typed errors, capabilities, and bounded snapshots.
 - `input/model/`: RFC-004A platform-neutral input event model, device kind/message/action enums, validation, delivery classification, and normalized/fixed-point conversion helpers. It contains no Android framework classes and no wire serializer.
+- `platform/input/capture/`: RFC-004B Android View-based input capture, raw `KeyEvent`/`MotionEvent` mapping, event-time conversion, bounded device-slot registry, keyboard HID mapper, gamepad state cache, pointer/touch normalization, pointer capture, and `InputDeviceListener` lifecycle handling.
+- `ui/input/`: Compose `AndroidView` wrapper for placing the transparent input capture View over a remote-control surface.
 
 ## Android Capture Source Tree
 
@@ -292,6 +298,24 @@ Responsibilities:
 
 The Kotlin model is platform-neutral. It does not depend on Android `InputDevice`, `KeyEvent`, `MotionEvent`, display IDs, pixels, capture callbacks, input injection APIs, JNI, UDP, or SCL wire serialization.
 
+## Android Input Capture Source Tree
+
+```text
+app/src/main/java/io/warpnect/input/capture/
+app/src/main/java/io/warpnect/platform/input/capture/
+app/src/main/java/io/warpnect/ui/input/
+```
+
+Responsibilities:
+
+- `InputCaptureTypes.kt`: app-facing capture controller contract, `InputEventSink`, sink result, config, capability, state, error, and snapshot types.
+- `WarpnectInputCaptureView.kt`: transparent focusable Android `View` that receives raw key, touch, generic motion, captured-pointer, pointer-capture, and window-focus callbacks.
+- `AndroidInputCaptureController.kt`: deterministic lifecycle, synchronous event dispatch, bounded registry ownership, reset behavior, pointer-capture control, device listener ownership, and capture telemetry counters.
+- `AndroidInputCaptureMappers.kt`: Android event timestamp conversion, Android keycode to HID usage mapping, left/right modifier tracking, session-local device-slot registry, gamepad button/axis normalization, touch tool/pressure/size mapping, pointer button masks, scroll Q8.8 conversion, and relative Q16.16 conversion.
+- `WarpnectInputSurface.kt`: Compose wrapper for hosting the capture View through `AndroidView`.
+
+Production input capture is Android/Kotlin platform integration only. It does not use JNI, SCL serialization, UDP, input reliability policy, AccessibilityService, target-side injection, target coordinate mapping, gesture recognition, per-event coroutines, worker queues, or timer polling.
+
 ## Audio Performance Source Tree
 
 ```text
@@ -459,6 +483,8 @@ Current JVM tests also include RFC-003H audio performance configuration coverage
 
 Current JVM tests also include RFC-004A portable input model coverage for normalization/fixed-point conversion, device-slot validation, HID key events, modifier masks, touch contact/action-pointer rules, pointer button masks, scroll no-op rejection, gamepad axis/button validation, ResetState scope rules, and delivery classification.
 
+Current JVM tests also include RFC-004B Android input mapper coverage for Android keycode to HID usage mapping, unknown key behavior, left/right modifier tracking, bounded device registry slot freshness, gamepad button mapping, nonstandard axis-range normalization, no-deadzone behavior, pointer button masks, normalized coordinate conversion, relative Q16.16 conversion, scroll Q8.8 conversion, and capture-config validation.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -480,6 +506,8 @@ Current Android instrumentation tests also include RFC-003D JNI encoder-to-decod
 Current Android instrumentation tests also include RFC-003E Oboe playback lifecycle and direct PCM submission smoke coverage for connected devices/emulators. It uses short deterministic PCM and does not require network audio.
 
 RFC-003G Android synthetic A/V, privileged real-capture timestamp-domain qualification, and two-device A/V validation are device/prerequisite-gated and must report actual device status only.
+
+Current Android instrumentation tests also include RFC-004B synthetic View dispatch coverage for keyboard, touch, mouse absolute, scroll, and gamepad button translation when a device/emulator is available. Physical keyboard, mouse/pointer-capture, gamepad, and touch hardware validation remains actual-device dependent.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, RFC-003D portable Opus decoder tests, RFC-003E portable playback ring tests, RFC-003F audio receiver runtime loopback/reassembly tests, and RFC-003G playback source-anchor metadata tests.
 

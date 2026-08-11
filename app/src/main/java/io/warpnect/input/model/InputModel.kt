@@ -137,6 +137,8 @@ enum class InputDeliveryClass {
     Reset,
 }
 
+sealed interface WarpnectInputEvent
+
 data class InputKeyEvent(
     val deviceSlot: Int,
     val usagePage: Int,
@@ -144,7 +146,7 @@ data class InputKeyEvent(
     val action: InputKeyAction,
     val repeatCount: Int,
     val modifierMask: Int,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
         if (usagePage !in 0..0xFFFF || usageId !in 0..0xFFFF) {
@@ -202,7 +204,7 @@ data class InputTouchFrame(
     val action: InputTouchAction,
     val actionPointerId: Int,
     val contacts: List<InputTouchContact>,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (deviceKind !in TOUCH_DEVICE_KINDS) return InputModelError.InvalidDeviceKind
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
@@ -243,7 +245,7 @@ data class InputPointerAbsolute(
     val buttonMask: Int,
     val pointerFlags: Int,
     val pressure: Int = 0,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (deviceKind !in ABSOLUTE_POINTER_DEVICE_KINDS) return InputModelError.InvalidDeviceKind
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
@@ -272,7 +274,7 @@ data class InputPointerRelative(
     val deltaXQ16_16: Int,
     val deltaYQ16_16: Int,
     val buttonMask: Int,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (deviceKind !in RELATIVE_POINTER_DEVICE_KINDS) return InputModelError.InvalidDeviceKind
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
@@ -289,7 +291,7 @@ data class InputScroll(
     val horizontalQ8_8: Int,
     val verticalQ8_8: Int,
     val buttonMask: Int,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (deviceKind !in RELATIVE_POINTER_DEVICE_KINDS) return InputModelError.InvalidDeviceKind
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
@@ -315,7 +317,7 @@ data class InputGamepadState(
     val rightY: Int,
     val leftTrigger: Int,
     val rightTrigger: Int,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (!InputDeviceSlots.isValidDeviceSlot(deviceSlot)) return InputModelError.InvalidDeviceSlot
         if ((buttonMask and INPUT_GAMEPAD_BUTTON_MASK_ALLOWED.inv()) != 0) {
@@ -342,7 +344,7 @@ data class InputResetState(
     val deviceSlot: Int,
     val scope: InputResetScope,
     val reason: InputResetReason,
-) {
+) : WarpnectInputEvent {
     fun validate(): InputModelError {
         if (scope != InputResetScope.ThisDevice && scope != InputResetScope.AllDevices) {
             return InputModelError.InvalidResetScope

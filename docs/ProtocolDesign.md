@@ -1089,6 +1089,8 @@ Input Payload V1 uses explicit big-endian field encoding. Native runtime structu
 
 Input Payload V1 contains no input-specific fragmentation model, no batching message, no compression chain, and no input-specific sequence field. RFC-004C may use the existing SCL `PacketHeader.sequence_number`, `PacketHeader.timestamp_us`, and RFC-001C fragmentation primitives when transport is introduced.
 
+RFC-004B is the Android source adapter for these existing Input Payload V1 semantics. It translates delivered Android `KeyEvent` and `MotionEvent` values into portable Kotlin input models but does not alter the wire layout, add Kotlin binary serialization, add JNI input transport, or introduce UDP input runtime.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

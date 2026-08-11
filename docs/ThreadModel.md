@@ -154,6 +154,18 @@ If a future device-measured playback buffer tuner is enabled, it must run outsid
 
 RFC-004A adds no input capture thread, transport thread, injection thread, JNI callback, or worker queue. Input Payload V1 encode/decode/validation is caller-driven protocol work and has no Android runtime dependency.
 
+RFC-004B adds no input worker thread. Android input capture runs on the normal Android UI/input dispatch context:
+
+```text
+Android UI/input dispatch
+        -> WarpnectInputCaptureView
+        -> raw KeyEvent / MotionEvent mapping
+        -> portable Input model
+        -> InputEventSink
+```
+
+The capture path does not launch a per-event coroutine, post a per-event handler hop, poll input devices on a timer, sample input at VSYNC, perform JNI, perform UDP input transport, or invoke privileged target-side injection. `InputDeviceListener` callbacks use the application looper for device lifecycle notifications only.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

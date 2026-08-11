@@ -315,7 +315,31 @@ JNI / SCL input transport
 Input Payload V1
 ```
 
-Android capture belongs to RFC-004B, reverse UDP transport to RFC-004C, and privileged injection to RFC-004D.
+RFC-004B introduces no input JNI boundary and no NativeBridge entry point. Android capture is currently:
+
+```text
+Android KeyEvent / MotionEvent
+        |
+WarpnectInputCaptureView
+        |
+Android input adapters
+        |
+portable Kotlin Input model
+        |
+InputEventSink
+```
+
+The future native boundary remains:
+
+```text
+Android KeyEvent / MotionEvent
+        |
+portable Kotlin Input model
+        |
+future RFC-004C JNI / SCL input transport
+```
+
+Reverse UDP transport belongs to RFC-004C, and privileged injection belongs to RFC-004D.
 
 ## Error Handling
 

@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, and the beginning of Phase 4 reverse input through RFC-004A.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, and the Phase 4 reverse-input foundation through RFC-004B.
 
 Present:
 
@@ -46,6 +46,7 @@ Present:
 - Phase 3 audio latency, recovery, and performance tuning backed by a reproducible UltraLowLatency profile, host-native Phase 3 audio benchmarks, explicit recovery-policy selection, bounded playback/A/V timing defaults, and documentation that separates host CPU/runtime costs from device-specific output latency.
 - Input Payload Version 1 for portable low-level keyboard, touch, pointer, scroll, gamepad, and reset semantics using the existing `PayloadType::Input`.
 - Platform-neutral Kotlin input models and native C++20 Input Payload V1 encode/decode/validation tests. Input wire semantics do not embed Android device IDs, Android keycodes, scan codes, source constants, display IDs, or pixel coordinates.
+- Android low-latency input-capture foundation using a dedicated View-based raw input surface, synchronous `InputEventSink`, bounded session-local device-slot registry, hardware keyboard HID mapping, touch/pointer normalization, scroll, pointer capture, and common game-controller state snapshots.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
@@ -53,7 +54,7 @@ Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Android input capture, reverse UDP input transport, privileged input injection, input mapping, or end-to-end reverse input.
+- Reverse UDP input transport, privileged target-side input injection, target/input mapping, or end-to-end reverse input.
 - Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, or authentication/encryption.
 
 ## Repository Layout
@@ -214,6 +215,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-003G Ultra-Low-Latency Audio/Video Synchronization](docs/rfc/RFC-003G-Ultra-Low-Latency-Audio-Video-Synchronization.md)
 - [RFC-003H Audio Latency, Recovery and Performance Tuning](docs/rfc/RFC-003H-Audio-Latency-Recovery-Performance-Tuning.md)
 - [RFC-004A Portable Input Event Model and SCL Input Payload V1](docs/rfc/RFC-004A-Portable-Input-Event-Model-SCL-Input-Payload.md)
+- [RFC-004B Android Low-Latency Input Capture Foundation](docs/rfc/RFC-004B-Android-Low-Latency-Input-Capture-Foundation.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -229,12 +231,12 @@ Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged A
 
 Phase 3 audio is implementation-complete. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. RFC-003C adds SCL Audio Payload Version 1 transport for both system and microphone streams. RFC-003D adds a portable queue-free Opus decoder foundation with borrowed PCM output. RFC-003E adds an Android low-latency native playback foundation based on Oboe and a bounded PCM handoff ring. RFC-003F integrates end-to-end audio streaming with receiver-first StreamConfig handling, immediate sample-position ordering, small-gap Opus PLC, and freshness resets for large gaps. RFC-003G adds a latency-bounded A/V synchronization foundation that uses audio hardware presentation as the master clock, qualifies video timestamp compatibility before using scheduled rendering, and falls back to immediate presentation when trustworthy timing is unavailable. RFC-003H adds Phase 3 performance configuration, reproducible host-native audio benchmarks, freshness-oriented recovery evaluation, and documented production defaults.
 
-Phase 4 reverse input has begun. RFC-004A defines Portable Input Payload Version 1 for keyboard, multi-touch, absolute pointer, relative pointer, scroll, common gamepad state, and reset messages without embedding Android-specific identifiers or pixel coordinates into the protocol.
+Phase 4 reverse input has begun. RFC-004A defines Portable Input Payload Version 1 for keyboard, multi-touch, absolute pointer, relative pointer, scroll, common gamepad state, and reset messages without embedding Android-specific identifiers or pixel coordinates into the protocol. RFC-004B adds an Android input-capture foundation above that model: hardware keyboard, touchscreen, mouse/pointer, scroll, and common game-controller events delivered to the Warpnect input surface can be translated into portable Warpnect input models with monotonic source event timestamps and session-local logical device slots.
 
 The next implementation RFC is:
 
 ```text
-RFC-004B - Android Input Capture Foundation
+RFC-004C - Reverse SCL Input Transport
 ```
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

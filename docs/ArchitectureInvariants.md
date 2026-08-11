@@ -184,6 +184,16 @@ Input Payload V1 MUST contain an explicit ResetState mechanism so later session 
 
 Input Payload V1 MUST NOT batch unrelated temporal input events, introduce input-specific fragmentation, add an input reliability protocol, or create an input queue in RFC-004A.
 
+Android input capture MUST remain event-driven. It MUST NOT introduce an input worker queue, timer-based polling loop, per-event coroutine, VSYNC sampling loop, or temporal batching layer.
+
+Android runtime input-device IDs are local capture identifiers only. They MUST NOT become SCL Input Payload wire identity.
+
+MotionEvent source timestamps MUST be preserved. Capture callbacks MUST NOT replace them with callback receipt time as the event timestamp.
+
+Relative pointer axes MUST consume historical samples supplied by Android because incremental relative motion is not accumulated into the current sample.
+
+RFC-004A ResetState MUST be emitted on capture lifecycle boundaries that can otherwise leave remote state logically pressed, including focus loss, session stop, device removal, pointer-capture loss, and local recovery resets where applicable.
+
 ## JNI Rules
 
 JNI is only a bridge.

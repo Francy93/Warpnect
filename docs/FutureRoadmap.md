@@ -57,14 +57,14 @@ Status: In progress.
 Implemented:
 
 - RFC-004A - Portable Input Event Model and SCL Input Payload V1 [complete]
+- RFC-004B - Android Input Capture Foundation [complete]
 
 Next:
 
-- RFC-004B - Android Input Capture Foundation [next]
+- RFC-004C - Reverse SCL Input Transport [next]
 
 Planned:
 
-- RFC-004C - Reverse SCL Input Transport
 - RFC-004D - Android Privileged Input Injection
 - RFC-004E - Input Mapping, Coordinate and Device Semantics
 - RFC-004F - End-to-End Reverse Input
