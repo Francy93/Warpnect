@@ -27,7 +27,11 @@ enum class AudioTransportError {
     UdpBindFailed,
     UdpSendFailed,
     WouldBlock,
+    Timeout,
     PartialEmission,
+    UnsupportedPayloadType,
+    ReassemblyWindowFull,
+    ReadyWindowFull,
     Closed,
     InvalidHandle,
     ;

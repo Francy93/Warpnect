@@ -46,14 +46,14 @@ Implemented:
 - RFC-003C - SCL Audio Payload and Transport Integration [complete]
 - RFC-003D - Portable Ultra-Low-Latency Opus Decoder [complete]
 - RFC-003E - Android Ultra-Low-Latency Audio Playback [complete]
+- RFC-003F - End-to-End Audio Streaming [complete]
 
 Next:
 
-- RFC-003F - End-to-End Audio Streaming [next]
+- RFC-003G - Audio/Video Synchronization [next]
 
 Planned:
 
-- RFC-003G - Audio/Video Synchronization.
 - RFC-003H - Audio Latency, Recovery and Performance Tuning.
 
 ## Phase 4 - Reverse Input

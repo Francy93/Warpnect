@@ -6,10 +6,11 @@ import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.capture.PcmAudioSink
 import io.warpnect.audio.encoder.AudioEncoderError
+import io.warpnect.audio.encoder.PcmSubmittingAudioEncoderController
 import java.nio.ByteBuffer
 
 class OpusPcmAudioSink(
-    private val encoder: NativeOpusAudioEncoderController,
+    private val encoder: PcmSubmittingAudioEncoderController,
 ) : PcmAudioSink {
     override fun onFormatChanged(format: AudioCaptureFormat) {
         val snapshot = encoder.snapshot()

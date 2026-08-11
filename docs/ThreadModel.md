@@ -105,6 +105,34 @@ Oboe audio callback
 
 The callback does not invoke JNI, Kotlin/Java, a per-frame coroutine, UI-thread work, networking, codec decode, logging, sleeping, allocation, timestamp queries, or blocking locks. Underrun fills the remaining output with PCM16 silence and updates counters.
 
+RFC-003F adds one persistent receiver context per active audio receiver stream:
+
+```text
+WarpnectAudioReceiver
+        -> UDP readability wait
+        -> SCL packet parse/reassembly
+        -> Audio Payload V1 parse
+        -> sample-position ordering
+        -> Opus decode / explicit PLC
+        -> playback-ring submit
+```
+
+Transmitter media remains synchronous:
+
+```text
+SystemAudio:
+WarpnectSystemAudioCapture / WarpnectSystemAudioDrain
+        -> Opus
+        -> SCL UDP
+
+Microphone:
+WarpnectMicrophoneCapture
+        -> Opus
+        -> SCL UDP
+```
+
+RFC-003F adds no audio sender worker, encoder worker, decoder worker, playback worker queue, per-frame coroutine launch, per-frame UI hop, or per-frame thread creation. The receiver context may wait in native socket readiness; it must not busy-poll. The Oboe callback remains isolated from UDP, SCL parsing, decoder work, JNI, and Kotlin.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

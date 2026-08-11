@@ -33,6 +33,7 @@ set(SCL_CORE_SOURCES
     src/clock_sync.cpp
     src/clock_sync_control.cpp
     src/audio_playback_ring.cpp
+    src/audio_receiver_runtime.cpp
     src/audio_opus_decoder.cpp
     src/audio_opus_encoder.cpp
     src/audio_packetizer.cpp

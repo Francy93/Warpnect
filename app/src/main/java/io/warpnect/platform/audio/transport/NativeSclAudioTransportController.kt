@@ -147,11 +147,19 @@ class NativeSclAudioTransportController : AudioTransportController {
     private fun remember(error: AudioTransportError): AudioTransportError {
         val current = snapshot()
         localSnapshot = current.copy(
-            state = if (error == AudioTransportError.None) current.state else AudioTransportState.Error,
+            state = if (error == AudioTransportError.None || error.isFrameSendBackpressure()) {
+                current.state
+            } else {
+                AudioTransportState.Error
+            },
             lastError = error,
         )
         return error
     }
+
+    private fun AudioTransportError.isFrameSendBackpressure(): Boolean = this == AudioTransportError.WouldBlock ||
+        this == AudioTransportError.UdpSendFailed ||
+        this == AudioTransportError.PartialEmission
 
     private fun validateConfig(config: AudioTransportConfig): AudioTransportError {
         if (config.remotePort !in 1..U16_MAX || config.localPort !in 0..U16_MAX) {

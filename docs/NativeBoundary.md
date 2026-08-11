@@ -227,6 +227,34 @@ The Oboe data callback is entirely native. It must not invoke JNI, call Kotlin/J
 
 RFC-003E introduces no SCL protocol change, SCL parser, network receive runtime, `AudioTrack` fallback, playback worker queue, network jitter buffer, per-frame coroutine, sample-rate conversion, channel mixer, effects, or A/V synchronization.
 
+RFC-003F adds an additive Native Bridge ABI Version 1 audio receiver/runtime boundary:
+
+```text
+native SCL audio ready slot
+        |
+persistent borrowed DirectByteBuffer
+        |
+Kotlin receiver session
+        |
+RFC-003D decoder JNI
+        |
+native PCM scratch
+        |
+borrowed DirectByteBuffer
+        |
+RFC-003E playback JNI
+        |
+native playback ring
+        |
+Oboe
+```
+
+The native audio receiver owns bounded reassembly slots and ready slots. Kotlin receives slot metadata and borrows a persistent direct view only until the synchronous decoder call returns. The session releases the slot in `finally` so decoder or playback failures cannot leak ready capacity.
+
+RFC-003F does not return encoded packets as Kotlin `ByteArray` values and does not create a second complete encoded-packet staging copy. The decoder/playback boundary remains the single required decoded-PCM ownership copy into RFC-003E's native playback ring.
+
+RFC-003F adds no PacketHeader, PayloadType, Audio Payload V1, NACK, FEC, ClockSync, Video Payload V1, or VideoResyncRequest wire change.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

@@ -3,7 +3,6 @@ package io.warpnect.platform.audio.encoder
 import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.encoder.AudioEncoderCapabilities
-import io.warpnect.audio.encoder.AudioEncoderController
 import io.warpnect.audio.encoder.AudioEncoderError
 import io.warpnect.audio.encoder.AudioEncoderRequest
 import io.warpnect.audio.encoder.AudioEncoderResult
@@ -13,12 +12,13 @@ import io.warpnect.audio.encoder.AudioEncoderSupport
 import io.warpnect.audio.encoder.AudioEncoderValidation
 import io.warpnect.audio.encoder.EncodedAudioFormat
 import io.warpnect.audio.encoder.EncodedAudioSink
+import io.warpnect.audio.encoder.PcmSubmittingAudioEncoderController
 import io.warpnect.audio.encoder.audioFrameOffsetTimeNs
 import java.nio.ByteBuffer
 
 class NativeOpusAudioEncoderController internal constructor(
     private val backend: OpusAudioEncoderBackend,
-) : AudioEncoderController {
+) : PcmSubmittingAudioEncoderController {
     constructor() : this(NativeOpusAudioEncoderBackend)
 
     private val lock = Any()
@@ -179,7 +179,7 @@ class NativeOpusAudioEncoderController internal constructor(
         resultLocked(stopped.error)
     }
 
-    fun submitPcm(
+    override fun submitPcm(
         buffer: ByteBuffer,
         offset: Int,
         sizeBytes: Int,
@@ -294,7 +294,7 @@ class NativeOpusAudioEncoderController internal constructor(
         AudioEncoderError.None
     }
 
-    fun reportInputError(error: AudioEncoderError): AudioEncoderError = synchronized(lock) {
+    override fun reportInputError(error: AudioEncoderError): AudioEncoderError = synchronized(lock) {
         failLocked(error)
         sink?.onEncoderError(error)
         error

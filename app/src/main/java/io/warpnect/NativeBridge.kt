@@ -189,6 +189,36 @@ internal object NativeBridge {
     private external fun nativeAudioTransportSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeAudioReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        remoteAddress: String?,
+        remotePort: Int,
+        restrictRemoteEndpoint: Boolean,
+        maxWireDatagramSize: Int,
+        maxLogicalAudioPayloadSize: Int,
+        reassemblySlotCount: Int,
+        readySlotCount: Int,
+        reassemblyTimeoutUs: Long,
+        source: Int,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeAudioReceiverDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioReceiverPump(handle: Long, timeoutUs: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioReceiverReadyBuffer(handle: Long, slotIndex: Int): ByteBuffer?
+
+    @JvmStatic
+    private external fun nativeAudioReceiverReleaseSlot(handle: Long, slotIndex: Int): Int
+
+    @JvmStatic
+    private external fun nativeAudioReceiverSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeVideoTransportCreate(
         remoteAddress: String,
         remotePort: Int,
@@ -533,6 +563,43 @@ internal object NativeBridge {
     )
 
     fun audioTransportSnapshot(handle: Long): LongArray = nativeAudioTransportSnapshot(handle)
+
+    fun audioReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        remoteAddress: String?,
+        remotePort: Int,
+        restrictRemoteEndpoint: Boolean,
+        maxWireDatagramSize: Int,
+        maxLogicalAudioPayloadSize: Int,
+        reassemblySlotCount: Int,
+        readySlotCount: Int,
+        reassemblyTimeoutUs: Long,
+        source: Int,
+    ): Long = nativeAudioReceiverCreate(
+        localAddress,
+        localPort,
+        remoteAddress,
+        remotePort,
+        restrictRemoteEndpoint,
+        maxWireDatagramSize,
+        maxLogicalAudioPayloadSize,
+        reassemblySlotCount,
+        readySlotCount,
+        reassemblyTimeoutUs,
+        source,
+    )
+
+    fun audioReceiverDestroy(handle: Long): Int = nativeAudioReceiverDestroy(handle)
+
+    fun audioReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeAudioReceiverPump(handle, timeoutUs)
+
+    fun audioReceiverReadyBuffer(handle: Long, slotIndex: Int): ByteBuffer? =
+        nativeAudioReceiverReadyBuffer(handle, slotIndex)
+
+    fun audioReceiverReleaseSlot(handle: Long, slotIndex: Int): Int = nativeAudioReceiverReleaseSlot(handle, slotIndex)
+
+    fun audioReceiverSnapshot(handle: Long): LongArray = nativeAudioReceiverSnapshot(handle)
 
     fun videoTransportCreate(
         remoteAddress: String,

@@ -644,6 +644,14 @@ RFC-003C emits one AudioFrame per RFC-003B encoded Opus packet and creates no en
 
 Audio NACK, SCL FEC, Opus in-band FEC, decoder loss policy, network jitter/playout policy, packet pacing, congestion control, automatic bitrate adaptation, and A/V synchronization are intentionally deferred to later Phase 3 RFCs. RFC-003E's bounded PCM handoff ring is a local playback ownership boundary, not an Audio Payload or SCL transport policy.
 
+### RFC-003F Runtime Behavior
+
+RFC-003F composes Audio Payload V1 into end-to-end audio streaming without changing the wire layout. The transmitter emits each Opus packet immediately as one AudioFrame. The receiver runtime accepts only the configured `SystemAudio` or `MicrophoneAudio` payload type, uses RFC-001C reassembly for fragmented logical messages, publishes `StreamConfigReady` and `AudioFrameReady` events, and exposes bounded native ready-slot storage to the decoder through borrowed direct buffers.
+
+The receiver session uses `first_frame_position` as the audio media timeline. It decodes contiguous frames immediately, drops late/duplicate frames, generates at most a small configured number of immediate Opus PLC frames for aligned gaps, and performs a freshness reset for large or misaligned gaps. It does not add a timed network reorder window, NACK, SCL FEC, Opus in-band FEC, pacing, congestion control, adaptive bitrate, jitter buffer, playback scheduling by sender clock, or A/V synchronization.
+
+These are runtime policies only. They do not modify `PacketHeader`, `PayloadType`, Audio Payload V1, NACK, FEC, ClockSync, Video Payload V1, or VideoResyncRequest.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

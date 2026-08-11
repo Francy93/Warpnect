@@ -34,7 +34,11 @@ enum class AudioTransportError : std::uint8_t {
     UdpBindFailed,
     UdpSendFailed,
     WouldBlock,
+    Timeout,
     PartialEmission,
+    UnsupportedPayloadType,
+    ReassemblyWindowFull,
+    ReadyWindowFull,
     Closed,
     InvalidHandle,
 };
@@ -94,8 +98,16 @@ audio_transport_error_name(AudioTransportError error) noexcept {
         return "UdpSendFailed";
     case AudioTransportError::WouldBlock:
         return "WouldBlock";
+    case AudioTransportError::Timeout:
+        return "Timeout";
     case AudioTransportError::PartialEmission:
         return "PartialEmission";
+    case AudioTransportError::UnsupportedPayloadType:
+        return "UnsupportedPayloadType";
+    case AudioTransportError::ReassemblyWindowFull:
+        return "ReassemblyWindowFull";
+    case AudioTransportError::ReadyWindowFull:
+        return "ReadyWindowFull";
     case AudioTransportError::Closed:
         return "Closed";
     case AudioTransportError::InvalidHandle:

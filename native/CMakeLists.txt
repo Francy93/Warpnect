@@ -27,6 +27,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/audio_opus_encoder.cpp"
     "${SCL_CPP_ROOT}/src/audio_packetizer.cpp"
     "${SCL_CPP_ROOT}/src/audio_playback_ring.cpp"
+    "${SCL_CPP_ROOT}/src/audio_receiver_runtime.cpp"
     "${SCL_CPP_ROOT}/src/audio_protocol.cpp"
     "${SCL_CPP_ROOT}/src/audio_transport.cpp"
     "${SCL_CPP_ROOT}/src/clock_sync.cpp"
@@ -170,6 +171,10 @@ add_executable(scl_audio_transport_tests tests/scl_audio_transport_tests.cpp)
 configure_native_target(scl_audio_transport_tests)
 target_link_libraries(scl_audio_transport_tests PRIVATE scl_native_core)
 
+add_executable(scl_audio_receiver_runtime_tests tests/scl_audio_receiver_runtime_tests.cpp)
+configure_native_target(scl_audio_receiver_runtime_tests)
+target_link_libraries(scl_audio_receiver_runtime_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -237,3 +242,4 @@ add_test(NAME opus_audio_encoder_tests COMMAND opus_audio_encoder_tests)
 add_test(NAME opus_audio_decoder_tests COMMAND opus_audio_decoder_tests)
 add_test(NAME audio_playback_ring_tests COMMAND audio_playback_ring_tests)
 add_test(NAME scl_audio_transport_tests COMMAND scl_audio_transport_tests)
+add_test(NAME scl_audio_receiver_runtime_tests COMMAND scl_audio_receiver_runtime_tests)

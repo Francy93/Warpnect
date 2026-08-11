@@ -138,6 +138,18 @@ Playback underrun MUST produce explicit PCM16 silence and counters rather than b
 
 Audio presentation timestamps are receiver-local playback diagnostics. They MUST remain distinct from sender capture timestamps and be preserved separately for later A/V synchronization.
 
+End-to-end audio orchestration MUST compose RFC-003A through RFC-003E without duplicating their subsystem responsibilities inside a monolithic controller.
+
+Audio receive storage MUST be strictly bounded transport/reassembly ownership. It is not an intentional network playback jitter buffer and MUST NOT grow with stream duration.
+
+RFC-003F MUST NOT introduce a timed audio reordering wait. The baseline receiver favors immediate freshness and caller-driven Opus PLC for small sample-position gaps.
+
+Late audio frames MUST be discarded rather than inserted behind the active playback timeline.
+
+Large audio gaps MUST be handled by freshness-oriented media reset rather than unbounded PLC generation, retransmission waiting, or preservation of stale playback-ring PCM.
+
+The Oboe real-time callback MUST remain independent from network receive, SCL parsing, codec decoding, JNI, and Kotlin execution.
+
 ## JNI Rules
 
 JNI is only a bridge.
