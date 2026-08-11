@@ -76,6 +76,16 @@ WarpnectMicrophoneCapture
 
 The native audio sender uses non-blocking UDP and returns `WouldBlock` or `UdpSendFailed` immediately. It does not wait for writability, launch a coroutine per packet, create an encoded-audio queue, or hop through the UI thread.
 
+RFC-003D adds no audio decoder worker thread. Opus decoding runs synchronously on whichever future receive context invokes the decoder:
+
+```text
+future audio receive context
+        -> Opus decoder
+        -> DecodedPcmAudioSink
+```
+
+The decoder does not create an encoded input queue, decoded PCM queue, playback queue, playback jitter buffer, per-frame coroutine, or per-frame UI hop.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

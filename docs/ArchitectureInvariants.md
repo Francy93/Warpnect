@@ -118,6 +118,16 @@ Audio sample position MUST remain independent from SCL packet sequence numbers. 
 
 Opus bytes MUST remain opaque to SCL transport. Audio Payload V1 must not parse, repacketize, merge, split at codec level, or rewrite Opus packets.
 
+Audio decoding MUST be synchronous and queue-free. RFC-003D MUST NOT maintain an encoded packet queue, decoded PCM queue, playback queue, decoder worker queue, or playback jitter buffer.
+
+Decoded PCM MUST be exposed through bounded-lifetime preallocated storage. It MUST NOT be materialized as per-frame Kotlin `ByteArray`, native full-frame staging buffers, `FloatArray`, or `List<Short>` values in production.
+
+Audio source discontinuity metadata MUST be preserved through decode, but it MUST NOT implicitly reset Opus codec state.
+
+Opus packet-loss concealment MUST be an explicit caller-driven decoder mechanism. The decoder MUST NOT infer network loss, inspect SCL sequence gaps, or invoke PLC automatically.
+
+Encoder lookahead MUST remain visible for later timeline alignment and MUST NOT be blindly applied as pre-skip whenever a decoder instance is created.
+
 ## JNI Rules
 
 JNI is only a bridge.

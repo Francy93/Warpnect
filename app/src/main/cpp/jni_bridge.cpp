@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "audio_opus_decoder.h"
 #include "audio_opus_encoder.h"
 #include "audio_transport.h"
 #include "fec.h"
@@ -47,12 +48,20 @@ using warpnect::scl::VideoTransportSenderWorkspace;
 using warpnect::audio::AudioBitrateMode;
 using warpnect::audio::AudioCaptureSource;
 using warpnect::audio::AudioCodec;
+using warpnect::audio::AudioDecoderError;
+using warpnect::audio::DecodedAudioFrameKind;
+using warpnect::audio::EncodedAudioFrameMetadata;
 using warpnect::audio::AudioEncoderError;
 using warpnect::audio::AudioEncoderSubmitStatus;
 using warpnect::audio::AudioTimestampQuality;
+using warpnect::audio::MissingAudioFrameMetadata;
+using warpnect::audio::OpusAudioDecoder;
+using warpnect::audio::OpusAudioDecoderConfig;
 using warpnect::audio::OpusAudioEncoder;
 using warpnect::audio::OpusAudioEncoderConfig;
 
+inline constexpr jsize kNativeAudioDecoderDecodeValues = 10;
+inline constexpr jsize kNativeAudioDecoderSnapshotValues = 26;
 inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
@@ -67,6 +76,10 @@ inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 }
 
 [[nodiscard]] constexpr jint audio_error_code(AudioEncoderError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+[[nodiscard]] constexpr jint audio_decoder_error_code(AudioDecoderError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
 }
 
@@ -91,6 +104,11 @@ struct AudioDirectBufferSpanResult final {
 
 struct AudioTransportDirectBufferSpanResult final {
     AudioTransportError error = AudioTransportError::None;
+    std::span<const std::byte> bytes{};
+};
+
+struct AudioDecoderDirectBufferSpanResult final {
+    AudioDecoderError error = AudioDecoderError::None;
     std::span<const std::byte> bytes{};
 };
 
@@ -132,6 +150,11 @@ struct NativeAudioEncoderHandle final {
     std::unique_ptr<OpusAudioEncoder> encoder{};
 };
 
+struct NativeAudioDecoderHandle final {
+    std::mutex lock{};
+    std::unique_ptr<OpusAudioDecoder> decoder{};
+};
+
 struct NativeAudioTransportHandle final {
     AudioTransportSenderConfig config{};
     std::vector<std::byte> datagram_scratch{};
@@ -164,6 +187,13 @@ struct NativeAudioTransportHandle final {
         return nullptr;
     }
     return reinterpret_cast<NativeAudioEncoderHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativeAudioDecoderHandle* audio_decoder_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeAudioDecoderHandle*>(static_cast<std::intptr_t>(handle));
 }
 
 [[nodiscard]] NativeAudioTransportHandle* audio_transport_handle_from(jlong handle) noexcept {
@@ -329,6 +359,34 @@ struct NativeAudioTransportHandle final {
         return AudioTransportDirectBufferSpanResult{.error = AudioTransportError::InvalidBufferRange};
     }
     return AudioTransportDirectBufferSpanResult{
+        .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
+    };
+}
+
+[[nodiscard]] AudioDecoderDirectBufferSpanResult audio_decoder_direct_buffer_span(
+    JNIEnv* env,
+    jobject buffer,
+    jint offset,
+    jint size) noexcept {
+    if (buffer == nullptr) {
+        return AudioDecoderDirectBufferSpanResult{.error = AudioDecoderError::NonDirectBuffer};
+    }
+    if (offset < 0 || size <= 0) {
+        return AudioDecoderDirectBufferSpanResult{.error = AudioDecoderError::InvalidBufferRange};
+    }
+
+    auto* const base = static_cast<std::byte*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (base == nullptr || capacity < 0) {
+        return AudioDecoderDirectBufferSpanResult{.error = AudioDecoderError::NonDirectBuffer};
+    }
+    const auto safe_offset = static_cast<std::size_t>(offset);
+    const auto safe_size = static_cast<std::size_t>(size);
+    const auto safe_capacity = static_cast<std::size_t>(capacity);
+    if (safe_offset > safe_capacity || safe_size > safe_capacity - safe_offset) {
+        return AudioDecoderDirectBufferSpanResult{.error = AudioDecoderError::InvalidBufferRange};
+    }
+    return AudioDecoderDirectBufferSpanResult{
         .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
     };
 }
@@ -625,6 +683,37 @@ create_audio_encoder_handle(jint source,
     return handle;
 }
 
+[[nodiscard]] std::unique_ptr<NativeAudioDecoderHandle>
+create_audio_decoder_handle(jint source,
+                            jlong config_generation,
+                            jint sample_rate_hz,
+                            jint channel_count,
+                            jint frame_duration_us,
+                            jint lookahead_samples) {
+    if (source < 0 || source > 1 || !valid_u32(config_generation) ||
+        config_generation == 0 || sample_rate_hz <= 0 || channel_count <= 0 ||
+        channel_count > 255 || frame_duration_us <= 0 || lookahead_samples < 0) {
+        return nullptr;
+    }
+    auto handle = std::make_unique<NativeAudioDecoderHandle>();
+    auto decoder = std::make_unique<OpusAudioDecoder>(
+        OpusAudioDecoderConfig{
+            .codec = AudioCodec::Opus,
+            .source = static_cast<AudioCaptureSource>(static_cast<std::uint8_t>(source)),
+            .config_generation = static_cast<std::uint32_t>(config_generation),
+            .sample_rate_hz = static_cast<std::uint32_t>(sample_rate_hz),
+            .channel_count = static_cast<std::uint8_t>(channel_count),
+            .frame_duration_us = static_cast<std::uint32_t>(frame_duration_us),
+            .lookahead_samples = static_cast<std::uint32_t>(lookahead_samples),
+        });
+    const auto prepared = decoder->prepare();
+    if (prepared.error != AudioDecoderError::None) {
+        return nullptr;
+    }
+    handle->decoder = std::move(decoder);
+    return handle;
+}
+
 } // namespace
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -643,6 +732,228 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeProtocolAbiVersion(JNIEnv* /* env */, jclass /* clazz */) {
     const auto info = warpnect::scl::bridge::native_core_info();
     return static_cast<jint>(info.protocol_abi_version);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderCreate(JNIEnv* /* env */,
+                                                       jclass /* clazz */,
+                                                       jint source,
+                                                       jlong config_generation,
+                                                       jint sample_rate_hz,
+                                                       jint channel_count,
+                                                       jint frame_duration_us,
+                                                       jint lookahead_samples) {
+    try {
+        auto handle = create_audio_decoder_handle(source, config_generation, sample_rate_hz,
+                                                 channel_count, frame_duration_us,
+                                                 lookahead_samples);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderDestroy(JNIEnv* /* env */,
+                                                        jclass /* clazz */,
+                                                        jlong handle) {
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        return audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->decoder->close();
+    }
+    delete native_handle;
+    return audio_decoder_error_code(AudioDecoderError::None);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderOutputBuffer(JNIEnv* env,
+                                                            jclass /* clazz */,
+                                                            jlong handle) {
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        return nullptr;
+    }
+    std::lock_guard guard(native_handle->lock);
+    auto output = native_handle->decoder->output_buffer();
+    if (output.data() == nullptr || output.empty()) {
+        return nullptr;
+    }
+    return env->NewDirectByteBuffer(output.data(), static_cast<jlong>(output.size()));
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderStart(JNIEnv* /* env */,
+                                                      jclass /* clazz */,
+                                                      jlong handle) {
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        return audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_decoder_error_code(native_handle->decoder->start().error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderDecode(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jobject buffer,
+    jint offset,
+    jint size,
+    jlong config_generation,
+    jlong first_frame_position,
+    jlong capture_time_us,
+    jint timestamp_quality,
+    jboolean discontinuity_before) {
+    jlong values[kNativeAudioDecoderDecodeValues]{};
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        values[0] = audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    } else if (!valid_u32(config_generation) || config_generation == 0 ||
+               first_frame_position < 0 || capture_time_us < 0 ||
+               timestamp_quality < 0 || timestamp_quality > 2) {
+        values[0] = audio_decoder_error_code(AudioDecoderError::InvalidBufferRange);
+    } else {
+        const AudioDecoderDirectBufferSpanResult span =
+            audio_decoder_direct_buffer_span(env, buffer, offset, size);
+        if (span.error != AudioDecoderError::None) {
+            values[0] = audio_decoder_error_code(span.error);
+        } else {
+            std::lock_guard guard(native_handle->lock);
+            const auto result = native_handle->decoder->decode(
+                span.bytes,
+                EncodedAudioFrameMetadata{
+                    .config_generation = static_cast<std::uint32_t>(config_generation),
+                    .first_frame_position = static_cast<std::uint64_t>(first_frame_position),
+                    .capture_time_us = static_cast<std::uint64_t>(capture_time_us),
+                    .timestamp_quality =
+                        static_cast<AudioTimestampQuality>(
+                            static_cast<std::uint8_t>(timestamp_quality)),
+                    .discontinuity_before = discontinuity_before == JNI_TRUE,
+                });
+            values[0] = audio_decoder_error_code(result.error);
+            values[1] = static_cast<jlong>(result.native_error);
+            values[2] = static_cast<jlong>(result.frame_kind);
+            values[3] = static_cast<jlong>(result.pcm_size_bytes);
+            values[4] = static_cast<jlong>(result.frame_count);
+            values[5] = static_cast<jlong>(result.first_frame_position);
+            values[6] = static_cast<jlong>(result.capture_time_us);
+            values[7] = static_cast<jlong>(result.timestamp_quality);
+            values[8] = result.discontinuity_before ? 1 : 0;
+        }
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioDecoderDecodeValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioDecoderDecodeValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderConcealMissingFrame(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jlong config_generation,
+    jlong first_frame_position,
+    jlong capture_time_us,
+    jint timestamp_quality) {
+    jlong values[kNativeAudioDecoderDecodeValues]{};
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        values[0] = audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    } else if (!valid_u32(config_generation) || config_generation == 0 ||
+               first_frame_position < 0 || capture_time_us < 0 ||
+               timestamp_quality < 0 || timestamp_quality > 2) {
+        values[0] = audio_decoder_error_code(AudioDecoderError::InvalidMissingFrameMetadata);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto result = native_handle->decoder->conceal_missing_frame(
+            MissingAudioFrameMetadata{
+                .config_generation = static_cast<std::uint32_t>(config_generation),
+                .first_frame_position = static_cast<std::uint64_t>(first_frame_position),
+                .capture_time_us = static_cast<std::uint64_t>(capture_time_us),
+                .timestamp_quality =
+                    static_cast<AudioTimestampQuality>(
+                        static_cast<std::uint8_t>(timestamp_quality)),
+            });
+        values[0] = audio_decoder_error_code(result.error);
+        values[1] = static_cast<jlong>(result.native_error);
+        values[2] = static_cast<jlong>(result.frame_kind);
+        values[3] = static_cast<jlong>(result.pcm_size_bytes);
+        values[4] = static_cast<jlong>(result.frame_count);
+        values[5] = static_cast<jlong>(result.first_frame_position);
+        values[6] = static_cast<jlong>(result.capture_time_us);
+        values[7] = static_cast<jlong>(result.timestamp_quality);
+        values[8] = result.discontinuity_before ? 1 : 0;
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioDecoderDecodeValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioDecoderDecodeValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderStop(JNIEnv* /* env */,
+                                                     jclass /* clazz */,
+                                                     jlong handle) {
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        return audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    }
+    std::lock_guard guard(native_handle->lock);
+    return audio_decoder_error_code(native_handle->decoder->stop().error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioDecoderSnapshot(JNIEnv* env,
+                                                        jclass /* clazz */,
+                                                        jlong handle) {
+    jlong values[kNativeAudioDecoderSnapshotValues]{};
+    NativeAudioDecoderHandle* native_handle = audio_decoder_handle_from(handle);
+    if (native_handle == nullptr || native_handle->decoder == nullptr) {
+        values[22] = audio_decoder_error_code(AudioDecoderError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->decoder->snapshot();
+        values[0] = static_cast<jlong>(snapshot.codec);
+        values[1] = static_cast<jlong>(snapshot.source);
+        values[2] = static_cast<jlong>(snapshot.config_generation);
+        values[3] = static_cast<jlong>(snapshot.sample_rate_hz);
+        values[4] = static_cast<jlong>(snapshot.channel_count);
+        values[5] = static_cast<jlong>(snapshot.frame_duration_us);
+        values[6] = static_cast<jlong>(snapshot.samples_per_frame);
+        values[7] = static_cast<jlong>(snapshot.lookahead_samples);
+        values[8] = static_cast<jlong>(snapshot.packets_submitted);
+        values[9] = static_cast<jlong>(snapshot.encoded_bytes_submitted);
+        values[10] = static_cast<jlong>(snapshot.frames_decoded);
+        values[11] = static_cast<jlong>(snapshot.pcm_frames_decoded);
+        values[12] = static_cast<jlong>(snapshot.pcm_bytes_decoded);
+        values[13] = static_cast<jlong>(snapshot.plc_frames_generated);
+        values[14] = static_cast<jlong>(snapshot.malformed_packets);
+        values[15] = static_cast<jlong>(snapshot.duration_mismatches);
+        values[16] = static_cast<jlong>(snapshot.decode_failures);
+        values[17] = static_cast<jlong>(snapshot.sink_failures);
+        values[18] = static_cast<jlong>(snapshot.last_frame_position);
+        values[19] = static_cast<jlong>(snapshot.last_capture_time_us);
+        values[20] = static_cast<jlong>(snapshot.last_decoded_samples);
+        values[21] = static_cast<jlong>(snapshot.last_native_error);
+        values[22] = audio_decoder_error_code(snapshot.last_error);
+        values[23] = snapshot.prepared ? 1 : 0;
+        values[24] = snapshot.running ? 1 : 0;
+        values[25] = snapshot.closed ? 1 : 0;
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioDecoderSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioDecoderSnapshotValues, values);
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT jlong JNICALL

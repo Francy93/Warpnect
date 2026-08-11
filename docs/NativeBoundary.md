@@ -183,6 +183,26 @@ non-blocking UDP
 
 Kotlin owns the encoded callback lifetime. JNI borrows the Opus packet pointer only during the synchronous audio frame submission call. Native packetization copies only fragment-sized ranges into the datagram scratch buffer and must not retain the encoded pointer. No complete encoded packet crosses JNI as a Kotlin `ByteArray`, and no complete native logical-message staging buffer is required.
 
+RFC-003D adds an additive Native Bridge ABI Version 1 Opus decoder boundary:
+
+```text
+borrowed Opus DirectByteBuffer
+        |
+NativeBridge JNI
+        |
+portable warpnect::audio OpusAudioDecoder
+        |
+native PCM scratch
+        |
+persistent borrowed DirectByteBuffer
+        |
+DecodedPcmAudioSink
+```
+
+Kotlin owns the encoded packet lifetime. JNI borrows the encoded pointer only during the synchronous decode call. Native owns the libopus decoder state and the preallocated PCM scratch buffer. Kotlin receives a persistent direct output view but does not own or copy the PCM payload. `DecodedPcmAudioSink` borrows the output only for the duration of `onPcmFrame()` and must not retain it.
+
+RFC-003D introduces no SCL parser, network receive runtime, AudioTrack playback, audio jitter buffer, encoded packet queue, decoded PCM queue, per-frame encoded `ByteArray`, or per-frame PCM `ByteArray`.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

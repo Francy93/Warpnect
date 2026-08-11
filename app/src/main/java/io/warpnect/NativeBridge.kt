@@ -28,6 +28,53 @@ internal object NativeBridge {
     ): Long
 
     @JvmStatic
+    private external fun nativeAudioDecoderCreate(
+        source: Int,
+        configGeneration: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        lookaheadSamples: Int,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeAudioDecoderDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioDecoderOutputBuffer(handle: Long): ByteBuffer?
+
+    @JvmStatic
+    private external fun nativeAudioDecoderStart(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioDecoderDecode(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioDecoderConcealMissingFrame(
+        handle: Long,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioDecoderStop(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioDecoderSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeAudioEncoderDestroy(handle: Long): Int
 
     @JvmStatic
@@ -230,6 +277,68 @@ internal object NativeBridge {
         bitrateMode,
         complexity,
     )
+
+    fun audioDecoderCreate(
+        source: Int,
+        configGeneration: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        lookaheadSamples: Int,
+    ): Long = nativeAudioDecoderCreate(
+        source,
+        configGeneration,
+        sampleRateHz,
+        channelCount,
+        frameDurationUs,
+        lookaheadSamples,
+    )
+
+    fun audioDecoderDestroy(handle: Long): Int = nativeAudioDecoderDestroy(handle)
+
+    fun audioDecoderOutputBuffer(handle: Long): ByteBuffer? = nativeAudioDecoderOutputBuffer(handle)
+
+    fun audioDecoderStart(handle: Long): Int = nativeAudioDecoderStart(handle)
+
+    fun audioDecoderDecode(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+    ): LongArray = nativeAudioDecoderDecode(
+        handle,
+        buffer,
+        offset,
+        size,
+        configGeneration,
+        firstFramePosition,
+        captureTimeUs,
+        timestampQuality,
+        discontinuityBefore,
+    )
+
+    fun audioDecoderConcealMissingFrame(
+        handle: Long,
+        configGeneration: Long,
+        firstFramePosition: Long,
+        captureTimeUs: Long,
+        timestampQuality: Int,
+    ): LongArray = nativeAudioDecoderConcealMissingFrame(
+        handle,
+        configGeneration,
+        firstFramePosition,
+        captureTimeUs,
+        timestampQuality,
+    )
+
+    fun audioDecoderStop(handle: Long): Int = nativeAudioDecoderStop(handle)
+
+    fun audioDecoderSnapshot(handle: Long): LongArray = nativeAudioDecoderSnapshot(handle)
 
     fun audioEncoderDestroy(handle: Long): Int = nativeAudioEncoderDestroy(handle)
 

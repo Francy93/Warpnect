@@ -23,6 +23,7 @@ endif()
 set(BUILD_TESTING "${WARPNNECT_BUILD_TESTING}")
 
 set(SCL_NATIVE_SOURCES
+    "${SCL_CPP_ROOT}/src/audio_opus_decoder.cpp"
     "${SCL_CPP_ROOT}/src/audio_opus_encoder.cpp"
     "${SCL_CPP_ROOT}/src/audio_packetizer.cpp"
     "${SCL_CPP_ROOT}/src/audio_protocol.cpp"
@@ -156,6 +157,10 @@ add_executable(opus_audio_encoder_tests tests/opus_audio_encoder_tests.cpp)
 configure_native_target(opus_audio_encoder_tests)
 target_link_libraries(opus_audio_encoder_tests PRIVATE scl_native_core)
 
+add_executable(opus_audio_decoder_tests tests/opus_audio_decoder_tests.cpp)
+configure_native_target(opus_audio_decoder_tests)
+target_link_libraries(opus_audio_decoder_tests PRIVATE scl_native_core)
+
 add_executable(scl_audio_transport_tests tests/scl_audio_transport_tests.cpp)
 configure_native_target(scl_audio_transport_tests)
 target_link_libraries(scl_audio_transport_tests PRIVATE scl_native_core)
@@ -199,6 +204,19 @@ target_include_directories(
 )
 target_link_libraries(opus_audio_encoder_benchmarks PRIVATE scl_native_core)
 
+add_executable(
+    opus_audio_decoder_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/opus_audio_decoder_benchmarks.cpp
+)
+configure_native_target(opus_audio_decoder_benchmarks)
+target_include_directories(
+    opus_audio_decoder_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(opus_audio_decoder_benchmarks PRIVATE scl_native_core)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)
@@ -211,4 +229,5 @@ add_test(NAME scl_video_transport_tests COMMAND scl_video_transport_tests)
 add_test(NAME scl_video_runtime_tests COMMAND scl_video_runtime_tests)
 add_test(NAME scl_video_resync_tests COMMAND scl_video_resync_tests)
 add_test(NAME opus_audio_encoder_tests COMMAND opus_audio_encoder_tests)
+add_test(NAME opus_audio_decoder_tests COMMAND opus_audio_decoder_tests)
 add_test(NAME scl_audio_transport_tests COMMAND scl_audio_transport_tests)
