@@ -57,6 +57,46 @@ internal object NativeBridge {
     private external fun nativeAudioEncoderSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeAudioTransportCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        initialAudioSequence: Long,
+        source: Int,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeAudioTransportDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioTransportSubmitConfig(
+        handle: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        lookaheadSamples: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeAudioTransportResendConfig(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioTransportSubmitFrame(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        firstFramePosition: Long,
+        captureTimeNs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeAudioTransportSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeVideoTransportCreate(
         remoteAddress: String,
         remotePort: Int,
@@ -221,6 +261,62 @@ internal object NativeBridge {
     fun audioEncoderStop(handle: Long): LongArray = nativeAudioEncoderStop(handle)
 
     fun audioEncoderSnapshot(handle: Long): LongArray = nativeAudioEncoderSnapshot(handle)
+
+    fun audioTransportCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        initialAudioSequence: Long,
+        source: Int,
+    ): Long = nativeAudioTransportCreate(
+        remoteAddress,
+        remotePort,
+        localPort,
+        maxWireDatagramSize,
+        initialAudioSequence,
+        source,
+    )
+
+    fun audioTransportDestroy(handle: Long): Int = nativeAudioTransportDestroy(handle)
+
+    fun audioTransportSubmitConfig(
+        handle: Long,
+        sampleRateHz: Int,
+        channelCount: Int,
+        frameDurationUs: Int,
+        lookaheadSamples: Int,
+    ): Int = nativeAudioTransportSubmitConfig(
+        handle,
+        sampleRateHz,
+        channelCount,
+        frameDurationUs,
+        lookaheadSamples,
+    )
+
+    fun audioTransportResendConfig(handle: Long): Int = nativeAudioTransportResendConfig(handle)
+
+    fun audioTransportSubmitFrame(
+        handle: Long,
+        buffer: ByteBuffer,
+        offset: Int,
+        size: Int,
+        firstFramePosition: Long,
+        captureTimeNs: Long,
+        timestampQuality: Int,
+        discontinuityBefore: Boolean,
+    ): Int = nativeAudioTransportSubmitFrame(
+        handle,
+        buffer,
+        offset,
+        size,
+        firstFramePosition,
+        captureTimeNs,
+        timestampQuality,
+        discontinuityBefore,
+    )
+
+    fun audioTransportSnapshot(handle: Long): LongArray = nativeAudioTransportSnapshot(handle)
 
     fun videoTransportCreate(
         remoteAddress: String,

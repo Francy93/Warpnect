@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "audio_opus_encoder.h"
+#include "audio_transport.h"
 #include "fec.h"
 #include "native_bridge.h"
 #include "retransmission_cache.h"
@@ -27,6 +28,11 @@ using warpnect::scl::ReedSolomonConfig;
 using warpnect::scl::RetransmissionCacheConfig;
 using warpnect::scl::RetransmissionEntry;
 using warpnect::scl::UdpEndpoint;
+using warpnect::scl::AudioTransportError;
+using warpnect::scl::AudioTransportSender;
+using warpnect::scl::AudioTransportSenderConfig;
+using warpnect::scl::AudioTransportSenderWorkspace;
+using warpnect::scl::AudioTransportStatus;
 using warpnect::scl::VideoError;
 using warpnect::scl::VideoReceiverConfig;
 using warpnect::scl::VideoReceiverEventType;
@@ -50,6 +56,7 @@ using warpnect::audio::OpusAudioEncoderConfig;
 inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
+inline constexpr jsize kNativeAudioTransportSnapshotValues = 21;
 inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
 inline constexpr jsize kNativeVideoReceiverFillValues = 7;
@@ -60,6 +67,10 @@ inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 }
 
 [[nodiscard]] constexpr jint audio_error_code(AudioEncoderError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+[[nodiscard]] constexpr jint audio_transport_error_code(AudioTransportError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
 }
 
@@ -75,6 +86,11 @@ struct MutableDirectBufferSpanResult final {
 
 struct AudioDirectBufferSpanResult final {
     AudioEncoderError error = AudioEncoderError::None;
+    std::span<const std::byte> bytes{};
+};
+
+struct AudioTransportDirectBufferSpanResult final {
+    AudioTransportError error = AudioTransportError::None;
     std::span<const std::byte> bytes{};
 };
 
@@ -116,6 +132,19 @@ struct NativeAudioEncoderHandle final {
     std::unique_ptr<OpusAudioEncoder> encoder{};
 };
 
+struct NativeAudioTransportHandle final {
+    AudioTransportSenderConfig config{};
+    std::vector<std::byte> datagram_scratch{};
+    std::mutex lock{};
+    std::unique_ptr<AudioTransportSender> sender{};
+
+    [[nodiscard]] AudioTransportSenderWorkspace workspace() noexcept {
+        return AudioTransportSenderWorkspace{
+            .datagram_scratch = datagram_scratch,
+        };
+    }
+};
+
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
     if (handle == 0) {
         return nullptr;
@@ -135,6 +164,13 @@ struct NativeAudioEncoderHandle final {
         return nullptr;
     }
     return reinterpret_cast<NativeAudioEncoderHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativeAudioTransportHandle* audio_transport_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeAudioTransportHandle*>(static_cast<std::intptr_t>(handle));
 }
 
 [[nodiscard]] bool valid_port(jint port, bool allow_zero) noexcept {
@@ -269,6 +305,44 @@ struct NativeAudioEncoderHandle final {
     };
 }
 
+[[nodiscard]] AudioTransportDirectBufferSpanResult audio_transport_direct_buffer_span(
+    JNIEnv* env,
+    jobject buffer,
+    jint offset,
+    jint size) noexcept {
+    if (buffer == nullptr) {
+        return AudioTransportDirectBufferSpanResult{.error = AudioTransportError::NonDirectBuffer};
+    }
+    if (offset < 0 || size <= 0) {
+        return AudioTransportDirectBufferSpanResult{.error = AudioTransportError::InvalidBufferRange};
+    }
+
+    auto* const base = static_cast<std::byte*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (base == nullptr || capacity < 0) {
+        return AudioTransportDirectBufferSpanResult{.error = AudioTransportError::NonDirectBuffer};
+    }
+    const auto safe_offset = static_cast<std::size_t>(offset);
+    const auto safe_size = static_cast<std::size_t>(size);
+    const auto safe_capacity = static_cast<std::size_t>(capacity);
+    if (safe_offset > safe_capacity || safe_size > safe_capacity - safe_offset) {
+        return AudioTransportDirectBufferSpanResult{.error = AudioTransportError::InvalidBufferRange};
+    }
+    return AudioTransportDirectBufferSpanResult{
+        .bytes = std::span<const std::byte>(base + safe_offset, safe_size),
+    };
+}
+
+[[nodiscard]] warpnect::scl::PayloadType payload_type_from_audio_source(jint source) noexcept {
+    if (source == static_cast<jint>(AudioCaptureSource::SystemAudio)) {
+        return warpnect::scl::PayloadType::SystemAudio;
+    }
+    if (source == static_cast<jint>(AudioCaptureSource::MicrophoneAudio)) {
+        return warpnect::scl::PayloadType::MicrophoneAudio;
+    }
+    return warpnect::scl::PayloadType::Unknown;
+}
+
 [[nodiscard]] std::unique_ptr<NativeVideoTransportHandle>
 create_handle(JNIEnv* env,
               jstring remote_address,
@@ -341,6 +415,57 @@ create_handle(JNIEnv* env,
     handle->sender = std::make_unique<VideoTransportSender>(handle->config, handle->workspace());
     handle->control_receive_scratch.resize(handle->config.max_wire_datagram_size);
     const VideoStatus open = handle->sender->open();
+    if (!open.ok()) {
+        return nullptr;
+    }
+    return handle;
+}
+
+[[nodiscard]] std::unique_ptr<NativeAudioTransportHandle>
+create_audio_transport_handle(JNIEnv* env,
+                              jstring remote_address,
+                              jint remote_port,
+                              jint local_port,
+                              jint max_wire_datagram_size,
+                              jlong initial_audio_sequence,
+                              jint source) {
+    if (remote_address == nullptr || !valid_port(remote_port, false) ||
+        !valid_port(local_port, true) || max_wire_datagram_size <= 0 ||
+        !valid_u32(initial_audio_sequence)) {
+        return nullptr;
+    }
+
+    const auto payload_type = payload_type_from_audio_source(source);
+    if (!warpnect::scl::is_supported_audio_payload_type(payload_type)) {
+        return nullptr;
+    }
+
+    const char* remote_chars = env->GetStringUTFChars(remote_address, nullptr);
+    if (remote_chars == nullptr) {
+        return nullptr;
+    }
+    const auto parsed =
+        warpnect::scl::parse_numeric_ip_address(std::string_view(remote_chars));
+    env->ReleaseStringUTFChars(remote_address, remote_chars);
+    if (!parsed.ok()) {
+        return nullptr;
+    }
+
+    auto handle = std::make_unique<NativeAudioTransportHandle>();
+    handle->config = AudioTransportSenderConfig{
+        .remote_endpoint =
+            UdpEndpoint{
+                .address = parsed.address,
+                .port = static_cast<std::uint16_t>(remote_port),
+            },
+        .local_port = static_cast<std::uint16_t>(local_port),
+        .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
+        .initial_audio_sequence = static_cast<std::uint32_t>(initial_audio_sequence),
+        .payload_type = payload_type,
+    };
+    handle->datagram_scratch.resize(handle->config.max_wire_datagram_size);
+    handle->sender = std::make_unique<AudioTransportSender>(handle->config, handle->workspace());
+    const AudioTransportStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
     }
@@ -719,6 +844,163 @@ Java_io_warpnect_NativeBridge_nativeAudioEncoderSnapshot(JNIEnv* env,
     jlongArray array = env->NewLongArray(kNativeAudioEncoderSnapshotValues);
     if (array != nullptr) {
         env->SetLongArrayRegion(array, 0, kNativeAudioEncoderSnapshotValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportCreate(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jint max_wire_datagram_size,
+    jlong initial_audio_sequence,
+    jint source) {
+    try {
+        auto handle = create_audio_transport_handle(env, remote_address, remote_port, local_port,
+                                                   max_wire_datagram_size, initial_audio_sequence,
+                                                   source);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportDestroy(JNIEnv* /* env */,
+                                                          jclass /* clazz */,
+                                                          jlong handle) {
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->sender->close();
+    }
+    delete native_handle;
+    return audio_transport_error_code(AudioTransportError::None);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportSubmitConfig(JNIEnv* /* env */,
+                                                               jclass /* clazz */,
+                                                               jlong handle,
+                                                               jint sample_rate_hz,
+                                                               jint channel_count,
+                                                               jint frame_duration_us,
+                                                               jint lookahead_samples) {
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    if (sample_rate_hz <= 0 || channel_count <= 0 || channel_count > 255 ||
+        frame_duration_us <= 0 || lookahead_samples < 0) {
+        return audio_transport_error_code(AudioTransportError::InvalidBufferRange);
+    }
+    std::lock_guard guard(native_handle->lock);
+    const AudioTransportStatus submitted = native_handle->sender->submit_stream_config(
+        static_cast<std::uint32_t>(sample_rate_hz),
+        static_cast<std::uint8_t>(channel_count),
+        static_cast<std::uint32_t>(frame_duration_us),
+        static_cast<std::uint32_t>(lookahead_samples));
+    return audio_transport_error_code(submitted.error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportResendConfig(JNIEnv* /* env */,
+                                                               jclass /* clazz */,
+                                                               jlong handle) {
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    std::lock_guard guard(native_handle->lock);
+    const AudioTransportStatus submitted = native_handle->sender->resend_current_config();
+    return audio_transport_error_code(submitted.error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportSubmitFrame(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jobject buffer,
+    jint offset,
+    jint size,
+    jlong first_frame_position,
+    jlong capture_time_ns,
+    jint timestamp_quality,
+    jboolean discontinuity_before) {
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    if (first_frame_position < 0) {
+        return audio_transport_error_code(AudioTransportError::InvalidFramePosition);
+    }
+    if (capture_time_ns < 0) {
+        return audio_transport_error_code(AudioTransportError::InvalidCaptureTimestamp);
+    }
+    if (timestamp_quality < 0 || timestamp_quality > 2) {
+        return audio_transport_error_code(AudioTransportError::InvalidTimestampQuality);
+    }
+    const AudioTransportDirectBufferSpanResult span =
+        audio_transport_direct_buffer_span(env, buffer, offset, size);
+    if (span.error != AudioTransportError::None) {
+        return audio_transport_error_code(span.error);
+    }
+
+    std::lock_guard guard(native_handle->lock);
+    const AudioTransportStatus submitted = native_handle->sender->submit_audio_frame(
+        span.bytes,
+        static_cast<std::uint64_t>(first_frame_position),
+        static_cast<std::uint64_t>(capture_time_ns),
+        static_cast<warpnect::scl::AudioTimestampQuality>(
+            static_cast<std::uint8_t>(timestamp_quality)),
+        discontinuity_before == JNI_TRUE);
+    return audio_transport_error_code(submitted.error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportSnapshot(JNIEnv* env,
+                                                           jclass /* clazz */,
+                                                           jlong handle) {
+    jlong values[kNativeAudioTransportSnapshotValues]{};
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        values[18] = audio_transport_error_code(AudioTransportError::InvalidHandle);
+        values[20] = 1;
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->sender->snapshot();
+        values[0] = static_cast<jlong>(static_cast<std::uint8_t>(snapshot.payload_type));
+        values[1] = static_cast<jlong>(snapshot.current_config_generation);
+        values[2] = static_cast<jlong>(snapshot.next_audio_sequence);
+        values[3] = static_cast<jlong>(snapshot.configs_submitted);
+        values[4] = static_cast<jlong>(snapshot.frames_submitted);
+        values[5] = static_cast<jlong>(snapshot.frames_fragmented);
+        values[6] = static_cast<jlong>(snapshot.datagrams_generated);
+        values[7] = static_cast<jlong>(snapshot.datagrams_sent);
+        values[8] = static_cast<jlong>(snapshot.bytes_sent);
+        values[9] = static_cast<jlong>(snapshot.discontinuity_frames);
+        values[10] = static_cast<jlong>(snapshot.would_block_count);
+        values[11] = static_cast<jlong>(snapshot.send_failures);
+        values[12] = static_cast<jlong>(snapshot.sample_rate_hz);
+        values[13] = static_cast<jlong>(snapshot.channel_count);
+        values[14] = static_cast<jlong>(snapshot.frame_duration_us);
+        values[15] = static_cast<jlong>(snapshot.lookahead_samples);
+        values[16] = static_cast<jlong>(snapshot.last_frame_position);
+        values[17] = static_cast<jlong>(snapshot.last_capture_time_us);
+        values[18] = audio_transport_error_code(snapshot.last_error);
+        values[19] = snapshot.opened ? 1 : 0;
+        values[20] = snapshot.closed ? 1 : 0;
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioTransportSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioTransportSnapshotValues, values);
     }
     return array;
 }

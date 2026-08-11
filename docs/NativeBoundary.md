@@ -165,6 +165,24 @@ Kotlin owns the RFC-003A PCM callback lifetime. JNI borrows the PCM pointer only
 
 RFC-003B introduces no SCL audio transport JNI. No complete PCM or encoded audio media payload crosses JNI as a Kotlin `ByteArray`.
 
+RFC-003C adds additive Native Bridge ABI Version 1 audio transport calls:
+
+```text
+native libopus output scratch
+        |
+borrowed DirectByteBuffer
+        |
+Kotlin EncodedAudioSink
+        |
+NativeBridge JNI
+        |
+SCL Audio Payload V1 packetization
+        |
+non-blocking UDP
+```
+
+Kotlin owns the encoded callback lifetime. JNI borrows the Opus packet pointer only during the synchronous audio frame submission call. Native packetization copies only fragment-sized ranges into the datagram scratch buffer and must not retain the encoded pointer. No complete encoded packet crosses JNI as a Kotlin `ByteArray`, and no complete native logical-message staging buffer is required.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

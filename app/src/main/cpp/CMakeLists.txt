@@ -19,6 +19,9 @@ set(SCL_CORE_SOURCES
     src/clock_sync.cpp
     src/clock_sync_control.cpp
     src/audio_opus_encoder.cpp
+    src/audio_packetizer.cpp
+    src/audio_protocol.cpp
+    src/audio_transport.cpp
     src/fec.cpp
     src/fec_control.cpp
     jni_bridge.cpp

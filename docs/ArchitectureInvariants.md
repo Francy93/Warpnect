@@ -108,6 +108,16 @@ Audio codec implementation MUST remain separate from SCL transport/protocol resp
 
 PCM discontinuities MUST NOT be concealed by concatenating non-contiguous capture samples. Partial codec-frame state must be discarded when capture frame positions reveal a gap.
 
+One encoded Opus packet MUST map to one SCL `AudioFrame`. Warpnect MUST NOT batch multiple Opus packets into one audio transport message to reduce packet-header overhead.
+
+Audio transport MUST NOT introduce an encoded-frame sender queue, audio sender worker queue, or hidden retry backlog. `SclEncodedAudioSink` submits each borrowed Opus packet synchronously to native SCL transport.
+
+Audio capture timestamps MUST be serialized through `PacketHeader::timestamp_us` in monotonic microseconds. The transport boundary performs the explicit `captureTimeNs / 1000` conversion.
+
+Audio sample position MUST remain independent from SCL packet sequence numbers. `first_frame_position` is the audio timeline; packet sequence numbers are transport ordering/recovery metadata.
+
+Opus bytes MUST remain opaque to SCL transport. Audio Payload V1 must not parse, repacketize, merge, split at codec level, or rewrite Opus packets.
+
 ## JNI Rules
 
 JNI is only a bridge.

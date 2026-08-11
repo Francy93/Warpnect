@@ -2,7 +2,7 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This document records the SCL packet foundation, UDP transport boundary, Version 1 fragmentation semantics, Version 1 NACK recovery control payload, Version 1 Reed-Solomon FEC parity control payload, Version 1 clock synchronization control payloads, Video Payload Version 1, and VideoResyncRequest Version 1. It does not define discovery, encryption, audio, input injection, or session negotiation.
+This document records the SCL packet foundation, UDP transport boundary, Version 1 fragmentation semantics, Version 1 NACK recovery control payload, Version 1 Reed-Solomon FEC parity control payload, Version 1 clock synchronization control payloads, Video Payload Version 1, VideoResyncRequest Version 1, and Audio Payload Version 1. It does not define discovery, encryption, input injection, or session negotiation.
 
 ## Protocol Purpose
 
@@ -435,6 +435,214 @@ The native packetizer copies only the bytes intersecting each SCL fragment into 
 RFC-002F adds end-to-end sender/receiver runtime orchestration for Video Payload Version 1. It does not change the Video V1 wire layout, the 21-byte SCL `PacketHeader`, `PayloadType::Video`, NACK payloads, FEC parity payloads, or clock-sync payloads.
 
 The receiver runtime uses existing SCL packet decode, loss detection, NACK generation, Reed-Solomon FEC recovery, RFC-001C reassembly, and Video V1 parsing. Completed AccessUnit payload bytes remain owned by bounded native receiver storage until JNI synchronously fills a MediaCodec-owned direct input buffer. No complete access-unit Kotlin payload representation is part of the protocol contract.
+
+## Audio Payload Version 1
+
+RFC-003C defines the Version 1 logical payload carried inside:
+
+```cpp
+PayloadType::SystemAudio == 2
+PayloadType::MicrophoneAudio == 3
+```
+
+Both payload types carry the same Audio Payload Version 1 layout. The payload type identifies the logical source, so the audio payload does not duplicate `SystemAudio` or `MicrophoneAudio` identity.
+
+This payload version is independent from SCL Protocol Version, Native Bridge ABI Version, PCM Shared Ring Version, Video Payload Version, and Video Resync Control Version.
+
+Constants:
+
+```cpp
+kAudioPayloadVersion == 1
+```
+
+The 21-byte SCL `PacketHeader` is unchanged. RFC-003C does not add a new `PayloadType`.
+
+### Audio Message Types
+
+| Value | Message type |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `StreamConfig` |
+| 2 | `AudioFrame` |
+
+No EndOfStream or network-control audio message exists in Version 1.
+
+### Audio Codec IDs
+
+| Value | Codec |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Opus` |
+
+RFC-003C supports raw Opus packets only. This codec ID is the SCL Audio Payload V1 codec ID and is distinct from Kotlin application enum implementation details.
+
+### Common Audio Message Header
+
+Every Version 1 audio logical payload begins with this exact 8-byte header:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 1 | `audio_version` |
+| 1 | 1 | `message_type` |
+| 2 | 1 | `codec` |
+| 3 | 1 | `flags` |
+| 4 | 4 | `config_generation` |
+
+Constants:
+
+```cpp
+kAudioMessageHeaderWireSize == 8
+```
+
+All multi-byte audio payload fields use big-endian byte order.
+
+### Audio Configuration Generation
+
+`config_generation` identifies the decoder-critical audio configuration required by an AudioFrame.
+
+Rules:
+
+```text
+0 = invalid / no active configuration
+first accepted configuration = 1
+subsequent format change = previous + 1
+UINT32_MAX + 1 wraps to 1, skipping 0
+```
+
+SystemAudio and MicrophoneAudio sender instances maintain independent generation and SCL sequence-number state.
+
+### Audio StreamConfig
+
+`StreamConfig.flags` must be zero in Version 1.
+
+After the 8-byte common header, a `StreamConfig` contains:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 8 | 4 | `sample_rate_hz` |
+| 12 | 1 | `channel_count` |
+| 13 | 1 | `frame_duration_code` |
+| 14 | 2 | reserved, zero |
+| 16 | 4 | `lookahead_samples` |
+
+The StreamConfig payload is exactly 20 bytes:
+
+```cpp
+kAudioStreamConfigWireSize == 20
+```
+
+Supported Opus sample rates are:
+
+```text
+8000, 12000, 16000, 24000, 48000 Hz
+```
+
+Supported channel counts are:
+
+```text
+1 = mono
+2 = stereo
+```
+
+Frame duration codes are:
+
+| Value | Duration |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `2.5 ms` |
+| 2 | `5 ms` |
+| 3 | `10 ms` |
+| 4 | `20 ms` |
+
+`lookahead_samples` is copied from the RFC-003B encoder format. Transport does not calculate a replacement. StreamConfig V1 does not serialize bitrate, complexity, CBR/CVBR mode, signal hint, DTX, or in-band FEC.
+
+### AudioFrame
+
+One raw Opus packet maps to one AudioFrame logical message:
+
+```text
+8-byte common audio header
+8-byte first_frame_position
+raw Opus packet
+```
+
+The fixed AudioFrame prefix is exactly 16 bytes:
+
+```cpp
+kAudioFramePrefixWireSize == 16
+```
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common audio header |
+| 8 | 8 | `first_frame_position` |
+| 16 | ... | raw Opus packet |
+
+`first_frame_position` is an unsigned 64-bit big-endian PCM sample position per channel. It is the audio continuity timeline and is independent from SCL packet sequence numbers.
+
+For `AudioFrame.flags`:
+
+```text
+bit 0     = DiscontinuityBefore
+bits 1..2 = TimestampQuality
+bits 3..7 = reserved, zero
+```
+
+Timestamp quality values:
+
+| Bits | Quality |
+| ---: | --- |
+| `00` | `Unavailable` |
+| `01` | `AudioRecordTimestamp` |
+| `10` | `EstimatedFromReadCompletion` |
+| `11` | reserved, rejected |
+
+`DiscontinuityBefore` means captured PCM continuity was broken immediately before this encoded frame. The sender may retain one local pending-discontinuity boolean after an encoder discontinuity callback; the next successfully submitted AudioFrame carries the flag and clears it.
+
+### Audio Timestamps
+
+For Version 1 `AudioFrame` SCL packets:
+
+```text
+PacketHeader::timestamp_us = floor(captureTimeNs / 1000)
+```
+
+`captureTimeNs` belongs to the first PCM sample represented by the encoded Opus packet. All fragments of one AudioFrame carry the same timestamp.
+
+Negative Kotlin `captureTimeNs` values are rejected before unsigned native conversion.
+
+### Audio Fragmentation
+
+The logical payload being fragmented is:
+
+```text
+StreamConfig:
+20-byte StreamConfig payload
+
+AudioFrame:
+16-byte AudioFrame prefix + raw Opus packet
+```
+
+Fragmentation uses RFC-001C unchanged. Each fragment receives its own SCL sequence number and the same `PacketHeader::timestamp_us` for one logical AudioFrame.
+
+Typical 5 ms Opus packets should normally fit one datagram, but Version 1 does not require that. Oversized packets are fragmented as one logical AudioFrame; Warpnect must not aggregate additional Opus packets to avoid or amortize fragmentation overhead.
+
+### Audio Segmented Packetization
+
+RFC-003C packetizes audio frames as segmented logical payloads:
+
+```text
+segment 0 = 16-byte AudioFrame prefix
+segment 1 = borrowed raw Opus packet bytes
+```
+
+The native packetizer copies only the bytes intersecting each SCL fragment into the outgoing datagram scratch buffer. It does not allocate or require a complete temporary `16 + Opus packet size` staging buffer.
+
+### Audio Transport Policy
+
+RFC-003C emits one AudioFrame per RFC-003B encoded Opus packet and creates no encoded-audio sender queue or audio worker thread. UDP sends are non-blocking. `WouldBlock` and send failures surface immediately to the caller rather than causing hidden backlog.
+
+Audio NACK, SCL FEC, Opus in-band FEC, decoder loss concealment, playback buffering, packet pacing, congestion control, automatic bitrate adaptation, and A/V synchronization are intentionally deferred to later Phase 3 RFCs.
 
 ## Loss Detection, NACK, And Recovery
 

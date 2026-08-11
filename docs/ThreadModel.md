@@ -60,6 +60,22 @@ WarpnectMicrophoneCapture
 
 The audio encoder does not introduce a PCM queue, encoder work queue, encoded-packet queue, per-frame coroutine, or per-frame main-thread hop.
 
+RFC-003C adds no audio transport worker thread. Audio transport submission is synchronous on the existing encoded-audio callback path:
+
+```text
+SystemAudio:
+WarpnectSystemAudioDrain
+        -> Opus encoder
+        -> SCL audio send
+
+Microphone:
+WarpnectMicrophoneCapture
+        -> Opus encoder
+        -> SCL audio send
+```
+
+The native audio sender uses non-blocking UDP and returns `WouldBlock` or `UdpSendFailed` immediately. It does not wait for writability, launch a coroutine per packet, create an encoded-audio queue, or hop through the UI thread.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

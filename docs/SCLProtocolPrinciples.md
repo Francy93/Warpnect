@@ -141,6 +141,14 @@ Version 1 video payloads carry either StreamConfig or AccessUnit messages. Strea
 
 SCL video packetization must not parse or normalize AVC NAL units. Video recovery must reuse existing SCL fragmentation, exact-datagram retransmission/NACK, and FEC primitives rather than introducing a second recovery protocol.
 
+## Encoded Audio Payload Contract
+
+System and microphone audio use existing `PayloadType::SystemAudio` and `PayloadType::MicrophoneAudio` with an inner Audio Payload Version. RFC-003C defines Audio Payload Version 1 without changing the SCL packet header or adding a payload type.
+
+Version 1 audio payloads carry either StreamConfig or AudioFrame messages. StreamConfig carries Opus decoder-critical metadata: sample rate, channel count, codec frame duration, configuration generation, and encoder lookahead. AudioFrame carries one raw Opus packet plus the first PCM frame position, timestamp quality, discontinuity flag, and capture timestamp in `PacketHeader::timestamp_us`.
+
+SCL audio packetization must not parse Opus internals, aggregate multiple Opus packets, maintain an encoded-audio queue, or enable audio recovery policy by default. Existing fragmentation remains the only Version 1 fragmentation model.
+
 ## Clock Synchronization Contract
 
 Latency and ordering decisions must use monotonic clocks.

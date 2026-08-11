@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, and Phase 3 audio foundations through RFC-003B.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, and Phase 3 audio foundations through RFC-003C.
 
 Present:
 
@@ -38,13 +38,14 @@ Present:
 - PCM Shared Ring Version 1 for privileged system-audio transfer through bounded SharedMemory and FD notification/ACK.
 - Microphone `AudioRecord` capture using preallocated direct buffers and borrowed PCM sink callbacks.
 - Portable libopus 1.6.1 Opus audio encoder foundation using RestrictedLowDelay operation, 5 ms baseline frames, borrowed direct PCM input, and borrowed encoded packet output.
+- SCL Audio Payload Version 1 transport for both system and microphone streams, mapping each borrowed raw Opus packet to one SCL AudioFrame over non-blocking UDP.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
-- SCL audio payload/transport, audio decoding, remote playback, and A/V synchronization are not implemented yet.
+- Remote Opus decoding, audio playback, and A/V synchronization are not implemented yet.
 - Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, authentication/encryption, or input injection.
 
 ## Repository Layout
@@ -196,6 +197,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-002G Video Latency, Recovery and Performance Tuning](docs/rfc/RFC-002G-Video-Latency-Recovery-Performance-Tuning.md)
 - [RFC-003A Android Low-Latency Audio Capture Foundation](docs/rfc/RFC-003A-Android-Low-Latency-Audio-Capture-Foundation.md)
 - [RFC-003B Portable Ultra-Low-Latency Opus Audio Encoder Pipeline](docs/rfc/RFC-003B-Portable-Ultra-Low-Latency-Opus-Audio-Encoder-Pipeline.md)
+- [RFC-003C SCL Audio Payload and Transport Integration](docs/rfc/RFC-003C-SCL-Audio-Payload-Transport-Integration.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
@@ -208,12 +210,12 @@ The produced Android shared library is `libscl_core.so`.
 
 Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, RFC-002F end-to-end video session orchestration, and RFC-002G latency/recovery/performance tuning are implemented.
 
-Phase 3 audio has begun. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. SCL audio transport, remote playback, and A/V sync remain pending.
+Phase 3 audio has begun. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. RFC-003C adds SCL Audio Payload Version 1 transport for both system and microphone streams. Remote playback and A/V sync remain pending.
 
 The next implementation RFC is:
 
 ```text
-RFC-003C - SCL Audio Payload and Transport Integration
+RFC-003D - Android Audio Decoder Pipeline
 ```
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

@@ -57,6 +57,7 @@ app/src/main/java/io/warpnect/
 |-- platform/capture/
 |-- platform/audio/capture/
 |-- platform/audio/encoder/
+|-- platform/audio/transport/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
 |-- platform/video/render/
@@ -79,9 +80,11 @@ Responsibilities:
 - `platform/capture/`: Android Shizuku/UserService capture integration, display configuration monitoring, and hidden framework adapter ownership.
 - `audio/capture/`: app-facing PCM audio capture contracts, source model, format, synchronous borrowed sink, typed errors/results, lifecycle snapshots, chunk sizing, timestamp tracking, and controller-core logic.
 - `audio/encoder/`: app-facing Opus audio encoder contracts, request/format/snapshot/error/state values, borrowed encoded sink, capability validation, and timing helpers.
+- `audio/transport/`: app-facing SCL Audio Payload V1 transport contracts, typed errors/results, snapshots, and `SclEncodedAudioSink`.
 - `platform/audio/capture/`: Android `AudioRecord` microphone capture, system-audio Shizuku gateway, app-side SharedMemory drain, audio thread priority helper, and shared PCM ring layout.
 - `platform/audio/capture/privileged/`: Shizuku/Sui UserService for privileged system-audio capture, isolated AudioPolicy reflection adapter, AIDL control contract, and Bundle conversion.
 - `platform/audio/encoder/`: native-backed Opus encoder controller, fakeable JNI backend seam, and `PcmAudioSink` adapter.
+- `platform/audio/transport/`: native-backed SCL audio transport controller and source-specific opaque native sender handle ownership.
 - `video/encoder/`: app-facing hardware AVC encoder contracts, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
 - `platform/video/encoder/`: Android `MediaCodec` AVC encoder discovery, MediaFormat translation, output-format extraction, monotonic clock access, and Surface-input encoder controller.
 - `video/decoder/`: app-facing hardware AVC decoder contracts, pull-based input source, output Surface policy values, capability values, lifecycle state, snapshots, format plans, and controller-core logic.
@@ -189,6 +192,23 @@ Responsibilities:
 
 Production audio encoding uses pinned libopus 1.6.1 through portable `warpnect::audio` C++ code. It does not use Android `MediaCodec`, AAC fallback, resampling, channel conversion, SCL audio packetization, UDP, decoding, playback, or an encoder worker queue.
 
+## Android Audio Transport Source Tree
+
+```text
+app/src/main/java/io/warpnect/audio/transport/
+app/src/main/java/io/warpnect/platform/audio/transport/
+```
+
+Responsibilities:
+
+- `AudioTransportConfig.kt`: explicit source, numeric remote endpoint, datagram budget, local port, and initial audio sequence configuration.
+- `AudioTransportError.kt`, `AudioTransportResult.kt`, `AudioTransportState.kt`, `AudioTransportSnapshot.kt`: typed local transport model.
+- `EncodedAudioTransportBackend.kt`: synchronous boundary used by the encoded audio sink.
+- `SclEncodedAudioSink.kt`: RFC-003B `EncodedAudioSink` implementation that submits StreamConfig on format changes and forwards each borrowed direct Opus packet as one SCL AudioFrame.
+- `NativeSclAudioTransportController.kt`: platform controller that creates/destroys the native audio sender handle through `NativeBridge.kt`.
+
+Production audio transport does not copy complete encoded Opus packets into Kotlin `ByteArray` values, does not serialize audio wire format in Kotlin, does not batch multiple Opus packets, and does not create an encoded-audio queue or worker thread.
+
 ## Android Video Transport Source Tree
 
 ```text
@@ -280,10 +300,13 @@ Native responsibilities:
 - `video_resync_control.h`: Version 1 VideoResyncRequest SessionControl wire codec.
 - `video_receiver_runtime.h`: bounded SCL video receiver runtime composed from UDP receive, FEC/NACK, multi-message reassembly, Video Payload V1 parsing, ready-slot ownership, recovery freshness deadlines, VideoResyncRequest emission, clock-sync integration, and telemetry.
 - `audio_opus_encoder.h`: portable libopus 1.6.1 RestrictedLowDelay encoder wrapper in `warpnect::audio`, with one Opus state, one incomplete PCM frame accumulator, and one encoded packet scratch buffer.
+- `audio_protocol.h`, `audio_transport_result.h`: Audio Payload Version 1 constants, StreamConfig/AudioFrame parsing, timestamp-quality flags, and typed audio transport errors.
+- `audio_packetizer.h`: segmented Audio Payload V1 packetizer for header-plus-borrowed-Opus sources.
+- `audio_transport.h`: caller-driven SCL audio sender composed from packetization and non-blocking UDP.
 - `native_bridge.h`, `jni_bridge.cpp`: JNI glue only.
 - `src/internal/`: private byte-order, socket-platform, GF(256), and matrix helpers.
 
-SCL C++ owns protocol, timing, telemetry, and transport primitives. Portable audio codec code uses `warpnect::audio` and is linked beside SCL for JNI packaging, but it does not define audio wire format or pollute the SCL namespace. Native code does not own Android display capture, Shizuku integration, Compose, or app lifecycle.
+SCL C++ owns protocol, timing, telemetry, and transport primitives, including Audio Payload V1. Portable audio codec code uses `warpnect::audio` and is linked beside SCL for JNI packaging, but codec logic does not pollute SCL transport/protocol responsibilities. Native code does not own Android display capture, Shizuku integration, Compose, or app lifecycle.
 
 ## Future Expansion Points
 
@@ -322,6 +345,8 @@ Current JVM tests also include RFC-003A audio chunk sizing, monotonic timestamp 
 
 Current JVM tests also include RFC-003B Opus encoder request validation, frame-duration/sample calculations, fake-backend controller lifecycle, synchronous multiple-frame forwarding, discontinuity reporting, direct-buffer rejection, bitrate update, sink failure, stop/restart, and tail discard coverage.
 
+Current JVM tests also include RFC-003C encoded-audio transport sink validation for StreamConfig submission, one-frame forwarding, direct-buffer requirements, timestamp/frame-position validation, discontinuity flag semantics, transport error propagation, and ByteBuffer position/limit preservation.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -336,7 +361,9 @@ Current Android instrumentation tests also include RFC-003A SharedMemory PCM rin
 
 Current Android instrumentation tests also include RFC-003B JNI direct-buffer Opus encoder smoke coverage that does not require audio hardware. Microphone-to-Opus and system-audio-to-Opus tests remain device/prerequisite-gated.
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, and RFC-003B portable Opus encoder tests.
+Current Android instrumentation tests also include RFC-003C JNI direct-buffer audio transport smoke coverage that does not require audio hardware. Capture-to-encoder-to-transport device tests remain device/prerequisite-gated.
+
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, and RFC-003C Audio Payload V1/transport tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 
