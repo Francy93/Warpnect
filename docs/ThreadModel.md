@@ -148,6 +148,10 @@ The Oboe callback remains real-time native only. RFC-003G adds fixed metadata an
 
 Video render decisions remain on `WarpnectVideoDecoder`. `AvSynchronizedVideoRenderPolicy` reads the latest immutable model and returns immediately. It must not query Oboe, wait for the sync worker, call JNI, perform network I/O, allocate media payloads, or hop to the UI thread per frame.
 
+RFC-003H adds no worker thread for PLC, reorder buffering, codec adaptation, Oboe buffer adaptation, or benchmark telemetry. The new performance profile is a cold-path configuration/snapshot view. Host-native benchmarks run only when explicitly invoked from the native build tree.
+
+If a future device-measured playback buffer tuner is enabled, it must run outside the Oboe data callback, remain bounded, and report every buffer-size change. RFC-003H does not enable such a tuner by default.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

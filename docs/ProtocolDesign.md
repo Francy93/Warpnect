@@ -679,6 +679,24 @@ Synchronized video uses the existing receiver-local `RenderAt` mechanism. RFC-00
 
 These are runtime policies only. They do not modify `PacketHeader`, `PayloadType`, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync.
 
+### RFC-003H Runtime Tuning
+
+RFC-003H adds Phase 3 audio performance configuration, deterministic host-native benchmarks, and documented production recovery/playback/A/V tuning decisions without changing the wire contract.
+
+The production audio recovery default remains ImmediateFreshness:
+
+```text
+networkReorderWaitUs = 0
+maxImmediatePlcFrames = 2
+audio NACK = disabled
+SCL audio FEC = disabled
+Opus in-band FEC = disabled
+```
+
+TinyReorderWindow, NACK, FEC, codec-bitrate, frame-duration, and Oboe-buffer experiments are local policy/benchmark choices. They do not add fields to Audio Payload V1, change raw Opus payload opacity, or introduce an A/V synchronization control payload.
+
+RFC-003H does not modify `PacketHeader`, `PayloadType`, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

@@ -164,6 +164,16 @@ If synchronization would require exceeding configured latency bounds, Warpnect M
 
 The A/V synchronization layer MUST process timing metadata only. It MUST NOT copy Opus, PCM, AVC, decoded video pixels, or other media payloads.
 
+Audio recovery MUST be constrained by media freshness. A packet or parity block recovered after the useful playout deadline is not considered a latency-path benefit.
+
+The Phase 3 production audio profile MUST NOT add a continuous network jitter buffer unless measurements explicitly justify a bounded policy. The current baseline remains zero timed reorder wait with explicit small-gap PLC.
+
+Playback-ring capacity is a safety and ownership bound. Actual ring occupancy and residence determine application buffering latency; allocated capacity MUST NOT be reported as intentional playback delay.
+
+Audio performance tuning may trade reliability against latency only through explicit, measurable, bounded policy. Experimental reorder, retransmission, FEC, codec, and buffer settings MUST remain visible and must not silently become defaults.
+
+Host-native benchmarks may establish codec/runtime CPU costs and deterministic policy behavior, but they MUST NOT be used as proof of Android hardware output latency, acoustic latency, Bluetooth latency, or physical A/V synchronization.
+
 ## JNI Rules
 
 JNI is only a bridge.

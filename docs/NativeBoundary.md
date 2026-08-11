@@ -287,6 +287,20 @@ The render policy consumes metadata only and returns existing `RenderImmediately
 
 RFC-003G adds no PacketHeader, PayloadType, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync wire change.
 
+RFC-003H adds performance configuration, bounded telemetry visibility, and host-native benchmark coverage only. It does not add a new hot-path JNI media boundary and does not introduce any additional Opus, PCM, AVC, or decoded-video payload copy across JNI.
+
+Tuning controls remain explicit metadata:
+
+```text
+AudioPerformanceConfig
+        |
+subsystem config snapshots
+        |
+existing NativeBridge calls
+```
+
+The production media boundaries from RFC-003A through RFC-003G remain unchanged. Benchmark CSV output is generated under native build directories and is not a runtime media path.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

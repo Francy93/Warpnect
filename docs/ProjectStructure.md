@@ -51,6 +51,7 @@ app/src/main/java/io/warpnect/
 |-- audio/
 |-- audio/decoder/
 |-- audio/encoder/
+|-- audio/performance/
 |-- audio/playback/
 |-- avsync/
 |-- capture/
@@ -86,6 +87,7 @@ Responsibilities:
 - `audio/capture/`: app-facing PCM audio capture contracts, source model, format, synchronous borrowed sink, typed errors/results, lifecycle snapshots, chunk sizing, timestamp tracking, and controller-core logic.
 - `audio/decoder/`: app-facing Opus audio decoder contracts, decode metadata, decoded PCM sink, format/snapshot/error/state values, and validation.
 - `audio/encoder/`: app-facing Opus audio encoder contracts, request/format/snapshot/error/state values, borrowed encoded sink, capability validation, and timing helpers.
+- `audio/performance/`: RFC-003H Phase 3 audio performance profile, recovery-policy selection, freshness bounds, playback/A/V tuning values, validation, and snapshot projection into existing subsystem configs.
 - `audio/playback/`: app-facing low-latency PCM playback contracts, decoded PCM submission metadata, sharing policy, snapshots, presentation timestamp results, typed errors, and validation.
 - `audio/session/`: RFC-003F transmitter and receiver audio session orchestration, start/stop rollback, StreamConfig handling, sample-position ordering, PLC gap policy, freshness reset policy, and composed snapshots.
 - `audio/transport/`: app-facing SCL Audio Payload V1 transport contracts, typed errors/results, snapshots, and `SclEncodedAudioSink`.
@@ -276,6 +278,18 @@ Responsibilities:
 
 Production A/V synchronization processes timing metadata only. It does not own media payloads, copy encoded or decoded media, create a network jitter buffer, create a decoded-video queue, resample/time-stretch audio, or introduce a new wire protocol.
 
+## Audio Performance Source Tree
+
+```text
+app/src/main/java/io/warpnect/audio/performance/
+```
+
+Responsibilities:
+
+- `AudioPerformanceConfig.kt`: RFC-003H UltraLowLatency profile, ImmediateFreshness/TinyReorderWindow policy selection, max recoverable audio age, playback and A/V tuning values, validation, and immutable snapshot fields.
+
+Production performance configuration composes existing RFC-003A through RFC-003G settings. It does not create a new media runtime, payload queue, JNI path, codec wrapper, playback backend, or protocol version.
+
 ## Android Video Transport Source Tree
 
 ```text
@@ -426,6 +440,8 @@ Current JVM tests also include RFC-003F audio transmitter rollback/backpressure 
 
 Current JVM tests also include RFC-003G A/V synchronization coverage for lookahead math, output-frame interpolation, synthetic timestamp-domain qualification, different-epoch/rate rejection, stale fallback, synchronized video `RenderAt` decisions, past/excessive-future fallback and clamping, manual offset, startup gate limits, early/timeout release, and sync reacquisition hooks.
 
+Current JVM tests also include RFC-003H audio performance configuration coverage for default profile values, TinyReorderWindow validation, recoverable-age bounds, subsystem-capacity validation, and projection into receiver-session and A/V synchronization configs.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -453,6 +469,8 @@ Current native tests include header smoke coverage, packet foundation tests, UDP
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 
 `native/benchmarks/` contains host-only benchmark runners and the `scl_phase1_benchmarks`, `scl_phase2_video_benchmarks`, `opus_audio_encoder_benchmarks`, and `opus_audio_decoder_benchmarks` executables. Benchmarks are explicit/manual and are not part of Android production builds.
+
+RFC-003H adds the `scl_phase3_audio_benchmarks` executable under `native/benchmarks/`. It measures codec frame-duration, bitrate, CBR/CVBR, complexity, packetization, receiver-runtime, PLC, and deterministic recovery-policy scenarios. Generated CSV belongs under native build directories and is not committed.
 
 ## CI Layout
 

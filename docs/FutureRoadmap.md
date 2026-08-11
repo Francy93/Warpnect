@@ -37,7 +37,7 @@ Implemented:
 
 ## Phase 3 - Audio Pipeline
 
-Status: In progress.
+Status: Complete.
 
 Implemented:
 
@@ -48,14 +48,11 @@ Implemented:
 - RFC-003E - Android Ultra-Low-Latency Audio Playback [complete]
 - RFC-003F - End-to-End Audio Streaming [complete]
 - RFC-003G - Audio/Video Synchronization [complete]
-
-Next:
-
-- RFC-003H - Audio Latency, Recovery and Performance Tuning [next]
+- RFC-003H - Audio Latency, Recovery and Performance Tuning [complete]
 
 Planned:
 
-- Phase 4 - Reverse Input.
+- Phase 4 - Reverse Input [next].
 
 ## Phase 4 - Reverse Input
 
