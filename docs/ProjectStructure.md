@@ -57,6 +57,7 @@ app/src/main/java/io/warpnect/
 |-- capture/
 |-- codec/
 |-- input/
+|-- input/model/
 |-- network/
 |-- platform/capture/
 |-- platform/audio/capture/
@@ -112,7 +113,8 @@ Responsibilities:
 - `network/`: future discovery/session bootstrap stubs, not UDP transport implementation.
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
-- `input/`: future reverse-input stubs.
+- `input/`: future reverse-input stubs and Phase 4 input-facing contracts.
+- `input/model/`: RFC-004A platform-neutral input event model, device kind/message/action enums, validation, delivery classification, and normalized/fixed-point conversion helpers. It contains no Android framework classes and no wire serializer.
 
 ## Android Capture Source Tree
 
@@ -278,6 +280,18 @@ Responsibilities:
 
 Production A/V synchronization processes timing metadata only. It does not own media payloads, copy encoded or decoded media, create a network jitter buffer, create a decoded-video queue, resample/time-stretch audio, or introduce a new wire protocol.
 
+## Portable Input Model Source Tree
+
+```text
+app/src/main/java/io/warpnect/input/model/
+```
+
+Responsibilities:
+
+- `InputModel.kt`: Input Payload V1 semantic enums, session-local device slot validation, keyboard HID usage model, multi-touch contacts, absolute/relative pointer values, scroll values, complete gamepad snapshots, ResetState model, delivery classification, and integer/fixed-point normalization helpers.
+
+The Kotlin model is platform-neutral. It does not depend on Android `InputDevice`, `KeyEvent`, `MotionEvent`, display IDs, pixels, capture callbacks, input injection APIs, JNI, UDP, or SCL wire serialization.
+
 ## Audio Performance Source Tree
 
 ```text
@@ -383,6 +397,7 @@ Native responsibilities:
 - `audio_opus_encoder.h`: portable libopus 1.6.1 RestrictedLowDelay encoder wrapper in `warpnect::audio`, with one Opus state, one incomplete PCM frame accumulator, and one encoded packet scratch buffer.
 - `audio_opus_decoder.h`: portable libopus 1.6.1 decoder wrapper in `warpnect::audio`, with one Opus state, typed packet-duration validation, one preallocated PCM scratch buffer, and explicit caller-driven PLC.
 - `audio_protocol.h`, `audio_transport_result.h`: Audio Payload Version 1 constants, StreamConfig/AudioFrame parsing, timestamp-quality flags, and typed audio transport errors.
+- `input_protocol.h` / `input_protocol.cpp`: Input Payload Version 1 constants, semantic enums, common header, Key, TouchFrame, PointerAbsolute, PointerRelative, Scroll, GamepadState, ResetState, delivery class helper, typed errors, and exact-size encode/decode/validation.
 - `audio_packetizer.h`: segmented Audio Payload V1 packetizer for header-plus-borrowed-Opus sources.
 - `audio_receiver_runtime.h`: bounded Audio Payload V1 UDP receiver runtime, source filtering, RFC-001C reassembly ownership, ready-slot ownership, and coarse audio receive events.
 - `audio_transport.h`: caller-driven SCL audio sender composed from packetization and non-blocking UDP.
@@ -442,6 +457,8 @@ Current JVM tests also include RFC-003G A/V synchronization coverage for lookahe
 
 Current JVM tests also include RFC-003H audio performance configuration coverage for default profile values, TinyReorderWindow validation, recoverable-age bounds, subsystem-capacity validation, and projection into receiver-session and A/V synchronization configs.
 
+Current JVM tests also include RFC-004A portable input model coverage for normalization/fixed-point conversion, device-slot validation, HID key events, modifier masks, touch contact/action-pointer rules, pointer button masks, scroll no-op rejection, gamepad axis/button validation, ResetState scope rules, and delivery classification.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -465,6 +482,8 @@ Current Android instrumentation tests also include RFC-003E Oboe playback lifecy
 RFC-003G Android synthetic A/V, privileged real-capture timestamp-domain qualification, and two-device A/V validation are device/prerequisite-gated and must report actual device status only.
 
 Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, RFC-003D portable Opus decoder tests, RFC-003E portable playback ring tests, RFC-003F audio receiver runtime loopback/reassembly tests, and RFC-003G playback source-anchor metadata tests.
+
+Current native tests also include RFC-004A Input Payload V1 golden-vector, malformed-payload, strict-length, reserved-field, pointer/touch/gamepad/reset validation, and delivery-class tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 

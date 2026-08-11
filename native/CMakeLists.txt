@@ -35,6 +35,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/fec.cpp"
     "${SCL_CPP_ROOT}/src/fec_control.cpp"
     "${SCL_CPP_ROOT}/src/fragmentation.cpp"
+    "${SCL_CPP_ROOT}/src/input_protocol.cpp"
     "${SCL_CPP_ROOT}/src/loss_detector.cpp"
     "${SCL_CPP_ROOT}/src/monotonic_time.cpp"
     "${SCL_CPP_ROOT}/src/packet_codec.cpp"
@@ -175,6 +176,10 @@ add_executable(scl_audio_receiver_runtime_tests tests/scl_audio_receiver_runtime
 configure_native_target(scl_audio_receiver_runtime_tests)
 target_link_libraries(scl_audio_receiver_runtime_tests PRIVATE scl_native_core)
 
+add_executable(scl_input_protocol_tests tests/scl_input_protocol_tests.cpp)
+configure_native_target(scl_input_protocol_tests)
+target_link_libraries(scl_input_protocol_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -256,3 +261,4 @@ add_test(NAME opus_audio_decoder_tests COMMAND opus_audio_decoder_tests)
 add_test(NAME audio_playback_ring_tests COMMAND audio_playback_ring_tests)
 add_test(NAME scl_audio_transport_tests COMMAND scl_audio_transport_tests)
 add_test(NAME scl_audio_receiver_runtime_tests COMMAND scl_audio_receiver_runtime_tests)
+add_test(NAME scl_input_protocol_tests COMMAND scl_input_protocol_tests)

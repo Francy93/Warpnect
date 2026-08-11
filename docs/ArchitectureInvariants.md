@@ -174,6 +174,16 @@ Audio performance tuning may trade reliability against latency only through expl
 
 Host-native benchmarks may establish codec/runtime CPU costs and deterministic policy behavior, but they MUST NOT be used as proof of Android hardware output latency, acoustic latency, Bluetooth latency, or physical A/V synchronization.
 
+Android input device IDs, Android keycodes, scan codes, screen pixels, display IDs, and Android framework source constants MUST remain platform-adapter details. They MUST NOT become SCL Input Payload wire semantics.
+
+Absolute input coordinates MUST be normalized to a logical Warpnect remote-control surface so receiver and target display resolution are decoupled.
+
+Gamepad input MUST be represented as a bounded complete common-controller state snapshot rather than a sequence of independent Android axis deltas or platform keycodes.
+
+Input Payload V1 MUST contain an explicit ResetState mechanism so later session and transport layers can prevent stuck remote keys, touches, mouse buttons, and gamepad state without an unbounded recovery history.
+
+Input Payload V1 MUST NOT batch unrelated temporal input events, introduce input-specific fragmentation, add an input reliability protocol, or create an input queue in RFC-004A.
+
 ## JNI Rules
 
 JNI is only a bridge.

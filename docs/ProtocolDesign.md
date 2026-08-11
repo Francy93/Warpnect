@@ -697,6 +697,398 @@ TinyReorderWindow, NACK, FEC, codec-bitrate, frame-duration, and Oboe-buffer exp
 
 RFC-003H does not modify `PacketHeader`, `PayloadType`, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync.
 
+## Input Payload Version 1
+
+RFC-004A defines the Version 1 logical payload carried inside:
+
+```cpp
+PayloadType::Input == 4
+```
+
+Input Payload Version 1 is independent from SCL Protocol Version, Native Bridge ABI Version, Audio Payload Version, Video Payload Version, and Video Resync Control Version.
+
+Constants:
+
+```cpp
+kInputPayloadVersion == 1
+kInputMessageHeaderWireSize == 8
+```
+
+The 21-byte SCL `PacketHeader` is unchanged. RFC-004A does not add a new `PayloadType`.
+
+### Input Timestamp
+
+For future RFC-004C packetization, `PacketHeader::timestamp_us` carries source-device local monotonic event time in microseconds. Input Payload V1 does not duplicate this timestamp inside the payload.
+
+Input timestamps must not be wall-clock, UTC, calendar, or `System.currentTimeMillis()` values.
+
+### Device Model
+
+Every Input Payload V1 message contains:
+
+```text
+device_kind : u8
+device_slot : u16
+```
+
+`device_slot` is a session-local Warpnect logical device slot:
+
+```text
+0        = primary/default device slot
+1..65534 = additional session-local slots
+65535    = reserved, except ResetState AllDevices
+```
+
+Input Payload V1 does not serialize Android `InputDevice.deviceId`, scan codes, `KeyEvent.KEYCODE_*`, `MotionEvent` source bitmasks, Android display IDs, USB bus addresses, Bluetooth addresses, or hardware serials.
+
+### Common Input Header
+
+Every Version 1 input payload starts with this exact 8-byte header:
+
+| Offset | Size | Field | Wire type |
+| ---: | ---: | --- | --- |
+| 0 | 1 | `input_version` | unsigned 8-bit |
+| 1 | 1 | `message_type` | unsigned 8-bit |
+| 2 | 1 | `device_kind` | unsigned 8-bit |
+| 3 | 1 | `flags` | unsigned 8-bit |
+| 4 | 2 | `device_slot` | unsigned 16-bit |
+| 6 | 2 | reserved | zero |
+
+All multi-byte fields use big-endian byte order.
+
+Common `flags` are reserved and must be zero in Version 1. Reserved bytes must be zero.
+
+### Device Kinds
+
+| Value | Kind |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Keyboard` |
+| 2 | `Touchscreen` |
+| 3 | `Mouse` |
+| 4 | `Gamepad` |
+| 5 | `Stylus` |
+| 6 | `Touchpad` |
+
+`Unknown` is valid only for `ResetState` with `AllDevices`.
+
+### Message Types
+
+| Value | Message type |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Key` |
+| 2 | `TouchFrame` |
+| 3 | `PointerAbsolute` |
+| 4 | `PointerRelative` |
+| 5 | `Scroll` |
+| 6 | `GamepadState` |
+| 7 | `ResetState` |
+
+Unknown or unsupported message values are rejected.
+
+### Message And Device Compatibility
+
+Version 1 uses this strict compatibility matrix:
+
+| Message | Device kinds |
+| --- | --- |
+| `Key` | `Keyboard` |
+| `TouchFrame` | `Touchscreen`, `Touchpad`, `Stylus` |
+| `PointerAbsolute` | `Mouse`, `Stylus`, `Touchpad` |
+| `PointerRelative` | `Mouse`, `Touchpad` |
+| `Scroll` | `Mouse`, `Touchpad` |
+| `GamepadState` | `Gamepad` |
+| `ResetState` | valid device for `ThisDevice`, `Unknown` for `AllDevices` |
+
+Gamepad buttons are not encoded as keyboard key messages.
+
+### Key
+
+`Key` is exactly 20 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 2 | `usage_page` |
+| 10 | 2 | `usage_id` |
+| 12 | 1 | `action` |
+| 13 | 1 | reserved, zero |
+| 14 | 2 | `repeat_count` |
+| 16 | 2 | `modifier_mask` |
+| 18 | 2 | reserved, zero |
+
+Keyboard semantics use USB HID Usage Page and USB HID Usage ID, referencing USB HID Usage Tables 1.7 as the semantic baseline. The protocol does not restrict parsing to a small platform whitelist of known usages.
+
+Key actions:
+
+| Value | Action |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Down` |
+| 2 | `Up` |
+
+`Unknown` and other values are rejected. `Up` requires `repeat_count == 0`; repeated `Down` may use a nonzero repeat count.
+
+Modifier mask:
+
+| Bit | Meaning |
+| ---: | --- |
+| 0 | LeftControl |
+| 1 | LeftShift |
+| 2 | LeftAlt |
+| 3 | LeftGui |
+| 4 | RightControl |
+| 5 | RightShift |
+| 6 | RightAlt |
+| 7 | RightGui |
+| 8..15 | reserved, zero |
+
+Modifier keys remain representable as ordinary HID key usages. Input Payload V1 does not define Unicode text, IME composition, clipboard, or paste messages.
+
+### TouchFrame
+
+`TouchFrame` contains one source multi-contact observation. The prefix is 12 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 1 | `action` |
+| 9 | 1 | `action_pointer_id` |
+| 10 | 1 | `pointer_count` |
+| 11 | 1 | reserved, zero |
+
+Each contact is exactly 12 bytes:
+
+| Relative offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 1 | `pointer_id` |
+| 1 | 1 | `tool_type` |
+| 2 | 2 | `pointer_flags` |
+| 4 | 2 | `x_normalized` |
+| 6 | 2 | `y_normalized` |
+| 8 | 2 | `pressure` |
+| 10 | 2 | `size` |
+
+Exact payload size:
+
+```text
+12 + pointer_count * 12
+```
+
+`pointer_count` is bounded to 32. Non-cancel observations require at least one contact. `Cancel` may carry zero through 32 contacts depending on adapter semantics. Pointer IDs are 0..31 and must be unique within one frame.
+
+Touch actions:
+
+| Value | Action |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Down` |
+| 2 | `Up` |
+| 3 | `Move` |
+| 4 | `Cancel` |
+| 5 | `PointerDown` |
+| 6 | `PointerUp` |
+
+`Down`, `Up`, `PointerDown`, and `PointerUp` require `action_pointer_id` to name a contact present in the frame. `Move` and `Cancel` require `action_pointer_id == 0xFF`.
+
+Tool types:
+
+| Value | Tool |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `Finger` |
+| 2 | `Stylus` |
+| 3 | `Eraser` |
+| 4 | `Mouse` |
+
+Pointer flags:
+
+| Bit | Meaning |
+| ---: | --- |
+| 0 | PressureValid |
+| 1 | SizeValid |
+| 2..15 | reserved, zero |
+
+When pressure or size validity is false, the corresponding field must be zero. Coordinates are normalized unsigned 16-bit values: x=0 left, x=65535 right, y=0 top, y=65535 bottom.
+
+### PointerAbsolute
+
+`PointerAbsolute` is exactly 20 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 2 | `x_normalized` |
+| 10 | 2 | `y_normalized` |
+| 12 | 2 | `button_mask` |
+| 14 | 2 | `pointer_flags` |
+| 16 | 2 | `pressure` |
+| 18 | 2 | reserved, zero |
+
+Absolute pointer coordinates are normalized to the logical Warpnect remote-control surface. Pixel coordinates are not serialized.
+
+PointerAbsolute flags currently define bit 0 as `PressureValid`; bits 1..15 are reserved. If pressure is not valid, the pressure field must be zero.
+
+### PointerRelative
+
+`PointerRelative` is exactly 20 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 4 | `delta_x_q16_16` |
+| 12 | 4 | `delta_y_q16_16` |
+| 16 | 2 | `button_mask` |
+| 18 | 2 | reserved, zero |
+
+Relative motion uses signed Q16.16 normalized surface deltas:
+
+```text
+65536  = +1.0 logical surface width/height
+-65536 = -1.0 logical surface width/height
+```
+
+Zero relative motion is valid when button state changed. Pointer acceleration, DPI scaling, sensitivity, and target-pixel conversion are outside Input Payload V1.
+
+### Scroll
+
+`Scroll` is exactly 16 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 2 | `horizontal_q8_8` |
+| 10 | 2 | `vertical_q8_8` |
+| 12 | 2 | `button_mask` |
+| 14 | 2 | reserved, zero |
+
+Scroll uses signed Q8.8 logical units:
+
+```text
+256 = +1.0 logical scroll unit
+```
+
+Both horizontal and vertical zero is rejected as a no-op.
+
+### Pointer Button Mask
+
+Pointer button mask:
+
+| Bit | Button |
+| ---: | --- |
+| 0 | Primary |
+| 1 | Secondary |
+| 2 | Tertiary |
+| 3 | Back |
+| 4 | Forward |
+| 5..15 | reserved, zero |
+
+### GamepadState
+
+`GamepadState` is exactly 28 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 4 | `button_mask` |
+| 12 | 2 | `left_x` |
+| 14 | 2 | `left_y` |
+| 16 | 2 | `right_x` |
+| 18 | 2 | `right_y` |
+| 20 | 2 | `left_trigger` |
+| 22 | 2 | `right_trigger` |
+| 24 | 4 | reserved, zero |
+
+Each GamepadState is a complete common-controller snapshot. It is not a stream of independent axis/button deltas.
+
+Gamepad button mask:
+
+| Bit | Button |
+| ---: | --- |
+| 0 | A |
+| 1 | B |
+| 2 | X |
+| 3 | Y |
+| 4 | LeftShoulder |
+| 5 | RightShoulder |
+| 6 | LeftTriggerButton |
+| 7 | RightTriggerButton |
+| 8 | Select/Back |
+| 9 | Start |
+| 10 | Guide/Mode |
+| 11 | LeftStickButton |
+| 12 | RightStickButton |
+| 13 | DpadUp |
+| 14 | DpadDown |
+| 15 | DpadLeft |
+| 16 | DpadRight |
+| 17..31 | reserved, zero |
+
+Stick axes use signed 16-bit normalized values:
+
+```text
+-32767 = -1.0
+0      = center
+32767  = +1.0
+```
+
+`-32768` is reserved and rejected. X negative is left, X positive is right, Y negative is up, and Y positive is down. Triggers use unsigned 16-bit normalized values from released 0 to fully pressed 65535.
+
+No deadzone, sensitivity curve, or platform gamepad keycode is part of the protocol.
+
+### ResetState
+
+`ResetState` is exactly 12 bytes:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 8 | common input header |
+| 8 | 1 | `scope` |
+| 9 | 1 | `reason` |
+| 10 | 2 | reserved, zero |
+
+Scopes:
+
+| Value | Scope |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `ThisDevice` |
+| 2 | `AllDevices` |
+
+`Unknown` scope is rejected. `ThisDevice` requires a valid non-unknown device kind and device slot 0..65534. `AllDevices` requires `device_kind = Unknown` and `device_slot = 65535`; this is the only Version 1 use of slot 65535.
+
+Reasons:
+
+| Value | Reason |
+| ---: | --- |
+| 0 | `Unknown` |
+| 1 | `SessionStop` |
+| 2 | `DeviceDisconnected` |
+| 3 | `FocusLost` |
+| 4 | `ErrorRecovery` |
+| 5 | `UserRequest` |
+
+Reason is diagnostic. ResetState is not a device descriptor, capability negotiation, or session handshake.
+
+### Delivery Class
+
+Input Payload V1 defines a local helper classification, not a wire field:
+
+| Class | Examples |
+| --- | --- |
+| `FreshState` | GamepadState, PointerAbsolute, PointerRelative, Scroll, Touch Move |
+| `CriticalTransition` | Key Down/Up, Touch Down/Up/PointerDown/PointerUp/Cancel |
+| `Reset` | ResetState |
+
+The delivery class prepares RFC-004C/RFC-004G. RFC-004A does not implement input retransmission, duplication, NACK, FEC, reliable queues, or transport policy.
+
+### Serialization Rules
+
+Input Payload V1 uses explicit big-endian field encoding. Native runtime structures are not packed or copied directly onto the wire. Fixed-size messages require exact length. TouchFrame length is calculated from the bounded pointer count. Trailing bytes, reserved bits, reserved bytes, invalid enum values, duplicate pointer IDs, invalid action pointers, and reserved gamepad axis/button values are rejected.
+
+Input Payload V1 contains no input-specific fragmentation model, no batching message, no compression chain, and no input-specific sequence field. RFC-004C may use the existing SCL `PacketHeader.sequence_number`, `PacketHeader.timestamp_us`, and RFC-001C fragmentation primitives when transport is introduced.
+
 ## Loss Detection, NACK, And Recovery
 
 RFC-001D defines bounded packet-level loss detection and selective retransmission primitives for one caller-scoped recovery domain.

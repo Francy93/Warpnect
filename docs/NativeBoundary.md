@@ -301,6 +301,22 @@ existing NativeBridge calls
 
 The production media boundaries from RFC-003A through RFC-003G remain unchanged. Benchmark CSV output is generated under native build directories and is not a runtime media path.
 
+RFC-004A introduces no JNI input boundary and no NativeBridge entry point. It adds only portable C++20 Input Payload V1 encode/decode/validation and a platform-neutral Kotlin input model.
+
+Future Phase 4 boundaries are expected to compose as:
+
+```text
+Android input capture
+        |
+portable Kotlin input model
+        |
+JNI / SCL input transport
+        |
+Input Payload V1
+```
+
+Android capture belongs to RFC-004B, reverse UDP transport to RFC-004C, and privileged injection to RFC-004D.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

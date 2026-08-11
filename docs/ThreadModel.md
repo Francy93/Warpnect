@@ -152,6 +152,8 @@ RFC-003H adds no worker thread for PLC, reorder buffering, codec adaptation, Obo
 
 If a future device-measured playback buffer tuner is enabled, it must run outside the Oboe data callback, remain bounded, and report every buffer-size change. RFC-003H does not enable such a tuner by default.
 
+RFC-004A adds no input capture thread, transport thread, injection thread, JNI callback, or worker queue. Input Payload V1 encode/decode/validation is caller-driven protocol work and has no Android runtime dependency.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

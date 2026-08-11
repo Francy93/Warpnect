@@ -6,6 +6,7 @@
 #include "fec_result.h"
 #include "fragment_result.h"
 #include "fragmentation.h"
+#include "input_protocol.h"
 #include "loss_detector.h"
 #include "monotonic_time.h"
 #include "native_bridge.h"

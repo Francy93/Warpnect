@@ -149,6 +149,28 @@ Version 1 audio payloads carry either StreamConfig or AudioFrame messages. Strea
 
 SCL audio packetization must not parse Opus internals, aggregate multiple Opus packets, maintain an encoded-audio queue, or enable audio recovery policy by default. Existing fragmentation remains the only Version 1 fragmentation model.
 
+## Input Payload Contract
+
+Reverse input uses existing `PayloadType::Input` and an inner Input Payload Version. RFC-004A defines Input Payload Version 1 without changing the SCL packet header or adding a payload type.
+
+SCL Input Payloads carry portable control semantics rather than Android framework identifiers. Android device IDs, Android keycodes, scan codes, MotionEvent source constants, display IDs, screen pixels, hardware serials, USB bus addresses, and Bluetooth addresses are platform-adapter details, not wire semantics.
+
+One temporal input observation maps to one logical Input Payload message. Unrelated input events are not batched for header efficiency. A multi-contact TouchFrame is a single state observation, not temporal batching.
+
+Input event time uses `PacketHeader::timestamp_us` as source-device local monotonic event time. Input Payload V1 does not duplicate the timestamp inside the payload.
+
+Stateful controls may use complete snapshots where doing so improves recovery without creating a queue. GamepadState is a complete common-controller snapshot, and TouchFrame is a bounded multi-contact observation.
+
+Input Payload V1 defines a local delivery classification for future policy:
+
+```text
+FreshState
+CriticalTransition
+Reset
+```
+
+The classification is not a wire field and does not implement retransmission, duplication, NACK, FEC, reliable queues, or transport policy.
+
 ## Clock Synchronization Contract
 
 Latency and ordering decisions must use monotonic clocks.

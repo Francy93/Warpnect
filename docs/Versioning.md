@@ -108,6 +108,18 @@ Audio Payload Version describes the logical payload layout carried inside existi
 
 It is independent from SCL Protocol Version, Native ABI Version, PCM Shared Ring Version, Video Payload Version, and Video Resync Control Version. RFC-003C defines Version 1 `StreamConfig` and `AudioFrame` messages without changing the 21-byte SCL `PacketHeader` or adding a new payload type.
 
+## Input Payload Version
+
+Current value:
+
+```text
+1
+```
+
+Input Payload Version describes the logical payload layout carried inside existing `PayloadType::Input` packets.
+
+It is independent from SCL Protocol Version, Native ABI Version, Audio Payload Version, Video Payload Version, and Video Resync Control Version. RFC-004A defines Version 1 keyboard, touch, pointer, scroll, gamepad-state, and reset messages without changing the 21-byte SCL `PacketHeader` or adding a new payload type.
+
 ## Application Version
 
 Current value:
