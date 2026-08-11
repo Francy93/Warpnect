@@ -86,6 +86,7 @@ void PcmPlaybackRing::reset() noexcept {
     tail_.store(0, std::memory_order_relaxed);
     queued_slots_.store(0, std::memory_order_release);
     active_read_offset_frames_.store(0, std::memory_order_release);
+    invalidate_source_timeline();
 
     snapshot_.ring_capacity_frames = capacity_frames();
     snapshot_.ring_occupancy_frames = 0;
@@ -192,7 +193,8 @@ PcmPlaybackRingSubmitResult PcmPlaybackRing::submit(
 
 PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> output,
                                                       std::uint32_t requested_frames,
-                                                      std::uint64_t consume_time_ns) noexcept {
+                                                      std::uint64_t consume_time_ns,
+                                                      std::uint64_t output_start_frame_position) noexcept {
     PcmPlaybackRingConsumeResult result{.frames_requested = requested_frames};
     if (!prepared_ || closed_ || requested_frames == 0 || output.empty()) {
         return result;
@@ -245,6 +247,9 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
 
         const std::uint32_t available = slot.frame_count - read_offset;
         const std::uint32_t to_copy = std::min(available, frames_remaining);
+        if (read_offset == 0 && to_copy > 0) {
+            publish_source_anchor(slot, read_offset, output_start_frame_position + output_frame_offset);
+        }
         const auto samples_to_copy =
             static_cast<std::size_t>(to_copy) * config_.channel_count;
         const auto sample_source_offset =
@@ -279,6 +284,7 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
                   output_pcm + sample_output_offset + silence_samples, std::int16_t{0});
         result.underrun = true;
         result.silence_frames_inserted = frames_remaining;
+        invalidate_source_timeline();
         snapshot_.underrun_callbacks += 1;
         snapshot_.underrun_frames += frames_remaining;
         snapshot_.silence_frames_inserted += frames_remaining;
@@ -297,6 +303,45 @@ std::uint32_t PcmPlaybackRing::occupancy_frames() const noexcept {
         return 0;
     }
     return queued_frames_relaxed();
+}
+
+AudioSourcePlaybackAnchor PcmPlaybackRing::latest_source_anchor() const noexcept {
+    for (int attempts = 0; attempts < 4; ++attempts) {
+        const std::uint64_t before = anchor_sequence_.load(std::memory_order_acquire);
+        if ((before & 1ULL) != 0ULL) {
+            continue;
+        }
+        AudioSourcePlaybackAnchor anchor{
+            .valid = anchor_valid_.load(std::memory_order_acquire),
+            .sequence = before,
+            .config_generation = anchor_config_generation_.load(std::memory_order_relaxed),
+            .sample_rate_hz = anchor_sample_rate_hz_.load(std::memory_order_relaxed),
+            .channel_count = anchor_channel_count_.load(std::memory_order_relaxed),
+            .source_frame_position =
+                anchor_source_frame_position_.load(std::memory_order_relaxed),
+            .source_capture_time_us =
+                anchor_source_capture_time_us_.load(std::memory_order_relaxed),
+            .output_frame_position =
+                anchor_output_frame_position_.load(std::memory_order_relaxed),
+            .timestamp_quality = static_cast<AudioTimestampQuality>(
+                anchor_timestamp_quality_.load(std::memory_order_relaxed)),
+            .discontinuity_before =
+                anchor_discontinuity_before_.load(std::memory_order_relaxed),
+            .frame_kind = static_cast<DecodedAudioFrameKind>(
+                anchor_frame_kind_.load(std::memory_order_relaxed)),
+        };
+        const std::uint64_t after = anchor_sequence_.load(std::memory_order_acquire);
+        if (before == after && (after & 1ULL) == 0ULL) {
+            return anchor;
+        }
+    }
+    return AudioSourcePlaybackAnchor{};
+}
+
+void PcmPlaybackRing::invalidate_source_timeline() noexcept {
+    anchor_sequence_.fetch_add(1, std::memory_order_acq_rel);
+    anchor_valid_.store(false, std::memory_order_relaxed);
+    anchor_sequence_.fetch_add(1, std::memory_order_release);
 }
 
 PcmPlaybackRingSnapshot PcmPlaybackRing::snapshot() const noexcept {
@@ -327,6 +372,28 @@ std::uint32_t PcmPlaybackRing::queued_frames_relaxed() const noexcept {
         index = (index + 1U) % config_.ring_capacity_codec_frames;
     }
     return frames;
+}
+
+void PcmPlaybackRing::publish_source_anchor(const Slot& slot,
+                                            std::uint32_t read_offset,
+                                            std::uint64_t output_frame_position) noexcept {
+    anchor_sequence_.fetch_add(1, std::memory_order_acq_rel);
+    anchor_config_generation_.store(slot.metadata.config_generation, std::memory_order_relaxed);
+    anchor_sample_rate_hz_.store(config_.sample_rate_hz, std::memory_order_relaxed);
+    anchor_channel_count_.store(config_.channel_count, std::memory_order_relaxed);
+    anchor_source_frame_position_.store(slot.metadata.first_frame_position + read_offset,
+                                        std::memory_order_relaxed);
+    anchor_source_capture_time_us_.store(slot.metadata.capture_time_us,
+                                         std::memory_order_relaxed);
+    anchor_output_frame_position_.store(output_frame_position, std::memory_order_relaxed);
+    anchor_timestamp_quality_.store(
+        static_cast<std::uint8_t>(slot.metadata.timestamp_quality), std::memory_order_relaxed);
+    anchor_discontinuity_before_.store(slot.metadata.discontinuity_before,
+                                       std::memory_order_relaxed);
+    anchor_frame_kind_.store(static_cast<std::uint8_t>(slot.metadata.frame_kind),
+                             std::memory_order_relaxed);
+    anchor_valid_.store(true, std::memory_order_relaxed);
+    anchor_sequence_.fetch_add(1, std::memory_order_release);
 }
 
 void PcmPlaybackRing::update_high_water(std::uint32_t occupancy_frames) noexcept {

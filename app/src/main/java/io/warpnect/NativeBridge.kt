@@ -82,6 +82,7 @@ internal object NativeBridge {
         channelCount: Int,
         frameDurationUs: Int,
         framesPerCodecFrame: Int,
+        lookaheadSamples: Int,
         ringCapacityCodecFrames: Int,
         startThresholdCodecFrames: Int,
         sharingPolicy: Int,
@@ -115,6 +116,9 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeAudioPlaybackPresentationTimestamp(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackSourcePresentationAnchor(handle: Long): LongArray
 
     @JvmStatic
     private external fun nativeAudioPlaybackSnapshot(handle: Long): LongArray
@@ -422,6 +426,7 @@ internal object NativeBridge {
         channelCount: Int,
         frameDurationUs: Int,
         framesPerCodecFrame: Int,
+        lookaheadSamples: Int,
         ringCapacityCodecFrames: Int,
         startThresholdCodecFrames: Int,
         sharingPolicy: Int,
@@ -434,6 +439,7 @@ internal object NativeBridge {
         channelCount,
         frameDurationUs,
         framesPerCodecFrame,
+        lookaheadSamples,
         ringCapacityCodecFrames,
         startThresholdCodecFrames,
         sharingPolicy,
@@ -474,6 +480,9 @@ internal object NativeBridge {
     fun audioPlaybackStop(handle: Long): Int = nativeAudioPlaybackStop(handle)
 
     fun audioPlaybackPresentationTimestamp(handle: Long): LongArray = nativeAudioPlaybackPresentationTimestamp(handle)
+
+    fun audioPlaybackSourcePresentationAnchor(handle: Long): LongArray =
+        nativeAudioPlaybackSourcePresentationAnchor(handle)
 
     fun audioPlaybackSnapshot(handle: Long): LongArray = nativeAudioPlaybackSnapshot(handle)
 

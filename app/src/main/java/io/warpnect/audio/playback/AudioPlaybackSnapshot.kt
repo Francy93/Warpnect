@@ -12,6 +12,7 @@ data class AudioPlaybackSnapshot(
     val actualChannelCount: Int = 0,
     val frameDurationUs: Int = 0,
     val framesPerCodecFrame: Int = 0,
+    val lookaheadSamples: Int = 0,
     val requestedPerformanceMode: AudioPlaybackPerformanceMode = AudioPlaybackPerformanceMode.LowLatency,
     val actualPerformanceMode: AudioPlaybackPerformanceMode = AudioPlaybackPerformanceMode.Unknown,
     val requestedSharingMode: AudioPlaybackSharingMode = AudioPlaybackSharingMode.Exclusive,

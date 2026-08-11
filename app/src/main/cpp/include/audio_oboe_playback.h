@@ -48,6 +48,7 @@ struct OboeAudioPlaybackConfig final {
     std::uint8_t channel_count = 1;
     std::uint32_t frame_duration_us = 5000;
     std::uint32_t frames_per_codec_frame = 240;
+    std::uint32_t lookahead_samples = 0;
     std::uint32_t ring_capacity_codec_frames = 4;
     std::uint32_t start_threshold_codec_frames = 1;
     AudioPlaybackSharingPolicy sharing_policy =
@@ -64,6 +65,26 @@ struct AudioPlaybackPresentationTimestamp final {
     std::uint64_t latency_us = 0;
 };
 
+struct AudioSourcePresentationAnchor final {
+    AudioPlaybackError error = AudioPlaybackError::None;
+    bool valid = false;
+    std::int64_t source_content_time_us = 0;
+    std::uint64_t source_capture_time_us = 0;
+    std::uint64_t source_frame_position = 0;
+    std::uint64_t output_frame_position = 0;
+    std::uint64_t local_presentation_time_ns = 0;
+    std::uint64_t oboe_frame_position = 0;
+    std::uint64_t oboe_presentation_time_ns = 0;
+    std::uint64_t age_ns = 0;
+    std::uint32_t config_generation = 0;
+    std::uint32_t sample_rate_hz = 0;
+    std::uint32_t lookahead_samples = 0;
+    AudioTimestampQuality timestamp_quality = AudioTimestampQuality::Unavailable;
+    bool discontinuity_before = false;
+    DecodedAudioFrameKind frame_kind = DecodedAudioFrameKind::Normal;
+    std::uint64_t latency_us = 0;
+};
+
 struct OboeAudioPlaybackSnapshot final {
     AudioCaptureSource source = AudioCaptureSource::MicrophoneAudio;
     std::uint32_t config_generation = 0;
@@ -73,6 +94,7 @@ struct OboeAudioPlaybackSnapshot final {
     std::uint8_t actual_channel_count = 0;
     std::uint32_t frame_duration_us = 0;
     std::uint32_t frames_per_codec_frame = 0;
+    std::uint32_t lookahead_samples = 0;
     AudioPlaybackModeCode requested_performance_mode = AudioPlaybackModeCode::LowLatency;
     AudioPlaybackModeCode actual_performance_mode = AudioPlaybackModeCode::Unknown;
     AudioPlaybackSharingModeCode requested_sharing_mode = AudioPlaybackSharingModeCode::Exclusive;
@@ -130,6 +152,7 @@ public:
                                                 std::uint32_t frame_count,
                                                 const DecodedPcmPlaybackMetadata& metadata);
     [[nodiscard]] AudioPlaybackPresentationTimestamp query_presentation_timestamp();
+    [[nodiscard]] AudioSourcePresentationAnchor query_source_presentation_anchor();
     [[nodiscard]] OboeAudioPlaybackSnapshot snapshot();
     void close() noexcept;
 
@@ -145,6 +168,8 @@ private:
     void refresh_xrun_count();
     void record_error(AudioPlaybackError error) noexcept;
     [[nodiscard]] std::uint64_t monotonic_now_ns() const noexcept;
+    [[nodiscard]] static std::uint64_t lookahead_duration_us(std::uint32_t lookahead_samples,
+                                                             std::uint32_t sample_rate_hz) noexcept;
 
     OboeAudioPlaybackConfig config_{};
     std::shared_ptr<PcmPlaybackRing> ring_{};

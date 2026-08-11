@@ -198,6 +198,47 @@ void stereo_and_metadata_counters() {
     expect_equal(ring.snapshot().discontinuity_frames, 1ULL, "discontinuity counter");
 }
 
+void source_anchor_tracks_slot_start_and_invalidates_on_underrun() {
+    PcmPlaybackRing ring(config(1, 4, 3));
+    expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare anchor");
+    const auto a = frame(0, 4, 1);
+    const auto b = frame(4, 4, 1);
+    expect_equal(ring.submit(bytes(a), 4, metadata(100), 10).error, AudioPlaybackError::None,
+                 "anchor submit a");
+
+    std::vector<std::int16_t> first(2);
+    static_cast<void>(ring.consume(mutable_bytes(first), 2, 20, 1'000));
+    auto anchor = ring.latest_source_anchor();
+    expect(anchor.valid, "anchor valid after first source sample");
+    expect_equal(anchor.source_frame_position, 100ULL, "anchor source position");
+    expect_equal(anchor.source_capture_time_us, 1100ULL, "anchor capture time");
+    expect_equal(anchor.output_frame_position, 1'000ULL, "anchor output position");
+
+    std::vector<std::int16_t> second(2);
+    static_cast<void>(ring.consume(mutable_bytes(second), 2, 30, 1'002));
+    anchor = ring.latest_source_anchor();
+    expect(anchor.valid, "anchor remains valid through partial tail");
+    expect_equal(anchor.source_frame_position, 100ULL, "partial tail keeps original slot anchor");
+
+    expect_equal(ring.submit(bytes(b), 4,
+                             metadata(200, false,
+                                      DecodedAudioFrameKind::PacketLossConcealment))
+                     .error,
+                 AudioPlaybackError::None, "anchor submit b");
+    std::vector<std::int16_t> larger(4);
+    static_cast<void>(ring.consume(mutable_bytes(larger), 4, 40, 1'004));
+    anchor = ring.latest_source_anchor();
+    expect(anchor.valid, "plc anchor valid");
+    expect_equal(anchor.source_frame_position, 200ULL, "plc anchor source position");
+    expect_equal(anchor.output_frame_position, 1'004ULL, "plc anchor output position");
+    expect_equal(anchor.frame_kind, DecodedAudioFrameKind::PacketLossConcealment,
+                 "plc anchor kind");
+
+    std::vector<std::int16_t> empty(1);
+    static_cast<void>(ring.consume(mutable_bytes(empty), 1, 50, 1'010));
+    expect(!ring.latest_source_anchor().valid, "underrun invalidates source timeline");
+}
+
 void invalid_configuration_and_metadata_are_rejected() {
     auto invalid = config(3);
     expect_equal(PcmPlaybackRing::validate_config(invalid),
@@ -222,6 +263,7 @@ int main() {
     callback_larger_than_one_slot_preserves_order();
     wrap_full_and_reset();
     stereo_and_metadata_counters();
+    source_anchor_tracks_slot_start_and_invalidates_on_underrun();
     invalid_configuration_and_metadata_are_rejected();
 
     if (failures != 0) {

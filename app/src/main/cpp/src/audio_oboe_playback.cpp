@@ -13,6 +13,8 @@
 namespace warpnect::audio::android {
 namespace {
 
+inline constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ULL;
+
 [[nodiscard]] bool supported_sample_rate(std::uint32_t sample_rate_hz) noexcept {
     return sample_rate_hz == 8000 || sample_rate_hz == 12000 || sample_rate_hz == 16000 ||
            sample_rate_hz == 24000 || sample_rate_hz == 48000;
@@ -68,6 +70,49 @@ namespace {
                                                      : oboe::ContentType::Speech;
 }
 
+[[nodiscard]] bool add_signed_delta(std::uint64_t base,
+                                    std::int64_t delta,
+                                    std::uint64_t& output) noexcept {
+    if (delta >= 0) {
+        const auto unsigned_delta = static_cast<std::uint64_t>(delta);
+        if (base > std::numeric_limits<std::uint64_t>::max() - unsigned_delta) {
+            return false;
+        }
+        output = base + unsigned_delta;
+        return true;
+    }
+    const auto magnitude = static_cast<std::uint64_t>(-(delta + 1)) + 1ULL;
+    if (base < magnitude) {
+        return false;
+    }
+    output = base - magnitude;
+    return true;
+}
+
+[[nodiscard]] bool frames_to_nanoseconds_delta(std::uint64_t a,
+                                               std::uint64_t b,
+                                               std::uint32_t sample_rate_hz,
+                                               std::int64_t& output) noexcept {
+    if (sample_rate_hz == 0) {
+        return false;
+    }
+    const bool positive = a >= b;
+    const std::uint64_t frames = positive ? a - b : b - a;
+    const std::uint64_t seconds = frames / sample_rate_hz;
+    const std::uint64_t remainder = frames % sample_rate_hz;
+    if (seconds > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) /
+                      kNanosPerSecond) {
+        return false;
+    }
+    const std::uint64_t delta =
+        (seconds * kNanosPerSecond) + ((remainder * kNanosPerSecond) / sample_rate_hz);
+    if (delta > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return false;
+    }
+    output = positive ? static_cast<std::int64_t>(delta) : -static_cast<std::int64_t>(delta);
+    return true;
+}
+
 } // namespace
 
 class OboeAudioPlayback::DataCallback final : public oboe::AudioStreamDataCallback {
@@ -85,13 +130,21 @@ public:
         const auto byte_count =
             static_cast<std::size_t>(safe_frames) * channel_count_ * sizeof(std::int16_t);
         auto* const bytes = static_cast<std::byte*>(audio_data);
-        static_cast<void>(ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, 0));
+        const std::uint64_t output_start =
+            output_frame_cursor_.fetch_add(safe_frames, std::memory_order_acq_rel);
+        static_cast<void>(ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, 0,
+                                         output_start));
         return oboe::DataCallbackResult::Continue;
+    }
+
+    void reset_output_cursor() noexcept {
+        output_frame_cursor_.store(0, std::memory_order_release);
     }
 
 private:
     std::shared_ptr<PcmPlaybackRing> ring_{};
     std::uint8_t channel_count_ = 0;
+    std::atomic<std::uint64_t> output_frame_cursor_{0};
 };
 
 class OboeAudioPlayback::ErrorCallback final : public oboe::AudioStreamErrorCallback {
@@ -119,6 +172,7 @@ OboeAudioPlayback::OboeAudioPlayback(OboeAudioPlaybackConfig config) : config_(c
     snapshot_.requested_channel_count = config_.channel_count;
     snapshot_.frame_duration_us = config_.frame_duration_us;
     snapshot_.frames_per_codec_frame = config_.frames_per_codec_frame;
+    snapshot_.lookahead_samples = config_.lookahead_samples;
     snapshot_.requested_performance_mode = AudioPlaybackModeCode::LowLatency;
     snapshot_.requested_sharing_mode = AudioPlaybackSharingModeCode::Exclusive;
     snapshot_.requested_buffer_bursts = config_.requested_buffer_bursts;
@@ -270,6 +324,8 @@ AudioPlaybackError OboeAudioPlayback::start() {
         record_error(AudioPlaybackError::PlaybackNotPrimed);
         return AudioPlaybackError::PlaybackNotPrimed;
     }
+    data_callback_->reset_output_cursor();
+    ring_->invalidate_source_timeline();
     const oboe::Result result = stream_->requestStart();
     if (result != oboe::Result::OK) {
         record_error(AudioPlaybackError::StreamStartFailed);
@@ -358,6 +414,69 @@ AudioPlaybackPresentationTimestamp OboeAudioPlayback::query_presentation_timesta
     snapshot_.presentation_timestamp_valid = true;
     snapshot_.last_error = AudioPlaybackError::None;
     return result;
+}
+
+AudioSourcePresentationAnchor OboeAudioPlayback::query_source_presentation_anchor() {
+    if (closed_) {
+        return AudioSourcePresentationAnchor{.error = AudioPlaybackError::Closed};
+    }
+    if (!prepared_ || !stream_ || !ring_) {
+        return AudioSourcePresentationAnchor{.error = AudioPlaybackError::NotPrepared};
+    }
+    const AudioSourcePlaybackAnchor source_anchor = ring_->latest_source_anchor();
+    if (!source_anchor.valid) {
+        return AudioSourcePresentationAnchor{
+            .error = AudioPlaybackError::PresentationTimestampUnavailable,
+        };
+    }
+    const AudioPlaybackPresentationTimestamp timestamp = query_presentation_timestamp();
+    if (timestamp.error != AudioPlaybackError::None || !timestamp.valid) {
+        return AudioSourcePresentationAnchor{.error = timestamp.error};
+    }
+
+    std::int64_t delta_ns = 0;
+    if (!frames_to_nanoseconds_delta(source_anchor.output_frame_position,
+                                     timestamp.frame_position, config_.sample_rate_hz,
+                                     delta_ns)) {
+        record_error(AudioPlaybackError::PresentationTimestampUnavailable);
+        return AudioSourcePresentationAnchor{
+            .error = AudioPlaybackError::PresentationTimestampUnavailable,
+        };
+    }
+    std::uint64_t local_presentation_time_ns = 0;
+    if (!add_signed_delta(timestamp.presentation_time_ns, delta_ns,
+                          local_presentation_time_ns)) {
+        record_error(AudioPlaybackError::PresentationTimestampUnavailable);
+        return AudioSourcePresentationAnchor{
+            .error = AudioPlaybackError::PresentationTimestampUnavailable,
+        };
+    }
+    const std::uint64_t lookahead_us =
+        lookahead_duration_us(config_.lookahead_samples, config_.sample_rate_hz);
+    const std::int64_t source_content_time_us =
+        static_cast<std::int64_t>(source_anchor.source_capture_time_us) -
+        static_cast<std::int64_t>(lookahead_us);
+    const std::uint64_t now_ns = monotonic_now_ns();
+    const std::uint64_t age_ns =
+        now_ns >= local_presentation_time_ns ? now_ns - local_presentation_time_ns : 0ULL;
+    return AudioSourcePresentationAnchor{
+        .valid = true,
+        .source_content_time_us = source_content_time_us,
+        .source_capture_time_us = source_anchor.source_capture_time_us,
+        .source_frame_position = source_anchor.source_frame_position,
+        .output_frame_position = source_anchor.output_frame_position,
+        .local_presentation_time_ns = local_presentation_time_ns,
+        .oboe_frame_position = timestamp.frame_position,
+        .oboe_presentation_time_ns = timestamp.presentation_time_ns,
+        .age_ns = age_ns,
+        .config_generation = source_anchor.config_generation,
+        .sample_rate_hz = source_anchor.sample_rate_hz,
+        .lookahead_samples = config_.lookahead_samples,
+        .timestamp_quality = source_anchor.timestamp_quality,
+        .discontinuity_before = source_anchor.discontinuity_before,
+        .frame_kind = source_anchor.frame_kind,
+        .latency_us = timestamp.latency_us,
+    };
 }
 
 OboeAudioPlaybackSnapshot OboeAudioPlayback::snapshot() {
@@ -469,6 +588,14 @@ std::uint64_t OboeAudioPlayback::monotonic_now_ns() const noexcept {
     }
     return (static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL) +
            static_cast<std::uint64_t>(now.tv_nsec);
+}
+
+std::uint64_t OboeAudioPlayback::lookahead_duration_us(std::uint32_t lookahead_samples,
+                                                       std::uint32_t sample_rate_hz) noexcept {
+    if (sample_rate_hz == 0) {
+        return 0;
+    }
+    return (static_cast<std::uint64_t>(lookahead_samples) * 1'000'000ULL) / sample_rate_hz;
 }
 
 } // namespace warpnect::audio::android

@@ -8,6 +8,7 @@ import io.warpnect.audio.playback.AudioPlaybackSnapshot
 import io.warpnect.audio.playback.AudioPlaybackState
 import io.warpnect.audio.playback.AudioPlaybackValidation
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
+import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import java.nio.ByteBuffer
 
@@ -47,6 +48,7 @@ class NativeOboeAudioPlaybackController internal constructor(
             requestedChannelCount = config.channelCount,
             frameDurationUs = config.frameDurationUs,
             framesPerCodecFrame = config.framesPerCodecFrame,
+            lookaheadSamples = config.lookaheadSamples,
             requestedBufferBursts = config.requestedBufferBursts,
         )
 
@@ -140,6 +142,18 @@ class NativeOboeAudioPlaybackController internal constructor(
             return@synchronized AudioPresentationTimestampResult(error = AudioPlaybackError.NotPrepared)
         }
         val result = backend.queryPresentationTimestamp(handle)
+        refreshSnapshot()
+        result
+    }
+
+    override fun querySourcePresentationAnchor(): AudioSourcePresentationAnchorResult = synchronized(lock) {
+        if (state == AudioPlaybackState.Closed) {
+            return@synchronized AudioSourcePresentationAnchorResult(error = AudioPlaybackError.Closed)
+        }
+        if (handle == 0L) {
+            return@synchronized AudioSourcePresentationAnchorResult(error = AudioPlaybackError.NotPrepared)
+        }
+        val result = backend.querySourcePresentationAnchor(handle)
         refreshSnapshot()
         result
     }

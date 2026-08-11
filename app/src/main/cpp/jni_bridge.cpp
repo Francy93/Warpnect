@@ -76,7 +76,8 @@ inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
 inline constexpr jsize kNativeAudioPlaybackCreateValues = 2;
-inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 48;
+inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 49;
+inline constexpr jsize kNativeAudioPlaybackSourceAnchorValues = 17;
 inline constexpr jsize kNativeAudioPlaybackTimestampValues = 5;
 inline constexpr jsize kNativeAudioReceiverEventValues = 15;
 inline constexpr jsize kNativeAudioReceiverSnapshotValues = 26;
@@ -907,6 +908,7 @@ create_audio_playback_handle(jint source,
                              jint channel_count,
                              jint frame_duration_us,
                              jint frames_per_codec_frame,
+                             jint lookahead_samples,
                              jint ring_capacity_codec_frames,
                              jint start_threshold_codec_frames,
                              jint sharing_policy,
@@ -916,7 +918,8 @@ create_audio_playback_handle(jint source,
     if (source < 0 || source > 1 || !valid_u32(config_generation) ||
         config_generation == 0 || sample_rate_hz <= 0 || channel_count <= 0 ||
         channel_count > 255 || frame_duration_us <= 0 || frames_per_codec_frame <= 0 ||
-        ring_capacity_codec_frames <= 0 || start_threshold_codec_frames <= 0 ||
+        lookahead_samples < 0 || ring_capacity_codec_frames <= 0 ||
+        start_threshold_codec_frames <= 0 ||
         sharing_policy < 0 || sharing_policy > 1 || requested_buffer_bursts <= 0) {
         error = AudioPlaybackError::InvalidConfiguration;
         return nullptr;
@@ -930,6 +933,7 @@ create_audio_playback_handle(jint source,
             .channel_count = static_cast<std::uint8_t>(channel_count),
             .frame_duration_us = static_cast<std::uint32_t>(frame_duration_us),
             .frames_per_codec_frame = static_cast<std::uint32_t>(frames_per_codec_frame),
+            .lookahead_samples = static_cast<std::uint32_t>(lookahead_samples),
             .ring_capacity_codec_frames =
                 static_cast<std::uint32_t>(ring_capacity_codec_frames),
             .start_threshold_codec_frames =
@@ -979,6 +983,7 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackCreate(
     jint channel_count,
     jint frame_duration_us,
     jint frames_per_codec_frame,
+    jint lookahead_samples,
     jint ring_capacity_codec_frames,
     jint start_threshold_codec_frames,
     jint sharing_policy,
@@ -989,8 +994,9 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackCreate(
         AudioPlaybackError error = AudioPlaybackError::None;
         auto handle = create_audio_playback_handle(
             source, config_generation, sample_rate_hz, channel_count, frame_duration_us,
-            frames_per_codec_frame, ring_capacity_codec_frames, start_threshold_codec_frames,
-            sharing_policy, requested_buffer_bursts, require_low_latency_performance_mode, error);
+            frames_per_codec_frame, lookahead_samples, ring_capacity_codec_frames,
+            start_threshold_codec_frames, sharing_policy, requested_buffer_bursts,
+            require_low_latency_performance_mode, error);
         values[0] = reinterpret_cast<jlong>(handle.release());
         values[1] = audio_playback_error_code(error);
     } catch (...) {
@@ -1114,6 +1120,42 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackPresentationTimestamp(JNIEnv* e
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackSourcePresentationAnchor(JNIEnv* env,
+                                                                          jclass /* clazz */,
+                                                                          jlong handle) {
+    jlong values[kNativeAudioPlaybackSourceAnchorValues]{};
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr) {
+        values[0] = audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    } else {
+        std::lock_guard guard(native_handle->lock);
+        const auto anchor = native_handle->playback->query_source_presentation_anchor();
+        values[0] = audio_playback_error_code(anchor.error);
+        values[1] = anchor.valid ? 1 : 0;
+        values[2] = static_cast<jlong>(anchor.source_content_time_us);
+        values[3] = static_cast<jlong>(anchor.source_capture_time_us);
+        values[4] = static_cast<jlong>(anchor.source_frame_position);
+        values[5] = static_cast<jlong>(anchor.output_frame_position);
+        values[6] = static_cast<jlong>(anchor.local_presentation_time_ns);
+        values[7] = static_cast<jlong>(anchor.oboe_frame_position);
+        values[8] = static_cast<jlong>(anchor.oboe_presentation_time_ns);
+        values[9] = static_cast<jlong>(anchor.age_ns);
+        values[10] = static_cast<jlong>(anchor.config_generation);
+        values[11] = static_cast<jlong>(anchor.sample_rate_hz);
+        values[12] = static_cast<jlong>(anchor.lookahead_samples);
+        values[13] = static_cast<jlong>(anchor.timestamp_quality);
+        values[14] = anchor.discontinuity_before ? 1 : 0;
+        values[15] = static_cast<jlong>(anchor.frame_kind);
+        values[16] = static_cast<jlong>(anchor.latency_us);
+    }
+    jlongArray array = env->NewLongArray(kNativeAudioPlaybackSourceAnchorValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeAudioPlaybackSourceAnchorValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_warpnect_NativeBridge_nativeAudioPlaybackSnapshot(JNIEnv* env,
                                                           jclass /* clazz */,
                                                           jlong handle) {
@@ -1172,6 +1214,7 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSnapshot(JNIEnv* env,
         values[45] = static_cast<jlong>(snapshot.ring_residence_samples);
         values[46] = static_cast<jlong>(snapshot.last_ring_residence_ns);
         values[47] = static_cast<jlong>(snapshot.max_ring_residence_ns);
+        values[48] = static_cast<jlong>(snapshot.lookahead_samples);
     }
     jlongArray array = env->NewLongArray(kNativeAudioPlaybackSnapshotValues);
     if (array != nullptr) {

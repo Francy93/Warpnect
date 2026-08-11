@@ -11,6 +11,7 @@ import io.warpnect.audio.playback.AudioPlaybackSharingMode
 import io.warpnect.audio.playback.AudioPlaybackSnapshot
 import io.warpnect.audio.playback.AudioPlaybackState
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
+import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import java.nio.ByteBuffer
 
@@ -32,6 +33,8 @@ internal interface OboeAudioPlaybackBackend {
 
     fun queryPresentationTimestamp(handle: Long): AudioPresentationTimestampResult
 
+    fun querySourcePresentationAnchor(handle: Long): AudioSourcePresentationAnchorResult
+
     fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot
 
     fun destroy(handle: Long): AudioPlaybackError
@@ -52,6 +55,7 @@ internal object NativeOboeAudioPlaybackBackend : OboeAudioPlaybackBackend {
             channelCount = config.channelCount,
             frameDurationUs = config.frameDurationUs,
             framesPerCodecFrame = config.framesPerCodecFrame,
+            lookaheadSamples = config.lookaheadSamples,
             ringCapacityCodecFrames = config.ringCapacityCodecFrames,
             startThresholdCodecFrames = config.startThresholdCodecFrames,
             sharingPolicy = config.sharingPolicy.ordinal,
@@ -102,6 +106,9 @@ internal object NativeOboeAudioPlaybackBackend : OboeAudioPlaybackBackend {
     override fun queryPresentationTimestamp(handle: Long): AudioPresentationTimestampResult =
         presentationTimestampFrom(NativeBridge.audioPlaybackPresentationTimestamp(handle))
 
+    override fun querySourcePresentationAnchor(handle: Long): AudioSourcePresentationAnchorResult =
+        sourcePresentationAnchorFrom(NativeBridge.audioPlaybackSourcePresentationAnchor(handle))
+
     override fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot =
         audioPlaybackSnapshotFrom(NativeBridge.audioPlaybackSnapshot(handle), state)
 
@@ -116,6 +123,27 @@ internal fun presentationTimestampFrom(values: LongArray): AudioPresentationTime
         streamFramePosition = values.getOrElse(2) { 0L },
         presentationTimeNs = values.getOrElse(3) { 0L },
         latencyUs = values.getOrElse(4) { 0L },
+    )
+
+internal fun sourcePresentationAnchorFrom(values: LongArray): AudioSourcePresentationAnchorResult =
+    AudioSourcePresentationAnchorResult(
+        error = AudioPlaybackError.fromNativeCode(values.getOrElse(0) { 21L }.toInt()),
+        valid = values.getOrElse(1) { 0L } != 0L,
+        sourceContentTimeUs = values.getOrElse(2) { 0L },
+        sourceCaptureTimeUs = values.getOrElse(3) { 0L },
+        sourceFramePosition = values.getOrElse(4) { 0L },
+        outputFramePosition = values.getOrElse(5) { 0L },
+        localPresentationTimeNs = values.getOrElse(6) { 0L },
+        oboeFramePosition = values.getOrElse(7) { 0L },
+        oboePresentationTimeNs = values.getOrElse(8) { 0L },
+        ageNs = values.getOrElse(9) { 0L },
+        configGeneration = values.getOrElse(10) { 0L },
+        sampleRateHz = values.getOrElse(11) { 0L }.toInt(),
+        lookaheadSamples = values.getOrElse(12) { 0L }.toInt(),
+        timestampQuality = enumAt(values, 13, io.warpnect.audio.capture.AudioTimestampQuality.Unavailable),
+        discontinuityBefore = values.getOrElse(14) { 0L } != 0L,
+        frameKind = enumAt(values, 15, io.warpnect.audio.decoder.DecodedAudioFrameKind.Normal),
+        latencyUs = values.getOrElse(16) { 0L },
     )
 
 internal fun audioPlaybackSnapshotFrom(values: LongArray, state: AudioPlaybackState): AudioPlaybackSnapshot {
@@ -169,6 +197,7 @@ internal fun audioPlaybackSnapshotFrom(values: LongArray, state: AudioPlaybackSt
         ringResidenceSamples = values.getOrElse(45) { 0L },
         lastRingResidenceNs = values.getOrElse(46) { 0L },
         maxRingResidenceNs = values.getOrElse(47) { 0L },
+        lookaheadSamples = values.getOrElse(48) { 0L }.toInt(),
     )
 }
 

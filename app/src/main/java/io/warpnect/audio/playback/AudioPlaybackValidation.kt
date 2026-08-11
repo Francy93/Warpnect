@@ -19,6 +19,9 @@ object AudioPlaybackValidation {
         if (expectedFrames <= 0 || config.framesPerCodecFrame != expectedFrames) {
             return AudioPlaybackError.InvalidConfiguration
         }
+        if (config.lookaheadSamples < 0) {
+            return AudioPlaybackError.InvalidConfiguration
+        }
         if (config.ringCapacityCodecFrames <= 0 || config.ringCapacityCodecFrames > 64) {
             return AudioPlaybackError.InvalidConfiguration
         }

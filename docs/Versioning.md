@@ -66,6 +66,36 @@ Video Payload Version describes the logical payload layout carried inside existi
 
 It is independent from SCL Protocol Version and Native ABI Version. RFC-002C defines Version 1 `StreamConfig` and `AccessUnit` messages without changing the 21-byte SCL `PacketHeader` or adding a new payload type.
 
+## Video Resync Control Version
+
+Current value:
+
+```text
+1
+```
+
+Video Resync Control Version describes the compact `VideoResyncRequest` SessionControl subtype defined by RFC-002G. RFC-003G does not change it.
+
+## PCM Shared Ring Version
+
+Current value:
+
+```text
+1
+```
+
+PCM Shared Ring Version describes the privileged system-audio SharedMemory ring layout defined by RFC-003A. It is not an SCL wire version.
+
+## PCM Playback Ring Version
+
+Current value:
+
+```text
+1
+```
+
+PCM Playback Ring Version describes the internal RFC-003E native playback handoff ring. RFC-003G adds source/output timing anchor metadata on top of that native playback path without changing SCL wire protocol.
+
 ## Audio Payload Version
 
 Current value:

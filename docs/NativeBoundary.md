@@ -255,6 +255,38 @@ RFC-003F does not return encoded packets as Kotlin `ByteArray` values and does n
 
 RFC-003F adds no PacketHeader, PayloadType, Audio Payload V1, NACK, FEC, ClockSync, Video Payload V1, or VideoResyncRequest wire change.
 
+RFC-003G adds additive Native Bridge ABI Version 1 audio presentation-anchor query support:
+
+```text
+Oboe callback
+        |
+small source/output timing anchor
+        |
+native playback backend
+        |
+cold-path JNI query
+        |
+AvSyncController
+```
+
+The Oboe callback publishes only fixed metadata relating remote source PCM timing to native output-frame positions. It does not invoke JNI, Kotlin/Java, MediaCodec, network code, codec decode, timestamp queries, allocation, logging, or blocking synchronization.
+
+The cold-path query combines the latest native source/output anchor with Oboe `CLOCK_MONOTONIC` presentation timestamp data and returns a small synchronization result. No media payload crosses this boundary.
+
+RFC-003G also publishes a small immutable A/V model to the video render policy:
+
+```text
+AvSyncModel
+        |
+atomic read
+        |
+VideoRenderPolicy
+```
+
+The render policy consumes metadata only and returns existing `RenderImmediately` or receiver-local `RenderAt` decisions. It does not copy video bitstreams, decoded pixels, Opus packets, or PCM frames.
+
+RFC-003G adds no PacketHeader, PayloadType, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync wire change.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

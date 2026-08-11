@@ -133,6 +133,21 @@ WarpnectMicrophoneCapture
 
 RFC-003F adds no audio sender worker, encoder worker, decoder worker, playback worker queue, per-frame coroutine launch, per-frame UI hop, or per-frame thread creation. The receiver context may wait in native socket readiness; it must not busy-poll. The Oboe callback remains isolated from UDP, SCL parsing, decoder work, JNI, and Kotlin.
 
+RFC-003G adds one optional low-frequency synchronization context for active A/V sessions:
+
+```text
+WarpnectAvSync
+        -> query audio presentation anchor
+        -> update timestamp-domain validator
+        -> publish immutable A/V model
+```
+
+`WarpnectAvSync` is not a media worker queue. It does not decode, render, copy PCM, copy video, read UDP payloads, run network I/O, or perform per-frame media scheduling. It sleeps between configured sampling intervals and exits on controller stop/close.
+
+The Oboe callback remains real-time native only. RFC-003G adds fixed metadata anchor publication to the existing callback path, but no JNI, Kotlin/Java, timestamp query, network operation, codec work, allocation, logging, or blocking lock.
+
+Video render decisions remain on `WarpnectVideoDecoder`. `AvSynchronizedVideoRenderPolicy` reads the latest immutable model and returns immediately. It must not query Oboe, wait for the sync worker, call JNI, perform network I/O, allocate media payloads, or hop to the UI thread per frame.
+
 ## Future Thread Responsibilities
 
 Future phases should isolate real-time responsibilities into explicit execution domains:

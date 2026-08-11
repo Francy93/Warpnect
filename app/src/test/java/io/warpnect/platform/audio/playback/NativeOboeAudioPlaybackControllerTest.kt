@@ -11,6 +11,7 @@ import io.warpnect.audio.playback.AudioPlaybackSharingMode
 import io.warpnect.audio.playback.AudioPlaybackSnapshot
 import io.warpnect.audio.playback.AudioPlaybackState
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
+import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals
@@ -107,6 +108,11 @@ class NativeOboeAudioPlaybackControllerTest {
         assertEquals(1234L, timestamp.streamFramePosition)
         assertEquals(99_000L, timestamp.presentationTimeNs)
 
+        val anchor = controller.querySourcePresentationAnchor()
+        assertTrue(anchor.valid)
+        assertEquals(997L, anchor.sourceContentTimeUs)
+        assertEquals(64L, anchor.outputFramePosition)
+
         assertEquals(AudioPlaybackError.None, controller.stop().error)
         assertEquals(AudioPlaybackState.Prepared, controller.snapshot().state)
         assertEquals(AudioPlaybackError.None, controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata()).error)
@@ -160,6 +166,7 @@ class NativeOboeAudioPlaybackControllerTest {
         channelCount = 1,
         frameDurationUs = 5000,
         framesPerCodecFrame = 240,
+        lookaheadSamples = 120,
     )
 
     private fun directPcm(): ByteBuffer = ByteBuffer.allocateDirect(240 * 2)
@@ -230,6 +237,27 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
             latencyUs = 4200,
         )
 
+    override fun querySourcePresentationAnchor(handle: Long): AudioSourcePresentationAnchorResult =
+        AudioSourcePresentationAnchorResult(
+            error = AudioPlaybackError.None,
+            valid = true,
+            sourceContentTimeUs = 997,
+            sourceCaptureTimeUs = 1000,
+            sourceFramePosition = 0,
+            outputFramePosition = 64,
+            localPresentationTimeNs = 88_000,
+            oboeFramePosition = 1234,
+            oboePresentationTimeNs = 99_000,
+            ageNs = 1_000,
+            configGeneration = 1,
+            sampleRateHz = 48000,
+            lookaheadSamples = 120,
+            timestampQuality = AudioTimestampQuality.AudioRecordTimestamp,
+            discontinuityBefore = false,
+            frameKind = DecodedAudioFrameKind.Normal,
+            latencyUs = 4200,
+        )
+
     override fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot = snapshot(config(), state)
 
     override fun destroy(handle: Long): AudioPlaybackError {
@@ -244,6 +272,7 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
         channelCount = 1,
         frameDurationUs = 5000,
         framesPerCodecFrame = 240,
+        lookaheadSamples = 120,
     )
 
     private fun snapshot(config: AudioPlaybackConfig, state: AudioPlaybackState): AudioPlaybackSnapshot =
@@ -257,6 +286,7 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
             actualChannelCount = config.channelCount,
             frameDurationUs = config.frameDurationUs,
             framesPerCodecFrame = config.framesPerCodecFrame,
+            lookaheadSamples = config.lookaheadSamples,
             actualPerformanceMode = AudioPlaybackPerformanceMode.LowLatency,
             actualSharingMode = AudioPlaybackSharingMode.Exclusive,
             audioApi = AudioPlaybackApi.AAudio,

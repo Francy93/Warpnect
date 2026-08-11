@@ -42,6 +42,20 @@ enum class AudioPlaybackError : std::uint8_t {
     Closed = 26,
 };
 
+struct AudioSourcePlaybackAnchor final {
+    bool valid = false;
+    std::uint64_t sequence = 0;
+    std::uint32_t config_generation = 0;
+    std::uint32_t sample_rate_hz = 0;
+    std::uint8_t channel_count = 0;
+    std::uint64_t source_frame_position = 0;
+    std::uint64_t source_capture_time_us = 0;
+    std::uint64_t output_frame_position = 0;
+    AudioTimestampQuality timestamp_quality = AudioTimestampQuality::Unavailable;
+    bool discontinuity_before = false;
+    DecodedAudioFrameKind frame_kind = DecodedAudioFrameKind::Normal;
+};
+
 struct PcmPlaybackRingConfig final {
     AudioCaptureSource source = AudioCaptureSource::MicrophoneAudio;
     std::uint32_t config_generation = 1;
@@ -124,10 +138,14 @@ public:
 
     [[nodiscard]] PcmPlaybackRingConsumeResult consume(std::span<std::byte> output,
                                                        std::uint32_t requested_frames,
-                                                       std::uint64_t consume_time_ns = 0) noexcept;
+                                                       std::uint64_t consume_time_ns = 0,
+                                                       std::uint64_t output_start_frame_position =
+                                                           0) noexcept;
 
     [[nodiscard]] std::uint32_t occupancy_frames() const noexcept;
     [[nodiscard]] std::uint32_t capacity_frames() const noexcept;
+    [[nodiscard]] AudioSourcePlaybackAnchor latest_source_anchor() const noexcept;
+    void invalidate_source_timeline() noexcept;
     [[nodiscard]] PcmPlaybackRingSnapshot snapshot() const noexcept;
     [[nodiscard]] static AudioPlaybackError validate_config(
         const PcmPlaybackRingConfig& config) noexcept;
@@ -141,6 +159,9 @@ private:
     };
 
     [[nodiscard]] std::uint32_t queued_frames_relaxed() const noexcept;
+    void publish_source_anchor(const Slot& slot,
+                               std::uint32_t read_offset,
+                               std::uint64_t output_frame_position) noexcept;
     void update_high_water(std::uint32_t occupancy_frames) noexcept;
     void record_error(AudioPlaybackError error) noexcept;
 
@@ -150,6 +171,17 @@ private:
     std::atomic<std::uint32_t> tail_{0};
     std::atomic<std::uint32_t> queued_slots_{0};
     std::atomic<std::uint32_t> active_read_offset_frames_{0};
+    std::atomic<std::uint64_t> anchor_sequence_{0};
+    std::atomic<bool> anchor_valid_{false};
+    std::atomic<std::uint32_t> anchor_config_generation_{0};
+    std::atomic<std::uint32_t> anchor_sample_rate_hz_{0};
+    std::atomic<std::uint8_t> anchor_channel_count_{0};
+    std::atomic<std::uint64_t> anchor_source_frame_position_{0};
+    std::atomic<std::uint64_t> anchor_source_capture_time_us_{0};
+    std::atomic<std::uint64_t> anchor_output_frame_position_{0};
+    std::atomic<std::uint8_t> anchor_timestamp_quality_{0};
+    std::atomic<bool> anchor_discontinuity_before_{false};
+    std::atomic<std::uint8_t> anchor_frame_kind_{0};
 
     PcmPlaybackRingSnapshot snapshot_{};
     bool prepared_ = false;

@@ -40,6 +40,7 @@ import io.warpnect.audio.playback.AudioPlaybackResult
 import io.warpnect.audio.playback.AudioPlaybackSnapshot
 import io.warpnect.audio.playback.AudioPlaybackState
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
+import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import io.warpnect.audio.transport.AudioReceiverFrameReady
 import io.warpnect.audio.transport.AudioReceiverRuntimeConfig
@@ -243,6 +244,34 @@ class AudioSessionControllerTest {
     }
 
     @Test
+    fun receiverPlaybackStartGateHoldsPrimedAudioUntilRelease() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val playback = FakePlayback()
+        val gate = ManualStartGate()
+        val session = DefaultAudioReceiverSessionController(
+            receiverRuntimeController = runtime,
+            decoderControllerFactory = { FakeDecoder() },
+            playbackControllerFactory = { playback },
+            playbackStartGate = gate,
+            monotonicClockNs = { 1_000_000L },
+        )
+
+        session.start(receiverConfig())
+        runtime.emitConfig(streamConfig())
+        runtime.emitFrame(frame(position = 0))
+
+        assertEquals(AudioSessionState.Primed, session.snapshot().state)
+        assertEquals(0, playback.startCalls)
+
+        gate.decision = AudioPlaybackStartGateDecision.Start
+        assertEquals(AudioSessionError.None, session.releasePlaybackStartGate().error)
+
+        assertEquals(AudioSessionState.Streaming, session.snapshot().state)
+        assertEquals(1, playback.startCalls)
+        assertEquals(1, gate.startedCalls)
+    }
+
+    @Test
     fun receiverAlwaysReleasesReadySlotAfterDecoderFailure() = runBlocking {
         val runtime = FakeReceiverRuntime()
         val decoder = FakeDecoder(decodeError = AudioDecoderError.MalformedOpusPacket)
@@ -305,6 +334,18 @@ class AudioSessionControllerTest {
             timestampQuality = AudioTimestampQuality.AudioRecordTimestamp,
             discontinuityBefore = false,
         )
+}
+
+private class ManualStartGate : AudioPlaybackStartGate {
+    var decision = AudioPlaybackStartGateDecision.Hold
+    var startedCalls = 0
+
+    override fun evaluate(snapshot: AudioReceiverSessionSnapshot, nowNs: Long): AudioPlaybackStartGateDecision =
+        decision
+
+    override fun onPlaybackStarted() {
+        startedCalls += 1
+    }
 }
 
 private class FakeCapture(
@@ -736,6 +777,9 @@ private class FakePlayback(
 
     override fun queryPresentationTimestamp(): AudioPresentationTimestampResult =
         AudioPresentationTimestampResult(AudioPlaybackError.PresentationTimestampUnavailable)
+
+    override fun querySourcePresentationAnchor(): AudioSourcePresentationAnchorResult =
+        AudioSourcePresentationAnchorResult(AudioPlaybackError.PresentationTimestampUnavailable)
 
     override fun close() {
         closed = true

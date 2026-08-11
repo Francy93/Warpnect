@@ -24,6 +24,8 @@ interface AudioReceiverSessionController : AutoCloseable {
 
     suspend fun stop(): AudioSessionControlResult
 
+    fun releasePlaybackStartGate(): AudioSessionControlResult
+
     fun snapshot(): AudioReceiverSessionSnapshot
 
     override fun close()
@@ -33,6 +35,8 @@ class DefaultAudioReceiverSessionController(
     private val receiverRuntimeController: AudioReceiverRuntimeController,
     private val decoderControllerFactory: () -> AudioDecoderController,
     private val playbackControllerFactory: () -> AudioPlaybackController,
+    private val playbackStartGate: AudioPlaybackStartGate? = null,
+    private val monotonicClockNs: () -> Long = System::nanoTime,
 ) : AudioReceiverSessionController {
     private val lock = Any()
 
@@ -121,16 +125,41 @@ class DefaultAudioReceiverSessionController(
         AudioSessionControlResult.Success
     }
 
+    override fun releasePlaybackStartGate(): AudioSessionControlResult = synchronized(lock) {
+        if (state == AudioSessionState.Closed) {
+            return@synchronized remember(sessionFailure(AudioSessionError.Closed))
+        }
+        if (state != AudioSessionState.Primed && state != AudioSessionState.Streaming) {
+            return@synchronized remember(sessionFailure(AudioSessionError.NotRunning))
+        }
+        if (state == AudioSessionState.Streaming) {
+            return@synchronized AudioSessionControlResult.Success
+        }
+        startPlaybackAfterPrimeLocked(ignoreGate = true)
+        if (state == AudioSessionState.Streaming) {
+            AudioSessionControlResult.Success
+        } else {
+            AudioSessionControlResult(lastError.error, lastError)
+        }
+    }
+
     override fun snapshot(): AudioReceiverSessionSnapshot = synchronized(lock) {
+        snapshotLocked()
+    }
+
+    private fun snapshotLocked(): AudioReceiverSessionSnapshot {
         val streamConfig = activeStreamConfig
-        AudioReceiverSessionSnapshot(
+        val receiverConfig = lastConfig
+        return AudioReceiverSessionSnapshot(
             state = state,
-            source = lastConfig?.receiverRuntimeConfig?.source,
+            source = receiverConfig?.receiverRuntimeConfig?.source,
             activeConfigGeneration = streamConfig?.configGeneration ?: 0L,
             sampleRateHz = streamConfig?.sampleRateHz ?: 0,
             channelCount = streamConfig?.channelCount ?: 0,
             frameDurationUs = streamConfig?.frameDurationUs ?: 0,
             samplesPerFrame = streamConfig?.samplesPerFrame() ?: 0,
+            playbackRingCapacityCodecFrames = receiverConfig?.playbackRingCapacityCodecFrames ?: 0,
+            playbackStartThresholdCodecFrames = receiverConfig?.playbackStartThresholdCodecFrames ?: 0,
             framesBeforeConfigDropped = framesBeforeConfigDropped,
             framesReceived = framesReceived,
             framesDecoded = framesDecoded,
@@ -423,17 +452,25 @@ class DefaultAudioReceiverSessionController(
         return false
     }
 
-    private fun startPlaybackAfterPrimeLocked() {
+    private fun startPlaybackAfterPrimeLocked(ignoreGate: Boolean = false) {
         if (state != AudioSessionState.WaitingForFirstFrame && state != AudioSessionState.Primed) {
             return
         }
         state = AudioSessionState.Primed
+        val gate = playbackStartGate
+        if (!ignoreGate && gate != null) {
+            val decision = gate.evaluate(snapshotLocked(), monotonicClockNs())
+            if (decision == AudioPlaybackStartGateDecision.Hold) {
+                return
+            }
+        }
         val result = playbackController?.start() ?: return
         when (result.error) {
             AudioPlaybackError.None,
             AudioPlaybackError.AlreadyRunning,
             -> {
                 state = AudioSessionState.Streaming
+                gate?.onPlaybackStarted()
             }
             AudioPlaybackError.PlaybackNotPrimed -> {
                 state = AudioSessionState.WaitingForFirstFrame
@@ -468,6 +505,7 @@ class DefaultAudioReceiverSessionController(
 
     private fun releasePipelineLocked() {
         playbackSink = null
+        playbackStartGate?.onPlaybackReset()
         playbackController?.runCatching { stop() }
         playbackController?.close()
         playbackController = null

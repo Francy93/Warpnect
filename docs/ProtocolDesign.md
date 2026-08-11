@@ -642,7 +642,7 @@ The native packetizer copies only the bytes intersecting each SCL fragment into 
 
 RFC-003C emits one AudioFrame per RFC-003B encoded Opus packet and creates no encoded-audio sender queue or audio worker thread. UDP sends are non-blocking. `WouldBlock` and send failures surface immediately to the caller rather than causing hidden backlog.
 
-Audio NACK, SCL FEC, Opus in-band FEC, decoder loss policy, network jitter/playout policy, packet pacing, congestion control, automatic bitrate adaptation, and A/V synchronization are intentionally deferred to later Phase 3 RFCs. RFC-003E's bounded PCM handoff ring is a local playback ownership boundary, not an Audio Payload or SCL transport policy.
+Audio NACK, SCL FEC, Opus in-band FEC, decoder loss policy, network jitter/playout policy, packet pacing, congestion control, and automatic bitrate adaptation remain outside Audio Payload V1 transport. RFC-003E's bounded PCM handoff ring is a local playback ownership boundary, not an Audio Payload or SCL transport policy. RFC-003G's A/V synchronization is a metadata-only runtime layer above the existing audio and video payload contracts.
 
 ### RFC-003F Runtime Behavior
 
@@ -651,6 +651,33 @@ RFC-003F composes Audio Payload V1 into end-to-end audio streaming without chang
 The receiver session uses `first_frame_position` as the audio media timeline. It decodes contiguous frames immediately, drops late/duplicate frames, generates at most a small configured number of immediate Opus PLC frames for aligned gaps, and performs a freshness reset for large or misaligned gaps. It does not add a timed network reorder window, NACK, SCL FEC, Opus in-band FEC, pacing, congestion control, adaptive bitrate, jitter buffer, playback scheduling by sender clock, or A/V synchronization.
 
 These are runtime policies only. They do not modify `PacketHeader`, `PayloadType`, Audio Payload V1, NACK, FEC, ClockSync, Video Payload V1, or VideoResyncRequest.
+
+### RFC-003G Runtime Synchronization
+
+RFC-003G consumes existing Audio Payload V1 capture timing and existing Video Payload V1 presentation timestamps without changing either wire contract.
+
+The audio side provides:
+
+```text
+captureTimeUs
+firstFramePosition
+timestampQuality
+lookaheadSamples
+```
+
+The video side provides:
+
+```text
+PacketHeader::timestamp_us = MediaCodec presentationTimeUs
+```
+
+RFC-003G does not assume these timestamp domains are equal. It qualifies video PTS compatibility from bounded timing observations before using synchronized video scheduling. If compatibility is unknown, rejected, stale, or audio presentation is unavailable, video remains on immediate rendering.
+
+Audio presentation through Oboe is the receiver-side synchronization master. The native playback backend publishes small source/output timing anchors and a cold-path presentation query maps remote audio source content time to receiver-local presentation time. Opus lookahead from StreamConfig contributes to this model, but no Audio Payload V1 timestamp is rewritten and no decoded PCM is physically pre-skipped by the sync layer.
+
+Synchronized video uses the existing receiver-local `RenderAt` mechanism. RFC-003G adds no decoded-video queue, no network jitter buffer, no PCM queue, no A/V payload copy, no audio resampling/time stretching, and no new control message.
+
+These are runtime policies only. They do not modify `PacketHeader`, `PayloadType`, Audio Payload V1, Video Payload V1, VideoResyncRequest, NACK, FEC, or ClockSync.
 
 ## Loss Detection, NACK, And Recovery
 

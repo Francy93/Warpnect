@@ -150,6 +150,20 @@ Large audio gaps MUST be handled by freshness-oriented media reset rather than u
 
 The Oboe real-time callback MUST remain independent from network receive, SCL parsing, codec decoding, JNI, and Kotlin execution.
 
+A/V synchronization MUST NOT assume that two timestamps share a clock domain merely because they use the same unit.
+
+Audio presentation is the receiver-side synchronization master once a valid Oboe source-to-presentation timeline exists.
+
+Video synchronization MUST use the existing scheduled `RenderAt` mechanism and MUST NOT introduce a decoded-video presentation queue.
+
+Opus codec lookahead MUST participate in source-to-presentation timeline mapping. The value comes from the audio StreamConfig and MUST NOT be hard-coded.
+
+A/V synchronization MAY use only the bounded slack already available in the playback ring for startup alignment. It MUST NOT create a continuous audio jitter buffer or automatically increase playback-ring capacity.
+
+If synchronization would require exceeding configured latency bounds, Warpnect MUST degrade synchronization quality rather than growing media latency without bound.
+
+The A/V synchronization layer MUST process timing metadata only. It MUST NOT copy Opus, PCM, AVC, decoded video pixels, or other media payloads.
+
 ## JNI Rules
 
 JNI is only a bridge.

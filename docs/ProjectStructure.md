@@ -52,6 +52,7 @@ app/src/main/java/io/warpnect/
 |-- audio/decoder/
 |-- audio/encoder/
 |-- audio/playback/
+|-- avsync/
 |-- capture/
 |-- codec/
 |-- input/
@@ -88,6 +89,7 @@ Responsibilities:
 - `audio/playback/`: app-facing low-latency PCM playback contracts, decoded PCM submission metadata, sharing policy, snapshots, presentation timestamp results, typed errors, and validation.
 - `audio/session/`: RFC-003F transmitter and receiver audio session orchestration, start/stop rollback, StreamConfig handling, sample-position ordering, PLC gap policy, freshness reset policy, and composed snapshots.
 - `audio/transport/`: app-facing SCL Audio Payload V1 transport contracts, typed errors/results, snapshots, and `SclEncodedAudioSink`.
+- `avsync/`: RFC-003G metadata-only audio/video synchronization, audio-master presentation model sampling, video timestamp-domain qualification, bounded startup gate, synchronized video render policy, snapshots, and typed sync errors.
 - `platform/audio/capture/`: Android `AudioRecord` microphone capture, system-audio Shizuku gateway, app-side SharedMemory drain, audio thread priority helper, and shared PCM ring layout.
 - `platform/audio/capture/privileged/`: Shizuku/Sui UserService for privileged system-audio capture, isolated AudioPolicy reflection adapter, AIDL control contract, and Bundle conversion.
 - `platform/audio/decoder/`: native-backed Opus decoder controller and fakeable JNI backend seam.
@@ -257,6 +259,23 @@ Responsibilities:
 
 Production audio transport does not copy complete encoded Opus packets into Kotlin `ByteArray` values, does not serialize audio wire format in Kotlin, does not batch multiple Opus packets, and does not create an encoded-audio queue or worker thread.
 
+## Audio/Video Synchronization Source Tree
+
+```text
+app/src/main/java/io/warpnect/avsync/
+```
+
+Responsibilities:
+
+- `AudioVideoSyncController.kt`: optional coordination layer above existing audio and video sessions, low-frequency presentation-anchor sampling, sync model publication, invalidation/reacquisition hooks, and render-policy ownership.
+- `AvSyncTypes.kt`: configuration, state, quality, error, model, snapshot, and clock abstractions.
+- `VideoTimestampDomainValidator.kt`: bounded audio/video path-offset and rate-compatibility statistics.
+- `AvSynchronizedVideoRenderPolicy.kt`: existing `VideoRenderPolicy` implementation that maps qualified video PTS onto the audio presentation timeline.
+- `AvSyncPlaybackStartGate.kt`: optional startup-only audio gate that uses existing playback-ring slack and releases before ring overflow.
+- `AudioPresentationMath.kt`: integer/rational lookahead and output-frame interpolation helpers.
+
+Production A/V synchronization processes timing metadata only. It does not own media payloads, copy encoded or decoded media, create a network jitter buffer, create a decoded-video queue, resample/time-stretch audio, or introduce a new wire protocol.
+
 ## Android Video Transport Source Tree
 
 ```text
@@ -405,6 +424,8 @@ Current JVM tests also include RFC-003E Oboe playback fake-backend controller li
 
 Current JVM tests also include RFC-003F audio transmitter rollback/backpressure handling and receiver orchestration coverage for config wait, first-frame prime, contiguous decode, small-gap PLC, late/duplicate drop, misaligned reset, large-gap reset, config change, playback-ring-full drop, and ready-slot release on decoder failure.
 
+Current JVM tests also include RFC-003G A/V synchronization coverage for lookahead math, output-frame interpolation, synthetic timestamp-domain qualification, different-epoch/rate rejection, stale fallback, synchronized video `RenderAt` decisions, past/excessive-future fallback and clamping, manual offset, startup gate limits, early/timeout release, and sync reacquisition hooks.
+
 Current Android instrumentation tests include a privileged capture first-frame smoke test that skips explicitly when Shizuku/backend prerequisites are unavailable.
 
 Current Android instrumentation tests also include a synthetic EGL Surface producer feeding `MediaCodec`, plus a Shizuku-gated RFC-002A capture-to-encoder integration test that skips explicitly when device prerequisites are unavailable.
@@ -425,7 +446,9 @@ Current Android instrumentation tests also include RFC-003D JNI encoder-to-decod
 
 Current Android instrumentation tests also include RFC-003E Oboe playback lifecycle and direct PCM submission smoke coverage for connected devices/emulators. It uses short deterministic PCM and does not require network audio.
 
-Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, RFC-003D portable Opus decoder tests, RFC-003E portable playback ring tests, and RFC-003F audio receiver runtime loopback/reassembly tests.
+RFC-003G Android synthetic A/V, privileged real-capture timestamp-domain qualification, and two-device A/V validation are device/prerequisite-gated and must report actual device status only.
+
+Current native tests include header smoke coverage, packet foundation tests, UDP localhost transport tests, fragmentation/reassembly tests, loss/NACK/recovery tests, Reed-Solomon FEC tests, clock synchronization/network telemetry tests, Phase 1 full-pipeline integration tests, RFC-002C video protocol/transport tests, RFC-002F video receiver runtime tests, RFC-002G VideoResyncRequest/recovery deadline tests, RFC-003B portable Opus encoder tests, RFC-003C Audio Payload V1/transport tests, RFC-003D portable Opus decoder tests, RFC-003E portable playback ring tests, RFC-003F audio receiver runtime loopback/reassembly tests, and RFC-003G playback source-anchor metadata tests.
 
 `native/test_support/` contains host-only deterministic support code, including the scripted network impairment simulator used by integration tests and benchmarks. It is not compiled into the Android `scl_core` target.
 

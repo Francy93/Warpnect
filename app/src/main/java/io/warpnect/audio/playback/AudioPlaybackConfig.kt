@@ -9,6 +9,7 @@ data class AudioPlaybackConfig(
     val channelCount: Int,
     val frameDurationUs: Int,
     val framesPerCodecFrame: Int,
+    val lookaheadSamples: Int = 0,
     val ringCapacityCodecFrames: Int = 4,
     val startThresholdCodecFrames: Int = 1,
     val sharingPolicy: AudioPlaybackSharingPolicy = AudioPlaybackSharingPolicy.PreferExclusiveAllowShared,

@@ -21,5 +21,7 @@ interface AudioPlaybackController : AutoCloseable {
 
     fun queryPresentationTimestamp(): AudioPresentationTimestampResult
 
+    fun querySourcePresentationAnchor(): AudioSourcePresentationAnchorResult
+
     override fun close()
 }
