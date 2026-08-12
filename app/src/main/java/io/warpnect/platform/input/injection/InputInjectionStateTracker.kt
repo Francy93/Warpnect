@@ -504,7 +504,7 @@ internal class InputInjectionStateTracker(
     private companion object {
         const val MAX_STATE_SLOT = 65_535
         const val MAX_ANDROID_POINTER_ID = 31
-        val VALID_TOOL_TYPES = setOf(1, 2, 3, 4)
+        val VALID_TOOL_TYPES = setOf(0, 1, 2, 3, 4)
     }
 
     private fun isTouchAction(action: Int): Boolean = when (action) {

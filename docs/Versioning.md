@@ -120,6 +120,16 @@ Input Payload Version describes the logical payload layout carried inside existi
 
 It is independent from SCL Protocol Version, Native ABI Version, Audio Payload Version, Video Payload Version, and Video Resync Control Version. RFC-004A defines Version 1 keyboard, touch, pointer, scroll, gamepad-state, and reset messages without changing the 21-byte SCL `PacketHeader` or adding a new payload type.
 
+## Privileged Input Injection Service Version
+
+Current value:
+
+```text
+1
+```
+
+Privileged Input Injection Service Version describes RFC-004D's internal Android AIDL/Binder contract. RFC-004E consumes the existing Android-ready injection contracts without changing this service version or its Binder methods.
+
 ## Application Version
 
 Current value:

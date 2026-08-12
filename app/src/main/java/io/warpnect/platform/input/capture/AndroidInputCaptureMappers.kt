@@ -21,14 +21,6 @@ import io.warpnect.input.model.INPUT_GAMEPAD_BUTTON_SELECT_BACK
 import io.warpnect.input.model.INPUT_GAMEPAD_BUTTON_START
 import io.warpnect.input.model.INPUT_GAMEPAD_BUTTON_X
 import io.warpnect.input.model.INPUT_GAMEPAD_BUTTON_Y
-import io.warpnect.input.model.INPUT_MODIFIER_LEFT_ALT
-import io.warpnect.input.model.INPUT_MODIFIER_LEFT_CONTROL
-import io.warpnect.input.model.INPUT_MODIFIER_LEFT_GUI
-import io.warpnect.input.model.INPUT_MODIFIER_LEFT_SHIFT
-import io.warpnect.input.model.INPUT_MODIFIER_RIGHT_ALT
-import io.warpnect.input.model.INPUT_MODIFIER_RIGHT_CONTROL
-import io.warpnect.input.model.INPUT_MODIFIER_RIGHT_GUI
-import io.warpnect.input.model.INPUT_MODIFIER_RIGHT_SHIFT
 import io.warpnect.input.model.INPUT_POINTER_BUTTON_BACK
 import io.warpnect.input.model.INPUT_POINTER_BUTTON_FORWARD
 import io.warpnect.input.model.INPUT_POINTER_BUTTON_PRIMARY
@@ -38,7 +30,11 @@ import io.warpnect.input.model.InputDeviceKind
 import io.warpnect.input.model.InputGamepadState
 import io.warpnect.input.model.InputNormalization
 import io.warpnect.input.model.InputTouchToolType
+import io.warpnect.platform.input.mapping.AndroidHidKeyboardMappingTable
+import io.warpnect.platform.input.mapping.AndroidHidUsage as SharedAndroidHidUsage
 import kotlin.math.roundToInt
+
+typealias AndroidHidUsage = SharedAndroidHidUsage
 
 object AndroidInputEventClock {
     fun keyEventTimeUs(event: KeyEvent): Long = event.eventTime * 1_000L
@@ -58,84 +54,13 @@ object AndroidInputEventClock {
     fun callbackUptimeUs(): Long = SystemClock.uptimeMillis() * 1_000L
 }
 
-data class AndroidHidUsage(
-    val usagePage: Int,
-    val usageId: Int,
-)
-
 object AndroidKeyboardHidMapper {
-    const val KEYBOARD_USAGE_PAGE: Int = 0x0007
+    const val KEYBOARD_USAGE_PAGE: Int = AndroidHidKeyboardMappingTable.KEYBOARD_USAGE_PAGE
 
-    fun mapKeyCode(keyCode: Int): AndroidHidUsage? {
-        val usageId = when (keyCode) {
-            in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> 0x04 + (keyCode - KeyEvent.KEYCODE_A)
-            in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 -> 0x1E + (keyCode - KeyEvent.KEYCODE_1)
-            KeyEvent.KEYCODE_0 -> 0x27
-            KeyEvent.KEYCODE_ENTER -> 0x28
-            KeyEvent.KEYCODE_ESCAPE -> 0x29
-            KeyEvent.KEYCODE_DEL -> 0x2A
-            KeyEvent.KEYCODE_TAB -> 0x2B
-            KeyEvent.KEYCODE_SPACE -> 0x2C
-            KeyEvent.KEYCODE_MINUS -> 0x2D
-            KeyEvent.KEYCODE_EQUALS -> 0x2E
-            KeyEvent.KEYCODE_LEFT_BRACKET -> 0x2F
-            KeyEvent.KEYCODE_RIGHT_BRACKET -> 0x30
-            KeyEvent.KEYCODE_BACKSLASH -> 0x31
-            KeyEvent.KEYCODE_SEMICOLON -> 0x33
-            KeyEvent.KEYCODE_APOSTROPHE -> 0x34
-            KeyEvent.KEYCODE_GRAVE -> 0x35
-            KeyEvent.KEYCODE_COMMA -> 0x36
-            KeyEvent.KEYCODE_PERIOD -> 0x37
-            KeyEvent.KEYCODE_SLASH -> 0x38
-            KeyEvent.KEYCODE_CAPS_LOCK -> 0x39
-            in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> 0x3A + (keyCode - KeyEvent.KEYCODE_F1)
-            KeyEvent.KEYCODE_SYSRQ -> 0x46
-            KeyEvent.KEYCODE_SCROLL_LOCK -> 0x47
-            KeyEvent.KEYCODE_BREAK -> 0x48
-            KeyEvent.KEYCODE_INSERT -> 0x49
-            KeyEvent.KEYCODE_MOVE_HOME -> 0x4A
-            KeyEvent.KEYCODE_PAGE_UP -> 0x4B
-            KeyEvent.KEYCODE_FORWARD_DEL -> 0x4C
-            KeyEvent.KEYCODE_MOVE_END -> 0x4D
-            KeyEvent.KEYCODE_PAGE_DOWN -> 0x4E
-            KeyEvent.KEYCODE_DPAD_RIGHT -> 0x4F
-            KeyEvent.KEYCODE_DPAD_LEFT -> 0x50
-            KeyEvent.KEYCODE_DPAD_DOWN -> 0x51
-            KeyEvent.KEYCODE_DPAD_UP -> 0x52
-            KeyEvent.KEYCODE_NUM_LOCK -> 0x53
-            KeyEvent.KEYCODE_NUMPAD_DIVIDE -> 0x54
-            KeyEvent.KEYCODE_NUMPAD_MULTIPLY -> 0x55
-            KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> 0x56
-            KeyEvent.KEYCODE_NUMPAD_ADD -> 0x57
-            KeyEvent.KEYCODE_NUMPAD_ENTER -> 0x58
-            in KeyEvent.KEYCODE_NUMPAD_1..KeyEvent.KEYCODE_NUMPAD_9 ->
-                0x59 + (keyCode - KeyEvent.KEYCODE_NUMPAD_1)
-            KeyEvent.KEYCODE_NUMPAD_0 -> 0x62
-            KeyEvent.KEYCODE_NUMPAD_DOT -> 0x63
-            KeyEvent.KEYCODE_CTRL_LEFT -> 0xE0
-            KeyEvent.KEYCODE_SHIFT_LEFT -> 0xE1
-            KeyEvent.KEYCODE_ALT_LEFT -> 0xE2
-            KeyEvent.KEYCODE_META_LEFT -> 0xE3
-            KeyEvent.KEYCODE_CTRL_RIGHT -> 0xE4
-            KeyEvent.KEYCODE_SHIFT_RIGHT -> 0xE5
-            KeyEvent.KEYCODE_ALT_RIGHT -> 0xE6
-            KeyEvent.KEYCODE_META_RIGHT -> 0xE7
-            else -> return null
-        }
-        return AndroidHidUsage(KEYBOARD_USAGE_PAGE, usageId)
-    }
+    fun mapKeyCode(keyCode: Int): AndroidHidUsage? = AndroidHidKeyboardMappingTable.androidToHid(keyCode)
 
-    fun modifierMaskForKeyCode(keyCode: Int): Int = when (keyCode) {
-        KeyEvent.KEYCODE_CTRL_LEFT -> INPUT_MODIFIER_LEFT_CONTROL
-        KeyEvent.KEYCODE_SHIFT_LEFT -> INPUT_MODIFIER_LEFT_SHIFT
-        KeyEvent.KEYCODE_ALT_LEFT -> INPUT_MODIFIER_LEFT_ALT
-        KeyEvent.KEYCODE_META_LEFT -> INPUT_MODIFIER_LEFT_GUI
-        KeyEvent.KEYCODE_CTRL_RIGHT -> INPUT_MODIFIER_RIGHT_CONTROL
-        KeyEvent.KEYCODE_SHIFT_RIGHT -> INPUT_MODIFIER_RIGHT_SHIFT
-        KeyEvent.KEYCODE_ALT_RIGHT -> INPUT_MODIFIER_RIGHT_ALT
-        KeyEvent.KEYCODE_META_RIGHT -> INPUT_MODIFIER_RIGHT_GUI
-        else -> 0
-    }
+    fun modifierMaskForKeyCode(keyCode: Int): Int =
+        AndroidHidKeyboardMappingTable.modifierMaskForAndroidKeyCode(keyCode)
 }
 
 class AndroidKeyboardModifierTracker {

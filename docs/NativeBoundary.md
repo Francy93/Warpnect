@@ -363,6 +363,21 @@ cached Android InputManager reflection
 
 The UserService constructs and recycles Android `InputEvent` instances locally. No SCL payload, native input packet, JNI buffer, or media payload crosses this injection boundary.
 
+RFC-004E adds no JNI or Binder interface. It composes endpoint-local Kotlin model transforms around the existing boundaries:
+
+```text
+receiver Android capture
+        -> portable Input model
+        -> viewport mapper
+        -> RFC-004C JNI / SCL send
+
+target portable Input model
+        -> Android target mapper
+        -> RFC-004D Binder / UserService
+```
+
+The renderer publishes only immutable `VideoViewportGeometry` metadata to the receiver mapper. Target display geometry and target Android device IDs remain local mapping data. No wire payload or media payload is copied by RFC-004E.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

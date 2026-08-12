@@ -60,14 +60,14 @@ Implemented:
 - RFC-004B - Android Input Capture Foundation [complete]
 - RFC-004C - Reverse SCL Input Transport [complete]
 - RFC-004D - Android Privileged Input Injection [complete]
+- RFC-004E - Input Mapping, Coordinate and Device Semantics [complete]
 
 Next:
 
-- RFC-004E - Input Mapping, Coordinate and Device Semantics [next]
+- RFC-004F - End-to-End Reverse Input [next]
 
 Planned:
 
-- RFC-004E - Input Mapping, Coordinate and Device Semantics
 - RFC-004F - End-to-End Reverse Input
 - RFC-004G - Input Latency, Reliability and Performance Tuning
 

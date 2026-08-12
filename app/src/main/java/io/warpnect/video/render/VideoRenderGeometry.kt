@@ -38,4 +38,38 @@ object VideoRenderGeometry {
             height = renderHeight.coerceAtLeast(1),
         )
     }
+
+    fun viewportGeometry(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        containerWidth: Int,
+        containerHeight: Int,
+        surfaceGeneration: Long,
+        videoConfigGeneration: Long,
+    ): VideoViewportGeometry {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) {
+            return VideoViewportGeometry(
+                surfaceWidthPx = containerWidth.coerceAtLeast(0),
+                surfaceHeightPx = containerHeight.coerceAtLeast(0),
+                videoWidthPx = sourceWidth.coerceAtLeast(0),
+                videoHeightPx = sourceHeight.coerceAtLeast(0),
+                surfaceGeneration = surfaceGeneration,
+                videoConfigGeneration = videoConfigGeneration,
+            )
+        }
+        val rect = aspectFit(sourceWidth, sourceHeight, containerWidth, containerHeight)
+        return VideoViewportGeometry(
+            surfaceWidthPx = containerWidth,
+            surfaceHeightPx = containerHeight,
+            contentLeftPx = rect.left,
+            contentTopPx = rect.top,
+            contentWidthPx = rect.width,
+            contentHeightPx = rect.height,
+            videoWidthPx = sourceWidth,
+            videoHeightPx = sourceHeight,
+            surfaceGeneration = surfaceGeneration,
+            videoConfigGeneration = videoConfigGeneration,
+            valid = true,
+        )
+    }
 }

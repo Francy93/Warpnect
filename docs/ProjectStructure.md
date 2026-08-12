@@ -525,6 +525,8 @@ Android instrumentation includes RFC-004C native input sender primitive/touch-sc
 
 RFC-004D adds `input/injection` for Android-ready injection contracts and `platform/input/injection` for `AndroidInputInjectionController`, the Shizuku gateway, cached privileged InputManager API wrapper, Android event factory, and bounded state tracker. Its internal AIDL contract and `PrivilegedInputInjectionUserService` live under `platform/input/injection/privileged`. JVM tests cover bounded state and lifecycle; Android instrumentation covers event construction without asserting privileged delivery.
 
+RFC-004E adds `input/mapping` for queue-free receiver viewport mapping and `platform/input/mapping` for the shared Android/HID keyboard table, target logical-display provider, target-local input-device resolver, and Android target mapper. `video/render/VideoViewportGeometry` provides the immutable renderer-to-input metadata handoff. JVM tests cover source geometry and target semantic mapping; Android instrumentation covers target logical display geometry when a device/emulator is present.
+
 ## CI Layout
 
 ```text

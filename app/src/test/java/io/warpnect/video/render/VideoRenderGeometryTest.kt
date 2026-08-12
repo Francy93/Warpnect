@@ -45,6 +45,33 @@ class VideoRenderGeometryTest {
     }
 
     @Test
+    fun viewportGeometryReusesAspectFitContentRectangle() {
+        assertEquals(
+            VideoViewportGeometry(
+                surfaceWidthPx = 1920,
+                surfaceHeightPx = 1080,
+                contentLeftPx = 240,
+                contentTopPx = 0,
+                contentWidthPx = 1440,
+                contentHeightPx = 1080,
+                videoWidthPx = 4,
+                videoHeightPx = 3,
+                surfaceGeneration = 7,
+                videoConfigGeneration = 11,
+                valid = true,
+            ),
+            VideoRenderGeometry.viewportGeometry(
+                sourceWidth = 4,
+                sourceHeight = 3,
+                containerWidth = 1920,
+                containerHeight = 1080,
+                surfaceGeneration = 7,
+                videoConfigGeneration = 11,
+            ),
+        )
+    }
+
+    @Test
     fun veryNarrowAndVeryWideRemainCentered() {
         assertEquals(
             VideoRenderRect(left = 933, top = 0, width = 54, height = 1080),

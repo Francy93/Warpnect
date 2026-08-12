@@ -239,3 +239,14 @@ caller context
 ```
 
 The UserService contains no UI, handler loop, executor, retry queue, timer, or network work. It never calls JNI or SCL transport from the injection path. Caller serialization is required; service locking is a bounded correctness guard only.
+
+RFC-004E adds no mapping worker. Receiver-side viewport mapping executes synchronously in the existing Android input-dispatch call before `SclInputEventSink`:
+
+```text
+Android UI/input dispatch
+        -> RFC-004B capture mapper
+        -> RemoteVideoViewportInputMapper
+        -> RFC-004C sender
+```
+
+The future RFC-004F input receiver context will call `AndroidTargetInputMapper` and RFC-004D injection synchronously. Geometry and device listener callbacks only invalidate cold-path metadata caches; neither mapper polls, sleeps, posts per-event work, or owns a queue.

@@ -190,6 +190,16 @@ The app-to-UserService Binder transaction for injection MUST remain synchronous.
 
 RFC-004D consumes Android injection-ready events only. It MUST NOT map portable HID usages, normalized coordinates, or portable gamepad state, and it MUST NOT consume SCL Input Payloads directly.
 
+Input coordinate mapping MUST remain endpoint-local: receiver viewport geometry is removed before transport, while target logical-display geometry is applied only after portable Input Payload V1 arrives at the target.
+
+Warpnect MUST NOT place receiver View dimensions, Android display dimensions, or Android input-device IDs on the Input Payload V1 wire.
+
+The visible RFC-002E video-content rectangle MUST be the authoritative receiver-side coordinate viewport for touch and absolute pointer mapping. Letterbox interaction MUST NOT silently become target display-edge interaction.
+
+Portable gamepad state MUST be converted into bounded Android button transitions and joystick state without an event-history queue.
+
+Target display geometry changes MUST invalidate active absolute-input continuity rather than silently remapping an active gesture into a new coordinate system.
+
 Remote input source timestamps are diagnostic metadata. Target Android KeyEvent and MotionEvent eventTime/downTime MUST use local target-device uptime and MUST NOT be derived by subtracting unrelated device clock domains.
 
 Active injected state MUST remain bounded by configured state slots and pressed-key capacity. Reset repair MUST be bounded and best-effort; after service death Warpnect MUST report that state may remain injected rather than silently rebinding or claiming recovery.

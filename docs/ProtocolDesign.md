@@ -1417,3 +1417,7 @@ The RFC-004C production policy is BestEffortImmediate for FreshState, CriticalTr
 ## Privileged Input Injection
 
 RFC-004D adds no SCL wire message, PacketHeader change, PayloadType change, NativeBridge ABI change, or Input Payload Version change. It is an Android target-side primitive that consumes already Android-ready events over an internal synchronous AIDL connection to a Shizuku/Sui UserService. Portable HID/key mapping and normalized-coordinate mapping remain RFC-004E work.
+
+## Input Mapping Semantics
+
+RFC-004E adds no normative wire change. Input Payload V1 absolute coordinates represent normalized remote-control content coordinates after endpoint-local receiver viewport mapping. Android target pixel conversion, target display geometry, rotation diagnostics, Android HID/keycode mapping, and Android device-ID resolution remain outside the SCL protocol and never modify Input Payload V1 bytes.
