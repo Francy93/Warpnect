@@ -1,5 +1,6 @@
 #include <jni.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -16,6 +17,7 @@
 #include "audio_receiver_runtime.h"
 #include "audio_transport.h"
 #include "fec.h"
+#include "input_transport.h"
 #include "native_bridge.h"
 #include "retransmission_cache.h"
 #include "udp_endpoint.h"
@@ -39,6 +41,27 @@ using warpnect::scl::AudioTransportSender;
 using warpnect::scl::AudioTransportSenderConfig;
 using warpnect::scl::AudioTransportSenderWorkspace;
 using warpnect::scl::AudioTransportStatus;
+using warpnect::scl::InputDeviceKind;
+using warpnect::scl::InputGamepadState;
+using warpnect::scl::InputKeyAction;
+using warpnect::scl::InputKeyEvent;
+using warpnect::scl::InputMessageHeader;
+using warpnect::scl::InputMessageType;
+using warpnect::scl::InputPointerAbsolute;
+using warpnect::scl::InputPointerRelative;
+using warpnect::scl::InputResetReason;
+using warpnect::scl::InputResetScope;
+using warpnect::scl::InputResetState;
+using warpnect::scl::InputScroll;
+using warpnect::scl::InputTouchAction;
+using warpnect::scl::InputTouchContact;
+using warpnect::scl::InputTouchFrame;
+using warpnect::scl::InputTouchToolType;
+using warpnect::scl::InputTransportError;
+using warpnect::scl::InputTransportSender;
+using warpnect::scl::InputTransportSenderConfig;
+using warpnect::scl::InputTransportSenderWorkspace;
+using warpnect::scl::InputTransportStatus;
 using warpnect::scl::VideoError;
 using warpnect::scl::VideoReceiverConfig;
 using warpnect::scl::VideoReceiverEventType;
@@ -82,6 +105,7 @@ inline constexpr jsize kNativeAudioPlaybackTimestampValues = 5;
 inline constexpr jsize kNativeAudioReceiverEventValues = 15;
 inline constexpr jsize kNativeAudioReceiverSnapshotValues = 26;
 inline constexpr jsize kNativeAudioTransportSnapshotValues = 21;
+inline constexpr jsize kNativeInputTransportSnapshotValues = 34;
 inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
 inline constexpr jsize kNativeVideoReceiverFillValues = 7;
@@ -100,6 +124,10 @@ inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 }
 
 [[nodiscard]] constexpr jint audio_transport_error_code(AudioTransportError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+[[nodiscard]] constexpr jint input_transport_error_code(InputTransportError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
 }
 
@@ -198,6 +226,18 @@ struct NativeAudioTransportHandle final {
     }
 };
 
+struct NativeInputTransportHandle final {
+    InputTransportSenderConfig config{};
+    std::array<std::byte, warpnect::scl::kInputMaxDatagramWireSize> datagram_scratch{};
+    std::unique_ptr<InputTransportSender> sender{};
+
+    [[nodiscard]] InputTransportSenderWorkspace workspace() noexcept {
+        return InputTransportSenderWorkspace{
+            .datagram_scratch = datagram_scratch,
+        };
+    }
+};
+
 struct NativeAudioReceiverHandle final {
     std::mutex lock{};
     std::unique_ptr<AudioReceiverRuntime> runtime{};
@@ -246,6 +286,13 @@ struct NativeAudioReceiverHandle final {
     return reinterpret_cast<NativeAudioTransportHandle*>(static_cast<std::intptr_t>(handle));
 }
 
+[[nodiscard]] NativeInputTransportHandle* input_transport_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeInputTransportHandle*>(static_cast<std::intptr_t>(handle));
+}
+
 [[nodiscard]] NativeAudioReceiverHandle* audio_receiver_handle_from(jlong handle) noexcept {
     if (handle == 0) {
         return nullptr;
@@ -260,6 +307,31 @@ struct NativeAudioReceiverHandle final {
 
 [[nodiscard]] bool valid_u32(jlong value) noexcept {
     return value >= 0 && value <= static_cast<jlong>(std::numeric_limits<std::uint32_t>::max());
+}
+
+[[nodiscard]] bool valid_u16(jint value) noexcept {
+    return value >= 0 && value <= static_cast<jint>(std::numeric_limits<std::uint16_t>::max());
+}
+
+[[nodiscard]] bool valid_i16(jint value) noexcept {
+    return value >= static_cast<jint>(std::numeric_limits<std::int16_t>::min()) &&
+           value <= static_cast<jint>(std::numeric_limits<std::int16_t>::max());
+}
+
+[[nodiscard]] bool valid_u8(jint value) noexcept {
+    return value >= 0 && value <= static_cast<jint>(std::numeric_limits<std::uint8_t>::max());
+}
+
+[[nodiscard]] InputMessageHeader input_header(InputMessageType type,
+                                              jint device_kind,
+                                              jint device_slot) noexcept {
+    return InputMessageHeader{
+        .input_version = warpnect::scl::kInputPayloadVersion,
+        .message_type = type,
+        .device_kind = static_cast<InputDeviceKind>(static_cast<std::uint8_t>(device_kind)),
+        .flags = 0,
+        .device_slot = static_cast<std::uint16_t>(device_slot),
+    };
 }
 
 [[nodiscard]] bool allocate_workspaces(NativeVideoTransportHandle& handle) {
@@ -602,6 +674,51 @@ create_audio_transport_handle(JNIEnv* env,
     handle->datagram_scratch.resize(handle->config.max_wire_datagram_size);
     handle->sender = std::make_unique<AudioTransportSender>(handle->config, handle->workspace());
     const AudioTransportStatus open = handle->sender->open();
+    if (!open.ok()) {
+        return nullptr;
+    }
+    return handle;
+}
+
+[[nodiscard]] std::unique_ptr<NativeInputTransportHandle>
+create_input_transport_handle(JNIEnv* env,
+                              jstring remote_address,
+                              jint remote_port,
+                              jint local_port,
+                              jint max_wire_datagram_size,
+                              jlong initial_input_sequence) {
+    if (remote_address == nullptr || !valid_port(remote_port, false) ||
+        !valid_port(local_port, true) ||
+        max_wire_datagram_size <
+            static_cast<jint>(warpnect::scl::kInputMaxDatagramWireSize) ||
+        !valid_u32(initial_input_sequence)) {
+        return nullptr;
+    }
+
+    const char* remote_chars = env->GetStringUTFChars(remote_address, nullptr);
+    if (remote_chars == nullptr) {
+        return nullptr;
+    }
+    const auto parsed =
+        warpnect::scl::parse_numeric_ip_address(std::string_view(remote_chars));
+    env->ReleaseStringUTFChars(remote_address, remote_chars);
+    if (!parsed.ok()) {
+        return nullptr;
+    }
+
+    auto handle = std::make_unique<NativeInputTransportHandle>();
+    handle->config = InputTransportSenderConfig{
+        .remote_endpoint =
+            UdpEndpoint{
+                .address = parsed.address,
+                .port = static_cast<std::uint16_t>(remote_port),
+            },
+        .local_port = static_cast<std::uint16_t>(local_port),
+        .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
+        .initial_input_sequence = static_cast<std::uint32_t>(initial_input_sequence),
+    };
+    handle->sender = std::make_unique<InputTransportSender>(handle->config, handle->workspace());
+    const InputTransportStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
     }
@@ -1801,6 +1918,342 @@ Java_io_warpnect_NativeBridge_nativeAudioTransportSnapshot(JNIEnv* env,
     jlongArray array = env->NewLongArray(kNativeAudioTransportSnapshotValues);
     if (array != nullptr) {
         env->SetLongArrayRegion(array, 0, kNativeAudioTransportSnapshotValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportCreate(JNIEnv* env,
+                                                          jclass /* clazz */,
+                                                          jstring remote_address,
+                                                          jint remote_port,
+                                                          jint local_port,
+                                                          jint max_wire_datagram_size,
+                                                          jlong initial_input_sequence) {
+    try {
+        auto handle = create_input_transport_handle(env, remote_address, remote_port, local_port,
+                                                    max_wire_datagram_size, initial_input_sequence);
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportDestroy(JNIEnv* /* env */,
+                                                           jclass /* clazz */,
+                                                           jlong handle) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    native_handle->sender->close();
+    delete native_handle;
+    return input_transport_error_code(InputTransportError::None);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitKey(JNIEnv* /* env */,
+                                                             jclass /* clazz */,
+                                                             jlong handle,
+                                                             jlong event_time_us,
+                                                             jint device_slot,
+                                                             jint usage_page,
+                                                             jint usage_id,
+                                                             jint action,
+                                                             jint repeat_count,
+                                                             jint modifier_mask) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u16(device_slot) || !valid_u16(usage_page) ||
+        !valid_u16(usage_id) || !valid_u8(action) || !valid_u16(repeat_count) ||
+        !valid_u16(modifier_mask)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputKeyEvent event{
+        .header = input_header(InputMessageType::Key, static_cast<jint>(InputDeviceKind::Keyboard),
+                               device_slot),
+        .usage_page = static_cast<std::uint16_t>(usage_page),
+        .usage_id = static_cast<std::uint16_t>(usage_id),
+        .action = static_cast<InputKeyAction>(static_cast<std::uint8_t>(action)),
+        .repeat_count = static_cast<std::uint16_t>(repeat_count),
+        .modifier_mask = static_cast<std::uint16_t>(modifier_mask),
+    };
+    return input_transport_error_code(
+        native_handle->sender->submit_key(static_cast<std::uint64_t>(event_time_us), event).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitTouchFrame(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jlong event_time_us,
+    jint device_kind,
+    jint device_slot,
+    jint action,
+    jint action_pointer_id,
+    jint pointer_count,
+    jobject contact_scratch) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u8(device_kind) || !valid_u16(device_slot) ||
+        !valid_u8(action) || !valid_u8(action_pointer_id) || pointer_count < 1 ||
+        pointer_count > static_cast<jint>(warpnect::scl::kInputMaxTouchContacts) ||
+        contact_scratch == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    auto* const scratch = static_cast<const jint*>(env->GetDirectBufferAddress(contact_scratch));
+    const jlong capacity = env->GetDirectBufferCapacity(contact_scratch);
+    constexpr std::size_t kContactFieldCount = 7;
+    const std::size_t required = static_cast<std::size_t>(pointer_count) * kContactFieldCount * sizeof(jint);
+    if (scratch == nullptr || capacity < 0 || static_cast<std::uint64_t>(capacity) < required) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+
+    InputTouchFrame frame{};
+    frame.header = input_header(InputMessageType::TouchFrame, device_kind, device_slot);
+    frame.action = static_cast<InputTouchAction>(static_cast<std::uint8_t>(action));
+    frame.action_pointer_id = static_cast<std::uint8_t>(action_pointer_id);
+    frame.pointer_count = static_cast<std::uint8_t>(pointer_count);
+    for (jint index = 0; index < pointer_count; ++index) {
+        const jint* const contact = scratch + static_cast<std::size_t>(index) * kContactFieldCount;
+        if (!valid_u8(contact[0]) || !valid_u8(contact[1]) || !valid_u16(contact[2]) ||
+            !valid_u16(contact[3]) || !valid_u16(contact[4]) || !valid_u16(contact[5]) ||
+            !valid_u16(contact[6])) {
+            return input_transport_error_code(InputTransportError::InvalidInputEvent);
+        }
+        frame.contacts[static_cast<std::size_t>(index)] = InputTouchContact{
+            .pointer_id = static_cast<std::uint8_t>(contact[0]),
+            .tool_type = static_cast<InputTouchToolType>(static_cast<std::uint8_t>(contact[1])),
+            .pointer_flags = static_cast<std::uint16_t>(contact[2]),
+            .x_normalized = static_cast<std::uint16_t>(contact[3]),
+            .y_normalized = static_cast<std::uint16_t>(contact[4]),
+            .pressure = static_cast<std::uint16_t>(contact[5]),
+            .size = static_cast<std::uint16_t>(contact[6]),
+        };
+    }
+    return input_transport_error_code(native_handle->sender
+                                          ->submit_touch_frame(static_cast<std::uint64_t>(event_time_us), frame)
+                                          .error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitPointerAbsolute(
+    JNIEnv* /* env */,
+    jclass /* clazz */,
+    jlong handle,
+    jlong event_time_us,
+    jint device_kind,
+    jint device_slot,
+    jint x_normalized,
+    jint y_normalized,
+    jint button_mask,
+    jint pointer_flags,
+    jint pressure) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u8(device_kind) || !valid_u16(device_slot) ||
+        !valid_u16(x_normalized) || !valid_u16(y_normalized) || !valid_u16(button_mask) ||
+        !valid_u16(pointer_flags) || !valid_u16(pressure)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputPointerAbsolute event{
+        .header = input_header(InputMessageType::PointerAbsolute, device_kind, device_slot),
+        .x_normalized = static_cast<std::uint16_t>(x_normalized),
+        .y_normalized = static_cast<std::uint16_t>(y_normalized),
+        .button_mask = static_cast<std::uint16_t>(button_mask),
+        .pointer_flags = static_cast<std::uint16_t>(pointer_flags),
+        .pressure = static_cast<std::uint16_t>(pressure),
+    };
+    return input_transport_error_code(native_handle->sender
+                                          ->submit_pointer_absolute(
+                                              static_cast<std::uint64_t>(event_time_us), event)
+                                          .error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitPointerRelative(
+    JNIEnv* /* env */,
+    jclass /* clazz */,
+    jlong handle,
+    jlong event_time_us,
+    jint device_kind,
+    jint device_slot,
+    jint delta_x_q16_16,
+    jint delta_y_q16_16,
+    jint button_mask) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u8(device_kind) || !valid_u16(device_slot) ||
+        !valid_u16(button_mask)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputPointerRelative event{
+        .header = input_header(InputMessageType::PointerRelative, device_kind, device_slot),
+        .delta_x_q16_16 = static_cast<std::int32_t>(delta_x_q16_16),
+        .delta_y_q16_16 = static_cast<std::int32_t>(delta_y_q16_16),
+        .button_mask = static_cast<std::uint16_t>(button_mask),
+    };
+    return input_transport_error_code(native_handle->sender
+                                          ->submit_pointer_relative(
+                                              static_cast<std::uint64_t>(event_time_us), event)
+                                          .error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitScroll(JNIEnv* /* env */,
+                                                                jclass /* clazz */,
+                                                                jlong handle,
+                                                                jlong event_time_us,
+                                                                jint device_kind,
+                                                                jint device_slot,
+                                                                jint horizontal_q8_8,
+                                                                jint vertical_q8_8,
+                                                                jint button_mask) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u8(device_kind) || !valid_u16(device_slot) ||
+        !valid_i16(horizontal_q8_8) || !valid_i16(vertical_q8_8) || !valid_u16(button_mask)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputScroll event{
+        .header = input_header(InputMessageType::Scroll, device_kind, device_slot),
+        .horizontal_q8_8 = static_cast<std::int16_t>(horizontal_q8_8),
+        .vertical_q8_8 = static_cast<std::int16_t>(vertical_q8_8),
+        .button_mask = static_cast<std::uint16_t>(button_mask),
+    };
+    return input_transport_error_code(
+        native_handle->sender->submit_scroll(static_cast<std::uint64_t>(event_time_us), event).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitGamepadState(
+    JNIEnv* /* env */,
+    jclass /* clazz */,
+    jlong handle,
+    jlong event_time_us,
+    jint device_slot,
+    jint button_mask,
+    jint left_x,
+    jint left_y,
+    jint right_x,
+    jint right_y,
+    jint left_trigger,
+    jint right_trigger) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u16(device_slot) || button_mask < 0 ||
+        left_x < -32767 || left_x > 32767 || left_y < -32767 || left_y > 32767 ||
+        right_x < -32767 || right_x > 32767 || right_y < -32767 || right_y > 32767 ||
+        !valid_u16(left_trigger) || !valid_u16(right_trigger)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputGamepadState state{
+        .header = input_header(InputMessageType::GamepadState,
+                               static_cast<jint>(InputDeviceKind::Gamepad), device_slot),
+        .button_mask = static_cast<std::uint32_t>(button_mask),
+        .left_x = static_cast<std::int16_t>(left_x),
+        .left_y = static_cast<std::int16_t>(left_y),
+        .right_x = static_cast<std::int16_t>(right_x),
+        .right_y = static_cast<std::int16_t>(right_y),
+        .left_trigger = static_cast<std::uint16_t>(left_trigger),
+        .right_trigger = static_cast<std::uint16_t>(right_trigger),
+    };
+    return input_transport_error_code(native_handle->sender
+                                          ->submit_gamepad_state(
+                                              static_cast<std::uint64_t>(event_time_us), state)
+                                          .error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSubmitReset(JNIEnv* /* env */,
+                                                               jclass /* clazz */,
+                                                               jlong handle,
+                                                               jlong event_time_us,
+                                                               jint device_kind,
+                                                               jint device_slot,
+                                                               jint scope,
+                                                               jint reason) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    if (event_time_us < 0 || !valid_u8(device_kind) || !valid_u16(device_slot) ||
+        !valid_u8(scope) || !valid_u8(reason)) {
+        return input_transport_error_code(InputTransportError::InvalidInputEvent);
+    }
+    const InputResetState reset{
+        .header = input_header(InputMessageType::ResetState, device_kind, device_slot),
+        .scope = static_cast<InputResetScope>(static_cast<std::uint8_t>(scope)),
+        .reason = static_cast<InputResetReason>(static_cast<std::uint8_t>(reason)),
+    };
+    return input_transport_error_code(native_handle->sender
+                                          ->submit_reset_state(static_cast<std::uint64_t>(event_time_us), reset)
+                                          .error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportSnapshot(JNIEnv* env,
+                                                           jclass /* clazz */,
+                                                           jlong handle) {
+    jlong values[kNativeInputTransportSnapshotValues]{};
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        values[26] = input_transport_error_code(InputTransportError::InvalidHandle);
+        values[31] = 1;
+    } else {
+        const auto snapshot = native_handle->sender->snapshot();
+        values[0] = static_cast<jlong>(snapshot.next_input_sequence);
+        values[1] = static_cast<jlong>(snapshot.events_submitted);
+        values[2] = static_cast<jlong>(snapshot.datagrams_attempted);
+        values[3] = static_cast<jlong>(snapshot.datagrams_sent);
+        values[4] = static_cast<jlong>(snapshot.bytes_sent);
+        values[5] = static_cast<jlong>(snapshot.fresh_state_submitted);
+        values[6] = static_cast<jlong>(snapshot.fresh_state_sent);
+        values[7] = static_cast<jlong>(snapshot.fresh_state_dropped);
+        values[8] = static_cast<jlong>(snapshot.critical_transitions_submitted);
+        values[9] = static_cast<jlong>(snapshot.critical_transitions_sent);
+        values[10] = static_cast<jlong>(snapshot.critical_transitions_dropped);
+        values[11] = static_cast<jlong>(snapshot.resets_submitted);
+        values[12] = static_cast<jlong>(snapshot.resets_sent);
+        values[13] = static_cast<jlong>(snapshot.reset_send_failures);
+        values[14] = static_cast<jlong>(snapshot.key_events);
+        values[15] = static_cast<jlong>(snapshot.touch_frames);
+        values[16] = static_cast<jlong>(snapshot.pointer_absolute_events);
+        values[17] = static_cast<jlong>(snapshot.pointer_relative_events);
+        values[18] = static_cast<jlong>(snapshot.scroll_events);
+        values[19] = static_cast<jlong>(snapshot.gamepad_states);
+        values[20] = static_cast<jlong>(snapshot.reset_events);
+        values[21] = static_cast<jlong>(snapshot.would_block_count);
+        values[22] = static_cast<jlong>(snapshot.send_failure_count);
+        values[23] = static_cast<jlong>(snapshot.last_event_timestamp_us);
+        values[24] = static_cast<jlong>(snapshot.last_attempted_sequence);
+        values[25] = static_cast<jlong>(snapshot.last_sent_sequence);
+        values[26] = input_transport_error_code(snapshot.last_error);
+        values[27] = snapshot.has_last_event_timestamp ? 1 : 0;
+        values[28] = snapshot.has_last_attempted_sequence ? 1 : 0;
+        values[29] = snapshot.has_last_sent_sequence ? 1 : 0;
+        values[30] = snapshot.opened ? 1 : 0;
+        values[31] = snapshot.closed ? 1 : 0;
+        values[32] = snapshot.local_endpoint_port;
+        values[33] = static_cast<jlong>(snapshot.local_endpoint_ip_version);
+    }
+    jlongArray array = env->NewLongArray(kNativeInputTransportSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeInputTransportSnapshotValues, values);
     }
     return array;
 }

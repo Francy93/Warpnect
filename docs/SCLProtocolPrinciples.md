@@ -240,3 +240,7 @@ They must evolve independently.
 SCL is not a faster screen streaming protocol.
 
 SCL is a synchronization layer designed to make distributed interactive state feel local.
+
+Small latency-sensitive Input Payload Version 1 messages are intentionally constrained to one SCL datagram instead of using fragmentation.
+
+Transport reliability is not uniform across all input semantics. RFC-004C sends fresh state, critical transitions, and resets once immediately; later phases may measure distinct bounded policies without changing Input Payload V1 bytes.

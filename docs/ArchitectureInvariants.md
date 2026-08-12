@@ -343,3 +343,11 @@ Silent fallback behavior is forbidden in low-latency paths unless it is explicit
 Do not implement future phases inside architecture or cleanup work.
 
 RFC-001 may implement SCL networking. Codec, audio, input, discovery, diagnostics, optimization, desktop, and production work remain separate phases.
+
+Input Payload Version 1 messages are transported as exactly one SCL datagram. RFC-004C does not fragment or reassemble input events, and its 417-byte maximum includes the frozen 21-byte PacketHeader.
+
+Reverse input transport is synchronous and queue-free: each portable input observation receives one non-blocking UDP send attempt on its capture caller context. It does not use a sender queue, retry queue, pacing timer, delayed flush, or event batching.
+
+Input sequence numbers form one continuous `PayloadType::Input` domain independent from session-local device slots. Source event timestamps are preserved exactly in `PacketHeader.timestamp_us` and are never replaced with send time.
+
+FreshState, CriticalTransition, and Reset are local policy and telemetry classifications only. RFC-004C adds no input NACK, FEC, retransmission, duplication, or reliability queue.

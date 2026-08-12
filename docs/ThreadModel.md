@@ -216,3 +216,15 @@ Backpressure must be visible to the orchestrator and telemetry layer.
 Timing data must be captured from a monotonic clock. Cross-thread timestamps must use the same timing domain unless a documented synchronization transform exists.
 
 SCL clock synchronization converts timestamp domains inside SCL only. It must not adjust the operating-system clock or spawn a background synchronization loop.
+
+RFC-004C extends the RFC-004B caller-driven path without creating another execution context:
+
+```text
+Android UI/input dispatch
+        -> RFC-004B mapping
+        -> SclInputEventSink
+        -> JNI
+        -> native non-blocking UDP send
+```
+
+There is no input transport worker, retry worker, pacing timer, per-event coroutine, handler post, or receiver runtime in RFC-004C. The sender is caller-serialized; its steady-state send path does not take a blocking mutex.

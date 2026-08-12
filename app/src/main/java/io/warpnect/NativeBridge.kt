@@ -193,6 +193,104 @@ internal object NativeBridge {
     private external fun nativeAudioTransportSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeInputTransportCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        initialInputSequence: Long,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeInputTransportDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitKey(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceSlot: Int,
+        usagePage: Int,
+        usageId: Int,
+        action: Int,
+        repeatCount: Int,
+        modifierMask: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitTouchFrame(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        action: Int,
+        actionPointerId: Int,
+        pointerCount: Int,
+        contactScratch: ByteBuffer,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitPointerAbsolute(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        xNormalized: Int,
+        yNormalized: Int,
+        buttonMask: Int,
+        pointerFlags: Int,
+        pressure: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitPointerRelative(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        deltaXQ1616: Int,
+        deltaYQ1616: Int,
+        buttonMask: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitScroll(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        horizontalQ88: Int,
+        verticalQ88: Int,
+        buttonMask: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitGamepadState(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceSlot: Int,
+        buttonMask: Int,
+        leftX: Int,
+        leftY: Int,
+        rightX: Int,
+        rightY: Int,
+        leftTrigger: Int,
+        rightTrigger: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSubmitReset(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        scope: Int,
+        reason: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeAudioReceiverCreate(
         localAddress: String,
         localPort: Int,
@@ -572,6 +670,162 @@ internal object NativeBridge {
     )
 
     fun audioTransportSnapshot(handle: Long): LongArray = nativeAudioTransportSnapshot(handle)
+
+    fun inputTransportCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        initialInputSequence: Long,
+    ): Long = nativeInputTransportCreate(
+        remoteAddress,
+        remotePort,
+        localPort,
+        maxWireDatagramSize,
+        initialInputSequence,
+    )
+
+    fun inputTransportDestroy(handle: Long): Int = nativeInputTransportDestroy(handle)
+
+    fun inputTransportSubmitKey(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceSlot: Int,
+        usagePage: Int,
+        usageId: Int,
+        action: Int,
+        repeatCount: Int,
+        modifierMask: Int,
+    ): Int = nativeInputTransportSubmitKey(
+        handle,
+        eventTimeUs,
+        deviceSlot,
+        usagePage,
+        usageId,
+        action,
+        repeatCount,
+        modifierMask,
+    )
+
+    fun inputTransportSubmitTouchFrame(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        action: Int,
+        actionPointerId: Int,
+        pointerCount: Int,
+        contactScratch: ByteBuffer,
+    ): Int = nativeInputTransportSubmitTouchFrame(
+        handle,
+        eventTimeUs,
+        deviceKind,
+        deviceSlot,
+        action,
+        actionPointerId,
+        pointerCount,
+        contactScratch,
+    )
+
+    fun inputTransportSubmitPointerAbsolute(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        xNormalized: Int,
+        yNormalized: Int,
+        buttonMask: Int,
+        pointerFlags: Int,
+        pressure: Int,
+    ): Int = nativeInputTransportSubmitPointerAbsolute(
+        handle,
+        eventTimeUs,
+        deviceKind,
+        deviceSlot,
+        xNormalized,
+        yNormalized,
+        buttonMask,
+        pointerFlags,
+        pressure,
+    )
+
+    fun inputTransportSubmitPointerRelative(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        deltaXQ1616: Int,
+        deltaYQ1616: Int,
+        buttonMask: Int,
+    ): Int = nativeInputTransportSubmitPointerRelative(
+        handle,
+        eventTimeUs,
+        deviceKind,
+        deviceSlot,
+        deltaXQ1616,
+        deltaYQ1616,
+        buttonMask,
+    )
+
+    fun inputTransportSubmitScroll(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        horizontalQ88: Int,
+        verticalQ88: Int,
+        buttonMask: Int,
+    ): Int = nativeInputTransportSubmitScroll(
+        handle,
+        eventTimeUs,
+        deviceKind,
+        deviceSlot,
+        horizontalQ88,
+        verticalQ88,
+        buttonMask,
+    )
+
+    fun inputTransportSubmitGamepadState(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceSlot: Int,
+        buttonMask: Int,
+        leftX: Int,
+        leftY: Int,
+        rightX: Int,
+        rightY: Int,
+        leftTrigger: Int,
+        rightTrigger: Int,
+    ): Int = nativeInputTransportSubmitGamepadState(
+        handle,
+        eventTimeUs,
+        deviceSlot,
+        buttonMask,
+        leftX,
+        leftY,
+        rightX,
+        rightY,
+        leftTrigger,
+        rightTrigger,
+    )
+
+    fun inputTransportSubmitReset(
+        handle: Long,
+        eventTimeUs: Long,
+        deviceKind: Int,
+        deviceSlot: Int,
+        scope: Int,
+        reason: Int,
+    ): Int = nativeInputTransportSubmitReset(
+        handle,
+        eventTimeUs,
+        deviceKind,
+        deviceSlot,
+        scope,
+        reason,
+    )
+
+    fun inputTransportSnapshot(handle: Long): LongArray = nativeInputTransportSnapshot(handle)
 
     fun audioReceiverCreate(
         localAddress: String,

@@ -1403,3 +1403,13 @@ Packet layout is part of the SCL protocol contract.
 Breaking packet layout or protocol semantic changes require a Protocol Version change and an RFC.
 
 Transport API changes that affect native callers require an RFC and may require Native ABI documentation if exposed through the bridge in a later phase.
+
+## Reverse Input Transport Profile
+
+RFC-004C adds a transport profile above the unchanged Input Payload Version 1 layout. Every input observation is exactly one SCL datagram with `PayloadType::Input`, `slice_index = 0`, and `total_slices = 1`; Input does not use RFC-001C fragmentation or reassembly.
+
+The largest Input Payload V1 message is a 32-contact TouchFrame at 396 bytes. Together with the frozen 21-byte PacketHeader, the maximum reverse-input datagram is 417 bytes. `InputTransportConfig.maxWireDatagramSize` must be at least 417 bytes; larger budgets are allowed but unused by Input V1.
+
+`PacketHeader.timestamp_us` is RFC-004B's source Android monotonic event time, preserved exactly rather than replaced by JNI or send time. One unsigned 32-bit Input sequence domain spans all logical device slots and message types for an `InputTransportSender` lifecycle. A sequence is consumed after a valid message reaches its send attempt, including `WouldBlock` or send failure, so transport loss remains observable.
+
+The RFC-004C production policy is BestEffortImmediate for FreshState, CriticalTransition, and Reset events. Delivery class is local telemetry metadata, not a wire field. NACK, FEC, retransmission caching, duplication, pacing, timer flushes, batching, and receiver ordering/reassembly are intentionally absent.

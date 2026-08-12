@@ -519,6 +519,10 @@ Current native tests also include RFC-004A Input Payload V1 golden-vector, malfo
 
 RFC-003H adds the `scl_phase3_audio_benchmarks` executable under `native/benchmarks/`. It measures codec frame-duration, bitrate, CBR/CVBR, complexity, packetization, receiver-runtime, PLC, and deterministic recovery-policy scenarios. Generated CSV belongs under native build directories and is not committed.
 
+RFC-004C adds `input/transport` for `InputTransportController`, configuration, result/state/error, snapshot, and `SclInputEventSink`; and `platform/input/transport` for `NativeSclInputTransportController` and its controller-owned direct touch scratch. Native `input_packetizer.*` and `input_transport.*` provide direct single-datagram encoding, non-blocking sender ownership, and strict datagram parsing. Host-native input transport tests and JVM sink/scratch tests cover those boundaries.
+
+Android instrumentation includes RFC-004C native input sender primitive/touch-scratch submission and synthetic capture-to-`SclInputEventSink` transport coverage. It requires a connected device or emulator; no physical input device is required. Native tests include direct Input packetization, one-datagram limits, sequence progression/wrap after failure, per-class drop telemetry, strict parser checks, and UDP localhost loopback coverage.
+
 ## CI Layout
 
 ```text

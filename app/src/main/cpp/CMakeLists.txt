@@ -41,7 +41,9 @@ set(SCL_CORE_SOURCES
     src/audio_transport.cpp
     src/fec.cpp
     src/fec_control.cpp
+    src/input_packetizer.cpp
     src/input_protocol.cpp
+    src/input_transport.cpp
     jni_bridge.cpp
     src/fragmentation.cpp
     src/loss_detector.cpp

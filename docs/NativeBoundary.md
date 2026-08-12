@@ -315,7 +315,7 @@ JNI / SCL input transport
 Input Payload V1
 ```
 
-RFC-004B introduces no input JNI boundary and no NativeBridge entry point. Android capture is currently:
+RFC-004B capture is Android-side and remains transport-agnostic:
 
 ```text
 Android KeyEvent / MotionEvent
@@ -329,17 +329,25 @@ portable Kotlin Input model
 InputEventSink
 ```
 
-The future native boundary remains:
+RFC-004C establishes the additive send boundary:
 
 ```text
-Android KeyEvent / MotionEvent
-        |
 portable Kotlin Input model
         |
-future RFC-004C JNI / SCL input transport
+SclInputEventSink
+        |
+NativeBridge primitive fields
+        |
+InputTransportSender
+        |
+PacketHeader + Input Payload V1
+        |
+non-blocking SCL UDP
 ```
 
-Reverse UDP transport belongs to RFC-004C, and privileged injection belongs to RFC-004D.
+Fixed-size events cross JNI as primitive fields. A TouchFrame crosses in one JNI call through a controller-owned 896-byte direct scratch buffer holding seven native-order `Int` fields per contact: pointer ID, tool type, flags, normalized X/Y, pressure, and size. The scratch is not Input Payload wire format.
+
+RFC-004C creates no Input Payload `ByteArray`, no Kotlin wire serializer, no per-contact JNI call, and no receiver JNI path. Native packet encoding writes directly into the sender's fixed 417-byte datagram storage. Privileged injection remains RFC-004D.
 
 ## Error Handling
 
