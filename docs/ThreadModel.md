@@ -228,3 +228,14 @@ Android UI/input dispatch
 ```
 
 There is no input transport worker, retry worker, pacing timer, per-event coroutine, handler post, or receiver runtime in RFC-004C. The sender is caller-serialized; its steady-state send path does not take a blocking mutex.
+
+RFC-004D adds no app-side injection worker. A caller makes one synchronous Binder transaction to the Shizuku/Sui UserService, where a short bounded state lock protects validation, direct InputManager asynchronous submission, and state updates:
+
+```text
+caller context
+        -> synchronous Binder
+        -> PrivilegedInputInjectionUserService Binder context
+        -> InputManager ASYNC submission
+```
+
+The UserService contains no UI, handler loop, executor, retry queue, timer, or network work. It never calls JNI or SCL transport from the injection path. Caller serialization is required; service locking is a bounded correctness guard only.

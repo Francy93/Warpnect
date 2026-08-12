@@ -523,6 +523,8 @@ RFC-004C adds `input/transport` for `InputTransportController`, configuration, r
 
 Android instrumentation includes RFC-004C native input sender primitive/touch-scratch submission and synthetic capture-to-`SclInputEventSink` transport coverage. It requires a connected device or emulator; no physical input device is required. Native tests include direct Input packetization, one-datagram limits, sequence progression/wrap after failure, per-class drop telemetry, strict parser checks, and UDP localhost loopback coverage.
 
+RFC-004D adds `input/injection` for Android-ready injection contracts and `platform/input/injection` for `AndroidInputInjectionController`, the Shizuku gateway, cached privileged InputManager API wrapper, Android event factory, and bounded state tracker. Its internal AIDL contract and `PrivilegedInputInjectionUserService` live under `platform/input/injection/privileged`. JVM tests cover bounded state and lifecycle; Android instrumentation covers event construction without asserting privileged delivery.
+
 ## CI Layout
 
 ```text

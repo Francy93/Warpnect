@@ -184,6 +184,16 @@ Input Payload V1 MUST contain an explicit ResetState mechanism so later session 
 
 Input Payload V1 MUST NOT batch unrelated temporal input events, introduce input-specific fragmentation, add an input reliability protocol, or create an input queue in RFC-004A.
 
+Android privileged input injection MUST use the Shizuku/Sui UserService identity and direct Android InputManager injection. Warpnect MUST NOT spawn `shell input` commands, use an Accessibility fallback, or create a virtual input device in the injection hot path.
+
+The app-to-UserService Binder transaction for injection MUST remain synchronous. Production InputManager injection MUST use asynchronous submission and MUST NOT create an opaque `oneway` Binder backlog, injection worker queue, retry worker, timer, or pacing layer.
+
+RFC-004D consumes Android injection-ready events only. It MUST NOT map portable HID usages, normalized coordinates, or portable gamepad state, and it MUST NOT consume SCL Input Payloads directly.
+
+Remote input source timestamps are diagnostic metadata. Target Android KeyEvent and MotionEvent eventTime/downTime MUST use local target-device uptime and MUST NOT be derived by subtracting unrelated device clock domains.
+
+Active injected state MUST remain bounded by configured state slots and pressed-key capacity. Reset repair MUST be bounded and best-effort; after service death Warpnect MUST report that state may remain injected rather than silently rebinding or claiming recovery.
+
 Android input capture MUST remain event-driven. It MUST NOT introduce an input worker queue, timer-based polling loop, per-event coroutine, VSYNC sampling loop, or temporal batching layer.
 
 Android runtime input-device IDs are local capture identifiers only. They MUST NOT become SCL Input Payload wire identity.

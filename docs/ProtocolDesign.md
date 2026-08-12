@@ -1413,3 +1413,7 @@ The largest Input Payload V1 message is a 32-contact TouchFrame at 396 bytes. To
 `PacketHeader.timestamp_us` is RFC-004B's source Android monotonic event time, preserved exactly rather than replaced by JNI or send time. One unsigned 32-bit Input sequence domain spans all logical device slots and message types for an `InputTransportSender` lifecycle. A sequence is consumed after a valid message reaches its send attempt, including `WouldBlock` or send failure, so transport loss remains observable.
 
 The RFC-004C production policy is BestEffortImmediate for FreshState, CriticalTransition, and Reset events. Delivery class is local telemetry metadata, not a wire field. NACK, FEC, retransmission caching, duplication, pacing, timer flushes, batching, and receiver ordering/reassembly are intentionally absent.
+
+## Privileged Input Injection
+
+RFC-004D adds no SCL wire message, PacketHeader change, PayloadType change, NativeBridge ABI change, or Input Payload Version change. It is an Android target-side primitive that consumes already Android-ready events over an internal synchronous AIDL connection to a Shizuku/Sui UserService. Portable HID/key mapping and normalized-coordinate mapping remain RFC-004E work.

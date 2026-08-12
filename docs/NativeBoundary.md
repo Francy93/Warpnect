@@ -349,6 +349,20 @@ Fixed-size events cross JNI as primitive fields. A TouchFrame crosses in one JNI
 
 RFC-004C creates no Input Payload `ByteArray`, no Kotlin wire serializer, no per-contact JNI call, and no receiver JNI path. Native packet encoding writes directly into the sender's fixed 417-byte datagram storage. Privileged injection remains RFC-004D.
 
+RFC-004D adds no NativeBridge or native C++ input-injection path. Its Android-only boundary is:
+
+```text
+Android-ready event
+        |
+synchronous AIDL / Binder
+        |
+Shizuku/Sui UserService
+        |
+cached Android InputManager reflection
+```
+
+The UserService constructs and recycles Android `InputEvent` instances locally. No SCL payload, native input packet, JNI buffer, or media payload crosses this injection boundary.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

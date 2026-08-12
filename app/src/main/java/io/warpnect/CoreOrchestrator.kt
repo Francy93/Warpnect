@@ -10,6 +10,7 @@ import io.warpnect.audio.transport.AudioTransportController
 import io.warpnect.avsync.AvSyncController
 import io.warpnect.capture.VideoCaptureController
 import io.warpnect.input.capture.InputCaptureController
+import io.warpnect.input.injection.InputInjectionController
 import io.warpnect.input.transport.InputTransportController
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.encoder.VideoEncoderController
@@ -46,6 +47,7 @@ class CoreOrchestrator(
     val avSyncController: AvSyncController? = null,
     val inputCaptureController: InputCaptureController? = null,
     val inputTransportController: InputTransportController? = null,
+    val inputInjectionController: InputInjectionController? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
@@ -72,6 +74,7 @@ class CoreOrchestrator(
         microphoneAudioReceiverSessionController?.close()
         inputCaptureController?.close()
         inputTransportController?.close()
+        inputInjectionController?.close()
         transmitterVideoCaptureController?.close()
         transmitterVideoEncoderController?.close()
         transmitterVideoTransportController?.close()

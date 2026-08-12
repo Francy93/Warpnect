@@ -59,10 +59,11 @@ Implemented:
 - RFC-004A - Portable Input Event Model and SCL Input Payload V1 [complete]
 - RFC-004B - Android Input Capture Foundation [complete]
 - RFC-004C - Reverse SCL Input Transport [complete]
+- RFC-004D - Android Privileged Input Injection [complete]
 
 Next:
 
-- RFC-004D - Android Privileged Input Injection [next]
+- RFC-004E - Input Mapping, Coordinate and Device Semantics [next]
 
 Planned:
 
@@ -77,8 +78,7 @@ Implement:
 - Mouse.
 - Gamepad.
 - Shizuku integration.
-- `/dev/uinput` virtual devices.
-- Bidirectional input protocol.
+- Portable-to-Android input mapping and end-to-end reverse input.
 
 ## Phase 5 - Discovery and Session Management
 

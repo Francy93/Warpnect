@@ -244,3 +244,5 @@ SCL is a synchronization layer designed to make distributed interactive state fe
 Small latency-sensitive Input Payload Version 1 messages are intentionally constrained to one SCL datagram instead of using fragmentation.
 
 Transport reliability is not uniform across all input semantics. RFC-004C sends fresh state, critical transitions, and resets once immediately; later phases may measure distinct bounded policies without changing Input Payload V1 bytes.
+
+RFC-004D is intentionally outside the SCL wire contract. It consumes Android-ready target-side events after a future receiver/mapping layer has selected Android key codes, pixel coordinates, source, device, and display identifiers. It adds no input wire reliability policy, PacketHeader field, or payload version.
