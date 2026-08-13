@@ -264,4 +264,10 @@ Android UI/input dispatch
         -> RFC-004C sender
 ```
 
-The future RFC-004F input receiver context will call `AndroidTargetInputMapper` and RFC-004D injection synchronously. Geometry and device listener callbacks only invalidate cold-path metadata caches; neither mapper polls, sleeps, posts per-event work, or owns a queue.
+`WarpnectInputReceiver` calls `InputStateConvergenceController`, `AndroidTargetInputMapper`, and RFC-004D injection synchronously. Geometry and device listener callbacks only invalidate cold-path metadata caches; none of these components polls, sleeps, posts per-event work, or owns a queue.
+
+RFC-004G keeps this model. `InputStateConvergenceController` runs synchronously on
+`WarpnectInputReceiver` between the bridge decoder and `AndroidTargetInputMapper`. Immediate
+redundant source submissions run on the existing Android input-dispatch caller. There is no
+reliability worker, duplicate worker, touch-repair worker, retry timer, reorder timeout, or input
+coalescing queue.

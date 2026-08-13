@@ -21,6 +21,15 @@ enum class InputInjectionBackend {
     ShizukuUserService,
 }
 
+/** Cold-path `/dev/uhid` availability only; RFC-004G does not create a virtual HID device. */
+enum class UhidCapability {
+    Unavailable,
+    Missing,
+    PermissionDenied,
+    Accessible,
+    OpenFailed,
+}
+
 enum class PrivilegedUidKind {
     Unknown,
     Root,
@@ -154,6 +163,8 @@ data class InputInjectionCapabilities(
     val touchInjectionSupported: Boolean = false,
     val pointerInjectionSupported: Boolean = false,
     val joystickInjectionSupported: Boolean = false,
+    val uhidCapability: UhidCapability = UhidCapability.Unavailable,
+    val uhidErrno: Int? = null,
     val maxPointers: Int = MAX_TOUCH_POINTERS,
     val maxTrackedStateSlots: Int = InputInjectionConfig.MAX_TRACKED_INJECTION_SLOTS,
     val lastError: InputInjectionError = InputInjectionError.None,

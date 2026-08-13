@@ -2,10 +2,16 @@ package io.warpnect.input.session
 
 import io.warpnect.input.injection.InputInjectionController
 import io.warpnect.input.injection.InputInjectionError
+import io.warpnect.input.performance.BoundedInputTimingHistogram
+import io.warpnect.input.reliability.InputConvergenceDispatchResult
+import io.warpnect.input.reliability.InputConvergenceSink
+import io.warpnect.input.reliability.InputEventEnvelope
+import io.warpnect.input.reliability.InputStateConvergenceController
 import io.warpnect.input.transport.InputReceiverError
 import io.warpnect.input.transport.InputReceiverRuntime
 import io.warpnect.input.transport.InputReceiverWaitResult
 import io.warpnect.platform.input.mapping.AndroidTargetInputMappingOutcome
+import io.warpnect.platform.input.mapping.AndroidTargetInputMappingResult
 import io.warpnect.platform.input.mapping.TargetInputMapper
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -23,6 +29,9 @@ class ReverseInputReceiverSessionController(
 
     @Volatile
     private var snapshot = ReverseInputReceiverSessionSnapshot()
+    private var convergence: InputStateConvergenceController? = null
+    private val convergenceAndDispatchTiming = BoundedInputTimingHistogram()
+    private val mapperAndInjectionTiming = BoundedInputTimingHistogram()
     private var closed = false
 
     suspend fun start(config: ReverseInputReceiverSessionConfig): ReverseInputReceiverSessionResult {
@@ -51,6 +60,9 @@ class ReverseInputReceiverSessionController(
             injectionController.stop()
             return fail(ReverseInputSessionError.ReceiverStartFailed)
         }
+        convergence = InputStateConvergenceController(config.reliabilityConfig)
+        convergenceAndDispatchTiming.clear()
+        mapperAndInjectionTiming.clear()
         acceptingEvents.set(true)
         receiverThread = Thread(
             { receiveLoop(config.receiverWaitTimeoutUs) },
@@ -80,12 +92,17 @@ class ReverseInputReceiverSessionController(
         receiverThread = null
         val reset = targetMapper.reset()
         val resetSucceeded = reset.isSuccess
+        if (resetSucceeded) convergence?.onLocalResetSucceeded()
+        val convergenceSnapshot = convergence?.snapshot() ?: snapshot.convergence
+        convergence?.close()
+        convergence = null
         injectionController.stop()
         receiverRuntime.stop()
         snapshot = snapshot.copy(
             state = ReverseInputSessionState.Stopped,
             finalResetAttempted = true,
             finalResetSucceeded = resetSucceeded,
+            convergence = convergenceSnapshot,
             lastError = if (resetSucceeded) {
                 ReverseInputSessionError.None
             } else {
@@ -99,11 +116,16 @@ class ReverseInputReceiverSessionController(
         receiver = receiverRuntime.snapshot(),
         mapper = targetMapper.snapshot(),
         injection = injectionController.snapshot(),
+        convergence = convergence?.snapshot() ?: snapshot.convergence,
+        convergenceAndDispatchTiming = convergenceAndDispatchTiming.snapshot(),
+        mapperAndInjectionTiming = mapperAndInjectionTiming.snapshot(),
     )
 
     override fun close() {
         if (closed) return
         stop()
+        convergence?.close()
+        convergence = null
         receiverRuntime.close()
         targetMapper.close()
         injectionController.close()
@@ -116,6 +138,7 @@ class ReverseInputReceiverSessionController(
             val received = receiverRuntime.waitForInputEvent(timeoutUs)
             if (emergencyResetRequested.getAndSet(false)) {
                 val reset = targetMapper.reset()
+                if (reset.isSuccess) convergence?.onLocalResetSucceeded()
                 snapshot = snapshot.copy(
                     emergencyResetsCompleted = snapshot.emergencyResetsCompleted +
                         if (reset.isSuccess) 1L else 0L,
@@ -130,13 +153,37 @@ class ReverseInputReceiverSessionController(
             }
             when (received) {
                 is InputReceiverWaitResult.EventReady -> {
-                    val mapped = targetMapper.mapAndInject(
-                        received.event.sourceEventTimeUs,
-                        received.event.event,
-                    )
-                    if (!mapped.isSuccess) {
-                        val sessionError = if (mapped.outcome == AndroidTargetInputMappingOutcome.InjectionFailure ||
-                            mapped.outcome == AndroidTargetInputMappingOutcome.ResetInjectionFailure
+                    var mapped: AndroidTargetInputMappingResult? = null
+                    val startedAtNs = System.nanoTime()
+                    val convergenceResult = try {
+                        convergence?.process(
+                            InputEventEnvelope(
+                                sequenceNumber = received.event.sequenceNumber,
+                                sourceEventTimeUs = received.event.sourceEventTimeUs,
+                                event = received.event.event,
+                            ),
+                            InputConvergenceSink { candidate ->
+                                val mappingStartedAtNs = System.nanoTime()
+                                try {
+                                    targetMapper.mapAndInject(candidate.sourceEventTimeUs, candidate.event).also {
+                                        mapped = it
+                                    }.let { InputConvergenceDispatchResult(it.isSuccess) }
+                                } finally {
+                                    mapperAndInjectionTiming.recordElapsedNs(
+                                        System.nanoTime() - mappingStartedAtNs,
+                                    )
+                                }
+                            },
+                        )
+                    } finally {
+                        convergenceAndDispatchTiming.recordElapsedNs(System.nanoTime() - startedAtNs)
+                    }
+                    if (convergenceResult == null || !convergenceResult.isSuccess) {
+                        val mappingResult = mapped
+                        val mappingOutcome = mappingResult?.outcome
+                        val sessionError = if (
+                            mappingOutcome == AndroidTargetInputMappingOutcome.InjectionFailure ||
+                            mappingOutcome == AndroidTargetInputMappingOutcome.ResetInjectionFailure
                         ) {
                             ReverseInputSessionError.InjectionFailure
                         } else {
@@ -145,11 +192,19 @@ class ReverseInputReceiverSessionController(
                         snapshot = snapshot.copy(
                             mappingFailures = snapshot.mappingFailures + 1L,
                             injectionFailures = snapshot.injectionFailures +
-                                if (mapped.injectionError != InputInjectionError.None) 1L else 0L,
+                                if (mappingResult?.injectionError?.let {
+                                        it != InputInjectionError.None
+                                    } == true
+                                ) {
+                                    1L
+                                } else {
+                                    0L
+                                },
                             lastError = sessionError,
                         )
-                        if (mapped.injectionError.isFatalInputSessionFailure()) {
-                            targetMapper.reset()
+                        if (mappingResult?.injectionError?.isFatalInputSessionFailure() == true) {
+                            val reset = targetMapper.reset()
+                            if (reset.isSuccess) convergence?.onLocalResetSucceeded()
                             acceptingEvents.set(false)
                             snapshot = snapshot.copy(state = ReverseInputSessionState.Error)
                         }
@@ -165,7 +220,8 @@ class ReverseInputReceiverSessionController(
                 }
                 is InputReceiverWaitResult.Failure -> {
                     if (received.error != InputReceiverError.None) {
-                        targetMapper.reset()
+                        val reset = targetMapper.reset()
+                        if (reset.isSuccess) convergence?.onLocalResetSucceeded()
                         acceptingEvents.set(false)
                         snapshot = snapshot.copy(
                             state = ReverseInputSessionState.Error,

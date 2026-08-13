@@ -381,3 +381,26 @@ Reverse input transport is synchronous and queue-free: each portable input obser
 Input sequence numbers form one continuous `PayloadType::Input` domain independent from session-local device slots. Source event timestamps are preserved exactly in `PacketHeader.timestamp_us` and are never replaced with send time.
 
 FreshState, CriticalTransition, and Reset are local policy and telemetry classifications only. RFC-004C adds no input NACK, FEC, retransmission, duplication, or reliability queue.
+
+## Phase 4 State Convergence
+
+Warpnect input reliability is state-convergent rather than generically reliable: full-state inputs
+repair from newer state, while critical transitions may use bounded immediate redundancy without
+waiting for acknowledgements.
+
+Input reliability never introduces a network reorder wait, retransmission queue, ACK timeout, or
+reliability timer into the Phase 4 production hot path.
+
+Older state snapshots are prevented from resurrecting input state after newer snapshots or
+`ResetState` have already been accepted. Incremental relative pointer motion and scroll are not
+treated as replaceable latest-only snapshots.
+
+Multi-touch recovery is based on stable pointer IDs and the newest complete touch state rather than
+remote pointer indexes. A bounded local repair or reset is preferred to waiting for a missing
+packet.
+
+Cross-device one-way input latency is unavailable unless RFC-001F ClockSync and the source input
+timestamp domain are validly mapped. Endpoint filtering is isolation only, not authentication.
+
+InputManager event injection does not guarantee preservation of a requested physical Android device
+identity; hardware-like gamepad compatibility requires separate device validation.

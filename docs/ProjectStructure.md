@@ -79,6 +79,8 @@ app/src/main/java/io/warpnect/
 |-- input/
 |-- input/capture/
 |-- input/model/
+|-- input/performance/
+|-- input/reliability/
 |-- network/
 |-- platform/capture/
 |-- platform/audio/capture/
@@ -546,6 +548,13 @@ Android instrumentation includes RFC-004C native input sender primitive/touch-sc
 RFC-004D adds `input/injection` for Android-ready injection contracts and `platform/input/injection` for `AndroidInputInjectionController`, the Shizuku gateway, cached privileged InputManager API wrapper, Android event factory, and bounded state tracker. Its internal AIDL contract and `PrivilegedInputInjectionUserService` live under `platform/input/injection/privileged`. JVM tests cover bounded state and lifecycle; Android instrumentation covers event construction without asserting privileged delivery.
 
 RFC-004E adds `input/mapping` for queue-free receiver viewport mapping and `platform/input/mapping` for the shared Android/HID keyboard table, target logical-display provider, target-local input-device resolver, and Android target mapper. `video/render/VideoViewportGeometry` provides the immutable renderer-to-input metadata handoff. JVM tests cover source geometry and target semantic mapping; Android instrumentation covers target logical display geometry when a device/emulator is present.
+
+RFC-004G adds `input/reliability` for `InputReliabilityConfig`, source classification,
+`InputSequenceMath`, fixed recent-sequence/semantic caches, and `InputStateConvergenceController`
+with stable-pointer-ID touch repair. `input/performance` supplies bounded local timing histograms.
+`native/benchmarks/scl_phase4_input_benchmarks.cpp` provides host-only packetization/parse/receiver
+measurements. The existing privileged injection capability bundle reports a cold `/dev/uhid` probe
+result; no UHID backend is present.
 
 ## CI Layout
 

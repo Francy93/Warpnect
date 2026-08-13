@@ -94,9 +94,9 @@ Portable `deviceSlot` is passed directly to RFC-004D as `stateSlot`. Android dev
 | Keyboard | `SyntheticDefault` (`deviceId = 0`) |
 | Touchscreen, stylus, touchpad | `SyntheticDefault` (`deviceId = 0`) |
 | Mouse | `SyntheticDefault` (`deviceId = 0`) |
-| Gamepad | `PreferSourceCompatible` |
+| Gamepad | `SyntheticDefault` (`deviceId = 0`) for the InputManager backend |
 
-`PreferSourceCompatible` and `RequireSourceCompatible` use a target-local `InputManager` resolver cache. Device add/remove/change callbacks invalidate that cache; no input event scans local devices. No physical source-to-target pairing or Android device identity crosses Input Payload V1.
+`PreferSourceCompatible` and `RequireSourceCompatible` remain explicit target-local mapping options and use an `InputManager` resolver cache. Device add/remove/change callbacks invalidate that cache; no input event scans local devices. With the InputManager injection backend, a requested device ID is not a promise that InputDispatcher preserves a physical target `InputDevice` identity. No physical source-to-target pairing or Android device identity crosses Input Payload V1.
 
 ## Touch, Pointer, and Scroll
 

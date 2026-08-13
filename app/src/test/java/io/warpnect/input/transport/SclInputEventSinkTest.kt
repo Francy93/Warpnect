@@ -17,6 +17,7 @@ import io.warpnect.input.model.InputTouchContact
 import io.warpnect.input.model.InputTouchFrame
 import io.warpnect.input.model.InputTouchToolType
 import io.warpnect.input.model.WarpnectInputEvent
+import io.warpnect.input.reliability.InputReliabilityConfig
 import io.warpnect.platform.input.transport.InputTouchScratch
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
@@ -70,6 +71,94 @@ class SclInputEventSinkTest {
     }
 
     @Test
+    fun convergentProfileSendsCriticalAndResetCopiesImmediatelyButKeepsDeltasSingleCopy() {
+        val transport = FakeTransport()
+        val sink = SclInputEventSink(transport, InputReliabilityConfig.ultraLowLatencyConvergent())
+
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(100, InputKeyEvent(1, 7, 4, InputKeyAction.Down, 0, 0)),
+        )
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(101, InputPointerRelative(InputDeviceKind.Mouse, 2, 100, 0, 0)),
+        )
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(
+                102,
+                InputResetState(
+                    InputDeviceKind.Unknown,
+                    65_535,
+                    InputResetScope.AllDevices,
+                    InputResetReason.SessionStop,
+                ),
+            ),
+        )
+
+        assertEquals(6, transport.submissionCount)
+        assertEquals(listOf(100L, 100L, 101L, 102L, 102L, 102L), transport.eventTimes)
+        val snapshot = sink.snapshot()
+        assertEquals(1, snapshot.criticalTransitionEvents)
+        assertEquals(1, snapshot.incrementalDeltaEvents)
+        assertEquals(1, snapshot.resetEvents)
+        assertEquals(3L, snapshot.submissionTiming.count)
+    }
+
+    @Test
+    fun aPartialImmediateCriticalSendIsAcceptedWithoutSchedulingARetry() {
+        val transport = FakeTransport(
+            outcomeBySubmission = listOf(InputTransportError.WouldBlock, InputTransportError.None),
+        )
+        val sink = SclInputEventSink(transport, InputReliabilityConfig.ultraLowLatencyConvergent())
+
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(100, InputKeyEvent(1, 7, 4, InputKeyAction.Up, 0, 0)),
+        )
+        assertEquals(2, transport.submissionCount)
+        assertEquals(1L, sink.snapshot().eventsWithPartialRedundancy)
+    }
+
+    @Test
+    fun pointerAndGamepadButtonTransitionsAreDuplicatedButMotionAndAnalogUpdatesAreNot() {
+        val transport = FakeTransport()
+        val sink = SclInputEventSink(transport, InputReliabilityConfig.ultraLowLatencyConvergent())
+
+        sink.onInputEvent(1, InputPointerAbsolute(InputDeviceKind.Mouse, 2, 1, 1, 0, 0))
+        sink.onInputEvent(2, InputPointerAbsolute(InputDeviceKind.Mouse, 2, 2, 2, 1, 0))
+        sink.onInputEvent(3, InputPointerAbsolute(InputDeviceKind.Mouse, 2, 3, 3, 1, 0))
+        sink.onInputEvent(4, InputGamepadState(3, 0, 0, 0, 0, 0, 0, 0))
+        sink.onInputEvent(5, InputGamepadState(3, 1, 0, 0, 0, 0, 0, 0))
+        sink.onInputEvent(6, InputGamepadState(3, 1, 100, 0, 0, 0, 0, 0))
+
+        assertEquals(8, transport.submissionCount)
+        val snapshot = sink.snapshot()
+        assertEquals(2, snapshot.criticalTransitionEvents)
+        assertEquals(4, snapshot.freshSnapshotEvents)
+    }
+
+    @Test
+    fun allFailedPointerTransitionIsRetriedOnlyByTheNextSourceObservation() {
+        val transport = FakeTransport(
+            outcomeBySubmission = listOf(
+                InputTransportError.WouldBlock,
+                InputTransportError.WouldBlock,
+                InputTransportError.None,
+                InputTransportError.None,
+            ),
+        )
+        val sink = SclInputEventSink(transport, InputReliabilityConfig.ultraLowLatencyConvergent())
+        val pressed = InputPointerAbsolute(InputDeviceKind.Mouse, 2, 10, 10, 1, 0)
+
+        assertTrue(sink.onInputEvent(1, pressed) is InputSinkResult.Rejected)
+        assertEquals(InputSinkResult.Accepted, sink.onInputEvent(2, pressed))
+        assertEquals(4, transport.submissionCount)
+        assertEquals(2, sink.snapshot().criticalTransitionEvents)
+        assertEquals(0L, sink.snapshot().eventsWithPartialRedundancy)
+    }
+
+    @Test
     fun touchScratchUsesOneNativeOrderDirectRecordBuffer() {
         val scratch = InputTouchScratch()
         val firstBuffer = scratch.buffer
@@ -115,10 +204,12 @@ class SclInputEventSinkTest {
 
     private class FakeTransport(
         private val error: InputTransportError = InputTransportError.None,
+        private val outcomeBySubmission: List<InputTransportError> = emptyList(),
     ) : InputTransportController {
         var lastEventTimeUs: Long = -1L
         var lastEvent: WarpnectInputEvent? = null
         var submissionCount: Int = 0
+        val eventTimes = mutableListOf<Long>()
 
         override fun prepare(config: InputTransportConfig): InputTransportResult =
             InputTransportResult(InputTransportError.None, InputTransportSnapshot())
@@ -130,7 +221,9 @@ class SclInputEventSinkTest {
             lastEventTimeUs = eventTimeUs
             lastEvent = event
             submissionCount += 1
-            return InputTransportResult(error, InputTransportSnapshot(lastError = error))
+            eventTimes += eventTimeUs
+            val submissionError = outcomeBySubmission.getOrNull(submissionCount - 1) ?: error
+            return InputTransportResult(submissionError, InputTransportSnapshot(lastError = submissionError))
         }
 
         override fun stop(): InputTransportResult =

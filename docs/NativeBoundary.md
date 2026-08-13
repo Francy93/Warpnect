@@ -386,6 +386,23 @@ target portable Input model
 
 The renderer publishes only immutable `VideoViewportGeometry` metadata to the receiver mapper. Target display geometry and target Android device IDs remain local mapping data. No wire payload or media payload is copied by RFC-004E.
 
+RFC-004G inserts one local metadata stage after the existing native receiver bridge:
+
+```text
+UDP
+        -> native input parser
+        -> persistent scalar bridge
+        -> portable input envelope
+        -> InputStateConvergenceController
+        -> AndroidTargetInputMapper
+        -> RFC-004D Binder / UserService
+```
+
+The convergence stage owns only sequence numbers, source timestamps, bounded semantic state, and
+portable models. It crosses no new wire or JNI boundary and copies no input payload. The privileged
+capability query may probe `/dev/uhid` cold, but it does not create a HID device or add a new Binder
+method.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

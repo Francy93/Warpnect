@@ -14,6 +14,7 @@ class ReverseInputSenderSessionController(
     private val transportController: InputTransportController,
 ) : AutoCloseable {
     private var mapper: RemoteVideoViewportInputMapper? = null
+    private var reliabilitySink: SclInputEventSink? = null
     private var snapshot = ReverseInputSenderSessionSnapshot()
     private var closed = false
 
@@ -38,10 +39,11 @@ class ReverseInputSenderSessionController(
             return fail(ReverseInputSessionError.TransportStartFailed)
         }
 
+        val activeReliabilitySink = SclInputEventSink(transportController, config.reliabilityConfig)
         val activeMapper = try {
             RemoteVideoViewportInputMapper(
                 geometryProvider = geometryProvider,
-                downstream = SclInputEventSink(transportController),
+                downstream = activeReliabilitySink,
                 config = config.viewportMappingConfig,
             )
         } catch (_: IllegalArgumentException) {
@@ -49,10 +51,12 @@ class ReverseInputSenderSessionController(
             return fail(ReverseInputSessionError.MapperPrepareFailed)
         }
         mapper = activeMapper
+        reliabilitySink = activeReliabilitySink
         val preparedCapture = captureController.prepare(surface, config.captureConfig, activeMapper)
         if (!preparedCapture.isSuccess) {
             activeMapper.close()
             mapper = null
+            reliabilitySink = null
             transportController.stop()
             return fail(ReverseInputSessionError.CapturePrepareFailed)
         }
@@ -61,6 +65,7 @@ class ReverseInputSenderSessionController(
             captureController.stop()
             activeMapper.close()
             mapper = null
+            reliabilitySink = null
             transportController.stop()
             return fail(ReverseInputSessionError.CaptureStartFailed)
         }
@@ -81,13 +86,16 @@ class ReverseInputSenderSessionController(
         val afterCaptureStop = transportController.snapshot()
         val resetSent = afterCaptureStop.resetsSent > before.resetsSent
         val resetFailed = afterCaptureStop.resetSendFailures > before.resetSendFailures
+        val reliability = reliabilitySink?.snapshot() ?: snapshot.reliability
         transportController.stop()
         mapper?.close()
         mapper = null
+        reliabilitySink = null
         snapshot = snapshot.copy(
             state = ReverseInputSessionState.Stopped,
             stopResetSent = resetSent,
             stopResetFailed = resetFailed,
+            reliability = reliability,
             lastError = if (resetFailed) ReverseInputSessionError.ResetSendFailed else ReverseInputSessionError.None,
         )
         return result(snapshot.lastError)
@@ -96,6 +104,7 @@ class ReverseInputSenderSessionController(
     fun snapshot(): ReverseInputSenderSessionSnapshot = snapshot.copy(
         capture = captureController.snapshot(),
         mapper = mapper?.snapshot(),
+        reliability = reliabilitySink?.snapshot() ?: snapshot.reliability,
         transport = transportController.snapshot(),
     )
 
@@ -105,6 +114,7 @@ class ReverseInputSenderSessionController(
         captureController.close()
         mapper?.close()
         mapper = null
+        reliabilitySink = null
         transportController.close()
         closed = true
         snapshot = snapshot.copy(state = ReverseInputSessionState.Closed, lastError = ReverseInputSessionError.Closed)

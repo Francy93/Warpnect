@@ -7,6 +7,7 @@ import io.warpnect.input.injection.InputInjectionError
 import io.warpnect.input.injection.InputInjectionMode
 import io.warpnect.input.injection.InputInjectionSnapshot
 import io.warpnect.input.injection.PrivilegedUidKind
+import io.warpnect.input.injection.UhidCapability
 
 private const val KEY_SERVICE_AVAILABLE = "service_available"
 private const val KEY_BACKEND = "backend"
@@ -21,6 +22,8 @@ private const val KEY_KEY = "key"
 private const val KEY_TOUCH = "touch"
 private const val KEY_POINTER = "pointer"
 private const val KEY_JOYSTICK = "joystick"
+private const val KEY_UHID_CAPABILITY = "uhid_capability"
+private const val KEY_UHID_ERRNO = "uhid_errno"
 private const val KEY_MAX_POINTERS = "max_pointers"
 private const val KEY_MAX_SLOTS = "max_slots"
 private const val KEY_ERROR = "error"
@@ -39,6 +42,8 @@ internal fun InputInjectionCapabilities.toBundle(): Bundle = Bundle().apply {
     putBoolean(KEY_TOUCH, touchInjectionSupported)
     putBoolean(KEY_POINTER, pointerInjectionSupported)
     putBoolean(KEY_JOYSTICK, joystickInjectionSupported)
+    putInt(KEY_UHID_CAPABILITY, uhidCapability.ordinal)
+    uhidErrno?.let { putInt(KEY_UHID_ERRNO, it) }
     putInt(KEY_MAX_POINTERS, maxPointers)
     putInt(KEY_MAX_SLOTS, maxTrackedStateSlots)
     putInt(KEY_ERROR, lastError.code)
@@ -58,6 +63,10 @@ internal fun Bundle.toInputInjectionCapabilities(): InputInjectionCapabilities =
     touchInjectionSupported = getBoolean(KEY_TOUCH),
     pointerInjectionSupported = getBoolean(KEY_POINTER),
     joystickInjectionSupported = getBoolean(KEY_JOYSTICK),
+    uhidCapability = UhidCapability.entries.getOrElse(getInt(KEY_UHID_CAPABILITY)) {
+        UhidCapability.Unavailable
+    },
+    uhidErrno = if (containsKey(KEY_UHID_ERRNO)) getInt(KEY_UHID_ERRNO) else null,
     maxPointers = getInt(KEY_MAX_POINTERS),
     maxTrackedStateSlots = getInt(KEY_MAX_SLOTS),
     lastError = InputInjectionError.fromCode(getInt(KEY_ERROR)),

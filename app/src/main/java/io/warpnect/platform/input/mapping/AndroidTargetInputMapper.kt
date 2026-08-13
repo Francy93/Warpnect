@@ -77,7 +77,7 @@ data class AndroidTargetInputMappingConfig(
     val mouseDeviceResolutionPolicy: AndroidTargetDeviceResolutionPolicy =
         AndroidTargetDeviceResolutionPolicy.SyntheticDefault,
     val gamepadDeviceResolutionPolicy: AndroidTargetDeviceResolutionPolicy =
-        AndroidTargetDeviceResolutionPolicy.PreferSourceCompatible,
+        AndroidTargetDeviceResolutionPolicy.SyntheticDefault,
     val dpadInjectionMode: DpadInjectionMode = DpadInjectionMode.HatAxes,
     val maxTrackedSlots: Int = DEFAULT_MAX_TRACKED_SLOTS,
 ) {

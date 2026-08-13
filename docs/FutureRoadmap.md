@@ -52,7 +52,7 @@ Implemented:
 
 ## Phase 4 - Reverse Input
 
-Status: In progress.
+Status: Complete.
 
 Implemented:
 
@@ -62,23 +62,10 @@ Implemented:
 - RFC-004D - Android Privileged Input Injection [complete]
 - RFC-004E - Input Mapping, Coordinate and Device Semantics [complete]
 - RFC-004F - End-to-End Reverse Input [complete]
+- RFC-004G - Input Latency, State Convergence, Reliability and Performance Tuning [complete]
 
-Next:
-
-- RFC-004G - Input Latency, Reliability and Performance Tuning [next]
-
-Planned:
-
-- RFC-004G - Input Latency, Reliability and Performance Tuning
-
-Implement:
-
-- Touch.
-- Keyboard.
-- Mouse.
-- Gamepad.
-- Shizuku integration.
-- Portable-to-Android input mapping and end-to-end reverse input.
+Phase 4 is implementation-complete. Real-device privileged injection, UHID availability, and
+game-specific compatibility remain device-specific validation work.
 
 ## Phase 5 - Discovery and Session Management
 

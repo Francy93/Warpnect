@@ -3,6 +3,9 @@ package io.warpnect.platform.input.injection.privileged
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import io.warpnect.input.injection.ANDROID_INVALID_UID
 import io.warpnect.input.injection.AndroidJoystickInjectionEvent
 import io.warpnect.input.injection.AndroidKeyInjectionEvent
@@ -19,6 +22,7 @@ import io.warpnect.input.injection.InputInjectionState
 import io.warpnect.input.injection.InputResetScope
 import io.warpnect.input.injection.MAX_TOUCH_POINTERS
 import io.warpnect.input.injection.PrivilegedUidKind
+import io.warpnect.input.injection.UhidCapability
 import io.warpnect.platform.input.injection.AndroidInjectedEventFactory
 import io.warpnect.platform.input.injection.InputInjectionStateTracker
 import io.warpnect.platform.input.injection.ReflectivePrivilegedInputManagerApi
@@ -263,6 +267,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
     private fun capabilitiesLocked(): InputInjectionCapabilities {
         val api = inputManager.resolve()
         val usable = api.apiResolved && api.displayTargetingSupported
+        val uhid = probeUhid()
         return InputInjectionCapabilities(
             serviceAvailable = api.apiResolved,
             backend = if (api.apiResolved) InputInjectionBackend.ShizukuUserService else InputInjectionBackend.None,
@@ -277,8 +282,37 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
             touchInjectionSupported = usable,
             pointerInjectionSupported = usable,
             joystickInjectionSupported = usable,
+            uhidCapability = uhid.capability,
+            uhidErrno = uhid.errno,
             lastError = api.lastError,
         )
+    }
+
+    /** Probe only. It never creates, registers, or feeds a HID device. */
+    private fun probeUhid(): UhidProbeResult {
+        try {
+            Os.stat(UHID_DEVICE_PATH)
+        } catch (error: ErrnoException) {
+            return UhidProbeResult(error.toUhidCapability(), error.errno)
+        } catch (_: SecurityException) {
+            return UhidProbeResult(UhidCapability.PermissionDenied)
+        } catch (_: Throwable) {
+            return UhidProbeResult(UhidCapability.OpenFailed)
+        }
+        return try {
+            val descriptor = Os.open(UHID_DEVICE_PATH, OsConstants.O_RDWR or OsConstants.O_NONBLOCK, 0)
+            try {
+                UhidProbeResult(UhidCapability.Accessible)
+            } finally {
+                Os.close(descriptor)
+            }
+        } catch (error: ErrnoException) {
+            UhidProbeResult(error.toUhidCapability(), error.errno)
+        } catch (_: SecurityException) {
+            UhidProbeResult(UhidCapability.PermissionDenied)
+        } catch (_: Throwable) {
+            UhidProbeResult(UhidCapability.OpenFailed)
+        }
     }
 
     private fun snapshotLocked(): InputInjectionSnapshot {
@@ -306,7 +340,21 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
     private companion object {
         const val RESET_REASON_SESSION_STOP = 1
         const val MAX_RESET_REASON = 6
+        const val UHID_DEVICE_PATH = "/dev/uhid"
     }
+}
+
+private data class UhidProbeResult(
+    val capability: UhidCapability,
+    val errno: Int? = null,
+)
+
+private fun ErrnoException.toUhidCapability(): UhidCapability = when (errno) {
+    OsConstants.ENOENT -> UhidCapability.Missing
+    OsConstants.EACCES,
+    OsConstants.EPERM,
+    -> UhidCapability.PermissionDenied
+    else -> UhidCapability.OpenFailed
 }
 
 private fun Int.toUidKind(): PrivilegedUidKind = when (this) {

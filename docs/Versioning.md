@@ -130,6 +130,10 @@ Current value:
 
 Privileged Input Injection Service Version describes RFC-004D's internal Android AIDL/Binder contract. RFC-004F composes the existing injection controller without changing this service version or its Binder methods.
 
+RFC-004G keeps Privileged Input Injection Service Version `1`. Its optional UHID capability fields
+are additive keys in the existing capabilities Bundle and do not alter a service method or input
+wire contract.
+
 ## Application Version
 
 Current value:

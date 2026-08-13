@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, and the Phase 4 reverse-input pipeline through RFC-004F.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, and the complete Phase 4 reverse-input pipeline through RFC-004G.
 
 Present:
 
@@ -50,7 +50,9 @@ Present:
 - Reverse SCL input transport that submits each portable input observation immediately through `NativeBridge` as one non-blocking `PayloadType::Input` UDP datagram. It uses a single sequence domain, preserves source event timestamps, and keeps one reusable direct touch-contact scratch buffer per transport controller.
 - Privileged Android target-side input injection through a synchronous Shizuku/Sui UserService Binder call and cached `InputManagerGlobal` reflection in the privileged process. Android-ready key, touch, pointer, and joystick events use explicit display targeting, asynchronous InputManager submission, bounded state, and explicit reset repair.
 - Endpoint-local reverse-input mapping: receiver-side touch/absolute-pointer coordinates use the renderer's exact aspect-fit video-content rectangle before SCL transport, while target-side portable keyboard, touch, pointer, scroll, and gamepad semantics map synchronously into RFC-004D Android-ready events using target logical-display geometry and bounded target-local device resolution.
-- Integrated end-to-end reverse input: Android keyboard, touch, mouse, and gamepad capture flows through viewport-aware Portable Input V1 mapping, one-datagram SCL UDP transport, continuous strict-endpoint target receive/parsing, target mapping, and the privileged Shizuku/Sui injection backend. The baseline is queue-free, arrival-driven, and exposes sequence diagnostics without a reorder/retry policy.
+- Integrated end-to-end reverse input: Android keyboard, touch, mouse, and gamepad capture flows through viewport-aware Portable Input V1 mapping, one-datagram SCL UDP transport, continuous strict-endpoint target receive/parsing, target mapping, and the privileged Shizuku/Sui injection backend.
+- Phase 4 input latency, reliability, and performance tuning. The `UltraLowLatencyConvergent` profile has zero network reorder wait, bounded immediate critical-transition/reset redundancy, transport and semantic duplicate suppression, per-semantic freshness guards, and synchronous stable-pointer-ID touch repair. It has no ACK, retransmission, NACK, FEC, retry queue, or jitter buffer.
+- A cold privileged `/dev/uhid` capability probe for future hardware-like input compatibility research. It creates no virtual HID device and does not claim a production UHID backend.
 - Formatting, lint, CI, and test infrastructure.
 - Architecture Version 1.0 documentation.
 
@@ -58,7 +60,6 @@ Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Reverse-input latency and reliability tuning, including recovery/state-repair policy.
 - Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, or authentication/encryption.
 
 ## Repository Layout
@@ -164,6 +165,7 @@ cmake --build native/build-release --config Release
 .\native\build-release\Release\opus_audio_encoder_benchmarks.exe --standard --output native\build-release\opus-audio-encoder-standard.csv
 .\native\build-release\Release\opus_audio_decoder_benchmarks.exe --standard --output native\build-release\opus-audio-decoder-standard.csv
 .\native\build-release\Release\scl_phase3_audio_benchmarks.exe --standard --output native\build-release\benchmarks\phase3-audio-standard.csv
+.\native\build-release\Release\scl_phase4_input_benchmarks.exe --standard --output native\build-release\benchmarks\phase4-input-standard.csv
 ```
 
 ## Native Build Overview
@@ -224,9 +226,11 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-004D Android Privileged Low-Latency Input Injection](docs/rfc/RFC-004D-Android-Privileged-Low-Latency-Input-Injection.md)
 - [RFC-004E Input Mapping, Coordinate and Device Semantics](docs/rfc/RFC-004E-Input-Mapping-Coordinate-Device-Semantics.md)
 - [RFC-004F End-to-End Ultra-Low-Latency Reverse Input](docs/rfc/RFC-004F-End-to-End-Ultra-Low-Latency-Reverse-Input.md)
+- [RFC-004G Input Latency, State Convergence, Reliability and Performance Tuning](docs/rfc/RFC-004G-Input-Latency-State-Convergence-Reliability-Performance-Tuning.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
+- [Phase 4 Reverse Input Baseline](docs/benchmarks/Phase4ReverseInputBaseline.md)
 - [SCL Protocol Principles](docs/SCLProtocolPrinciples.md)
 - [State Management](docs/StateManagement.md)
 - [Thread Model](docs/ThreadModel.md)
@@ -239,12 +243,6 @@ Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged A
 
 Phase 3 audio is implementation-complete. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. RFC-003C adds SCL Audio Payload Version 1 transport for both system and microphone streams. RFC-003D adds a portable queue-free Opus decoder foundation with borrowed PCM output. RFC-003E adds an Android low-latency native playback foundation based on Oboe and a bounded PCM handoff ring. RFC-003F integrates end-to-end audio streaming with receiver-first StreamConfig handling, immediate sample-position ordering, small-gap Opus PLC, and freshness resets for large gaps. RFC-003G adds a latency-bounded A/V synchronization foundation that uses audio hardware presentation as the master clock, qualifies video timestamp compatibility before using scheduled rendering, and falls back to immediate presentation when trustworthy timing is unavailable. RFC-003H adds Phase 3 performance configuration, reproducible host-native audio benchmarks, freshness-oriented recovery evaluation, and documented production defaults.
 
-Phase 4 reverse input is integrated through RFC-004F. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, and RFC-004E supplies endpoint-local viewport and target-display semantics. RFC-004F composes those components with a strict expected IP/port native receiver, a persistent direct scalar bridge, one target receive context, arrival-order processing, and bounded local reset. Input reliability and latency tuning remain deferred to RFC-004G.
-
-The next implementation RFC is:
-
-```text
-RFC-004G - Input Latency, Reliability and Performance Tuning
-```
+Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

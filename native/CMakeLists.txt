@@ -256,6 +256,19 @@ target_include_directories(
 )
 target_link_libraries(scl_phase3_audio_benchmarks PRIVATE scl_native_core)
 
+add_executable(
+    scl_phase4_input_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/scl_phase4_input_benchmarks.cpp
+)
+configure_native_target(scl_phase4_input_benchmarks)
+target_include_directories(
+    scl_phase4_input_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(scl_phase4_input_benchmarks PRIVATE scl_native_core)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)

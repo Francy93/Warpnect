@@ -8,9 +8,14 @@ import io.warpnect.input.injection.InputInjectionError
 import io.warpnect.input.injection.InputInjectionSnapshot
 import io.warpnect.input.mapping.ViewportInputMappingConfig
 import io.warpnect.input.mapping.ViewportInputMappingSnapshot
+import io.warpnect.input.performance.InputTimingDistribution
+import io.warpnect.input.reliability.InputReliabilityConfig
+import io.warpnect.input.reliability.InputReliabilityConfigurationError
+import io.warpnect.input.reliability.InputStateConvergenceSnapshot
 import io.warpnect.input.transport.InputReceiverConfig
 import io.warpnect.input.transport.InputReceiverError
 import io.warpnect.input.transport.InputReceiverSnapshot
+import io.warpnect.input.transport.InputSenderReliabilitySnapshot
 import io.warpnect.input.transport.InputTransportConfig
 import io.warpnect.input.transport.InputTransportError
 import io.warpnect.input.transport.InputTransportSnapshot
@@ -50,20 +55,24 @@ data class ReverseInputSenderSessionConfig(
     val captureConfig: InputCaptureConfig,
     val viewportMappingConfig: ViewportInputMappingConfig = ViewportInputMappingConfig(),
     val transportConfig: InputTransportConfig,
+    val reliabilityConfig: InputReliabilityConfig = InputReliabilityConfig.ultraLowLatencyConvergent(),
 ) {
     fun isValid(): Boolean = captureConfig.validate() == InputCaptureError.None &&
         viewportMappingConfig.isValid() &&
         transportConfig.validate() == InputTransportError.None &&
+        reliabilityConfig.validate() == InputReliabilityConfigurationError.None &&
         transportConfig.localPort != 0
 }
 
 data class ReverseInputReceiverSessionConfig(
     val receiverConfig: InputReceiverConfig,
     val injectionConfig: InputInjectionConfig,
+    val reliabilityConfig: InputReliabilityConfig = InputReliabilityConfig.ultraLowLatencyConvergent(),
     val receiverWaitTimeoutUs: Long = DEFAULT_RECEIVER_WAIT_TIMEOUT_US,
 ) {
     fun isValid(): Boolean = receiverConfig.validate() == InputReceiverError.None &&
         injectionConfig.validate() == InputInjectionError.None &&
+        reliabilityConfig.validate() == InputReliabilityConfigurationError.None &&
         receiverWaitTimeoutUs in 1L..MAX_RECEIVER_WAIT_TIMEOUT_US
 
     companion object {
@@ -82,6 +91,7 @@ data class ReverseInputSenderSessionSnapshot(
     val lastError: ReverseInputSessionError = ReverseInputSessionError.None,
     val capture: InputCaptureSnapshot = InputCaptureSnapshot(),
     val mapper: ViewportInputMappingSnapshot? = null,
+    val reliability: InputSenderReliabilitySnapshot = InputSenderReliabilitySnapshot(),
     val transport: InputTransportSnapshot = InputTransportSnapshot(),
 )
 
@@ -99,6 +109,9 @@ data class ReverseInputReceiverSessionSnapshot(
     val receiver: InputReceiverSnapshot = InputReceiverSnapshot(),
     val mapper: AndroidTargetInputMappingSnapshot = AndroidTargetInputMappingSnapshot(),
     val injection: InputInjectionSnapshot = InputInjectionSnapshot(),
+    val convergence: InputStateConvergenceSnapshot = InputStateConvergenceSnapshot(),
+    val convergenceAndDispatchTiming: InputTimingDistribution = InputTimingDistribution(),
+    val mapperAndInjectionTiming: InputTimingDistribution = InputTimingDistribution(),
 )
 
 data class ReverseInputSenderSessionResult(
