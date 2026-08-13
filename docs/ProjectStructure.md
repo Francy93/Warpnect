@@ -1,5 +1,25 @@
 # Project Structure
 
+## RFC-004F Reverse Input
+
+```text
+input/session/
+  ReverseInputSenderSessionController
+  ReverseInputReceiverSessionController
+  ReverseInputSessionTypes
+
+input/transport/
+  InputReceiverRuntime
+  InputReceiverBridgeDecoder
+
+platform/input/transport/
+  NativeSclInputReceiverController
+
+native/
+  input_receiver_runtime.h/.cpp
+  scl_input_receiver_runtime_tests
+```
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines the current repository layout and intended responsibility boundaries.

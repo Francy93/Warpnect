@@ -1,5 +1,20 @@
 # Thread Model
 
+## RFC-004F Reverse Input
+
+```text
+Source Android UI/input dispatch
+  -> capture -> viewport mapper -> JNI/send
+
+Target WarpnectInputReceiver
+  -> native readiness wait -> bridge decode -> target mapper -> synchronous Binder injection
+
+Privileged Shizuku UserService Binder context
+  -> InputManager ASYNC
+```
+
+There is no input sender, mapping, injection, retry, or reorder worker.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines Warpnect's concurrency model and the phase-specific execution domains that currently exist.

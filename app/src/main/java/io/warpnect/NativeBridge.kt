@@ -291,6 +291,30 @@ internal object NativeBridge {
     private external fun nativeInputTransportSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeInputReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        expectedRemoteAddress: String,
+        expectedRemotePort: Int,
+        maxWireDatagramSize: Int,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeInputReceiverDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeInputReceiverWait(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int
+
+    @JvmStatic
+    private external fun nativeInputReceiverInterrupt(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeInputReceiverWake(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeInputReceiverSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeAudioReceiverCreate(
         localAddress: String,
         localPort: Int,
@@ -826,6 +850,31 @@ internal object NativeBridge {
     )
 
     fun inputTransportSnapshot(handle: Long): LongArray = nativeInputTransportSnapshot(handle)
+
+    fun inputReceiverCreate(
+        localAddress: String,
+        localPort: Int,
+        expectedRemoteAddress: String,
+        expectedRemotePort: Int,
+        maxWireDatagramSize: Int,
+    ): Long = nativeInputReceiverCreate(
+        localAddress,
+        localPort,
+        expectedRemoteAddress,
+        expectedRemotePort,
+        maxWireDatagramSize,
+    )
+
+    fun inputReceiverDestroy(handle: Long): Int = nativeInputReceiverDestroy(handle)
+
+    fun inputReceiverWait(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int =
+        nativeInputReceiverWait(handle, timeoutUs, bridgeBuffer)
+
+    fun inputReceiverInterrupt(handle: Long): Int = nativeInputReceiverInterrupt(handle)
+
+    fun inputReceiverWake(handle: Long): Int = nativeInputReceiverWake(handle)
+
+    fun inputReceiverSnapshot(handle: Long): LongArray = nativeInputReceiverSnapshot(handle)
 
     fun audioReceiverCreate(
         localAddress: String,

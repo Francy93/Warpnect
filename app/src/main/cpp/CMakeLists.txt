@@ -43,6 +43,7 @@ set(SCL_CORE_SOURCES
     src/fec_control.cpp
     src/input_packetizer.cpp
     src/input_protocol.cpp
+    src/input_receiver_runtime.cpp
     src/input_transport.cpp
     jni_bridge.cpp
     src/fragmentation.cpp

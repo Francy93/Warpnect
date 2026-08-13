@@ -128,7 +128,7 @@ Current value:
 1
 ```
 
-Privileged Input Injection Service Version describes RFC-004D's internal Android AIDL/Binder contract. RFC-004E consumes the existing Android-ready injection contracts without changing this service version or its Binder methods.
+Privileged Input Injection Service Version describes RFC-004D's internal Android AIDL/Binder contract. RFC-004F composes the existing injection controller without changing this service version or its Binder methods.
 
 ## Application Version
 

@@ -61,14 +61,14 @@ Implemented:
 - RFC-004C - Reverse SCL Input Transport [complete]
 - RFC-004D - Android Privileged Input Injection [complete]
 - RFC-004E - Input Mapping, Coordinate and Device Semantics [complete]
+- RFC-004F - End-to-End Reverse Input [complete]
 
 Next:
 
-- RFC-004F - End-to-End Reverse Input [next]
+- RFC-004G - Input Latency, Reliability and Performance Tuning [next]
 
 Planned:
 
-- RFC-004F - End-to-End Reverse Input
 - RFC-004G - Input Latency, Reliability and Performance Tuning
 
 Implement:

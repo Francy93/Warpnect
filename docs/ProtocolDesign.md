@@ -4,6 +4,10 @@ Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document records the SCL packet foundation, UDP transport boundary, Version 1 fragmentation semantics, Version 1 NACK recovery control payload, Version 1 Reed-Solomon FEC parity control payload, Version 1 clock synchronization control payloads, Video Payload Version 1, VideoResyncRequest Version 1, and Audio Payload Version 1. It does not define discovery, encryption, input injection, or session negotiation.
 
+## RFC-004F Input Runtime Profile
+
+RFC-004F does not change any wire table. Input Payload V1 remains one datagram per observation with a 396-byte maximum logical payload and a 417-byte maximum SCL datagram. The runtime uses `slice_index = 0`, `total_slices = 1`, strict expected-endpoint filtering, arrival-order processing, and sequence diagnostics only. Absolute Input V1 coordinates represent remote-control content coordinates after endpoint-local viewport mapping; Android target pixel conversion remains outside the wire protocol.
+
 ## Protocol Purpose
 
 SCL exists to keep two endpoints coherent under strict latency pressure. It will eventually transport synchronized channels for:

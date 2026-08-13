@@ -1,5 +1,13 @@
 # Native Boundary
 
+## RFC-004F Reverse Input
+
+Source: Android capture -> portable Kotlin model -> viewport mapper -> `SclInputEventSink` -> JNI -> native `InputTransportSender` -> UDP.
+
+Target: UDP -> native `InputReceiverRuntime` -> native `InputDatagramParser` -> persistent direct native-order bridge -> portable Kotlin model -> `AndroidTargetInputMapper` -> RFC-004D Binder/UserService.
+
+The target creates no Input Payload `ByteArray` and Kotlin does not parse Input Payload V1 wire bytes. The bridge is a private scalar record, not a second wire format.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 The native boundary is the relationship between Kotlin, JNI, and the C++20 SCL core.

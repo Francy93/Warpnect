@@ -4,6 +4,16 @@ Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines permanent architectural laws for Warpnect and SCL. These rules override local convenience.
 
+## End-To-End Reverse Input
+
+End-to-end reverse input composes RFC-004A through RFC-004E without duplicating capture, transport, mapping, or injection responsibilities.
+
+Reverse input reception accepts input only from the explicitly configured numeric sender IP/port pair. This filtering is a pre-session safety bound and is not cryptographic authentication.
+
+RFC-004F introduces no application-level reorder buffer, retry queue, input batching, or frame-synchronized input path. SCL Input sequence numbers are diagnostic only and do not cause reordering, freshness drops, or retransmission.
+
+Source input timestamps are preserved end-to-end as metadata and are never treated as target Android event time without clock-domain conversion. Target shutdown terminates network receive before its final injected-state reset.
+
 ## Core Independence
 
 The SCL core MUST remain platform independent.

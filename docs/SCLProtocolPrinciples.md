@@ -1,5 +1,9 @@
 # SCL Protocol Principles
 
+## End-To-End Input Runtime
+
+End-to-end Input V1 remains arrival-driven and one-datagram-per-observation in RFC-004F. Sequence gaps expose transport behavior but do not yet imply a uniform reliability policy across FreshState, CriticalTransition, and Reset semantics.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines protocol principles that future SCL implementation RFCs must preserve.
