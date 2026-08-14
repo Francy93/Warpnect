@@ -69,12 +69,12 @@ game-specific compatibility remain device-specific validation work.
 
 ## Phase 5 - Discovery and Secure Session Management
 
-Status: Started. RFC-005A and RFC-005B are complete; RFC-005C is next.
+Status: Started. RFC-005A through RFC-005C are complete; RFC-005D is next.
 
 - RFC-005A - Session Identity & Core Session Model [complete]
 - RFC-005B - Local Network Discovery & Presence [complete]
-- RFC-005C - Pairing & Trust Bootstrap [next]
-- RFC-005D - Authenticated Session Handshake
+- RFC-005C - Pairing & Trust Bootstrap [complete]
+- RFC-005D - Authenticated Session Handshake [next]
 - RFC-005E - Session Keys, Packet Authentication & Anti-Replay
 - RFC-005F - Capability, Role & Feature Negotiation
 - RFC-005G - Endpoint, Channel & Stream Negotiation

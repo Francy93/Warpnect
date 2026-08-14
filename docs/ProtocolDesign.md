@@ -1450,3 +1450,15 @@ ephemeral DiscoveryPresenceId, discovery route token, service name, and TXT fiel
 packet fields. No DeviceId, SessionId, ChannelId, PathId, discovery identifier, or discovery
 metadata has been added to PacketHeader, PayloadType, Video Payload V1, Audio Payload V1, Input
 Payload V1, ClockSync, NACK, FEC, or VideoResyncRequest.
+
+## Pairing Bootstrap Protocol V1
+
+RFC-005C adds a separate pre-session Pairing Bootstrap Protocol Version 1. It is not an SCL
+packet or media protocol. Its standalone datagram header is `WNPB`, version 1, message type,
+zero flags, a 128-bit PairingAttemptId, payload length, and zero reserved bytes. The only V1
+messages are Commit, Response, Reveal, Confirm, Reject, and Abort.
+
+The protocol carries no SessionId and changes no SCL PacketHeader, PayloadType, Video Payload V1,
+Audio Payload V1, Input Payload V1, ClockSync, NACK, FEC, VideoResyncRequest, or Discovery
+Presence Schema V1. It establishes a persistent DeviceId-to-public-key trust binding only; live
+session authentication and packet protection remain later Phase 5 work.

@@ -1,5 +1,7 @@
 package io.warpnect.session.discovery
 
+import io.warpnect.session.pairing.PairingTransport
+
 /** Small platform adapter seam. Backends never create sessions or invoke pairing/authentication. */
 interface DiscoveryBackend : AutoCloseable {
     val kind: DiscoveryRouteKind
@@ -67,6 +69,14 @@ interface DiscoveryBackendObserver {
 
 interface DiscoveryContactEndpointLease : AutoCloseable {
     val port: Int
+}
+
+/**
+ * Narrow RFC-005C handoff seam for the exact reserved discovery contact port. The lease remains
+ * owned by discovery; borrowing starts no receiver until pairing explicitly attaches a transport.
+ */
+interface PairingBootstrapContactEndpointLease : DiscoveryContactEndpointLease {
+    fun borrowPairingTransport(): PairingTransport?
 }
 
 fun interface DiscoveryContactEndpointLeaseFactory {

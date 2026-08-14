@@ -11,12 +11,15 @@ import io.warpnect.session.discovery.DiscoveryBackend
 import io.warpnect.session.discovery.DiscoveryConfig
 import io.warpnect.session.discovery.DiscoveryMonotonicClock
 import io.warpnect.session.discovery.DiscoveryOperationResult
+import io.warpnect.session.discovery.DiscoveryPresenceId
 import io.warpnect.session.discovery.DiscoveryPresenceIdGenerator
+import io.warpnect.session.discovery.DiscoveryRouteKind
 import io.warpnect.session.discovery.DiscoveryRouteLookupResult
 import io.warpnect.session.discovery.DiscoveryRouteToken
 import io.warpnect.session.discovery.HostAvailabilityProvider
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.discovery.SecureRandomDiscoveryPresenceIdGenerator
+import io.warpnect.session.pairing.PairingTransport
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
 
@@ -98,6 +101,13 @@ class AndroidLocalDiscoveryController(
     }
 
     override fun resolveRoute(token: DiscoveryRouteToken): DiscoveryRouteLookupResult = delegate.resolveRoute(token)
+
+    override fun resolveRoute(presenceId: DiscoveryPresenceId, kind: DiscoveryRouteKind): DiscoveryRouteLookupResult =
+        delegate.resolveRoute(presenceId, kind)
+
+    override fun borrowPairingTransport(): PairingTransport? = onControl {
+        delegate.borrowPairingTransport()
+    }
 
     override fun snapshot() = delegate.snapshot()
 

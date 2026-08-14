@@ -142,6 +142,21 @@ class DiscoveryPresenceCache(
     }
 
     @Synchronized
+    fun resolve(
+        presenceId: DiscoveryPresenceId,
+        kind: DiscoveryRouteKind,
+        activeControllerGeneration: Long?,
+    ): DiscoveryRouteLookupResult {
+        if (activeControllerGeneration == null) return DiscoveryRouteLookupResult(DiscoveryError.RouteNotFound)
+        val presence = presences[presenceId] ?: return DiscoveryRouteLookupResult(DiscoveryError.RouteNotFound)
+        val route = presence.routes[kind] ?: return DiscoveryRouteLookupResult(DiscoveryError.RouteNotFound)
+        if (route.token.controllerGeneration != activeControllerGeneration) {
+            return DiscoveryRouteLookupResult(DiscoveryError.RouteNotFound)
+        }
+        return DiscoveryRouteLookupResult(DiscoveryError.None, presence.id, route.descriptor)
+    }
+
+    @Synchronized
     fun snapshot(): DiscoveryPresenceCacheSnapshot {
         var lanRoutes = 0
         var directRoutes = 0

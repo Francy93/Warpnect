@@ -83,6 +83,9 @@ app/src/main/java/io/warpnect/
 |-- input/reliability/
 |-- session/
 |-- session/discovery/
+|-- session/identity/
+|-- session/pairing/
+|-- session/trust/
 |-- platform/capture/
 |-- platform/audio/capture/
 |-- platform/audio/decoder/
@@ -91,6 +94,9 @@ app/src/main/java/io/warpnect/
 |-- platform/audio/transport/
 |-- platform/input/capture/
 |-- platform/discovery/
+|-- platform/session/identity/
+|-- platform/session/pairing/
+|-- platform/session/trust/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
 |-- platform/video/render/
@@ -140,6 +146,12 @@ Responsibilities:
 - `session/`: RFC-005A platform-neutral identity, topology, policy, bounded SessionManager, and snapshots.
 - `session/discovery/`: RFC-005B platform-neutral ephemeral presence identity, TXT schema codec, bounded merge/expiry cache, discovery controller contracts, and availability policy.
 - `platform/discovery/`: Android NSD/Wi-Fi Direct DNS-SD adapters, contact-port lease, permission/capability planning, multicast-lock compatibility, and the `WarpnectDiscovery` control-thread owner.
+- `session/identity/`: RFC-005C immutable public identity values, local DeviceId/key repository contracts, fingerprinting, and bounded identity-consistency results.
+- `session/trust/`: RFC-005C bounded DeviceId-to-public-key trust records, validation, and persistence contracts.
+- `session/pairing/`: RFC-005C platform-neutral pairing bootstrap codec, canonical crypto inputs, JCA crypto seam, bounded state engine/controller, retry policy, and discovery-route bridge.
+- `platform/session/identity/`: Android Keystore P-256 key adapter and atomic local DeviceId persistence.
+- `platform/session/trust/`: Android app-private atomic trusted-peer store persistence.
+- `platform/session/pairing/`: Android DatagramSocket transport and `WarpnectPairing` HandlerThread controller/factories.
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
 - `input/`: future reverse-input stubs and Phase 4 input-facing contracts.
@@ -505,6 +517,38 @@ app/src/test/java/io/warpnect/platform/discovery/
 The session discovery core has no Android imports. Android adapters retain framework route locators
 only as bounded, ephemeral private metadata and feed platform-neutral observations to the core.
 Neither package creates a Session, connection, group, handshake, or native transport runtime.
+
+## RFC-005C Pairing and Trust
+
+```text
+app/src/main/java/io/warpnect/session/identity/
+  IdentityModels, LocalDeviceIdentityRepository
+
+app/src/main/java/io/warpnect/session/trust/
+  TrustedPeerStore
+
+app/src/main/java/io/warpnect/session/pairing/
+  PairingModel, PairingBootstrapCodec, PairingCanonical, PairingCrypto
+  PairingEngine, PairingController, DiscoveryPairingBootstrap
+
+app/src/main/java/io/warpnect/platform/session/identity/
+  AndroidLocalDeviceIdentity, AndroidSessionIdentityFactory
+
+app/src/main/java/io/warpnect/platform/session/trust/
+  AndroidTrustedPeerStorePersistence
+
+app/src/main/java/io/warpnect/platform/session/pairing/
+  AndroidDatagramPairingTransport, AndroidPairingController, AndroidPairingControllerFactory
+
+app/src/test/java/io/warpnect/session/identity/
+app/src/test/java/io/warpnect/session/trust/
+app/src/test/java/io/warpnect/session/pairing/
+app/src/androidTest/java/io/warpnect/platform/session/identity/
+```
+
+The core packages are Android-free except for the separate platform adapters. Pairing is an
+explicit cold-path pre-session protocol: it creates no `SessionManager` entry and adds no native
+or media/input transport dependency.
 
 ## Test Layout
 

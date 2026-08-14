@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session and local-discovery foundations through RFC-005B.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session, local-discovery, and pairing/trust foundations through RFC-005C.
 
 Present:
 
@@ -57,13 +57,14 @@ Present:
 - Platform-neutral Phase 5 session identity and topology modeling. Devices, peers, live sessions, channels, paths, and logical peripherals have distinct bounded identities; a Host can own independent Client sessions without equating a peer to an endpoint.
 - Android local discovery and ephemeral presence through LAN DNS-SD and Wi-Fi Direct DNS-SD. Each explicit advertising epoch uses one fresh random DiscoveryPresenceId across both backends, so LAN and Direct route observations can merge without broadcasting DeviceId or SessionId.
 - A bounded untrusted-presence cache with strict Discovery Presence Schema Version 1 TXT parsing, route loss/expiry, availability visibility policy, contact-port reservation without a receive protocol, typed Android permission/capability planning, and one `WarpnectDiscovery` control context.
+- Persistent local identity and explicit pairing/trust bootstrap. A non-zero DeviceId is bound to an Android Keystore P-256 signing key; explicit LAN pairing uses fresh ECDH, signed transcript commitment, a six-digit SAS, and two human confirmations before storing a bounded `DeviceId -> public key` trust binding.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Pairing, authenticated handshake, packet security, capability/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
+- Authenticated live-session handshake, packet security, capability/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
 
 ## Repository Layout
 
@@ -232,6 +233,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-004G Input Latency, State Convergence, Reliability and Performance Tuning](docs/rfc/RFC-004G-Input-Latency-State-Convergence-Reliability-Performance-Tuning.md)
 - [RFC-005A Session Identity & Core Session Model](docs/rfc/RFC-005A-Session-Identity-Core-Session-Model.md)
 - [RFC-005B Local Network Discovery & Presence](docs/rfc/RFC-005B-Local-Network-Discovery-Presence.md)
+- [RFC-005C Pairing & Trust Bootstrap](docs/rfc/RFC-005C-Pairing-Trust-Bootstrap.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -250,6 +252,6 @@ Phase 3 audio is implementation-complete. RFC-003A implements PCM capture founda
 
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
-Phase 5 now includes RFC-005A and RFC-005B. The session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. RFC-005B adds Android LAN DNS-SD and Wi-Fi Direct DNS-SD presence only: it uses a fresh ephemeral DiscoveryPresenceId for each full advertising lifecycle, merges consistent LAN and Direct observations, never advertises DeviceId or SessionId, and keeps all results unauthenticated. It does not pair, authenticate, encrypt, create Sessions, connect Wi-Fi Direct peers, negotiate channels, fail over, or reconnect sessions.
+Phase 5 now includes RFC-005A through RFC-005C. The session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. RFC-005B adds Android LAN DNS-SD and Wi-Fi Direct DNS-SD presence only: it uses a fresh ephemeral DiscoveryPresenceId for each full advertising lifecycle, merges consistent LAN and Direct observations, never advertises DeviceId or SessionId, and keeps all results unauthenticated. RFC-005C adds explicit human-verified, LAN-bootstrap pairing that binds a persistent DeviceId to a P-256 identity public key without storing a pairing secret. It does not create Sessions, authenticate future endpoints, derive session keys, encrypt media, connect Wi-Fi Direct peers, negotiate channels, fail over, or reconnect sessions.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

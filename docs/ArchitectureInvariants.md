@@ -442,3 +442,17 @@ policies. They MUST NOT destroy the underlying per-peer or per-peripheral identi
 
 Network-path migration MUST NOT inherently require a new SessionId. A standby path does not imply
 duplicate media transmission.
+
+## Phase 5 Pairing and Trust
+
+> Device trust is bound to the tuple of Warpnect DeviceId and a verified long-term identity public key; neither value may be silently replaced.
+
+> Pairing establishes persistent peer-key trust but does not authenticate future network endpoints or create a live Warpnect Session.
+
+> Long-term identity private keys remain platform-protected and are never transmitted or exported by Warpnect.
+
+> Pairing uses fresh ephemeral key-agreement material that is destroyed after each attempt and is never reused as a media or session key.
+
+> Pairing requires explicit human verification; discovery metadata, network proximity, and matching aliases never auto-establish trust.
+
+> A known DeviceId presenting a different identity key is a security-significant mismatch and must fail closed.

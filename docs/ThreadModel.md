@@ -299,3 +299,20 @@ RFC-004G keeps this model. `InputStateConvergenceController` runs synchronously 
 redundant source submissions run on the existing Android input-dispatch caller. There is no
 reliability worker, duplicate worker, touch-repair worker, retry timer, reorder timeout, or input
 coalescing queue.
+
+## RFC-005C Pairing Control
+
+RFC-005C uses one low-frequency `WarpnectPairing` HandlerThread for explicit pairing only:
+
+```text
+WarpnectPairing
+        -> cold-path UDP datagram receive
+        -> protocol state and crypto
+        -> bounded retry and timeout callbacks
+        -> pairing-window lifecycle
+        -> immutable snapshot publication
+```
+
+It does not process media frames, audio frames, reverse-input events, discovery callbacks, or UI
+permission requests. It has no per-message coroutine, busy poll, unbounded retry, or media/input
+queue. Pairing begins only after an explicit user action or explicit responder pairing window.

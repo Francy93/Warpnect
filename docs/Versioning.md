@@ -154,6 +154,29 @@ ephemeral unauthenticated local presence. It is not an SCL Protocol Version, Nat
 Version, media/input payload version, or session-security version. It adds no field to PacketHeader
 or any existing SCL/media/input wire contract.
 
+## Pairing Bootstrap Protocol Version
+
+Current value:
+
+```text
+1
+```
+
+Pairing Bootstrap Protocol Version describes RFC-005C's standalone pre-session pairing datagram
+format. It is independent from SCL Protocol Version and does not alter PacketHeader, PayloadType,
+or any existing media/input payload.
+
+## Trusted Peer Store Schema Version
+
+Current value:
+
+```text
+1
+```
+
+Trusted Peer Store Schema Version describes local application-private persistence of public trust
+bindings. It is neither a wire version nor a cryptographic key version.
+
 ## Application Version
 
 Current value:

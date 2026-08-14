@@ -1,5 +1,7 @@
 package io.warpnect.session.discovery
 
+import io.warpnect.session.pairing.PairingTransport
+
 /**
  * Bounded discovery lifecycle. It owns no pairing, trust, Session creation, sockets readers, or
  * Android framework types; platform adapters provide the actual DNS-SD operations.
@@ -26,6 +28,12 @@ interface LocalDiscoveryController : AutoCloseable {
     fun expireStaleRoutes(): DiscoveryOperationResult
 
     fun resolveRoute(token: DiscoveryRouteToken): DiscoveryRouteLookupResult
+
+    /** Resolves a current candidate by ephemeral PresenceId; it never creates a Session or trust binding. */
+    fun resolveRoute(presenceId: DiscoveryPresenceId, kind: DiscoveryRouteKind): DiscoveryRouteLookupResult
+
+    /** Borrows the exact advertised contact endpoint only when a platform lease supports pairing. */
+    fun borrowPairingTransport(): PairingTransport?
 
     fun snapshot(): DiscoverySnapshot
 }
@@ -211,6 +219,14 @@ class DefaultLocalDiscoveryController(
     @Synchronized
     override fun resolveRoute(token: DiscoveryRouteToken): DiscoveryRouteLookupResult =
         cache.resolve(token, activeControllerGeneration)
+
+    @Synchronized
+    override fun resolveRoute(presenceId: DiscoveryPresenceId, kind: DiscoveryRouteKind): DiscoveryRouteLookupResult =
+        cache.resolve(presenceId, kind, activeControllerGeneration)
+
+    @Synchronized
+    override fun borrowPairingTransport(): PairingTransport? =
+        (contactEndpointLease as? PairingBootstrapContactEndpointLease)?.borrowPairingTransport()
 
     @Synchronized
     override fun snapshot(): DiscoverySnapshot = snapshotLocked()

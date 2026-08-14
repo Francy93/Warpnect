@@ -430,6 +430,21 @@ NsdManager / WifiP2pManager
 It adds no JNI entry point, native SCL structure, PacketHeader field, payload field, packet copy, or
 Binder method. LAN DNS-SD and Wi-Fi Direct DNS-SD metadata is not an SCL wire protocol.
 
+## RFC-005C Pairing and Trust
+
+RFC-005C is Kotlin control-plane work only:
+
+```text
+platform-neutral PairingEngine
+        + JCA crypto abstraction
+        + Android Keystore identity-key adapter
+        + cold-path UDP pairing transport
+```
+
+It adds no JNI entry point, native SCL structure, PacketHeader field, payload field, or Binder
+method. The pairing protocol is a separate pre-session datagram format; it never enters media,
+audio, or reverse-input hot paths.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.
