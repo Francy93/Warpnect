@@ -1,5 +1,6 @@
 package io.warpnect.session.discovery
 
+import io.warpnect.session.handshake.SessionHandshakeTransport
 import io.warpnect.session.pairing.PairingTransport
 
 /**
@@ -34,6 +35,11 @@ interface LocalDiscoveryController : AutoCloseable {
 
     /** Borrows the exact advertised contact endpoint only when a platform lease supports pairing. */
     fun borrowPairingTransport(): PairingTransport?
+
+    fun borrowSessionHandshakeTransport(): SessionHandshakeTransport?
+
+    /** Current local RFC-005B advertising epoch only; it is not a DeviceId or trust assertion. */
+    fun currentAdvertisingPresenceId(): DiscoveryPresenceId?
 
     fun snapshot(): DiscoverySnapshot
 }
@@ -227,6 +233,13 @@ class DefaultLocalDiscoveryController(
     @Synchronized
     override fun borrowPairingTransport(): PairingTransport? =
         (contactEndpointLease as? PairingBootstrapContactEndpointLease)?.borrowPairingTransport()
+
+    @Synchronized
+    override fun borrowSessionHandshakeTransport(): SessionHandshakeTransport? =
+        (contactEndpointLease as? SessionHandshakeBootstrapContactEndpointLease)?.borrowSessionHandshakeTransport()
+
+    @Synchronized
+    override fun currentAdvertisingPresenceId(): DiscoveryPresenceId? = ownPresenceId
 
     @Synchronized
     override fun snapshot(): DiscoverySnapshot = snapshotLocked()

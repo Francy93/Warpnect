@@ -1,5 +1,6 @@
 package io.warpnect.session.discovery
 
+import io.warpnect.session.handshake.SessionHandshakeTransport
 import io.warpnect.session.pairing.PairingTransport
 
 /** Small platform adapter seam. Backends never create sessions or invoke pairing/authentication. */
@@ -77,6 +78,11 @@ interface DiscoveryContactEndpointLease : AutoCloseable {
  */
 interface PairingBootstrapContactEndpointLease : DiscoveryContactEndpointLease {
     fun borrowPairingTransport(): PairingTransport?
+}
+
+/** RFC-005D borrow seam for the same advertised socket; implementations must share one reader. */
+interface SessionHandshakeBootstrapContactEndpointLease : DiscoveryContactEndpointLease {
+    fun borrowSessionHandshakeTransport(): SessionHandshakeTransport?
 }
 
 fun interface DiscoveryContactEndpointLeaseFactory {

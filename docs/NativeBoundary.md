@@ -445,6 +445,18 @@ It adds no JNI entry point, native SCL structure, PacketHeader field, payload fi
 method. The pairing protocol is a separate pre-session datagram format; it never enters media,
 audio, or reverse-input hot paths.
 
+## RFC-005D Authenticated Session Handshake
+
+RFC-005D remains Android/Kotlin control-plane work:
+
+```text
+bootstrap UDP/router -> SessionHandshakeTransport -> SessionHandshakeEngine -> JCA/Android Keystore
+```
+
+It adds no JNI method, native SCL structure, PacketHeader field, payload field, or media/input
+hot-path work. The resulting root secret remains in Kotlin memory for RFC-005E and is not sent to
+native code.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

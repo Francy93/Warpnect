@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:max-line-length")
+
 package io.warpnect.session
 
 import java.util.Collections
@@ -23,6 +25,7 @@ class SessionManager(
 ) : AutoCloseable {
     private val lock = Any()
     private val sessions = LinkedHashMap<SessionId, ManagedSession>()
+    private val authenticatedReservations = LinkedHashMap<SessionId, AuthenticatedSessionAdmissionReservation>()
     private var policy = config.initialPolicy
     private var lastError = SessionError.None
     private var closed = false
@@ -35,11 +38,12 @@ class SessionManager(
 
     fun createSession(request: SessionCreateRequest): SessionOperationResult = synchronized(lock) {
         if (closed) return@synchronized failed(SessionError.Closed)
+        expireReservationsLocked()
         validateRequest(request)?.let { return@synchronized failed(it) }
-        if (sessions.containsKey(request.sessionId)) {
+        if (sessions.containsKey(request.sessionId) || authenticatedReservations.containsKey(request.sessionId)) {
             return@synchronized failed(SessionError.DuplicateSessionId)
         }
-        if (sessions.size >= config.maxSessions) {
+        if (sessions.size + authenticatedReservations.size >= config.maxSessions) {
             return@synchronized failed(SessionError.SessionCapacityExceeded)
         }
         if (request.localRole == SessionRole.Host && hostLiveSessionCount() >= policy.maxConcurrentClients) {
@@ -82,6 +86,7 @@ class SessionManager(
 
     fun replacePolicy(replacement: SessionBehaviorPolicy): SessionOperationResult = synchronized(lock) {
         if (closed) return@synchronized failed(SessionError.Closed)
+        expireReservationsLocked()
         if (replacement.validate() != SessionError.None ||
             replacement.maxConcurrentClients > config.maxSessions ||
             hostLiveSessionCount() > replacement.maxConcurrentClients
@@ -161,10 +166,12 @@ class SessionManager(
     }
 
     fun session(sessionId: SessionId): SessionSnapshot? = synchronized(lock) {
+        expireReservationsLocked()
         sessions[sessionId]?.snapshot()
     }
 
     fun sessionsForPeer(deviceId: DeviceId): List<SessionSnapshot> = synchronized(lock) {
+        expireReservationsLocked()
         immutableList(
             sessions.values
                 .filter { it.remoteParticipant.deviceId == deviceId }
@@ -178,7 +185,72 @@ class SessionManager(
         succeeded(removed)
     }
 
+    /** Atomically reserves Host capacity after RFC-005D Client authentication. */
+    fun reserveAuthenticatedAdmission(
+        sessionId: SessionId,
+        peerDeviceId: DeviceId,
+        generation: SessionGeneration,
+        lifetimeUs: Long,
+    ): SessionAdmissionResult = synchronized(lock) {
+        if (closed) return@synchronized SessionAdmissionResult(SessionError.Closed)
+        if (lifetimeUs <= 0L || peerDeviceId == config.localDeviceId) {
+            return@synchronized SessionAdmissionResult(
+                SessionError.InvalidPolicy,
+            )
+        }
+        expireReservationsLocked()
+        if (sessions.containsKey(sessionId) || authenticatedReservations.containsKey(sessionId)) {
+            return@synchronized SessionAdmissionResult(SessionError.DuplicateSessionId)
+        }
+        if (sessions.size + authenticatedReservations.size >= config.maxSessions ||
+            hostLiveSessionCount() + authenticatedReservations.size >= policy.maxConcurrentClients
+        ) {
+            return@synchronized SessionAdmissionResult(SessionError.SessionCapacityExceeded)
+        }
+        if (policy.duplicatePeerSessionPolicy == DuplicatePeerSessionPolicy.SingleSessionPerPeer &&
+            (
+                sessions.values.any {
+                    it.localParticipant.role == SessionRole.Host && it.remoteParticipant.deviceId == peerDeviceId && it.state.isLive()
+                } ||
+                    authenticatedReservations.values.any { it.peerDeviceId == peerDeviceId }
+                )
+        ) {
+            return@synchronized SessionAdmissionResult(SessionError.DuplicatePeerSessionNotAllowed)
+        }
+        val participantIndex = nextReservationParticipantIndex() ?: return@synchronized SessionAdmissionResult(SessionError.DuplicateParticipantIndex)
+        val now = monotonicNowUs()
+        val expiresAt = if (lifetimeUs > Long.MAX_VALUE - now) Long.MAX_VALUE else now + lifetimeUs
+        val reservation =
+            AuthenticatedSessionAdmissionReservation(sessionId, peerDeviceId, generation, participantIndex, expiresAt)
+        authenticatedReservations[sessionId] = reservation
+        SessionAdmissionResult(SessionError.None, reservation)
+    }
+
+    fun releaseAuthenticatedAdmission(sessionId: SessionId): SessionError = synchronized(lock) {
+        if (closed) return@synchronized SessionError.Closed
+        expireReservationsLocked()
+        if (authenticatedReservations.remove(sessionId) == null) SessionError.AdmissionReservationNotFound else SessionError.None
+    }
+
+    /** Future Phase 5 negotiation may atomically consume this reservation when registering Created. */
+    fun consumeAuthenticatedAdmission(request: SessionCreateRequest): SessionOperationResult = synchronized(lock) {
+        if (closed) return@synchronized failed(SessionError.Closed)
+        expireReservationsLocked()
+        val reservation = authenticatedReservations[request.sessionId]
+            ?: return@synchronized failed(SessionError.AdmissionReservationNotFound)
+        if (request.localRole != SessionRole.Host || request.remoteRole != SessionRole.Client ||
+            request.remotePeer.deviceId != reservation.peerDeviceId || request.generation != reservation.generation
+        ) {
+            return@synchronized failed(SessionError.InvalidRoleCombination)
+        }
+        authenticatedReservations.remove(request.sessionId)
+        val result = createSession(request.copy(participantIndex = reservation.participantIndex))
+        if (!result.isSuccess) authenticatedReservations[request.sessionId] = reservation
+        result
+    }
+
     fun snapshot(): SessionManagerSnapshot = synchronized(lock) {
+        expireReservationsLocked()
         snapshotLocked()
     }
 
@@ -186,6 +258,7 @@ class SessionManager(
         synchronized(lock) {
             if (closed) return
             sessions.clear()
+            authenticatedReservations.clear()
             closed = true
         }
     }
@@ -231,6 +304,21 @@ class SessionManager(
     private fun hostLiveSessionCount(): Int =
         sessions.values.count { it.localParticipant.role == SessionRole.Host && it.state.isLive() }
 
+    private fun nextReservationParticipantIndex(): ParticipantIndex? =
+        (0 until SessionBounds.HARD_MAX_CONCURRENT_CLIENTS).mapNotNull(
+            ParticipantIndex::from,
+        ).firstOrNull { candidate ->
+            sessions.values.none {
+                it.localParticipant.role == SessionRole.Host && it.participantIndex == candidate && it.state.isLive()
+            } &&
+                authenticatedReservations.values.none { it.participantIndex == candidate }
+        }
+
+    private fun expireReservationsLocked() {
+        val now = monotonicNowUs()
+        authenticatedReservations.entries.removeIf { it.value.expiresAtMonotonicUs <= now }
+    }
+
     private fun findMutableSession(sessionId: SessionId): ManagedSession? {
         if (closed) return null
         return sessions[sessionId]
@@ -261,6 +349,7 @@ class SessionManager(
             registeredSessionCount = sessions.size,
             maxConcurrentClients = policy.maxConcurrentClients,
             maxSessions = config.maxSessions,
+            authenticatedReservationCount = authenticatedReservations.size,
             hostSessions = sessions.values.count { it.localParticipant.role == SessionRole.Host },
             clientSessions = sessions.values.count { it.localParticipant.role == SessionRole.Client },
             sessionsByState = immutableList(

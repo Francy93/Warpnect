@@ -1,10 +1,12 @@
 package io.warpnect.platform.discovery
 
-import io.warpnect.platform.session.pairing.AndroidDatagramPairingTransport
+import io.warpnect.platform.session.bootstrap.AndroidBootstrapDatagramRouter
 import io.warpnect.session.discovery.DiscoveryContactEndpointLeaseFactory
 import io.warpnect.session.discovery.DiscoveryContactEndpointLeaseResult
 import io.warpnect.session.discovery.DiscoveryError
 import io.warpnect.session.discovery.PairingBootstrapContactEndpointLease
+import io.warpnect.session.discovery.SessionHandshakeBootstrapContactEndpointLease
+import io.warpnect.session.handshake.SessionHandshakeTransport
 import io.warpnect.session.pairing.PairingTransport
 import java.net.DatagramSocket
 import java.net.InetSocketAddress
@@ -26,23 +28,23 @@ class AndroidDiscoveryContactEndpointLeaseFactory : DiscoveryContactEndpointLeas
 
 private class AndroidDiscoveryContactEndpointLease(
     private val socket: DatagramSocket,
-) : PairingBootstrapContactEndpointLease {
+) : PairingBootstrapContactEndpointLease, SessionHandshakeBootstrapContactEndpointLease {
+    private val router = AndroidBootstrapDatagramRouter(socket)
     private var closed = false
-    private var borrowed = false
 
     override val port: Int
         get() = socket.localPort
 
     override fun borrowPairingTransport(): PairingTransport? = synchronized(this) {
-        if (closed || borrowed) return@synchronized null
-        borrowed = true
-        AndroidDatagramPairingTransport.borrow(socket) {
-            synchronized(this) { borrowed = false }
-        }
+        if (closed) null else router.borrowPairingTransport()
+    }
+
+    override fun borrowSessionHandshakeTransport(): SessionHandshakeTransport? = synchronized(this) {
+        if (closed) null else router.borrowSessionHandshakeTransport()
     }
 
     override fun close() = synchronized(this) {
         closed = true
-        socket.close()
+        router.close()
     }
 }

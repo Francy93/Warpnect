@@ -19,6 +19,7 @@ import io.warpnect.session.discovery.DiscoveryRouteToken
 import io.warpnect.session.discovery.HostAvailabilityProvider
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.discovery.SecureRandomDiscoveryPresenceIdGenerator
+import io.warpnect.session.handshake.SessionHandshakeTransport
 import io.warpnect.session.pairing.PairingTransport
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
@@ -108,6 +109,12 @@ class AndroidLocalDiscoveryController(
     override fun borrowPairingTransport(): PairingTransport? = onControl {
         delegate.borrowPairingTransport()
     }
+
+    override fun borrowSessionHandshakeTransport(): SessionHandshakeTransport? = onControl {
+        delegate.borrowSessionHandshakeTransport()
+    }
+
+    override fun currentAdvertisingPresenceId(): DiscoveryPresenceId? = delegate.currentAdvertisingPresenceId()
 
     override fun snapshot() = delegate.snapshot()
 

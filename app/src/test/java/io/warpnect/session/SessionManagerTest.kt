@@ -80,6 +80,30 @@ class SessionManagerTest {
     }
 
     @Test
+    fun authenticatedAdmissionsAreBoundedAndReleasedWithoutCreatingSessions() {
+        val manager = hostManager()
+        val first = manager.reserveAuthenticatedAdmission(
+            session(90uL),
+            device(190uL),
+            SessionGeneration.Initial,
+            30_000L,
+        )
+        val second = manager.reserveAuthenticatedAdmission(
+            session(91uL),
+            device(191uL),
+            SessionGeneration.Initial,
+            30_000L,
+        )
+
+        assertTrue(first.isSuccess)
+        assertEquals(SessionError.SessionCapacityExceeded, second.error)
+        assertEquals(0, manager.snapshot().registeredSessionCount)
+        assertEquals(1, manager.snapshot().authenticatedReservationCount)
+        assertEquals(SessionError.None, manager.releaseAuthenticatedAdmission(session(90uL)))
+        assertEquals(0, manager.snapshot().authenticatedReservationCount)
+    }
+
+    @Test
     fun multiClientAndSamePeerPoliciesAreExplicitAndBounded() {
         val singlePeerManager = hostManager(
             policy = SessionBehaviorPolicy(maxConcurrentClients = 2),

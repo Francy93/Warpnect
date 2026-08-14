@@ -1402,6 +1402,19 @@ Unsupported peers that do not recognize subtype `5` must reject or ignore it saf
 
 ## Stability
 
+## Session Handshake Protocol Version 1
+
+RFC-005D defines a separate pre-session WNSH control protocol, not SCL. Its fixed 32-byte header
+uses magic `WNSH`, version 1, message type, flags, non-zero attempt ID, logical sequence, payload
+length, and zero reserved bytes. ClientHello/HelloRetry/ServerHello are plaintext bootstrap
+messages; ServerAuth, ClientAuth, and ServerComplete are AES-128-GCM records with the WNSH header
+as AAD. The logical sequence is 0 through 6 and retransmissions are byte-identical cached
+datagrams, not new transcript entries.
+
+Session Handshake Protocol V1 uses P-256 ECDH, P-256/SHA-256 identity signatures, SHA-256,
+HKDF-SHA256, AES-128-GCM, and HMAC-SHA256. It does not add SessionId, DeviceId, ChannelId, PathId,
+or a security field to PacketHeader or existing media/input payloads.
+
 Packet layout is part of the SCL protocol contract.
 
 Breaking packet layout or protocol semantic changes require a Protocol Version change and an RFC.

@@ -23,8 +23,10 @@ import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
 import java.security.spec.X509EncodedKeySpec
+import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 sealed interface PairingCryptoResult<out T> {
@@ -61,6 +63,21 @@ interface PairingCryptoProvider {
     fun isValidP256PublicKey(encodedSpki: ByteArray): Boolean
 
     fun verifyIdentitySignature(publicKey: IdentityPublicKey, data: ByteArray, signature: PairingSignature): Boolean
+
+    /** AES-128-GCM is used by the RFC-005D pre-session authentication records only. */
+    fun aes128GcmEncrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        plaintext: ByteArray,
+    ): PairingCryptoResult<ByteArray>
+
+    fun aes128GcmDecrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        ciphertext: ByteArray,
+    ): PairingCryptoResult<ByteArray>
 
     fun constantTimeEquals(left: ByteArray, right: ByteArray): Boolean
 }
@@ -140,7 +157,39 @@ class JcaPairingCryptoProvider(
         false
     }
 
+    override fun aes128GcmEncrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        plaintext: ByteArray,
+    ): PairingCryptoResult<ByteArray> = aesGcm(Cipher.ENCRYPT_MODE, key, nonce, aad, plaintext)
+
+    override fun aes128GcmDecrypt(
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        ciphertext: ByteArray,
+    ): PairingCryptoResult<ByteArray> = aesGcm(Cipher.DECRYPT_MODE, key, nonce, aad, ciphertext)
+
     override fun constantTimeEquals(left: ByteArray, right: ByteArray): Boolean = MessageDigest.isEqual(left, right)
+
+    private fun aesGcm(
+        mode: Int,
+        key: ByteArray,
+        nonce: ByteArray,
+        aad: ByteArray,
+        input: ByteArray,
+    ): PairingCryptoResult<ByteArray> {
+        if (key.size != 16 || nonce.size != 12) return PairingCryptoResult.Failed("Invalid AES-GCM key or nonce")
+        return try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(mode, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD(aad)
+            PairingCryptoResult.Value(cipher.doFinal(input))
+        } catch (exception: Exception) {
+            PairingCryptoResult.Failed(exception.message ?: "AES-GCM operation failed")
+        }
+    }
 
     private class JcaPairingEphemeralKeyPair(
         private var keyPair: KeyPair?,

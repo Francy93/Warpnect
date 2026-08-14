@@ -179,6 +179,17 @@ bindings. It is neither a wire version nor a cryptographic key version.
 
 ## Application Version
 
+## Session Handshake Protocol Version
+
+Current value:
+
+```text
+1
+```
+
+Session Handshake Protocol Version defines RFC-005D's standalone pre-session `WNSH` datagram
+format. It is distinct from the SCL, discovery, pairing, and trusted-store version domains.
+
 Current value:
 
 ```text

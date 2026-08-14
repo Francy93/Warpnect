@@ -28,6 +28,7 @@ enum class SessionError {
     InvalidManagerConfiguration,
     InvalidStateTransition,
     SessionNotFound,
+    AdmissionReservationNotFound,
     Closed,
 }
 
@@ -250,6 +251,7 @@ data class SessionManagerSnapshot(
     val registeredSessionCount: Int,
     val maxConcurrentClients: Int,
     val maxSessions: Int,
+    val authenticatedReservationCount: Int,
     val hostSessions: Int,
     val clientSessions: Int,
     val sessionsByState: List<SessionStateCount>,
@@ -268,6 +270,22 @@ data class SessionOperationResult(
 ) {
     val isSuccess: Boolean
         get() = error == SessionError.None
+}
+
+/** Bounded pre-negotiation admission. It is not a running Session and owns no media resources. */
+data class AuthenticatedSessionAdmissionReservation(
+    val sessionId: SessionId,
+    val peerDeviceId: DeviceId,
+    val generation: SessionGeneration,
+    val participantIndex: ParticipantIndex?,
+    val expiresAtMonotonicUs: Long,
+)
+
+data class SessionAdmissionResult(
+    val error: SessionError,
+    val reservation: AuthenticatedSessionAdmissionReservation? = null,
+) {
+    val isSuccess: Boolean get() = error == SessionError.None && reservation != null
 }
 
 fun SessionChannelKind.defaultDirection(): SessionChannelDirection = when (this) {

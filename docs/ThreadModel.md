@@ -316,3 +316,11 @@ WarpnectPairing
 It does not process media frames, audio frames, reverse-input events, discovery callbacks, or UI
 permission requests. It has no per-message coroutine, busy poll, unbounded retry, or media/input
 queue. Pairing begins only after an explicit user action or explicit responder pairing window.
+
+## RFC-005D Session Handshake Control
+
+`WarpnectSessionHandshake` serializes bootstrap datagrams, stateless cookie validation, ECDH,
+identity signatures, AES-GCM, retries/timeouts, and bounded admission reservations. The shared
+bootstrap router has one blocking contact-socket reader and only dispatches WNPB/WNSH. No media,
+audio, input, native receive, UI permission, per-datagram worker, or busy-poll work enters this
+context.

@@ -149,9 +149,12 @@ Responsibilities:
 - `session/identity/`: RFC-005C immutable public identity values, local DeviceId/key repository contracts, fingerprinting, and bounded identity-consistency results.
 - `session/trust/`: RFC-005C bounded DeviceId-to-public-key trust records, validation, and persistence contracts.
 - `session/pairing/`: RFC-005C platform-neutral pairing bootstrap codec, canonical crypto inputs, JCA crypto seam, bounded state engine/controller, retry policy, and discovery-route bridge.
+- `session/handshake/`: RFC-005D WNSH model, strict codec, canonical transcript/key schedule, stateless cookie, bounded engine/controller, root-secret lifecycle, and admission seam.
 - `platform/session/identity/`: Android Keystore P-256 key adapter and atomic local DeviceId persistence.
 - `platform/session/trust/`: Android app-private atomic trusted-peer store persistence.
 - `platform/session/pairing/`: Android DatagramSocket transport and `WarpnectPairing` HandlerThread controller/factories.
+- `platform/session/bootstrap/`: one advertised-contact-socket WNPB/WNSH datagram router.
+- `platform/session/handshake/`: dedicated initiator UDP transport plus `WarpnectSessionHandshake` Android controller/factories.
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
 - `input/`: future reverse-input stubs and Phase 4 input-facing contracts.

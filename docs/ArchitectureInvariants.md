@@ -456,3 +456,17 @@ duplicate media transmission.
 > Pairing requires explicit human verification; discovery metadata, network proximity, and matching aliases never auto-establish trust.
 
 > A known DeviceId presenting a different identity key is a security-significant mismatch and must fail closed.
+
+## Phase 5 Authenticated Session Handshake
+
+> RFC-005C pairing trust and RFC-005D live-session authentication are distinct. A trusted DeviceId/public-key binding does not authenticate a current endpoint until the live handshake succeeds.
+
+> Every authenticated session handshake uses fresh ephemeral key-agreement material. Session-handshake ECDH key shares are never reused across attempts or sessions.
+
+> Stable DeviceId/fingerprint metadata is not sent in plaintext ClientHello or ServerHello. A Client reveals its identity only after verifying trusted encrypted ServerAuth.
+
+> Session Handshake V1 binds DeviceIds, roles, SessionId, SessionGeneration, ephemeral keys, and the complete logical transcript.
+
+> AuthenticatedSessionRootSecret is memory-only RFC-005E keying material and must never directly protect media or input.
+
+> UDP return-routability cookies limit bootstrap allocation but do not authenticate a peer.
