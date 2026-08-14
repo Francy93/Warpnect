@@ -403,6 +403,20 @@ portable models. It crosses no new wire or JNI boundary and copies no input payl
 capability query may probe `/dev/uhid` cold, but it does not create a HID device or add a new Binder
 method.
 
+## RFC-005A Session Core
+
+RFC-005A adds a Kotlin-only, platform-neutral session model:
+
+~~~text
+DeviceId / PeerReference / SessionId
+        -> bounded SessionManager
+        -> session channels, paths, and logical peripherals
+~~~
+
+It adds no JNI entry point, native structure, packet field, payload copy, or Binder method.
+Existing video, audio, and reverse-input JNI boundaries remain unchanged. Discovery, handshake,
+packet security, endpoint negotiation, and session composition are later Phase 5 work.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

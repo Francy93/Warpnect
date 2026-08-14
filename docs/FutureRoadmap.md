@@ -67,16 +67,19 @@ Implemented:
 Phase 4 is implementation-complete. Real-device privileged injection, UHID availability, and
 game-specific compatibility remain device-specific validation work.
 
-## Phase 5 - Discovery and Session Management
+## Phase 5 - Discovery and Secure Session Management
 
-Implement:
+Status: Started. RFC-005A is complete; RFC-005B is next.
 
-- Wi-Fi Direct.
-- mDNS/NSD.
-- Automatic peer discovery.
-- Session negotiation.
-- Connection lifecycle.
-- Authentication primitives.
+- RFC-005A - Session Identity & Core Session Model [complete]
+- RFC-005B - Local Network Discovery & Presence [next]
+- RFC-005C - Pairing & Trust Bootstrap
+- RFC-005D - Authenticated Session Handshake
+- RFC-005E - Session Keys, Packet Authentication & Anti-Replay
+- RFC-005F - Capability, Role & Feature Negotiation
+- RFC-005G - Endpoint, Channel & Stream Negotiation
+- RFC-005H - Session Lifecycle, Disconnect & Reconnection
+- RFC-005I - End-to-End Discovery & Secure Session Integration
 
 ## Phase 6 - Telemetry and Diagnostics
 

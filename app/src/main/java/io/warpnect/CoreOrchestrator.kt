@@ -16,6 +16,7 @@ import io.warpnect.input.session.ReverseInputReceiverSessionController
 import io.warpnect.input.session.ReverseInputSenderSessionController
 import io.warpnect.input.transport.InputTransportController
 import io.warpnect.platform.input.mapping.TargetInputMapper
+import io.warpnect.session.SessionManager
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.encoder.VideoEncoderController
 import io.warpnect.video.render.VideoRenderController
@@ -56,6 +57,7 @@ class CoreOrchestrator(
     val inputInjectionController: InputInjectionController? = null,
     val reverseInputSenderSessionController: ReverseInputSenderSessionController? = null,
     val reverseInputReceiverSessionController: ReverseInputReceiverSessionController? = null,
+    val sessionManager: SessionManager? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
@@ -73,6 +75,7 @@ class CoreOrchestrator(
     }
 
     fun shutdown() {
+        sessionManager?.close()
         avSyncController?.close()
         videoTransmitterSessionController?.close()
         videoReceiverSessionController?.close()
@@ -106,6 +109,12 @@ class CoreOrchestrator(
     }
 }
 
+/**
+ * Legacy local pipeline-selection UI state.
+ *
+ * It is not a device or session identity. RFC-005A session topology uses SessionRole.Host and
+ * SessionRole.Client, whose channels each declare their own direction.
+ */
 sealed interface WarpnectRole {
     val displayName: String
 

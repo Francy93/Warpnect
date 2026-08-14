@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, and the complete Phase 4 reverse-input pipeline through RFC-004G.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the first Phase 5 session-model foundation through RFC-005A.
 
 Present:
 
@@ -54,13 +54,14 @@ Present:
 - Phase 4 input latency, reliability, and performance tuning. The `UltraLowLatencyConvergent` profile has zero network reorder wait, bounded immediate critical-transition/reset redundancy, transport and semantic duplicate suppression, per-semantic freshness guards, and synchronous stable-pointer-ID touch repair. It has no ACK, retransmission, NACK, FEC, retry queue, or jitter buffer.
 - A cold privileged `/dev/uhid` capability probe for future hardware-like input compatibility research. It creates no virtual HID device and does not claim a production UHID backend.
 - Formatting, lint, CI, and test infrastructure.
+- Platform-neutral Phase 5 session identity and topology modeling. Devices, peers, live sessions, channels, paths, and logical peripherals have distinct bounded identities; a Host can own independent Client sessions without equating a peer to an endpoint.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Discovery, session negotiation, telemetry UI/wire streaming, reconnect strategy, or authentication/encryption.
+- Local-network discovery, pairing, authenticated handshake, packet security, capability/channel negotiation, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
 
 ## Repository Layout
 
@@ -227,6 +228,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-004E Input Mapping, Coordinate and Device Semantics](docs/rfc/RFC-004E-Input-Mapping-Coordinate-Device-Semantics.md)
 - [RFC-004F End-to-End Ultra-Low-Latency Reverse Input](docs/rfc/RFC-004F-End-to-End-Ultra-Low-Latency-Reverse-Input.md)
 - [RFC-004G Input Latency, State Convergence, Reliability and Performance Tuning](docs/rfc/RFC-004G-Input-Latency-State-Convergence-Reliability-Performance-Tuning.md)
+- [RFC-005A Session Identity & Core Session Model](docs/rfc/RFC-005A-Session-Identity-Core-Session-Model.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -244,5 +246,7 @@ Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged A
 Phase 3 audio is implementation-complete. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. RFC-003C adds SCL Audio Payload Version 1 transport for both system and microphone streams. RFC-003D adds a portable queue-free Opus decoder foundation with borrowed PCM output. RFC-003E adds an Android low-latency native playback foundation based on Oboe and a bounded PCM handoff ring. RFC-003F integrates end-to-end audio streaming with receiver-first StreamConfig handling, immediate sample-position ordering, small-gap Opus PLC, and freshness resets for large gaps. RFC-003G adds a latency-bounded A/V synchronization foundation that uses audio hardware presentation as the master clock, qualifies video timestamp compatibility before using scheduled rendering, and falls back to immediate presentation when trustworthy timing is unavailable. RFC-003H adds Phase 3 performance configuration, reproducible host-native audio benchmarks, freshness-oriented recovery evaluation, and documented production defaults.
 
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
+
+Phase 5 has begun with RFC-005A. Its Kotlin-only session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. It supports bounded independent Host/Client sessions, Direct and LAN path topology, explicit behavior preferences, and immutable snapshots. It does not yet discover, pair, authenticate, encrypt, establish, negotiate, fail over, or reconnect sessions.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

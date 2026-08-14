@@ -1432,3 +1432,13 @@ RFC-004G adds no normative wire change. Input Payload V1 remains unchanged. Endp
 reliability uses existing packet sequence numbers, full-state message semantics, bounded state, and
 additional immediate copies of existing logical messages. There is no input ACK, NACK, FEC, session
 token, transport reordering wait, or new payload/control message.
+
+## Session Model Non-Wire Semantics
+
+RFC-005A defines application/session semantic identities that later Phase 5 RFCs may encode into
+authenticated control or session messages. It does not add DeviceId, SessionId, ChannelId, PathId,
+or endpoint data to the frozen SCL PacketHeader, PayloadType values, Video Payload V1, Audio
+Payload V1, Input Payload V1, ClockSync, NACK, FEC, or VideoResyncRequest.
+
+Input Payload V1 device slots remain session-scoped portable peripheral identifiers. They are not
+global peer identity, Android device identity, or a replacement for a future SessionId.

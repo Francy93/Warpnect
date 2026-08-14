@@ -134,6 +134,13 @@ RFC-004G keeps Privileged Input Injection Service Version `1`. Its optional UHID
 are additive keys in the existing capabilities Bundle and do not alter a service method or input
 wire contract.
 
+## RFC-005A Session Model
+
+RFC-005A adds a Kotlin application-model layer only. It introduces no Session Model wire version
+and does not change Architecture Version, SCL Protocol Version, Native Bridge ABI Version, PCM
+ring versions, Video Payload Version, Audio Payload Version, Input Payload Version, Video Resync
+Control Version, or Privileged Input Injection Service Version.
+
 ## Application Version
 
 Current value:

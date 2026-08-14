@@ -404,3 +404,25 @@ timestamp domain are validly mapped. Endpoint filtering is isolation only, not a
 
 InputManager event injection does not guarantee preservation of a requested physical Android device
 identity; hardware-like gamepad compatibility requires separate device validation.
+
+## Phase 5 Session Identity
+
+A Warpnect device identity, session identity, network endpoint, network path, stream/channel
+identity, and peripheral identity are distinct concepts and MUST NOT be implicitly interchangeable.
+
+IP addresses and UDP ports identify transport endpoints, not Warpnect peers. A DeviceId identifies
+a device but does not by itself establish trust or authentication. A SessionId identifies a logical
+live session but is not an authentication credential or secret.
+
+Discovery will not establish trust. Pairing will not establish an active authenticated session.
+Those later Phase 5 boundaries must remain explicit.
+
+A Host may own multiple independent Client sessions. Each session retains its own channel, path,
+peripheral, telemetry, and future security state. RFC-004A device slots are session-scoped, so
+equal device slots in different sessions represent different logical peripherals.
+
+User-selectable microphone aggregation and peripheral-presence behavior are routing/exposure
+policies. They MUST NOT destroy the underlying per-peer or per-peripheral identity.
+
+Network-path migration MUST NOT inherently require a new SessionId. A standby path does not imply
+duplicate media transmission.

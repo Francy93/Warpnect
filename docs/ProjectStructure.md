@@ -465,6 +465,19 @@ Future code should expand along existing responsibility boundaries:
 
 No future phase should collapse SCL protocol logic into Kotlin or Android lifecycle logic into C++.
 
+## RFC-005A Session Core
+
+The platform-neutral session model is located in:
+
+~~~text
+app/src/main/java/io/warpnect/session/
+app/src/test/java/io/warpnect/session/
+~~~
+
+It contains typed identity values, policy values, session/channel/path/peripheral models, the
+bounded synchronized SessionManager, immutable snapshots, and JVM model tests. It has no Android,
+transport, media, JNI, or discovery dependency.
+
 ## Test Layout
 
 ```text

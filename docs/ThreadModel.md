@@ -15,6 +15,18 @@ Privileged Shizuku UserService Binder context
 
 There is no input sender, mapping, injection, retry, or reorder worker.
 
+## RFC-005A Session Core
+
+~~~text
+Any caller
+  -> SessionManager synchronized bounded mutation
+  -> immutable SessionSnapshot / SessionManagerSnapshot
+~~~
+
+RFC-005A owns no discovery worker, handshake worker, network-path worker, coroutine actor, or
+session loop. Later Phase 5 RFCs must introduce execution contexts explicitly rather than turning
+the session model into an implicit background runtime.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines Warpnect's concurrency model and the phase-specific execution domains that currently exist.
