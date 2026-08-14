@@ -141,6 +141,19 @@ and does not change Architecture Version, SCL Protocol Version, Native Bridge AB
 ring versions, Video Payload Version, Audio Payload Version, Input Payload Version, Video Resync
 Control Version, or Privileged Input Injection Service Version.
 
+## Discovery Presence Schema Version
+
+Current value:
+
+```text
+1
+```
+
+Discovery Presence Schema Version describes RFC-005B's small DNS-SD TXT metadata schema for
+ephemeral unauthenticated local presence. It is not an SCL Protocol Version, Native Bridge ABI
+Version, media/input payload version, or session-security version. It adds no field to PacketHeader
+or any existing SCL/media/input wire contract.
+
 ## Application Version
 
 Current value:

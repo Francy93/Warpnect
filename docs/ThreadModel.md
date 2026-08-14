@@ -27,6 +27,22 @@ RFC-005A owns no discovery worker, handshake worker, network-path worker, corout
 session loop. Later Phase 5 RFCs must introduce execution contexts explicitly rather than turning
 the session model into an implicit background runtime.
 
+## RFC-005B Local Discovery
+
+```text
+WarpnectDiscovery HandlerThread
+  -> NSD callbacks
+  -> Wi-Fi P2P DNS-SD callbacks
+  -> presence-cache mutation
+  -> stale-route expiry
+  -> advertisement availability updates
+```
+
+`AndroidLocalDiscoveryController` owns one explicit low-frequency control context. It has no media
+worker, input worker, native UDP receive loop, discovery busy-poll loop, pairing worker, or
+handshake worker. Its delayed expiry task runs on the same control thread; it is not a separate
+presence-cleanup worker.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This document defines Warpnect's concurrency model and the phase-specific execution domains that currently exist.

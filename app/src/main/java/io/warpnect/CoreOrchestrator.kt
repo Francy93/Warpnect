@@ -17,6 +17,7 @@ import io.warpnect.input.session.ReverseInputSenderSessionController
 import io.warpnect.input.transport.InputTransportController
 import io.warpnect.platform.input.mapping.TargetInputMapper
 import io.warpnect.session.SessionManager
+import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.encoder.VideoEncoderController
 import io.warpnect.video.render.VideoRenderController
@@ -57,6 +58,7 @@ class CoreOrchestrator(
     val inputInjectionController: InputInjectionController? = null,
     val reverseInputSenderSessionController: ReverseInputSenderSessionController? = null,
     val reverseInputReceiverSessionController: ReverseInputReceiverSessionController? = null,
+    val localDiscoveryController: LocalDiscoveryController? = null,
     val sessionManager: SessionManager? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
@@ -75,6 +77,7 @@ class CoreOrchestrator(
     }
 
     fun shutdown() {
+        localDiscoveryController?.close()
         sessionManager?.close()
         avSyncController?.close()
         videoTransmitterSessionController?.close()

@@ -417,6 +417,22 @@ live session but is not an authentication credential or secret.
 Discovery will not establish trust. Pairing will not establish an active authenticated session.
 Those later Phase 5 boundaries must remain explicit.
 
+## Phase 5 Discovery Presence
+
+> Warpnect DeviceId is never broadcast through unauthenticated local discovery.
+
+> DiscoveryPresenceId is an ephemeral, non-secret, unauthenticated presence identifier and must never be interpreted as trusted device identity.
+
+> LAN IP addresses, DNS-SD service names, and Wi-Fi Direct device addresses are transport/discovery locators, not Warpnect peer identity.
+
+> A single discovery presence may expose multiple candidate route kinds, including LAN and Direct, without creating multiple logical peers.
+
+> Discovery does not create a Session and does not establish trust.
+
+> Discovery availability is a hint; definitive session capacity is validated during later session establishment.
+
+> Discovery callbacks and stale route expiry execute on a control-plane context and never enter media or input hot paths.
+
 A Host may own multiple independent Client sessions. Each session retains its own channel, path,
 peripheral, telemetry, and future security state. RFC-004A device slots are session-scoped, so
 equal device slots in different sessions represent different logical peripherals.

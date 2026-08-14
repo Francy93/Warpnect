@@ -1442,3 +1442,11 @@ Payload V1, Input Payload V1, ClockSync, NACK, FEC, or VideoResyncRequest.
 
 Input Payload V1 device slots remain session-scoped portable peripheral identifiers. They are not
 global peer identity, Android device identity, or a replacement for a future SessionId.
+
+## Discovery Presence Schema V1
+
+RFC-005B's Discovery Presence Schema Version 1 is DNS-SD control-plane metadata only. Its
+ephemeral DiscoveryPresenceId, discovery route token, service name, and TXT fields are not SCL
+packet fields. No DeviceId, SessionId, ChannelId, PathId, discovery identifier, or discovery
+metadata has been added to PacketHeader, PayloadType, Video Payload V1, Audio Payload V1, Input
+Payload V1, ClockSync, NACK, FEC, or VideoResyncRequest.

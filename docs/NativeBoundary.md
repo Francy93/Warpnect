@@ -417,6 +417,19 @@ It adds no JNI entry point, native structure, packet field, payload copy, or Bin
 Existing video, audio, and reverse-input JNI boundaries remain unchanged. Discovery, handshake,
 packet security, endpoint negotiation, and session composition are later Phase 5 work.
 
+## RFC-005B Local Discovery
+
+RFC-005B is Android/Kotlin control-plane work only:
+
+```text
+NsdManager / WifiP2pManager
+        -> platform discovery backends
+        -> platform-neutral presence controller/cache
+```
+
+It adds no JNI entry point, native SCL structure, PacketHeader field, payload field, packet copy, or
+Binder method. LAN DNS-SD and Wi-Fi Direct DNS-SD metadata is not an SCL wire protocol.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

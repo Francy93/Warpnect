@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the first Phase 5 session-model foundation through RFC-005A.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session and local-discovery foundations through RFC-005B.
 
 Present:
 
@@ -55,13 +55,15 @@ Present:
 - A cold privileged `/dev/uhid` capability probe for future hardware-like input compatibility research. It creates no virtual HID device and does not claim a production UHID backend.
 - Formatting, lint, CI, and test infrastructure.
 - Platform-neutral Phase 5 session identity and topology modeling. Devices, peers, live sessions, channels, paths, and logical peripherals have distinct bounded identities; a Host can own independent Client sessions without equating a peer to an endpoint.
+- Android local discovery and ephemeral presence through LAN DNS-SD and Wi-Fi Direct DNS-SD. Each explicit advertising epoch uses one fresh random DiscoveryPresenceId across both backends, so LAN and Direct route observations can merge without broadcasting DeviceId or SessionId.
+- A bounded untrusted-presence cache with strict Discovery Presence Schema Version 1 TXT parsing, route loss/expiry, availability visibility policy, contact-port reservation without a receive protocol, typed Android permission/capability planning, and one `WarpnectDiscovery` control context.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Local-network discovery, pairing, authenticated handshake, packet security, capability/channel negotiation, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
+- Pairing, authenticated handshake, packet security, capability/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
 
 ## Repository Layout
 
@@ -229,6 +231,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-004F End-to-End Ultra-Low-Latency Reverse Input](docs/rfc/RFC-004F-End-to-End-Ultra-Low-Latency-Reverse-Input.md)
 - [RFC-004G Input Latency, State Convergence, Reliability and Performance Tuning](docs/rfc/RFC-004G-Input-Latency-State-Convergence-Reliability-Performance-Tuning.md)
 - [RFC-005A Session Identity & Core Session Model](docs/rfc/RFC-005A-Session-Identity-Core-Session-Model.md)
+- [RFC-005B Local Network Discovery & Presence](docs/rfc/RFC-005B-Local-Network-Discovery-Presence.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -247,6 +250,6 @@ Phase 3 audio is implementation-complete. RFC-003A implements PCM capture founda
 
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
-Phase 5 has begun with RFC-005A. Its Kotlin-only session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. It supports bounded independent Host/Client sessions, Direct and LAN path topology, explicit behavior preferences, and immutable snapshots. It does not yet discover, pair, authenticate, encrypt, establish, negotiate, fail over, or reconnect sessions.
+Phase 5 now includes RFC-005A and RFC-005B. The session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. RFC-005B adds Android LAN DNS-SD and Wi-Fi Direct DNS-SD presence only: it uses a fresh ephemeral DiscoveryPresenceId for each full advertising lifecycle, merges consistent LAN and Direct observations, never advertises DeviceId or SessionId, and keeps all results unauthenticated. It does not pair, authenticate, encrypt, create Sessions, connect Wi-Fi Direct peers, negotiate channels, fail over, or reconnect sessions.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

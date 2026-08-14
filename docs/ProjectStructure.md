@@ -81,7 +81,8 @@ app/src/main/java/io/warpnect/
 |-- input/model/
 |-- input/performance/
 |-- input/reliability/
-|-- network/
+|-- session/
+|-- session/discovery/
 |-- platform/capture/
 |-- platform/audio/capture/
 |-- platform/audio/decoder/
@@ -89,6 +90,7 @@ app/src/main/java/io/warpnect/
 |-- platform/audio/playback/
 |-- platform/audio/transport/
 |-- platform/input/capture/
+|-- platform/discovery/
 |-- platform/video/encoder/
 |-- platform/video/decoder/
 |-- platform/video/render/
@@ -135,7 +137,9 @@ Responsibilities:
 - `video/session/`: RFC-002F/RFC-002G transmitter and receiver session orchestration, lifecycle snapshots, rollback/error mapping, receiver prerequisite/keyframe state core, performance tuning configuration, resync orchestration, and optional bounded loss-reactive bitrate policy.
 - `ui/`: Compose UI.
 - `shizuku/`: app-level Shizuku availability and permission helper.
-- `network/`: future discovery/session bootstrap stubs, not UDP transport implementation.
+- `session/`: RFC-005A platform-neutral identity, topology, policy, bounded SessionManager, and snapshots.
+- `session/discovery/`: RFC-005B platform-neutral ephemeral presence identity, TXT schema codec, bounded merge/expiry cache, discovery controller contracts, and availability policy.
+- `platform/discovery/`: Android NSD/Wi-Fi Direct DNS-SD adapters, contact-port lease, permission/capability planning, multicast-lock compatibility, and the `WarpnectDiscovery` control-thread owner.
 - `codec/`: future video pipeline stubs.
 - `audio/`: future audio pipeline stubs.
 - `input/`: future reverse-input stubs and Phase 4 input-facing contracts.
@@ -477,6 +481,30 @@ app/src/test/java/io/warpnect/session/
 It contains typed identity values, policy values, session/channel/path/peripheral models, the
 bounded synchronized SessionManager, immutable snapshots, and JVM model tests. It has no Android,
 transport, media, JNI, or discovery dependency.
+
+## RFC-005B Discovery Presence
+
+```text
+app/src/main/java/io/warpnect/session/discovery/
+  DiscoveryPresenceId, DiscoveryDisplayAlias, DiscoveryRouteToken
+  DiscoveryAdvertisementCodec, DiscoveryPresenceCache
+  LocalDiscoveryController, DefaultLocalDiscoveryController
+
+app/src/main/java/io/warpnect/platform/discovery/
+  AndroidLocalDiscoveryController
+  AndroidLanNsdDiscoveryBackend
+  AndroidWifiDirectDnsSdDiscoveryBackend
+  AndroidDiscoveryPermissionPlanner
+  AndroidDiscoveryMulticastLock
+  AndroidDiscoveryContactEndpointLeaseFactory
+
+app/src/test/java/io/warpnect/session/discovery/
+app/src/test/java/io/warpnect/platform/discovery/
+```
+
+The session discovery core has no Android imports. Android adapters retain framework route locators
+only as bounded, ephemeral private metadata and feed platform-neutral observations to the core.
+Neither package creates a Session, connection, group, handshake, or native transport runtime.
 
 ## Test Layout
 
