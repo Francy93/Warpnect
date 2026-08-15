@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session, discovery, pairing/trust, authenticated-handshake, packet-protection, and secure capability-negotiation foundations through RFC-005F.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 foundations through authenticated endpoint, channel, and exact stream preparation in RFC-005G.
 
 Present:
 
@@ -61,13 +61,14 @@ Present:
 - Mutually authenticated WNSH session handshakes. A trusted Host authenticates first inside encrypted handshake records, then both peers produce a fresh forward-secret root secret without creating a media session.
 - Session Packet Protection V1: a portable native WNSD AES-128-GCM envelope with scoped directional keys, bounded anti-replay windows, monotonic key epochs, and cold JNI runtime/context ownership.
 - Authenticated capability and feature negotiation through bounded WNCP Version 1 records carried only inside encrypted RFC-005E SessionControl datagrams. Frozen Client/Host capability snapshots, explicit Required/Preferred/Disabled requests, and Host policy produce one immutable profile without starting media, audio, input, or Direct resources.
+- Authenticated RFC-005G Session Setup V1 over protected SessionControl: strict bounded WNSN state machines, explicit LAN/Direct path policy, public-API Android Wi-Fi Direct Group Owner reuse, authenticated Direct candidate probing, path-bound endpoint leases, deterministic PathId/ChannelId allocation, exact stream validation, and independent protected native channel transports. The result is a bounded `PreparedSessionBootstrap`; no media pipeline is started.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Endpoint/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
+- Running-session lifecycle, path health, automatic live failover, disconnect/reconnect/resume, full Phase 5 startup orchestration, telemetry UI, or an unbounded telemetry wire stream.
 
 ## Repository Layout
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "clock_sync_control.h"
+#include "datagram_protection.h"
 #include "fec.h"
 #include "recovery_control.h"
 #include "retransmission_cache.h"
@@ -34,6 +35,7 @@ struct VideoTransportSenderConfig final {
     std::size_t retransmission_cache_slots = 0;
     VideoTransportFecConfig fec{};
     std::uint64_t resync_request_cooldown_us = 250'000;
+    DatagramProtector* protector = nullptr;
 };
 
 struct VideoTransportSenderWorkspace final {
@@ -45,6 +47,7 @@ struct VideoTransportSenderWorkspace final {
     std::span<std::byte> fec_matrix_storage{};
     std::span<std::byte> fec_scratch_storage{};
     std::span<std::byte> fec_parity_payload_scratch{};
+    std::span<std::byte> protected_datagram_scratch{};
 };
 
 struct VideoTransportSnapshot final {
@@ -85,6 +88,7 @@ class VideoTransportSender final : private DatagramSink {
     VideoTransportSender& operator=(const VideoTransportSender&) = delete;
 
     [[nodiscard]] VideoStatus open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] VideoStatus submit_stream_config(std::uint16_t width, std::uint16_t height,
                                                    std::span<const CsdEntryView> csd_entries) noexcept;
     [[nodiscard]] VideoStatus submit_access_unit(std::span<const std::byte> access_unit,
@@ -104,6 +108,8 @@ class VideoTransportSender final : private DatagramSink {
   private:
     [[nodiscard]] VideoStatus send(std::span<const std::byte> datagram) noexcept override;
     [[nodiscard]] VideoStatus send_retransmission(std::span<const std::byte> datagram) noexcept;
+    [[nodiscard]] VideoStatus send_inner_datagram(std::span<const std::byte> datagram,
+                                                  bool cache_for_retransmission) noexcept;
     [[nodiscard]] VideoStatus maybe_accept_fec_data(std::span<const std::byte> datagram) noexcept;
     [[nodiscard]] VideoStatus flush_fec_if_ready() noexcept;
     [[nodiscard]] VideoStatus send_parity(const FecParityView& parity) noexcept;

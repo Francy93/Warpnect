@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "retransmission_cache.h"
 #include "session_protection.h"
 #include "udp_endpoint.h"
+#include "udp_socket.h"
 #include "video_receiver_runtime.h"
 #include "video_resync_control.h"
 #include "video_transport.h"
@@ -38,6 +40,7 @@ using warpnect::scl::ReedSolomonConfig;
 using warpnect::scl::RetransmissionCacheConfig;
 using warpnect::scl::RetransmissionEntry;
 using warpnect::scl::UdpEndpoint;
+using warpnect::scl::UdpSocket;
 using warpnect::scl::AudioTransportError;
 using warpnect::scl::AudioReceiverConfig;
 using warpnect::scl::AudioReceiverEventType;
@@ -132,6 +135,7 @@ inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
 inline constexpr jsize kNativeSessionProtectionCreateValues = 5;
 inline constexpr jsize kNativeSessionProtectionContextValues = 3;
 inline constexpr jsize kNativeSessionProtectionSnapshotValues = 13;
+inline constexpr jsize kNativePreparedUdpEndpointValues = 3;
 
 [[nodiscard]] constexpr jint error_code(VideoError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
@@ -198,6 +202,8 @@ struct NativeVideoTransportHandle final {
     std::vector<std::byte> fec_scratch_storage{};
     std::vector<std::byte> fec_parity_payload_scratch{};
     std::vector<std::byte> control_receive_scratch{};
+    std::vector<std::byte> protected_datagram_scratch{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::mutex lock{};
     std::unique_ptr<VideoTransportSender> sender{};
 
@@ -211,12 +217,14 @@ struct NativeVideoTransportHandle final {
             .fec_matrix_storage = fec_matrix_storage,
             .fec_scratch_storage = fec_scratch_storage,
             .fec_parity_payload_scratch = fec_parity_payload_scratch,
+            .protected_datagram_scratch = protected_datagram_scratch,
         };
     }
 };
 
 struct NativeVideoReceiverHandle final {
     std::mutex lock{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::unique_ptr<VideoReceiverRuntime> runtime{};
 };
 
@@ -238,12 +246,15 @@ struct NativeAudioPlaybackHandle final {
 struct NativeAudioTransportHandle final {
     AudioTransportSenderConfig config{};
     std::vector<std::byte> datagram_scratch{};
+    std::vector<std::byte> protected_datagram_scratch{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::mutex lock{};
     std::unique_ptr<AudioTransportSender> sender{};
 
     [[nodiscard]] AudioTransportSenderWorkspace workspace() noexcept {
         return AudioTransportSenderWorkspace{
             .datagram_scratch = datagram_scratch,
+            .protected_datagram_scratch = protected_datagram_scratch,
         };
     }
 };
@@ -251,29 +262,161 @@ struct NativeAudioTransportHandle final {
 struct NativeInputTransportHandle final {
     InputTransportSenderConfig config{};
     std::array<std::byte, warpnect::scl::kInputMaxDatagramWireSize> datagram_scratch{};
+    std::vector<std::byte> protected_datagram_scratch{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::unique_ptr<InputTransportSender> sender{};
 
     [[nodiscard]] InputTransportSenderWorkspace workspace() noexcept {
         return InputTransportSenderWorkspace{
             .datagram_scratch = datagram_scratch,
+            .protected_datagram_scratch = protected_datagram_scratch,
         };
     }
 };
 
 struct NativeInputReceiverHandle final {
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::unique_ptr<InputReceiverRuntime> runtime{};
 };
 
 struct NativeAudioReceiverHandle final {
     std::mutex lock{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::unique_ptr<AudioReceiverRuntime> runtime{};
     std::vector<jobject> ready_slot_views{};
 };
 
-struct NativeSessionProtectionHandle final {
+struct NativePreparedUdpEndpointHandle final {
+    std::mutex lock{};
+    UdpSocket socket{};
+    UdpEndpoint endpoint{};
+    bool consumed = false;
+};
+
+struct NativePreparedSecureChannelHandle final {
+    std::mutex lock{};
+    UdpSocket socket{};
+    UdpEndpoint remote_endpoint{};
+    std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+};
+
+struct NativeSessionProtectionState final {
     std::mutex lock{};
     std::unique_ptr<SessionProtectionRuntime> runtime{};
 };
+
+struct NativeSessionProtectionHandle final {
+    std::shared_ptr<NativeSessionProtectionState> state =
+        std::make_shared<NativeSessionProtectionState>();
+};
+
+[[nodiscard]] NativeSessionProtectionHandle* session_protection_handle_from(jlong handle) noexcept;
+
+[[nodiscard]] NativePreparedUdpEndpointHandle* prepared_udp_endpoint_handle_from(
+    const jlong handle) noexcept {
+    if (handle == 0) return nullptr;
+    return reinterpret_cast<NativePreparedUdpEndpointHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] NativePreparedSecureChannelHandle* prepared_secure_channel_handle_from(
+    const jlong handle) noexcept {
+    if (handle == 0) return nullptr;
+    return reinterpret_cast<NativePreparedSecureChannelHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] std::optional<UdpSocket> take_prepared_udp_socket(
+    const jlong handle, const std::uint16_t expected_port, const IpVersion expected_version) noexcept {
+    NativePreparedUdpEndpointHandle* prepared = prepared_udp_endpoint_handle_from(handle);
+    if (prepared == nullptr) return std::nullopt;
+    std::lock_guard guard(prepared->lock);
+    if (prepared->consumed || !prepared->socket.is_open() ||
+        prepared->endpoint.port != expected_port ||
+        prepared->endpoint.address.version != expected_version) {
+        return std::nullopt;
+    }
+    prepared->consumed = true;
+    return std::optional<UdpSocket>{std::move(prepared->socket)};
+}
+
+class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProtector {
+  public:
+    NativeSessionDatagramProtector(std::shared_ptr<NativeSessionProtectionState> state,
+                                   const ProtectionScope scope) noexcept
+        : state_(std::move(state)), scope_(scope) {}
+
+    [[nodiscard]] std::size_t secure_datagram_budget() const noexcept override {
+        std::lock_guard guard(state_->lock);
+        return state_->runtime == nullptr ? 0 : state_->runtime->secure_datagram_budget();
+    }
+
+    [[nodiscard]] std::size_t inner_datagram_budget() const noexcept override {
+        std::lock_guard guard(state_->lock);
+        return state_->runtime == nullptr ? 0 : state_->runtime->inner_datagram_budget();
+    }
+
+    [[nodiscard]] warpnect::scl::DatagramProtectionResult protect(
+        const std::span<const std::byte> inner,
+        const std::span<std::byte> output) noexcept override {
+        std::lock_guard guard(state_->lock);
+        if (state_->runtime == nullptr) {
+            return {.error = warpnect::scl::DatagramProtectionError::Failed};
+        }
+        const auto result = state_->runtime->protect(scope_, inner, output);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+    [[nodiscard]] warpnect::scl::DatagramProtectionResult unprotect(
+        const UdpEndpoint& source,
+        const std::span<const std::byte> secure,
+        const std::span<std::byte> output,
+        const std::uint64_t now_us) noexcept override {
+        std::lock_guard guard(state_->lock);
+        if (state_->runtime == nullptr) {
+            return {.error = warpnect::scl::DatagramProtectionError::Failed};
+        }
+        const auto result = state_->runtime->unprotect(source, secure, output, now_us);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+  private:
+    [[nodiscard]] static warpnect::scl::DatagramProtectionError map(
+        const SessionProtectionError error) noexcept {
+        if (error == SessionProtectionError::None) {
+            return warpnect::scl::DatagramProtectionError::None;
+        }
+        if (error == SessionProtectionError::DatagramTooLarge) {
+            return warpnect::scl::DatagramProtectionError::DatagramTooLarge;
+        }
+        if (error == SessionProtectionError::EndpointMismatch ||
+            error == SessionProtectionError::ReplayDuplicate ||
+            error == SessionProtectionError::ReplayTooOld ||
+            error == SessionProtectionError::AuthFailure ||
+            error == SessionProtectionError::UnknownContext) {
+            return warpnect::scl::DatagramProtectionError::Rejected;
+        }
+        return warpnect::scl::DatagramProtectionError::Failed;
+    }
+
+    std::shared_ptr<NativeSessionProtectionState> state_{};
+    ProtectionScope scope_{};
+};
+
+[[nodiscard]] std::unique_ptr<warpnect::scl::DatagramProtector> make_channel_protector(
+    const jlong protection_handle, const jlong channel_id) {
+    if (protection_handle == 0 && channel_id == 0) return nullptr;
+    if (protection_handle == 0 || channel_id <= 0 ||
+        channel_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
+        return nullptr;
+    }
+    NativeSessionProtectionHandle* handle = session_protection_handle_from(protection_handle);
+    if (handle == nullptr) return nullptr;
+    {
+        std::lock_guard guard(handle->state->lock);
+        if (handle->state->runtime == nullptr) return nullptr;
+    }
+    return std::make_unique<NativeSessionDatagramProtector>(
+        handle->state, ProtectionScope::channel(static_cast<std::uint32_t>(channel_id)));
+}
 
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
     if (handle == 0) {
@@ -453,6 +596,9 @@ struct SecretByteArray final {
     handle.retransmission_entries.resize(handle.config.retransmission_cache_slots);
 
     if (handle.config.fec.enabled) {
+        const std::size_t fec_datagram_budget = handle.protector == nullptr
+                                                    ? handle.config.max_wire_datagram_size
+                                                    : handle.protector->inner_datagram_budget();
         const FecBlockConfig fec_config{
             .rs =
                 ReedSolomonConfig{
@@ -461,7 +607,7 @@ struct SecretByteArray final {
                 },
             .target_payload_type = warpnect::scl::PayloadType::Video,
             .base_sequence_number = handle.config.initial_video_sequence,
-            .max_wire_datagram_size = handle.config.max_wire_datagram_size,
+            .max_wire_datagram_size = fec_datagram_budget,
         };
         const auto data_size = warpnect::scl::required_fec_encoder_data_storage_size(fec_config);
         const auto parity_size =
@@ -667,7 +813,10 @@ create_handle(JNIEnv* env,
               jboolean fec_enabled,
               jint fec_data_shards,
               jint fec_parity_shards,
-              jlong resync_request_cooldown_us) {
+              jlong resync_request_cooldown_us,
+              jlong protection_handle,
+              jlong channel_id,
+              jlong prepared_endpoint_handle) {
     if (remote_address == nullptr || !valid_port(remote_port, false) ||
         !valid_port(local_port, true) || max_wire_datagram_size <= 0 ||
         retransmission_cache_slots <= 0 || !valid_u32(initial_video_sequence) ||
@@ -694,6 +843,8 @@ create_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeVideoTransportHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     handle->config = VideoTransportSenderConfig{
         .remote_endpoint =
             UdpEndpoint{
@@ -717,14 +868,22 @@ create_handle(JNIEnv* env,
                                    : std::uint8_t{0},
             },
         .resync_request_cooldown_us = static_cast<std::uint64_t>(resync_request_cooldown_us),
+        .protector = handle->protector.get(),
     };
 
     if (!allocate_workspaces(*handle)) {
         return nullptr;
     }
 
-    handle->sender = std::make_unique<VideoTransportSender>(handle->config, handle->workspace());
     handle->control_receive_scratch.resize(handle->config.max_wire_datagram_size);
+    handle->protected_datagram_scratch.resize(handle->config.max_wire_datagram_size);
+    handle->sender = std::make_unique<VideoTransportSender>(handle->config, handle->workspace());
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port), parsed.address.version);
+        if (!socket.has_value()) return nullptr;
+        handle->sender->adopt_prebound_socket(std::move(*socket));
+    }
     const VideoStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
@@ -739,7 +898,10 @@ create_audio_transport_handle(JNIEnv* env,
                               jint local_port,
                               jint max_wire_datagram_size,
                               jlong initial_audio_sequence,
-                              jint source) {
+                              jint source,
+                              jlong protection_handle,
+                              jlong channel_id,
+                              jlong prepared_endpoint_handle) {
     if (remote_address == nullptr || !valid_port(remote_port, false) ||
         !valid_port(local_port, true) || max_wire_datagram_size <= 0 ||
         !valid_u32(initial_audio_sequence)) {
@@ -763,6 +925,8 @@ create_audio_transport_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeAudioTransportHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     handle->config = AudioTransportSenderConfig{
         .remote_endpoint =
             UdpEndpoint{
@@ -773,9 +937,17 @@ create_audio_transport_handle(JNIEnv* env,
         .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
         .initial_audio_sequence = static_cast<std::uint32_t>(initial_audio_sequence),
         .payload_type = payload_type,
+        .protector = handle->protector.get(),
     };
     handle->datagram_scratch.resize(handle->config.max_wire_datagram_size);
+    handle->protected_datagram_scratch.resize(handle->config.max_wire_datagram_size);
     handle->sender = std::make_unique<AudioTransportSender>(handle->config, handle->workspace());
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port), parsed.address.version);
+        if (!socket.has_value()) return nullptr;
+        handle->sender->adopt_prebound_socket(std::move(*socket));
+    }
     const AudioTransportStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
@@ -789,7 +961,10 @@ create_input_transport_handle(JNIEnv* env,
                               jint remote_port,
                               jint local_port,
                               jint max_wire_datagram_size,
-                              jlong initial_input_sequence) {
+                              jlong initial_input_sequence,
+                              jlong protection_handle,
+                              jlong channel_id,
+                              jlong prepared_endpoint_handle) {
     if (remote_address == nullptr || !valid_port(remote_port, false) ||
         !valid_port(local_port, true) ||
         max_wire_datagram_size <
@@ -810,6 +985,8 @@ create_input_transport_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeInputTransportHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     handle->config = InputTransportSenderConfig{
         .remote_endpoint =
             UdpEndpoint{
@@ -819,8 +996,16 @@ create_input_transport_handle(JNIEnv* env,
         .local_port = static_cast<std::uint16_t>(local_port),
         .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
         .initial_input_sequence = static_cast<std::uint32_t>(initial_input_sequence),
+        .protector = handle->protector.get(),
     };
+    handle->protected_datagram_scratch.resize(static_cast<std::size_t>(max_wire_datagram_size));
     handle->sender = std::make_unique<InputTransportSender>(handle->config, handle->workspace());
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port), parsed.address.version);
+        if (!socket.has_value()) return nullptr;
+        handle->sender->adopt_prebound_socket(std::move(*socket));
+    }
     const InputTransportStatus open = handle->sender->open();
     if (!open.ok()) {
         return nullptr;
@@ -834,10 +1019,13 @@ create_input_receiver_handle(JNIEnv* env,
                              jint local_port,
                              jstring expected_remote_address,
                              jint expected_remote_port,
-                             jint max_wire_datagram_size) {
+                             jint max_wire_datagram_size,
+                             jlong protection_handle,
+                             jlong channel_id,
+                             jlong prepared_endpoint_handle) {
     if (local_address == nullptr || expected_remote_address == nullptr ||
         !valid_port(local_port, false) || !valid_port(expected_remote_port, false) ||
-        max_wire_datagram_size !=
+        max_wire_datagram_size <
             static_cast<jint>(warpnect::scl::kInputReceiverMaxDatagramWireSize)) {
         return nullptr;
     }
@@ -858,6 +1046,8 @@ create_input_receiver_handle(JNIEnv* env,
         return nullptr;
     }
     auto handle = std::make_unique<NativeInputReceiverHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     handle->runtime = std::make_unique<InputReceiverRuntime>(InputReceiverConfig{
         .local_endpoint = UdpEndpoint{
             .address = local.address,
@@ -868,7 +1058,14 @@ create_input_receiver_handle(JNIEnv* env,
             .port = static_cast<std::uint16_t>(expected_remote_port),
         },
         .max_wire_datagram_size = static_cast<std::size_t>(max_wire_datagram_size),
+        .protector = handle->protector.get(),
     });
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port), local.address.version);
+        if (!socket.has_value()) return nullptr;
+        handle->runtime->adopt_prebound_socket(std::move(*socket));
+    }
     if (handle->runtime->open() != InputReceiverError::None) {
         return nullptr;
     }
@@ -905,7 +1102,10 @@ create_receiver_handle(JNIEnv* env,
                        jlong max_frame_recovery_age_us,
                        jlong resync_request_cooldown_us,
                        jlong clock_sync_interval_us,
-                       jint clock_sync_sample_capacity) {
+                       jint clock_sync_sample_capacity,
+                       jlong protection_handle,
+                       jlong channel_id,
+                       jlong prepared_endpoint_handle) {
     if (local_address == nullptr || !valid_port(local_port, true) ||
         !valid_port(remote_port, true) || max_wire_datagram_size <= 0 ||
         max_logical_payload_size <= 0 || reassembly_slot_count <= 0 ||
@@ -953,6 +1153,8 @@ create_receiver_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeVideoReceiverHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     auto runtime = std::make_unique<VideoReceiverRuntime>(
         VideoReceiverConfig{
             .local_endpoint =
@@ -992,7 +1194,15 @@ create_receiver_handle(JNIEnv* env,
                 static_cast<std::uint64_t>(resync_request_cooldown_us),
             .clock_sync_interval_us = static_cast<std::uint64_t>(clock_sync_interval_us),
             .clock_sync_sample_capacity = static_cast<std::size_t>(clock_sync_sample_capacity),
+            .protector = handle->protector.get(),
         });
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port),
+            parsed_local.address.version);
+        if (!socket.has_value()) return nullptr;
+        runtime->adopt_prebound_socket(std::move(*socket));
+    }
     if (!runtime->open().ok()) {
         return nullptr;
     }
@@ -1012,7 +1222,10 @@ create_audio_receiver_handle(JNIEnv* env,
                              jint reassembly_slot_count,
                              jint ready_slot_count,
                              jlong reassembly_timeout_us,
-                             jint source) {
+                             jint source,
+                             jlong protection_handle,
+                             jlong channel_id,
+                             jlong prepared_endpoint_handle) {
     if (local_address == nullptr || !valid_port(local_port, true) ||
         !valid_port(remote_port, true) || max_wire_datagram_size <= 0 ||
         max_logical_audio_payload_size <= 0 || reassembly_slot_count <= 0 ||
@@ -1055,6 +1268,8 @@ create_audio_receiver_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeAudioReceiverHandle>();
+    handle->protector = make_channel_protector(protection_handle, channel_id);
+    if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     auto runtime = std::make_unique<AudioReceiverRuntime>(
         AudioReceiverConfig{
             .local_endpoint =
@@ -1071,7 +1286,15 @@ create_audio_receiver_handle(JNIEnv* env,
             .reassembly_slot_count = static_cast<std::size_t>(reassembly_slot_count),
             .ready_slot_count = static_cast<std::size_t>(ready_slot_count),
             .reassembly_timeout_us = static_cast<std::uint64_t>(reassembly_timeout_us),
+            .protector = handle->protector.get(),
         });
+    if (prepared_endpoint_handle != 0) {
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port),
+            parsed_local.address.version);
+        if (!socket.has_value()) return nullptr;
+        runtime->adopt_prebound_socket(std::move(*socket));
+    }
     if (!runtime->open().ok()) {
         return nullptr;
     }
@@ -1295,8 +1518,8 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
                                         ? SessionProtectionLocalRole::Host
                                         : static_cast<SessionProtectionLocalRole>(0);
             auto handle = std::make_unique<NativeSessionProtectionHandle>();
-            handle->runtime = std::make_unique<SessionProtectionRuntime>(config);
-            const auto initialized = handle->runtime->initialize(
+            handle->state->runtime = std::make_unique<SessionProtectionRuntime>(config);
+            const auto initialized = handle->state->runtime->initialize(
                 root.bytes, sid, static_cast<std::uint32_t>(session_generation), transcript, role);
             if (!initialized.ok()) {
                 values[1] = session_protection_error_code(initialized.error);
@@ -1307,7 +1530,7 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
                     endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(remote_address[index]);
                 }
                 endpoint.port = static_cast<std::uint16_t>(expected_remote_port);
-                const auto context = handle->runtime->create_context(
+                const auto context = handle->state->runtime->create_context(
                     ProtectionScope::session_control(), endpoint);
                 if (!context.ok()) {
                     values[1] = session_protection_error_code(context.error);
@@ -1337,12 +1560,12 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroy(
     JNIEnv* /* env */, jclass /* clazz */, jlong handle) {
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr) {
         return session_protection_error_code(SessionProtectionError::Closed);
     }
     {
-        std::lock_guard guard(native_handle->lock);
-        native_handle->runtime->close();
+        std::lock_guard guard(native_handle->state->lock);
+        native_handle->state->runtime->close();
     }
     delete native_handle;
     return session_protection_error_code(SessionProtectionError::None);
@@ -1350,20 +1573,49 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroy(
 
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_warpnect_NativeBridge_nativeSessionProtectionCreateContext(
-    JNIEnv* env, jclass /* clazz */, jlong handle, jint scope_type, jlong scope_id) {
+    JNIEnv* env, jclass /* clazz */, jlong handle, jint scope_type, jlong scope_id,
+    jbyteArray expected_remote_address, jint expected_remote_port) {
     jlong values[kNativeSessionProtectionContextValues]{};
     values[0] = session_protection_error_code(SessionProtectionError::InvalidConfig);
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle != nullptr && native_handle->runtime != nullptr && scope_id >= 0 &&
+    if (native_handle != nullptr && native_handle->state->runtime != nullptr && scope_id >= 0 &&
         scope_id <= static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
         const auto type = scope_type == static_cast<jint>(ProtectionScopeType::SessionControl)
                               ? ProtectionScopeType::SessionControl
                               : scope_type == static_cast<jint>(ProtectionScopeType::Channel)
                                     ? ProtectionScopeType::Channel
                                     : static_cast<ProtectionScopeType>(255);
-        std::lock_guard guard(native_handle->lock);
-        const auto result = native_handle->runtime->create_context(
-            ProtectionScope{.type = type, .id = static_cast<std::uint32_t>(scope_id)});
+        std::optional<UdpEndpoint> endpoint{};
+        if (expected_remote_address != nullptr) {
+            std::vector<std::byte> address{};
+            if (!copy_bounded_byte_array(env, expected_remote_address, 16, address) ||
+                (address.size() != 4 && address.size() != 16) ||
+                !valid_port(expected_remote_port, false)) {
+                values[0] = session_protection_error_code(SessionProtectionError::InvalidConfig);
+                jlongArray array = env->NewLongArray(kNativeSessionProtectionContextValues);
+                if (array != nullptr) {
+                    env->SetLongArrayRegion(array, 0, kNativeSessionProtectionContextValues, values);
+                }
+                return array;
+            }
+            UdpEndpoint parsed{};
+            parsed.address.version = address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
+            for (std::size_t index = 0; index < address.size(); ++index) {
+                parsed.address.bytes[index] = std::to_integer<std::uint8_t>(address[index]);
+            }
+            parsed.port = static_cast<std::uint16_t>(expected_remote_port);
+            endpoint = parsed;
+        } else if (expected_remote_port != 0) {
+            values[0] = session_protection_error_code(SessionProtectionError::InvalidConfig);
+            jlongArray array = env->NewLongArray(kNativeSessionProtectionContextValues);
+            if (array != nullptr) {
+                env->SetLongArrayRegion(array, 0, kNativeSessionProtectionContextValues, values);
+            }
+            return array;
+        }
+        std::lock_guard guard(native_handle->state->lock);
+        const auto result = native_handle->state->runtime->create_context(
+            ProtectionScope{.type = type, .id = static_cast<std::uint32_t>(scope_id)}, endpoint);
         values[0] = session_protection_error_code(result.error);
         values[1] = static_cast<jlong>(result.send_context_id);
         values[2] = static_cast<jlong>(result.receive_context_id);
@@ -1379,7 +1631,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroyContext(
     JNIEnv* /* env */, jclass /* clazz */, jlong handle, jint scope_type, jlong scope_id) {
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle == nullptr || native_handle->runtime == nullptr || scope_id < 0 ||
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr || scope_id < 0 ||
         scope_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
         return session_protection_error_code(SessionProtectionError::InvalidConfig);
     }
@@ -1388,8 +1640,8 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroyContext(
                           : scope_type == static_cast<jint>(ProtectionScopeType::Channel)
                                 ? ProtectionScopeType::Channel
                                 : static_cast<ProtectionScopeType>(255);
-    std::lock_guard guard(native_handle->lock);
-    return session_protection_error_code(native_handle->runtime->destroy_context(
+    std::lock_guard guard(native_handle->state->lock);
+    return session_protection_error_code(native_handle->state->runtime->destroy_context(
         ProtectionScope{.type = type, .id = static_cast<std::uint32_t>(scope_id)}).error);
 }
 
@@ -1398,9 +1650,9 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionSnapshot(
     JNIEnv* env, jclass /* clazz */, jlong handle) {
     jlong values[kNativeSessionProtectionSnapshotValues]{};
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle != nullptr && native_handle->runtime != nullptr) {
-        std::lock_guard guard(native_handle->lock);
-        const auto snapshot = native_handle->runtime->snapshot();
+    if (native_handle != nullptr && native_handle->state->runtime != nullptr) {
+        std::lock_guard guard(native_handle->state->lock);
+        const auto snapshot = native_handle->state->runtime->snapshot();
         values[0] = static_cast<jlong>(snapshot.active_contexts);
         values[1] = static_cast<jlong>(snapshot.protected_packets);
         values[2] = static_cast<jlong>(snapshot.decrypted_packets);
@@ -1429,17 +1681,17 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionProtectSessionControl(
     JNIEnv* env, jclass /* clazz */, jlong handle, jlong sequence_number, jlong timestamp_us,
     jbyteArray payload) {
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_u32(sequence_number) ||
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr || !valid_u32(sequence_number) ||
         timestamp_us < 0) {
         return session_control_result(env, SessionProtectionError::InvalidConfig, {});
     }
     std::vector<std::byte> control_payload{};
     std::vector<std::byte> inner{};
     std::vector<std::byte> secure{};
-    if (!copy_bounded_byte_array(env, payload, native_handle->runtime->inner_datagram_budget(), control_payload)) {
+    if (!copy_bounded_byte_array(env, payload, native_handle->state->runtime->inner_datagram_budget(), control_payload)) {
         return session_control_result(env, SessionProtectionError::DatagramTooLarge, {});
     }
-    std::lock_guard guard(native_handle->lock);
+    std::lock_guard guard(native_handle->state->lock);
     const auto inner_size = warpnect::scl::encoded_packet_size(control_payload.size());
     if (!inner_size.ok()) return session_control_result(env, SessionProtectionError::DatagramTooLarge, {});
     inner.resize(inner_size.bytes_written);
@@ -1454,8 +1706,8 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionProtectSessionControl(
     };
     const auto encoded = warpnect::scl::encode_packet(header, control_payload, inner);
     if (!encoded.ok()) return session_control_result(env, SessionProtectionError::CryptoFailure, {});
-    secure.resize(native_handle->runtime->secure_datagram_budget());
-    const auto protected_result = native_handle->runtime->protect(
+    secure.resize(native_handle->state->runtime->secure_datagram_budget());
+    const auto protected_result = native_handle->state->runtime->protect(
         ProtectionScope::session_control(), std::span<const std::byte>(inner.data(), encoded.bytes_written), secure);
     if (!protected_result.ok()) return session_control_result(env, protected_result.error, {});
     return session_control_result(
@@ -1463,19 +1715,18 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionProtectSessionControl(
         std::span<const std::byte>(secure.data(), protected_result.bytes_written));
 }
 
-extern "C" JNIEXPORT jbyteArray JNICALL
-Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectSessionControl(
-    JNIEnv* env, jclass /* clazz */, jlong handle, jbyteArray source_address, jint source_port,
-    jbyteArray protected_datagram, jlong now_us) {
+[[nodiscard]] jbyteArray unprotect_session_control_record(
+    JNIEnv* env, jlong handle, jbyteArray source_address, jint source_port,
+    jbyteArray protected_datagram, jlong now_us, const bool candidate) {
     NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
-    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_port(source_port, false) ||
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr || !valid_port(source_port, false) ||
         now_us < 0) {
         return session_control_result(env, SessionProtectionError::InvalidConfig, {});
     }
     std::vector<std::byte> address{};
     std::vector<std::byte> secure{};
     if (!copy_bounded_byte_array(env, source_address, 16, address) ||
-        !copy_bounded_byte_array(env, protected_datagram, native_handle->runtime->secure_datagram_budget(), secure) ||
+        !copy_bounded_byte_array(env, protected_datagram, native_handle->state->runtime->secure_datagram_budget(), secure) ||
         (address.size() != 4 && address.size() != 16)) {
         return session_control_result(env, SessionProtectionError::InvalidEnvelope, {});
     }
@@ -1485,9 +1736,13 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectSessionControl(
         endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(address[index]);
     }
     endpoint.port = static_cast<std::uint16_t>(source_port);
-    std::lock_guard guard(native_handle->lock);
-    std::vector<std::byte> inner(native_handle->runtime->inner_datagram_budget());
-    const auto unprotected = native_handle->runtime->unprotect(endpoint, secure, inner, static_cast<std::uint64_t>(now_us));
+    std::lock_guard guard(native_handle->state->lock);
+    std::vector<std::byte> inner(native_handle->state->runtime->inner_datagram_budget());
+    const auto unprotected = candidate
+                                 ? native_handle->state->runtime->unprotect_candidate_session_control(
+                                       endpoint, secure, inner, static_cast<std::uint64_t>(now_us))
+                                 : native_handle->state->runtime->unprotect(
+                                       endpoint, secure, inner, static_cast<std::uint64_t>(now_us));
     if (!unprotected.ok()) return session_control_result(env, unprotected.error, {});
     const auto packet = warpnect::scl::decode_packet(
         std::span<const std::byte>(inner.data(), unprotected.bytes_written));
@@ -1495,6 +1750,157 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectSessionControl(
         return session_control_result(env, SessionProtectionError::InvalidEnvelope, {});
     }
     return session_control_result(env, SessionProtectionError::None, packet.packet.payload);
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectSessionControl(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jbyteArray source_address, jint source_port,
+    jbyteArray protected_datagram, jlong now_us) {
+    return unprotect_session_control_record(env, handle, source_address, source_port,
+                                            protected_datagram, now_us, false);
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectCandidateSessionControl(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jbyteArray source_address, jint source_port,
+    jbyteArray protected_datagram, jlong now_us) {
+    return unprotect_session_control_record(env, handle, source_address, source_port,
+                                            protected_datagram, now_us, true);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionRebindSessionControl(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jbyteArray remote_address, jint remote_port) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    std::vector<std::byte> address{};
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr ||
+        !valid_port(remote_port, false) ||
+        !copy_bounded_byte_array(env, remote_address, 16, address) ||
+        (address.size() != 4 && address.size() != 16)) {
+        return session_protection_error_code(SessionProtectionError::InvalidConfig);
+    }
+    UdpEndpoint endpoint{};
+    endpoint.address.version = address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
+    for (std::size_t index = 0; index < address.size(); ++index) {
+        endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(address[index]);
+    }
+    endpoint.port = static_cast<std::uint16_t>(remote_port);
+    std::lock_guard guard(native_handle->state->lock);
+    return session_protection_error_code(
+        native_handle->state->runtime->set_expected_remote_endpoint(
+            ProtectionScope::session_control(), endpoint).error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativePreparedUdpEndpointCreate(
+    JNIEnv* env, jclass /* clazz */, jstring local_address) {
+    jlong values[kNativePreparedUdpEndpointValues]{};
+    values[1] = 1;
+    try {
+        if (local_address != nullptr) {
+            const char* local_chars = env->GetStringUTFChars(local_address, nullptr);
+            if (local_chars != nullptr) {
+                const auto parsed =
+                    warpnect::scl::parse_numeric_ip_address(std::string_view(local_chars));
+                env->ReleaseStringUTFChars(local_address, local_chars);
+                if (parsed.ok()) {
+                    auto handle = std::make_unique<NativePreparedUdpEndpointHandle>();
+                    if (handle->socket.open(parsed.address.version).ok()) {
+                        const UdpEndpoint requested{.address = parsed.address, .port = 0};
+                        if (handle->socket.bind(requested).ok()) {
+                            const auto local = handle->socket.local_endpoint();
+                            if (local.ok() && local.endpoint.port != 0) {
+                                handle->endpoint = local.endpoint;
+                                values[0] = reinterpret_cast<jlong>(handle.release());
+                                values[1] = 0;
+                                values[2] = static_cast<jlong>(local.endpoint.port);
+                            } else {
+                                values[1] = 4;
+                            }
+                        } else {
+                            values[1] = 3;
+                        }
+                    } else {
+                        values[1] = 2;
+                    }
+                }
+            }
+        }
+    } catch (...) {
+        values[0] = 0;
+        values[1] = 5;
+        values[2] = 0;
+    }
+    jlongArray array = env->NewLongArray(kNativePreparedUdpEndpointValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativePreparedUdpEndpointValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativePreparedUdpEndpointDestroy(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle) {
+    NativePreparedUdpEndpointHandle* prepared = prepared_udp_endpoint_handle_from(handle);
+    if (prepared == nullptr) return 1;
+    {
+        std::lock_guard guard(prepared->lock);
+        prepared->socket.close();
+    }
+    delete prepared;
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativePreparedSecureChannelCreate(
+    JNIEnv* env, jclass /* clazz */, jstring remote_address, jint remote_port,
+    jint local_port, jint max_wire_datagram_size, jlong protection_handle,
+    jlong channel_id, jlong prepared_endpoint_handle) {
+    try {
+        if (remote_address == nullptr || !valid_port(remote_port, false) ||
+            !valid_port(local_port, false) || max_wire_datagram_size <= 0 ||
+            prepared_endpoint_handle == 0) {
+            return 0;
+        }
+        const char* remote_chars = env->GetStringUTFChars(remote_address, nullptr);
+        if (remote_chars == nullptr) return 0;
+        const auto parsed =
+            warpnect::scl::parse_numeric_ip_address(std::string_view(remote_chars));
+        env->ReleaseStringUTFChars(remote_address, remote_chars);
+        if (!parsed.ok()) return 0;
+        auto handle = std::make_unique<NativePreparedSecureChannelHandle>();
+        handle->protector = make_channel_protector(protection_handle, channel_id);
+        if (handle->protector == nullptr ||
+            handle->protector->secure_datagram_budget() !=
+                static_cast<std::size_t>(max_wire_datagram_size)) {
+            return 0;
+        }
+        auto socket = take_prepared_udp_socket(
+            prepared_endpoint_handle, static_cast<std::uint16_t>(local_port), parsed.address.version);
+        if (!socket.has_value()) return 0;
+        handle->socket = std::move(*socket);
+        handle->remote_endpoint = UdpEndpoint{
+            .address = parsed.address,
+            .port = static_cast<std::uint16_t>(remote_port),
+        };
+        return reinterpret_cast<jlong>(handle.release());
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativePreparedSecureChannelDestroy(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle) {
+    NativePreparedSecureChannelHandle* prepared = prepared_secure_channel_handle_from(handle);
+    if (prepared == nullptr) return 1;
+    {
+        std::lock_guard guard(prepared->lock);
+        prepared->socket.close();
+        prepared->protector.reset();
+    }
+    delete prepared;
+    return 0;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -2181,11 +2587,15 @@ Java_io_warpnect_NativeBridge_nativeAudioTransportCreate(
     jint local_port,
     jint max_wire_datagram_size,
     jlong initial_audio_sequence,
-    jint source) {
+    jint source,
+    jlong protection_handle,
+    jlong channel_id,
+    jlong prepared_endpoint_handle) {
     try {
         auto handle = create_audio_transport_handle(env, remote_address, remote_port, local_port,
                                                    max_wire_datagram_size, initial_audio_sequence,
-                                                   source);
+                                                   source, protection_handle, channel_id,
+                                                   prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -2336,10 +2746,15 @@ Java_io_warpnect_NativeBridge_nativeInputTransportCreate(JNIEnv* env,
                                                           jint remote_port,
                                                           jint local_port,
                                                           jint max_wire_datagram_size,
-                                                          jlong initial_input_sequence) {
+                                                          jlong initial_input_sequence,
+                                                          jlong protection_handle,
+                                                          jlong channel_id,
+                                                          jlong prepared_endpoint_handle) {
     try {
         auto handle = create_input_transport_handle(env, remote_address, remote_port, local_port,
-                                                    max_wire_datagram_size, initial_input_sequence);
+                                                    max_wire_datagram_size, initial_input_sequence,
+                                                    protection_handle, channel_id,
+                                                    prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -2672,11 +3087,15 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverCreate(JNIEnv* env,
                                                          jint local_port,
                                                          jstring expected_remote_address,
                                                          jint expected_remote_port,
-                                                         jint max_wire_datagram_size) {
+                                                         jint max_wire_datagram_size,
+                                                         jlong protection_handle,
+                                                         jlong channel_id,
+                                                         jlong prepared_endpoint_handle) {
     try {
         auto handle = create_input_receiver_handle(env, local_address, local_port,
                                                    expected_remote_address, expected_remote_port,
-                                                   max_wire_datagram_size);
+                                                   max_wire_datagram_size, protection_handle,
+                                                   channel_id, prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -2808,13 +3227,17 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverCreate(
     jint reassembly_slot_count,
     jint ready_slot_count,
     jlong reassembly_timeout_us,
-    jint source) {
+    jint source,
+    jlong protection_handle,
+    jlong channel_id,
+    jlong prepared_endpoint_handle) {
     try {
         auto handle = create_audio_receiver_handle(
             env, local_address, local_port, remote_address, remote_port,
             restrict_remote_endpoint, max_wire_datagram_size,
             max_logical_audio_payload_size, reassembly_slot_count, ready_slot_count,
-            reassembly_timeout_us, source);
+            reassembly_timeout_us, source, protection_handle, channel_id,
+            prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -2972,13 +3395,17 @@ Java_io_warpnect_NativeBridge_nativeVideoTransportCreate(
     jboolean fec_enabled,
     jint fec_data_shards,
     jint fec_parity_shards,
-    jlong resync_request_cooldown_us) {
+    jlong resync_request_cooldown_us,
+    jlong protection_handle,
+    jlong channel_id,
+    jlong prepared_endpoint_handle) {
     try {
         auto handle = create_handle(env, remote_address, remote_port, local_port,
                                     max_wire_datagram_size, initial_video_sequence,
                                     initial_control_sequence, initial_frame_id,
                                     retransmission_cache_slots, fec_enabled, fec_data_shards,
-                                    fec_parity_shards, resync_request_cooldown_us);
+                                    fec_parity_shards, resync_request_cooldown_us,
+                                    protection_handle, channel_id, prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;
@@ -3195,7 +3622,10 @@ Java_io_warpnect_NativeBridge_nativeVideoReceiverCreate(
     jlong max_frame_recovery_age_us,
     jlong resync_request_cooldown_us,
     jlong clock_sync_interval_us,
-    jint clock_sync_sample_capacity) {
+    jint clock_sync_sample_capacity,
+    jlong protection_handle,
+    jlong channel_id,
+    jlong prepared_endpoint_handle) {
     try {
         auto handle = create_receiver_handle(
             env, local_address, local_port, remote_address, remote_port,
@@ -3204,7 +3634,8 @@ Java_io_warpnect_NativeBridge_nativeVideoReceiverCreate(
             reorder_delay_us, renack_interval_us, max_nack_attempts, initial_control_sequence,
             fec_enabled, fec_data_shards, fec_parity_shards, reassembly_timeout_us,
             max_frame_recovery_age_us, resync_request_cooldown_us, clock_sync_interval_us,
-            clock_sync_sample_capacity);
+            clock_sync_sample_capacity, protection_handle, channel_id,
+            prepared_endpoint_handle);
         return reinterpret_cast<jlong>(handle.release());
     } catch (...) {
         return 0;

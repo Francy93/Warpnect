@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "audio_protocol.h"
+#include "datagram_protection.h"
 #include "reassembly.h"
 #include "udp_socket.h"
 
@@ -33,6 +34,7 @@ struct AudioReceiverConfig final {
     std::size_t reassembly_slot_count = 0;
     std::size_t ready_slot_count = 0;
     std::uint64_t reassembly_timeout_us = 0;
+    DatagramProtector* protector = nullptr;
 };
 
 struct AudioReceiverEvent final {
@@ -90,6 +92,7 @@ class AudioReceiverRuntime final {
     AudioReceiverRuntime& operator=(const AudioReceiverRuntime&) = delete;
 
     [[nodiscard]] AudioTransportStatus open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] AudioReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] AudioTransportStatus accept_datagram(std::span<const std::byte> datagram,
                                                        const UdpEndpoint& source,
@@ -148,6 +151,7 @@ class AudioReceiverRuntime final {
     AudioReceiverConfig config_{};
     UdpSocket socket_{};
     std::vector<std::byte> datagram_buffer_{};
+    std::vector<std::byte> unprotected_datagram_buffer_{};
     std::vector<ReassemblyReceiverSlot> reassembly_slots_{};
     std::vector<ReadySlot> ready_slots_{};
     std::optional<UdpEndpoint> learned_remote_{};

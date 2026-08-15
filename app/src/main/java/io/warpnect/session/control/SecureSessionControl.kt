@@ -12,6 +12,15 @@ interface SecureSessionControlTransport : AutoCloseable {
 
     fun setPayloadListener(listener: ((ByteArray) -> Unit)?)
     fun send(payload: ByteArray): SecureSessionControlSendResult
+    fun protectCandidate(payload: ByteArray): SecureSessionControlSendResult =
+        SecureSessionControlSendResult(SessionProtectionError.InvalidConfig)
+    fun unprotectCandidate(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult = SessionControlUnprotectResult(SessionProtectionError.InvalidConfig)
+    fun rebindRemoteEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError =
+        SessionProtectionError.InvalidConfig
     override fun close()
 }
 
@@ -37,6 +46,15 @@ interface SessionControlProtectionRuntime : AutoCloseable {
         protectedDatagram: ByteArray,
         nowUs: Long,
     ): SessionControlUnprotectResult
+
+    fun unprotectCandidateSessionControl(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult = unprotectSessionControl(sourceEndpoint, protectedDatagram, nowUs)
+
+    fun rebindSessionControlEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError =
+        SessionProtectionError.InvalidConfig
 
     override fun close()
 }

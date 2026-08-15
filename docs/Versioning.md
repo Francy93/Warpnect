@@ -213,6 +213,21 @@ Capability Negotiation Protocol Version defines RFC-005F's encrypted `WNCP` appl
 format inside existing `PayloadType.SessionControl`. It is independent from SCL, discovery,
 pairing, handshake, packet-protection, native ABI, and media/input payload version domains.
 
+## Session Setup Protocol Version
+
+Current value:
+
+```text
+1
+```
+
+Session Setup Protocol Version defines RFC-005G's bounded `WNSN` application-control format. It
+is carried only inside RFC-005E protected existing `PayloadType.SessionControl` datagrams and does
+not alter SCL, discovery, pairing, handshake, packet-protection, capability-negotiation, native
+ABI, or existing media/input payload version domains.
+
+## Application Version
+
 Current value:
 
 ```text

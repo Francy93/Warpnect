@@ -37,7 +37,13 @@ internal object NativeBridge {
     private external fun nativeSessionProtectionDestroy(handle: Long): Int
 
     @JvmStatic
-    private external fun nativeSessionProtectionCreateContext(handle: Long, scopeType: Int, scopeId: Long): LongArray
+    private external fun nativeSessionProtectionCreateContext(
+        handle: Long,
+        scopeType: Int,
+        scopeId: Long,
+        expectedRemoteAddress: ByteArray?,
+        expectedRemotePort: Int,
+    ): LongArray
 
     @JvmStatic
     private external fun nativeSessionProtectionDestroyContext(handle: Long, scopeType: Int, scopeId: Long): Int
@@ -61,6 +67,42 @@ internal object NativeBridge {
         protectedDatagram: ByteArray,
         nowUs: Long,
     ): ByteArray?
+
+    @JvmStatic
+    private external fun nativeSessionProtectionUnprotectCandidateSessionControl(
+        handle: Long,
+        sourceAddress: ByteArray,
+        sourcePort: Int,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): ByteArray?
+
+    @JvmStatic
+    private external fun nativeSessionProtectionRebindSessionControl(
+        handle: Long,
+        remoteAddress: ByteArray,
+        remotePort: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativePreparedUdpEndpointCreate(localAddress: String): LongArray
+
+    @JvmStatic
+    private external fun nativePreparedUdpEndpointDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativePreparedSecureChannelCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
+    ): Long
+
+    @JvmStatic
+    private external fun nativePreparedSecureChannelDestroy(handle: Long): Int
 
     @JvmStatic
     private external fun nativeAudioEncoderCreate(
@@ -206,6 +248,9 @@ internal object NativeBridge {
         maxWireDatagramSize: Int,
         initialAudioSequence: Long,
         source: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -245,6 +290,9 @@ internal object NativeBridge {
         localPort: Int,
         maxWireDatagramSize: Int,
         initialInputSequence: Long,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -343,6 +391,9 @@ internal object NativeBridge {
         expectedRemoteAddress: String,
         expectedRemotePort: Int,
         maxWireDatagramSize: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -373,6 +424,9 @@ internal object NativeBridge {
         readySlotCount: Int,
         reassemblyTimeoutUs: Long,
         source: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -404,6 +458,9 @@ internal object NativeBridge {
         fecDataShards: Int,
         fecParityShards: Int,
         resyncRequestCooldownUs: Long,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -466,6 +523,9 @@ internal object NativeBridge {
         resyncRequestCooldownUs: Long,
         clockSyncIntervalUs: Long,
         clockSyncSampleCapacity: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
     ): Long
 
     @JvmStatic
@@ -539,8 +599,19 @@ internal object NativeBridge {
 
     fun sessionProtectionDestroy(handle: Long): Int = nativeSessionProtectionDestroy(handle)
 
-    fun sessionProtectionCreateContext(handle: Long, scopeType: Int, scopeId: Long): LongArray =
-        nativeSessionProtectionCreateContext(handle, scopeType, scopeId)
+    fun sessionProtectionCreateContext(
+        handle: Long,
+        scopeType: Int,
+        scopeId: Long,
+        expectedRemoteAddress: ByteArray? = null,
+        expectedRemotePort: Int = 0,
+    ): LongArray = nativeSessionProtectionCreateContext(
+        handle,
+        scopeType,
+        scopeId,
+        expectedRemoteAddress,
+        expectedRemotePort,
+    )
 
     fun sessionProtectionDestroyContext(handle: Long, scopeType: Int, scopeId: Long): Int =
         nativeSessionProtectionDestroyContext(handle, scopeType, scopeId)
@@ -567,6 +638,47 @@ internal object NativeBridge {
         protectedDatagram,
         nowUs,
     )
+
+    fun sessionProtectionUnprotectCandidateSessionControl(
+        handle: Long,
+        sourceAddress: ByteArray,
+        sourcePort: Int,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): ByteArray? = nativeSessionProtectionUnprotectCandidateSessionControl(
+        handle,
+        sourceAddress,
+        sourcePort,
+        protectedDatagram,
+        nowUs,
+    )
+
+    fun sessionProtectionRebindSessionControl(handle: Long, remoteAddress: ByteArray, remotePort: Int): Int =
+        nativeSessionProtectionRebindSessionControl(handle, remoteAddress, remotePort)
+
+    fun preparedUdpEndpointCreate(localAddress: String): LongArray = nativePreparedUdpEndpointCreate(localAddress)
+
+    fun preparedUdpEndpointDestroy(handle: Long): Int = nativePreparedUdpEndpointDestroy(handle)
+
+    fun preparedSecureChannelCreate(
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        maxWireDatagramSize: Int,
+        protectionHandle: Long,
+        channelId: Long,
+        preparedEndpointHandle: Long,
+    ): Long = nativePreparedSecureChannelCreate(
+        remoteAddress,
+        remotePort,
+        localPort,
+        maxWireDatagramSize,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
+    )
+
+    fun preparedSecureChannelDestroy(handle: Long): Int = nativePreparedSecureChannelDestroy(handle)
 
     fun audioEncoderCreate(
         source: Int,
@@ -753,6 +865,9 @@ internal object NativeBridge {
         maxWireDatagramSize: Int,
         initialAudioSequence: Long,
         source: Int,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeAudioTransportCreate(
         remoteAddress,
         remotePort,
@@ -760,6 +875,9 @@ internal object NativeBridge {
         maxWireDatagramSize,
         initialAudioSequence,
         source,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun audioTransportDestroy(handle: Long): Int = nativeAudioTransportDestroy(handle)
@@ -808,12 +926,18 @@ internal object NativeBridge {
         localPort: Int,
         maxWireDatagramSize: Int,
         initialInputSequence: Long,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeInputTransportCreate(
         remoteAddress,
         remotePort,
         localPort,
         maxWireDatagramSize,
         initialInputSequence,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun inputTransportDestroy(handle: Long): Int = nativeInputTransportDestroy(handle)
@@ -964,12 +1088,18 @@ internal object NativeBridge {
         expectedRemoteAddress: String,
         expectedRemotePort: Int,
         maxWireDatagramSize: Int,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeInputReceiverCreate(
         localAddress,
         localPort,
         expectedRemoteAddress,
         expectedRemotePort,
         maxWireDatagramSize,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun inputReceiverDestroy(handle: Long): Int = nativeInputReceiverDestroy(handle)
@@ -995,6 +1125,9 @@ internal object NativeBridge {
         readySlotCount: Int,
         reassemblyTimeoutUs: Long,
         source: Int,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeAudioReceiverCreate(
         localAddress,
         localPort,
@@ -1007,6 +1140,9 @@ internal object NativeBridge {
         readySlotCount,
         reassemblyTimeoutUs,
         source,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun audioReceiverDestroy(handle: Long): Int = nativeAudioReceiverDestroy(handle)
@@ -1033,6 +1169,9 @@ internal object NativeBridge {
         fecDataShards: Int,
         fecParityShards: Int,
         resyncRequestCooldownUs: Long,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeVideoTransportCreate(
         remoteAddress,
         remotePort,
@@ -1046,6 +1185,9 @@ internal object NativeBridge {
         fecDataShards,
         fecParityShards,
         resyncRequestCooldownUs,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun videoTransportDestroy(handle: Long): Int = nativeVideoTransportDestroy(handle)
@@ -1101,6 +1243,9 @@ internal object NativeBridge {
         resyncRequestCooldownUs: Long,
         clockSyncIntervalUs: Long,
         clockSyncSampleCapacity: Int,
+        protectionHandle: Long = 0L,
+        channelId: Long = 0L,
+        preparedEndpointHandle: Long = 0L,
     ): Long = nativeVideoReceiverCreate(
         localAddress,
         localPort,
@@ -1125,6 +1270,9 @@ internal object NativeBridge {
         resyncRequestCooldownUs,
         clockSyncIntervalUs,
         clockSyncSampleCapacity,
+        protectionHandle,
+        channelId,
+        preparedEndpointHandle,
     )
 
     fun videoReceiverDestroy(handle: Long): Int = nativeVideoReceiverDestroy(handle)

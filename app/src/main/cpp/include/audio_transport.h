@@ -6,6 +6,7 @@
 #include <span>
 
 #include "audio_packetizer.h"
+#include "datagram_protection.h"
 #include "udp_socket.h"
 
 namespace warpnect::scl {
@@ -16,10 +17,12 @@ struct AudioTransportSenderConfig final {
     std::size_t max_wire_datagram_size = 0;
     std::uint32_t initial_audio_sequence = 0;
     PayloadType payload_type = PayloadType::Unknown;
+    DatagramProtector* protector = nullptr;
 };
 
 struct AudioTransportSenderWorkspace final {
     std::span<std::byte> datagram_scratch{};
+    std::span<std::byte> protected_datagram_scratch{};
 };
 
 struct AudioTransportSnapshot final {
@@ -56,6 +59,7 @@ class AudioTransportSender final : private AudioDatagramSink {
     AudioTransportSender& operator=(const AudioTransportSender&) = delete;
 
     [[nodiscard]] AudioTransportStatus open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] AudioTransportStatus submit_stream_config(std::uint32_t sample_rate_hz,
                                                             std::uint8_t channel_count,
                                                             std::uint32_t frame_duration_us,

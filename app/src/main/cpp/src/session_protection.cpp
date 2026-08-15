@@ -650,6 +650,19 @@ SessionProtectionStatus SessionProtectionRuntime::destroy_context(const Protecti
     return status(SessionProtectionError::None);
 }
 
+SessionProtectionStatus SessionProtectionRuntime::set_expected_remote_endpoint(
+    const ProtectionScope scope, const UdpEndpoint& endpoint) noexcept {
+    if (impl_ == nullptr || impl_->closed) return status(SessionProtectionError::Closed);
+    Context* const context = impl_->context_for_scope(scope);
+    if (context == nullptr) return status(SessionProtectionError::UnknownContext);
+    if (!is_supported_ip_version(endpoint.address.version) || endpoint.address.is_unspecified() ||
+        endpoint.port == 0) {
+        return status(SessionProtectionError::InvalidConfig);
+    }
+    context->expected_remote = endpoint;
+    return status(SessionProtectionError::None);
+}
+
 SessionProtectionDatagramResult SessionProtectionRuntime::protect(
     const ProtectionScope scope, const std::span<const std::byte> inner_scl_datagram,
     const std::span<std::byte> output) noexcept {
@@ -714,6 +727,19 @@ SessionProtectionDatagramResult SessionProtectionRuntime::protect(
 SessionProtectionDatagramResult SessionProtectionRuntime::unprotect(
     const UdpEndpoint& source_endpoint, const std::span<const std::byte> secure_datagram,
     const std::span<std::byte> output, const std::uint64_t now_us) noexcept {
+    return unprotect_internal(source_endpoint, secure_datagram, output, now_us, false);
+}
+
+SessionProtectionDatagramResult SessionProtectionRuntime::unprotect_candidate_session_control(
+    const UdpEndpoint& source_endpoint, const std::span<const std::byte> secure_datagram,
+    const std::span<std::byte> output, const std::uint64_t now_us) noexcept {
+    return unprotect_internal(source_endpoint, secure_datagram, output, now_us, true);
+}
+
+SessionProtectionDatagramResult SessionProtectionRuntime::unprotect_internal(
+    const UdpEndpoint& source_endpoint, const std::span<const std::byte> secure_datagram,
+    const std::span<std::byte> output, const std::uint64_t now_us,
+    const bool allow_candidate_session_control) noexcept {
     if (impl_ == nullptr || impl_->closed) return {.error = SessionProtectionError::Closed};
     if (!impl_->initialized) return {.error = SessionProtectionError::InvalidConfig};
     if (secure_datagram.size() > secure_datagram_budget()) {
@@ -739,7 +765,10 @@ SessionProtectionDatagramResult SessionProtectionRuntime::unprotect(
         impl_->record(SessionProtectionError::UnknownContext);
         return {.error = SessionProtectionError::UnknownContext};
     }
-    if (context->expected_remote.has_value() && context->expected_remote.value() != source_endpoint) {
+    const bool candidate_session_control =
+        allow_candidate_session_control && context->scope == ProtectionScope::session_control();
+    if (!candidate_session_control && context->expected_remote.has_value() &&
+        context->expected_remote.value() != source_endpoint) {
         ++impl_->snapshot.endpoint_filter_drops;
         impl_->record(SessionProtectionError::EndpointMismatch);
         return {.error = SessionProtectionError::EndpointMismatch};

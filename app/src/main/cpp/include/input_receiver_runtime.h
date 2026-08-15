@@ -8,13 +8,16 @@
 #include <span>
 
 #include "input_protocol.h"
+#include "datagram_protection.h"
 #include "udp_socket.h"
 
 namespace warpnect::scl {
 
 inline constexpr std::size_t kInputReceiverMaxDatagramWireSize = 417;
+inline constexpr std::size_t kInputReceiverMaxProtectedDatagramWireSize =
+    kInputReceiverMaxDatagramWireSize + 44;
 inline constexpr std::size_t kInputReceiverReceiveScratchSize =
-    kInputReceiverMaxDatagramWireSize + 1;
+    kInputReceiverMaxProtectedDatagramWireSize + 1;
 
 // This is a native-order JNI record, not an Input Payload V1 wire layout.
 inline constexpr std::size_t kInputReceiverBridgeCapacity = 1024;
@@ -60,6 +63,7 @@ struct InputReceiverConfig final {
     UdpEndpoint local_endpoint{};
     UdpEndpoint expected_remote_endpoint{};
     std::size_t max_wire_datagram_size = kInputReceiverMaxDatagramWireSize;
+    DatagramProtector* protector = nullptr;
 };
 
 struct InputReceiverEvent final {
@@ -110,6 +114,7 @@ class InputReceiverRuntime final {
     InputReceiverRuntime& operator=(const InputReceiverRuntime&) = delete;
 
     [[nodiscard]] InputReceiverError open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] InputReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] InputReceiverEvent accept_datagram(std::span<const std::byte> datagram,
                                                      const UdpEndpoint& source) noexcept;
@@ -134,6 +139,7 @@ class InputReceiverRuntime final {
     InputReceiverConfig config_{};
     UdpSocket socket_{};
     std::array<std::byte, kInputReceiverReceiveScratchSize> receive_scratch_{};
+    std::array<std::byte, kInputReceiverMaxDatagramWireSize> unprotected_scratch_{};
     std::atomic_bool interrupted_{false};
     InputReceiverSnapshot snapshot_{};
     InputReceiverEvent latest_event_{};

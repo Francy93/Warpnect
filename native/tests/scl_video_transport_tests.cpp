@@ -6,6 +6,7 @@
 #include "recovery_control.h"
 #include "reed_solomon.h"
 #include "retransmission_cache.h"
+#include "session_protection.h"
 #include "udp_socket.h"
 #include "video_packetizer.h"
 #include "video_protocol.h"
@@ -26,6 +27,9 @@ namespace {
 using warpnect::scl::CsdEntryCursor;
 using warpnect::scl::CsdEntryView;
 using warpnect::scl::DatagramSink;
+using warpnect::scl::DatagramProtectionError;
+using warpnect::scl::DatagramProtectionResult;
+using warpnect::scl::DatagramProtector;
 using warpnect::scl::FecBlockConfig;
 using warpnect::scl::FecBlockEncoder;
 using warpnect::scl::FecEncoderWorkspace;
@@ -68,6 +72,10 @@ using warpnect::scl::VideoTransportFecConfig;
 using warpnect::scl::VideoTransportSender;
 using warpnect::scl::VideoTransportSenderConfig;
 using warpnect::scl::VideoTransportSenderWorkspace;
+using warpnect::scl::security::ProtectionScope;
+using warpnect::scl::security::SessionProtectionError;
+using warpnect::scl::security::SessionProtectionLocalRole;
+using warpnect::scl::security::SessionProtectionRuntime;
 
 int failures = 0;
 int skips = 0;
@@ -75,6 +83,72 @@ int skips = 0;
 [[nodiscard]] constexpr std::byte byte(std::uint8_t value) noexcept {
     return static_cast<std::byte>(value);
 }
+
+[[nodiscard]] std::array<std::byte, 32> protection_root() {
+    std::array<std::byte, 32> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(index + 1U));
+    }
+    return value;
+}
+
+[[nodiscard]] std::array<std::byte, 16> protection_session_id() {
+    std::array<std::byte, 16> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(0x30U + index));
+    }
+    return value;
+}
+
+[[nodiscard]] std::array<std::byte, 32> protection_transcript() {
+    std::array<std::byte, 32> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(0x70U + index));
+    }
+    return value;
+}
+
+class RuntimeDatagramProtector final : public DatagramProtector {
+  public:
+    RuntimeDatagramProtector(SessionProtectionRuntime& runtime, ProtectionScope scope) noexcept
+        : runtime_(runtime), scope_(scope) {}
+
+    [[nodiscard]] std::size_t secure_datagram_budget() const noexcept override {
+        return runtime_.secure_datagram_budget();
+    }
+
+    [[nodiscard]] std::size_t inner_datagram_budget() const noexcept override {
+        return runtime_.inner_datagram_budget();
+    }
+
+    [[nodiscard]] DatagramProtectionResult protect(
+        std::span<const std::byte> inner,
+        std::span<std::byte> output) noexcept override {
+        const auto result = runtime_.protect(scope_, inner, output);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+    [[nodiscard]] DatagramProtectionResult unprotect(
+        const UdpEndpoint& source,
+        std::span<const std::byte> secure,
+        std::span<std::byte> output,
+        std::uint64_t now_us) noexcept override {
+        const auto result = runtime_.unprotect(source, secure, output, now_us);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+  private:
+    [[nodiscard]] static DatagramProtectionError map(SessionProtectionError error) noexcept {
+        if (error == SessionProtectionError::None) return DatagramProtectionError::None;
+        if (error == SessionProtectionError::DatagramTooLarge) {
+            return DatagramProtectionError::DatagramTooLarge;
+        }
+        return DatagramProtectionError::Rejected;
+    }
+
+    SessionProtectionRuntime& runtime_;
+    ProtectionScope scope_{};
+};
 
 void expect(bool condition, std::string_view message) {
     if (!condition) {
@@ -834,6 +908,7 @@ void test_nack_fallback_after_fec_capacity_exceeded() {
 
 struct SenderStorage final {
     std::vector<std::byte> datagram_scratch{};
+    std::vector<std::byte> protected_datagram_scratch{};
     std::vector<std::byte> cache_storage{};
     std::vector<RetransmissionEntry> cache_entries{};
     std::vector<std::byte> fec_data{};
@@ -844,8 +919,10 @@ struct SenderStorage final {
 
     SenderStorage(std::size_t max_wire,
                   std::size_t cache_slots,
-                  VideoTransportFecConfig fec) {
+                  VideoTransportFecConfig fec,
+                  std::size_t fec_datagram_budget = 0) {
         datagram_scratch.resize(max_wire);
+        protected_datagram_scratch.resize(max_wire);
         RetransmissionCacheConfig cache_config{
             .slot_count = cache_slots,
             .max_datagram_size = max_wire,
@@ -854,8 +931,10 @@ struct SenderStorage final {
             warpnect::scl::required_retransmission_datagram_storage_size(cache_config).size);
         cache_entries.resize(cache_slots);
         if (fec.enabled) {
+            const std::size_t effective_fec_budget =
+                fec_datagram_budget == 0 ? max_wire : fec_datagram_budget;
             const FecBlockConfig block = fec_config(fec.data_shards, fec.parity_shards, 0,
-                                                   max_wire);
+                                                   effective_fec_budget);
             fec_data.resize(warpnect::scl::required_fec_encoder_data_storage_size(block).size);
             fec_parity.resize(
                 warpnect::scl::required_fec_encoder_parity_storage_size(block).size);
@@ -878,6 +957,7 @@ struct SenderStorage final {
             .fec_matrix_storage = fec_matrix,
             .fec_scratch_storage = fec_scratch,
             .fec_parity_payload_scratch = fec_payload,
+            .protected_datagram_scratch = protected_datagram_scratch,
         };
     }
 };
@@ -897,6 +977,328 @@ struct SenderStorage final {
     }
     out.header = decoded.packet.header;
     return true;
+}
+
+[[nodiscard]] bool receive_secure_datagram(UdpSocket& receiver,
+                                           std::vector<std::byte>& wire,
+                                           UdpEndpoint& source) {
+    std::array<std::byte, 2048> buffer{};
+    const UdpReceiveResult received = receive_until_ready(receiver, buffer);
+    expect(received.ok(), "secure UDP datagram receives");
+    if (!received.ok()) return false;
+    wire.assign(buffer.begin(), buffer.begin() + received.bytes_received);
+    source = received.source;
+    return true;
+}
+
+[[nodiscard]] bool unprotect_captured(RuntimeDatagramProtector& protector,
+                                      const UdpEndpoint& source,
+                                      const std::vector<std::byte>& wire,
+                                      CapturedDatagram& captured,
+                                      std::uint64_t now_us) {
+    std::array<std::byte, 2048> inner{};
+    const auto unprotected = protector.unprotect(source, as_bytes(wire), inner, now_us);
+    expect(unprotected.ok(), "WNSD video datagram authenticates before SCL parsing");
+    if (!unprotected.ok()) return false;
+    captured.bytes.assign(inner.begin(), inner.begin() + unprotected.bytes_written);
+    const auto decoded = warpnect::scl::decode_packet(as_bytes(captured.bytes));
+    expect(decoded.ok(), "authenticated inner video datagram decodes");
+    if (!decoded.ok()) return false;
+    captured.header = decoded.packet.header;
+    return true;
+}
+
+void test_protected_video_nack_retransmits_exact_cached_wnsd() {
+    constexpr std::size_t secure_budget = 1200;
+    UdpSocket sender_socket;
+    UdpSocket receiver_socket;
+    if (!sender_socket.open(IpVersion::V4).ok() ||
+        !receiver_socket.open(IpVersion::V4).ok() ||
+        !sender_socket.bind(UdpEndpoint::loopback_v4(0)).ok() ||
+        !receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok()) {
+        skip("protected video NACK UDP sockets unavailable");
+        return;
+    }
+    const auto sender_local = sender_socket.local_endpoint();
+    const auto receiver_local = receiver_socket.local_endpoint();
+    if (!sender_local.ok() || !receiver_local.ok()) {
+        skip("protected video NACK UDP endpoints unavailable");
+        return;
+    }
+
+    SessionProtectionRuntime sender_security({});
+    SessionProtectionRuntime receiver_security({});
+    const auto root = protection_root();
+    const auto session = protection_session_id();
+    const auto transcript = protection_transcript();
+    expect(sender_security.initialize(root, session, 1, transcript,
+                                      SessionProtectionLocalRole::Host).ok(),
+           "protected video Host security initializes");
+    expect(receiver_security.initialize(root, session, 1, transcript,
+                                        SessionProtectionLocalRole::Client).ok(),
+           "protected video Client security initializes");
+    const ProtectionScope scope = ProtectionScope::channel(17);
+    expect(sender_security.create_context(scope, receiver_local.endpoint).ok(),
+           "protected video sender Channel context initializes");
+    expect(receiver_security.create_context(scope, sender_local.endpoint).ok(),
+           "protected video receiver Channel context initializes");
+    RuntimeDatagramProtector sender_protector(sender_security, scope);
+    RuntimeDatagramProtector receiver_protector(receiver_security, scope);
+
+    SenderStorage storage(secure_budget, 16, VideoTransportFecConfig{});
+    VideoTransportSender sender(
+        VideoTransportSenderConfig{
+            .remote_endpoint = receiver_local.endpoint,
+            .local_port = sender_local.endpoint.port,
+            .max_wire_datagram_size = secure_budget,
+            .initial_video_sequence = 5000,
+            .initial_control_sequence = 9000,
+            .initial_frame_id = 41,
+            .retransmission_cache_slots = 16,
+            .fec = {},
+            .protector = &sender_protector,
+        },
+        storage.workspace());
+    sender.adopt_prebound_socket(std::move(sender_socket));
+    expect(sender.open().ok(), "protected video sender opens prebound endpoint");
+
+    const std::array<std::byte, 2> csd0{byte(0x67), byte(0x01)};
+    const std::array<std::byte, 2> csd1{byte(0x68), byte(0x02)};
+    const std::array<CsdEntryView, 2> csd_entries{
+        CsdEntryView{.bytes = as_bytes(csd0)},
+        CsdEntryView{.bytes = as_bytes(csd1)},
+    };
+    expect(sender.submit_stream_config(1280, 720, csd_entries).ok(),
+           "protected Video stream config sends first");
+    const std::size_t config_datagrams =
+        static_cast<std::size_t>(sender.snapshot().video_datagrams_sent);
+    for (std::size_t index = 0; index < config_datagrams; ++index) {
+        std::vector<std::byte> wire;
+        UdpEndpoint source{};
+        if (!receive_secure_datagram(receiver_socket, wire, source)) return;
+        CapturedDatagram ignored;
+        if (!unprotect_captured(receiver_protector, source, wire, ignored, index + 1U)) return;
+    }
+
+    const auto au = make_bytes(2500, 101);
+    expect(sender.submit_access_unit(as_bytes(au), 88'000, true).ok(),
+           "protected video AU sends");
+    const std::size_t count =
+        static_cast<std::size_t>(sender.snapshot().video_datagrams_sent) - config_datagrams;
+    expect(count > 2, "protected video AU fragments for NACK");
+    std::vector<CapturedDatagram> completed;
+    std::vector<std::byte> dropped_wire;
+    std::uint32_t first_sequence = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        std::vector<std::byte> wire;
+        UdpEndpoint source{};
+        if (!receive_secure_datagram(receiver_socket, wire, source)) return;
+        if (index == 1) {
+            dropped_wire = wire;
+            continue;
+        }
+        CapturedDatagram captured;
+        if (!unprotect_captured(receiver_protector, source, wire, captured, index + 1U)) return;
+        if (index == 0) first_sequence = captured.header.sequence_number;
+        completed.push_back(std::move(captured));
+    }
+    expect(!dropped_wire.empty(), "one protected Video datagram is lost before AEAD receive");
+
+    std::array<std::byte, warpnect::scl::kNackPayloadWireSize> nack_payload{};
+    expect(warpnect::scl::encode_nack(
+               NackRequest{.target_payload_type = PayloadType::Video,
+                           .base_sequence_number = first_sequence,
+                           .missing_bitmap = std::uint64_t{1} << 1U},
+               nack_payload).ok(),
+           "protected NACK payload encodes");
+    std::array<std::byte, 128> nack_inner{};
+    const auto nack_packet = warpnect::scl::encode_packet(
+        PacketHeader{.protocol_version = warpnect::scl::kSclProtocolVersion,
+                     .flags = 0,
+                     .sequence_number = 73,
+                     .timestamp_us = 0,
+                     .payload_type = PayloadType::SessionControl,
+                     .slice_index = 0,
+                     .total_slices = 1},
+        nack_payload, nack_inner);
+    expect(nack_packet.ok(), "protected NACK inner SCL datagram encodes");
+    std::array<std::byte, secure_budget> nack_secure{};
+    const auto protected_nack = receiver_protector.protect(
+        std::span<const std::byte>(nack_inner).first(nack_packet.bytes_written), nack_secure);
+    expect(protected_nack.ok(), "NACK is protected with Channel context");
+    expect(receiver_socket.send_to(
+               std::span<const std::byte>(nack_secure).first(protected_nack.bytes_written),
+               sender_local.endpoint).ok(),
+           "protected NACK reaches sender endpoint");
+    std::array<std::byte, secure_budget> control_receive{};
+    expect(sender.pump_control_datagram(control_receive, 100'000).ok(),
+           "sender authenticates NACK before retransmission");
+
+    std::vector<std::byte> retransmitted_wire;
+    UdpEndpoint retransmitted_source{};
+    if (!receive_secure_datagram(receiver_socket, retransmitted_wire, retransmitted_source)) return;
+    expect(bytes_equal(as_bytes(retransmitted_wire), as_bytes(dropped_wire)),
+           "NACK retransmission is exact cached WNSD bytes");
+    CapturedDatagram retransmitted;
+    expect(unprotect_captured(receiver_protector, retransmitted_source, retransmitted_wire,
+                              retransmitted, 1000),
+           "missing protected packet is accepted once");
+    expect_equal(retransmitted.header.sequence_number, first_sequence + 1U,
+                 "protected retransmission restores missing SCL sequence");
+    completed.push_back(retransmitted);
+
+    std::array<std::byte, 2048> replay_output{};
+    const auto replay = receiver_protector.unprotect(
+        retransmitted_source, as_bytes(retransmitted_wire), replay_output, 1001);
+    expect_equal(replay.error, DatagramProtectionError::Rejected,
+                 "second protected retransmission is rejected by anti-replay");
+    std::sort(completed.begin(), completed.end(),
+              [](const CapturedDatagram& lhs, const CapturedDatagram& rhs) {
+                  return lhs.header.slice_index < rhs.header.slice_index;
+              });
+    ReassembledPayload reassembled;
+    expect(reassemble_datagrams(completed, sender_protector.inner_datagram_budget(), reassembled),
+           "protected NACK-completed AU reassembles");
+    const auto parsed = warpnect::scl::decode_video_access_unit(
+        as_bytes(reassembled.payload), reassembled.timestamp_us);
+    expect(parsed.ok() && bytes_equal(parsed.access_unit.encoded_bytes, as_bytes(au)),
+           "protected NACK-completed Video AU is exact");
+    expect_equal(sender.snapshot().retransmissions, 1ULL,
+                 "protected sender counts one exact retransmission");
+}
+
+void test_protected_video_fec_unprotects_before_recovery() {
+    constexpr std::size_t secure_budget = 1200;
+    UdpSocket sender_socket;
+    UdpSocket receiver_socket;
+    if (!sender_socket.open(IpVersion::V4).ok() ||
+        !receiver_socket.open(IpVersion::V4).ok() ||
+        !sender_socket.bind(UdpEndpoint::loopback_v4(0)).ok() ||
+        !receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok()) {
+        skip("protected video FEC UDP sockets unavailable");
+        return;
+    }
+    const auto sender_local = sender_socket.local_endpoint();
+    const auto receiver_local = receiver_socket.local_endpoint();
+    if (!sender_local.ok() || !receiver_local.ok()) return;
+
+    SessionProtectionRuntime sender_security({});
+    SessionProtectionRuntime receiver_security({});
+    const auto root = protection_root();
+    const auto session = protection_session_id();
+    const auto transcript = protection_transcript();
+    expect(sender_security.initialize(root, session, 1, transcript,
+                                      SessionProtectionLocalRole::Host).ok(),
+           "protected FEC sender security initializes");
+    expect(receiver_security.initialize(root, session, 1, transcript,
+                                        SessionProtectionLocalRole::Client).ok(),
+           "protected FEC receiver security initializes");
+    const ProtectionScope scope = ProtectionScope::channel(18);
+    expect(sender_security.create_context(scope, receiver_local.endpoint).ok(),
+           "protected FEC sender context initializes");
+    expect(receiver_security.create_context(scope, sender_local.endpoint).ok(),
+           "protected FEC receiver context initializes");
+    RuntimeDatagramProtector sender_protector(sender_security, scope);
+    RuntimeDatagramProtector receiver_protector(receiver_security, scope);
+    const VideoTransportFecConfig fec{.enabled = true, .data_shards = 2, .parity_shards = 1};
+    SenderStorage storage(secure_budget, 16, fec, sender_protector.inner_datagram_budget());
+    VideoTransportSender sender(
+        VideoTransportSenderConfig{
+            .remote_endpoint = receiver_local.endpoint,
+            .local_port = sender_local.endpoint.port,
+            .max_wire_datagram_size = secure_budget,
+            .initial_video_sequence = 6000,
+            .initial_control_sequence = 9500,
+            .initial_frame_id = 51,
+            .retransmission_cache_slots = 16,
+            .fec = fec,
+            .protector = &sender_protector,
+        },
+        storage.workspace());
+    sender.adopt_prebound_socket(std::move(sender_socket));
+    expect(sender.open().ok(), "protected FEC sender opens");
+
+    const auto csd = make_bytes(1500, 107);
+    const std::array<CsdEntryView, 1> csd_entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(sender.submit_stream_config(1280, 720, csd_entries).ok(),
+           "protected FEC stream config sends complete block");
+    const std::size_t config_data =
+        static_cast<std::size_t>(sender.snapshot().video_datagrams_sent);
+    const std::size_t config_parity =
+        static_cast<std::size_t>(sender.snapshot().fec_parity_packets);
+    expect_equal(config_data, static_cast<std::size_t>(2),
+                 "protected FEC config emits a complete two-shard block");
+    expect_equal(config_parity, static_cast<std::size_t>(1),
+                 "protected FEC config flushes one parity record");
+    for (std::size_t index = 0; index < config_data + config_parity; ++index) {
+        std::vector<std::byte> wire;
+        UdpEndpoint source{};
+        if (!receive_secure_datagram(receiver_socket, wire, source)) return;
+        CapturedDatagram ignored;
+        if (!unprotect_captured(receiver_protector, source, wire, ignored, index + 1U)) return;
+    }
+    const std::uint64_t decrypted_before_au = receiver_security.snapshot().decrypted_packets;
+    const auto au = make_bytes(1500, 109);
+    expect(sender.submit_access_unit(as_bytes(au), 99'000, false).ok(),
+           "protected FEC Video AU sends");
+    expect_equal(sender.snapshot().video_datagrams_sent - config_data, 2ULL,
+                 "protected FEC AU emits two data shards");
+    expect_equal(sender.snapshot().fec_parity_packets - config_parity, 1ULL,
+                 "protected FEC emits one parity datagram");
+
+    std::vector<std::vector<std::byte>> wire;
+    std::vector<UdpEndpoint> sources;
+    for (int index = 0; index < 3; ++index) {
+        wire.emplace_back();
+        sources.emplace_back();
+        if (!receive_secure_datagram(receiver_socket, wire.back(), sources.back())) return;
+    }
+    CapturedDatagram first_data;
+    CapturedDatagram parity;
+    if (!unprotect_captured(receiver_protector, sources[0], wire[0], first_data, 1) ||
+        !unprotect_captured(receiver_protector, sources[2], wire[2], parity, 2)) {
+        return;
+    }
+    const auto parity_packet = warpnect::scl::decode_packet(as_bytes(parity.bytes));
+    expect(parity_packet.ok() && parity_packet.packet.header.payload_type == PayloadType::SessionControl,
+           "FEC parity is authenticated before SessionControl parsing");
+    const auto parity_view = warpnect::scl::decode_fec_parity_payload(parity_packet.packet.payload);
+    expect(parity_view.ok(), "authenticated FEC parity payload decodes");
+
+    const FecBlockConfig block = fec_config(2, 1, first_data.header.sequence_number,
+                                            sender_protector.inner_datagram_budget());
+    FecRecoveryStorage recovery_storage(block);
+    FecRecoveryBlock recovery(recovery_storage.workspace());
+    expect(recovery.accept_data_datagram(block, as_bytes(first_data.bytes)).ok(),
+           "FEC accepts authenticated inner data shard");
+    expect(recovery.accept_parity(parity_view.parity).ok(),
+           "FEC accepts authenticated inner parity shard");
+    expect(recovery.recover().ok(), "FEC recovers ciphertext-lost inner Video shard");
+    const auto missing = recovery.datagram(1);
+    expect(missing.ok(), "FEC exposes recovered inner Video datagram");
+    const auto missing_packet = warpnect::scl::decode_packet(missing.datagram.datagram);
+    expect(missing_packet.ok(), "FEC recovered inner SCL datagram decodes");
+    std::vector<CapturedDatagram> completed{
+        first_data,
+        CapturedDatagram{.bytes = to_vector(missing.datagram.datagram),
+                         .header = missing_packet.packet.header},
+    };
+    std::sort(completed.begin(), completed.end(),
+              [](const CapturedDatagram& lhs, const CapturedDatagram& rhs) {
+                  return lhs.header.slice_index < rhs.header.slice_index;
+              });
+    ReassembledPayload reassembled;
+    const auto fragment_budget = warpnect::scl::video_fragment_datagram_budget(
+        sender_protector.inner_datagram_budget(), true);
+    expect(fragment_budget.ok() &&
+               reassemble_datagrams(completed, fragment_budget.size, reassembled),
+           "protected FEC recovered AU reassembles");
+    const auto parsed = warpnect::scl::decode_video_access_unit(
+        as_bytes(reassembled.payload), reassembled.timestamp_us);
+    expect(parsed.ok() && bytes_equal(parsed.access_unit.encoded_bytes, as_bytes(au)),
+           "protected FEC recovered Video AU is exact");
+    expect_equal(receiver_security.snapshot().decrypted_packets - decrypted_before_au, 2ULL,
+                 "only received WNSD records decrypt before FEC recovery");
 }
 
 void test_video_transport_sender_udp_loopback_and_nack() {
@@ -1031,6 +1433,8 @@ int run_all_tests() {
     test_video_fec_recovery();
     test_stream_config_fec_recovery();
     test_nack_fallback_after_fec_capacity_exceeded();
+    test_protected_video_fec_unprotects_before_recovery();
+    test_protected_video_nack_retransmits_exact_cached_wnsd();
     test_video_transport_sender_udp_loopback_and_nack();
     return failures == 0 ? 0 : 1;
 }

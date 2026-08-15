@@ -342,3 +342,15 @@ existing serialized Phase 5 secure SessionControl context. The controller owns n
 thread, queue, reorder buffer, polling loop, or worker pool. Capability collection is cold-path
 only and must never start or run in MediaCodec callbacks, AudioRecord/Oboe loops, input capture,
 input injection, or native media receive paths.
+
+## RFC-005G Session Setup Control
+
+The Phase 5 SessionControl context serializes the bounded WNSN state machine, path policy,
+endpoint negotiation, exact stream planning, retries, completion caching, and admission renewal.
+`WarpnectDirectPath` owns Android P2P group/connect callbacks plus the temporary authenticated
+candidate-probe window. It uses callbacks and bounded timers, never a polling loop.
+
+Endpoint sockets may be bound during preparation, but Video, Audio, Input, and Telemetry workers
+remain stopped. When later started, native WNSD protection is synchronous at the final SCL
+datagram boundary. RFC-005G adds no crypto worker, no permanent thread per channel, no setup queue,
+no reorder queue, and no standby media queue.

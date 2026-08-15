@@ -45,8 +45,11 @@ namespace {
 } // namespace
 
 AudioReceiverRuntime::AudioReceiverRuntime(AudioReceiverConfig config)
-    : config_(config), datagram_buffer_(config.max_wire_datagram_size) {
-    const std::size_t datagram_budget = config_.max_wire_datagram_size;
+    : config_(config), datagram_buffer_(config.max_wire_datagram_size),
+      unprotected_datagram_buffer_(config.protector == nullptr ? 0 : config.protector->inner_datagram_budget()) {
+    const std::size_t datagram_budget = config_.protector == nullptr
+                                            ? config_.max_wire_datagram_size
+                                            : config_.protector->inner_datagram_budget();
     const FragmentCountResult max_fragments =
         calculate_fragment_count(FragmentationConfig{.max_datagram_size = datagram_budget},
                                  config_.max_logical_audio_payload_size);
@@ -84,6 +87,10 @@ AudioReceiverRuntime::~AudioReceiverRuntime() noexcept {
     close();
 }
 
+void AudioReceiverRuntime::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 AudioTransportStatus AudioReceiverRuntime::open() noexcept {
     if (snapshot_.closed) {
         return status(AudioTransportError::Closed);
@@ -96,7 +103,9 @@ AudioTransportStatus AudioReceiverRuntime::open() noexcept {
         config_.max_wire_datagram_size > kUdpMaxDatagramPayloadSize ||
         config_.max_logical_audio_payload_size < kAudioMessageHeaderWireSize ||
         config_.reassembly_slot_count == 0 || config_.ready_slot_count == 0 ||
-        datagram_buffer_.size() < config_.max_wire_datagram_size) {
+        datagram_buffer_.size() < config_.max_wire_datagram_size ||
+        (config_.protector != nullptr &&
+         unprotected_datagram_buffer_.size() < config_.protector->inner_datagram_budget())) {
         remember(AudioTransportError::InvalidDatagramBudget);
         return status(snapshot_.last_error);
     }
@@ -105,6 +114,17 @@ AudioTransportStatus AudioReceiverRuntime::open() noexcept {
         return status(snapshot_.last_error);
     }
 
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || local.endpoint.port != config_.local_endpoint.port ||
+            local.endpoint.address.version != config_.local_endpoint.address.version) {
+            remember(AudioTransportError::UdpBindFailed);
+            return status(snapshot_.last_error);
+        }
+        snapshot_.opened = true;
+        remember(AudioTransportError::None);
+        return status(AudioTransportError::None);
+    }
     const UdpStatus opened = socket_.open(config_.local_endpoint.address.version);
     if (!opened.ok()) {
         remember(AudioTransportError::UdpOpenFailed);
@@ -158,7 +178,19 @@ AudioReceiverEvent AudioReceiverRuntime::pump(std::uint64_t timeout_us) noexcept
 AudioTransportStatus AudioReceiverRuntime::accept_datagram(std::span<const std::byte> datagram,
                                                            const UdpEndpoint& source,
                                                            std::uint64_t now_us) noexcept {
-    const PacketViewResult decoded = decode_packet(datagram);
+    std::span<const std::byte> inner = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult unprotected = config_.protector->unprotect(
+            source, datagram, unprotected_datagram_buffer_, now_us);
+        if (!unprotected.ok()) {
+            return status(unprotected.error == DatagramProtectionError::Rejected
+                              ? AudioTransportError::Timeout
+                              : AudioTransportError::PacketEncodeFailed);
+        }
+        inner = std::span<const std::byte>(unprotected_datagram_buffer_.data(),
+                                          unprotected.bytes_written);
+    }
+    const PacketViewResult decoded = decode_packet(inner);
     if (!decoded.ok()) {
         ++snapshot_.malformed_payloads;
         remember(AudioTransportError::PacketEncodeFailed);

@@ -500,3 +500,17 @@ duplicate media transmission.
 > A platform probe does not imply a production capability. UHID accessibility alone never advertises stable or identity-preserving virtual gamepad support.
 
 > Video capability ceilings do not imply every tuple below those ceilings is valid; RFC-005G validates exact codec format tuples.
+
+## Phase 5 Session Setup
+
+> Discovery of a Direct-capable peer does not establish a Direct SessionPath; a Direct path requires P2P group formation and authenticated path validation.
+
+> Warpnect Hosts own/reuse the Android Wi-Fi Direct Group Owner role; independent Client Sessions do not create independent Host P2P groups.
+
+> A peer never supplies an arbitrary remote channel IP address. The validated SessionPath supplies the remote address and WNSN supplies only bounded endpoint ports and configuration.
+
+> A standby SessionPath never implies duplicate Video, Audio, or Input transmission. Initial Direct-to-LAN fallback is valid only where PathPreferencePolicy explicitly permits it; runtime failover remains separate lifecycle work.
+
+> Exact stream configuration is independently validated from WNCP capability ceilings. Every prepared authenticated channel owns an independent RFC-005E Channel(ChannelId) protection scope and ProtectedRequired semantics.
+
+> Session setup prepares bounded sockets, protection scopes, and configuration only. It does not transition a Session to Running or start a media/input pipeline.

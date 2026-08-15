@@ -209,6 +209,16 @@ class SessionProtectionRuntime final {
         std::span<std::byte> output,
         std::uint64_t now_us) noexcept;
 
+    [[nodiscard]] SessionProtectionDatagramResult unprotect_candidate_session_control(
+        const UdpEndpoint& source_endpoint,
+        std::span<const std::byte> secure_datagram,
+        std::span<std::byte> output,
+        std::uint64_t now_us) noexcept;
+
+    [[nodiscard]] SessionProtectionStatus set_expected_remote_endpoint(
+        ProtectionScope scope,
+        const UdpEndpoint& endpoint) noexcept;
+
     [[nodiscard]] SessionProtectionSnapshot snapshot() const noexcept;
     [[nodiscard]] bool is_initialized() const noexcept;
     [[nodiscard]] bool is_closed() const noexcept;
@@ -218,6 +228,13 @@ class SessionProtectionRuntime final {
     void close() noexcept;
 
   private:
+    [[nodiscard]] SessionProtectionDatagramResult unprotect_internal(
+        const UdpEndpoint& source_endpoint,
+        std::span<const std::byte> secure_datagram,
+        std::span<std::byte> output,
+        std::uint64_t now_us,
+        bool allow_candidate_session_control) noexcept;
+
     struct Impl;
     Impl* impl_;
 };

@@ -6,6 +6,7 @@
 #include <span>
 
 #include "input_packetizer.h"
+#include "datagram_protection.h"
 #include "packet_codec.h"
 #include "udp_socket.h"
 
@@ -16,10 +17,12 @@ struct InputTransportSenderConfig final {
     std::uint16_t local_port = 0;
     std::size_t max_wire_datagram_size = kInputMaxDatagramWireSize;
     std::uint32_t initial_input_sequence = 0;
+    DatagramProtector* protector = nullptr;
 };
 
 struct InputTransportSenderWorkspace final {
     std::span<std::byte> datagram_scratch{};
+    std::span<std::byte> protected_datagram_scratch{};
 };
 
 struct InputTransportSnapshot final {
@@ -73,6 +76,7 @@ class InputTransportSender final : private InputDatagramSink {
     InputTransportSender& operator=(const InputTransportSender&) = delete;
 
     [[nodiscard]] InputTransportStatus open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] InputTransportStatus submit_key(std::uint64_t event_time_us,
                                                   const InputKeyEvent& event) noexcept;
     [[nodiscard]] InputTransportStatus submit_touch_frame(std::uint64_t event_time_us,

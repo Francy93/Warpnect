@@ -47,6 +47,9 @@ fun interface AndroidCapabilityProbe {
  */
 data class AndroidCapabilityProbeSnapshot(
     val lanSecurePathAvailable: Boolean,
+    val directPathBackendImplemented: Boolean = false,
+    val directPathAvailable: Boolean = false,
+    val standbyPathSupported: Boolean = false,
     val videoEncoder: VideoEncoderCapabilities? = null,
     val videoDecoder: VideoDecoderCapabilities? = null,
     val systemAudioCapture: AudioCaptureCapabilities? = null,
@@ -65,6 +68,7 @@ data class AndroidCapabilityProbeSnapshot(
     val separateMicrophonePerPeerAvailable: Boolean = false,
 ) {
     fun toLocalSnapshot(role: SessionRole, capturedAtMonotonicNs: Long): LocalCapabilitySnapshot {
+        val directAvailable = directPathBackendImplemented && directPathAvailable
         val encoder = videoEncoder?.takeIf {
             it.isSupported && it.selectedCodec?.hardwareAcceleration == VideoEncoderHardwareAcceleration.Hardware
         }
@@ -160,7 +164,11 @@ data class AndroidCapabilityProbeSnapshot(
 
         val availability = linkedMapOf(
             "lanPath" to if (lanSecurePathAvailable) LocalCapabilityAvailability.Available else LocalCapabilityAvailability.SupportedButUnavailable,
-            "directPath" to LocalCapabilityAvailability.Unsupported,
+            "directPath" to when {
+                directAvailable -> LocalCapabilityAvailability.Available
+                directPathBackendImplemented -> LocalCapabilityAvailability.SupportedButUnavailable
+                else -> LocalCapabilityAvailability.Unsupported
+            },
             "video" to if (videoReady) LocalCapabilityAvailability.Available else LocalCapabilityAvailability.SupportedButUnavailable,
             "systemAudio" to if (systemAvailable && opusEncode) LocalCapabilityAvailability.Available else LocalCapabilityAvailability.SupportedButUnavailable,
             "microphone" to if (microphoneAvailable && opusEncode) LocalCapabilityAvailability.Available else LocalCapabilityAvailability.SupportedButUnavailable,
@@ -182,10 +190,16 @@ data class AndroidCapabilityProbeSnapshot(
                     (if (multiClientHostModelAvailable) CapabilityBits.FEATURE_MULTI_CLIENT_HOST else 0),
             ),
             paths = PathCapabilities(
-                implementedPathKinds = CapabilityBits.PATH_LAN,
-                availablePathKinds = if (lanSecurePathAvailable) CapabilityBits.PATH_LAN else 0,
-                maxPaths = 1,
-                pathFlags = 0,
+                implementedPathKinds = CapabilityBits.PATH_LAN or
+                    (if (directPathBackendImplemented) CapabilityBits.PATH_DIRECT else 0),
+                availablePathKinds = (if (lanSecurePathAvailable) CapabilityBits.PATH_LAN else 0) or
+                    (if (directAvailable) CapabilityBits.PATH_DIRECT else 0),
+                maxPaths = if (directPathBackendImplemented && standbyPathSupported) 2 else 1,
+                pathFlags = if (directPathBackendImplemented && standbyPathSupported) {
+                    CapabilityBits.PATH_STANDBY_SUPPORTED
+                } else {
+                    0
+                },
             ),
             video = video,
             audio = audio,

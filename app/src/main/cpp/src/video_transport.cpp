@@ -73,13 +73,22 @@ VideoTransportSender::~VideoTransportSender() noexcept {
     close();
 }
 
+void VideoTransportSender::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 VideoStatus VideoTransportSender::open() noexcept {
     if (snapshot_.closed) {
         return status(VideoError::Closed);
     }
+    const std::size_t inner_budget = config_.protector == nullptr
+                                         ? config_.max_wire_datagram_size
+                                         : config_.protector->inner_datagram_budget();
     const VideoSizeResult budget =
-        video_fragment_datagram_budget(config_.max_wire_datagram_size, config_.fec.enabled);
-    if (!budget.ok() || workspace_.datagram_scratch.size() < config_.max_wire_datagram_size ||
+        video_fragment_datagram_budget(inner_budget, config_.fec.enabled);
+    if (!budget.ok() || workspace_.datagram_scratch.size() < inner_budget ||
+        (config_.protector != nullptr &&
+         workspace_.protected_datagram_scratch.size() < config_.protector->secure_datagram_budget()) ||
         config_.retransmission_cache_slots == 0) {
         remember(VideoError::InvalidDatagramBudget);
         return status(snapshot_.last_error);
@@ -93,6 +102,17 @@ VideoStatus VideoTransportSender::open() noexcept {
         }
     }
 
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || (config_.local_port != 0 && local.endpoint.port != config_.local_port) ||
+            local.endpoint.address.version != config_.remote_endpoint.address.version) {
+            remember(VideoError::UdpBindFailed);
+            return status(snapshot_.last_error);
+        }
+        snapshot_.opened = true;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
     const UdpStatus open_status = socket_.open(config_.remote_endpoint.address.version);
     if (!open_status.ok()) {
         remember(VideoError::UdpOpenFailed);
@@ -257,7 +277,18 @@ VideoStatus VideoTransportSender::pump_control_datagram(std::span<std::byte> rec
                                                                : VideoError::NackDecodeFailed);
         return status(snapshot_.last_error);
     }
-    return handle_control_datagram(receive_buffer.first(received.bytes_received));
+    if (config_.protector == nullptr) {
+        return handle_control_datagram(receive_buffer.first(received.bytes_received));
+    }
+    const DatagramProtectionResult unprotected = config_.protector->unprotect(
+        received.source, receive_buffer.first(received.bytes_received), workspace_.datagram_scratch,
+        monotonic_time_now_us().value);
+    if (!unprotected.ok()) {
+        return status(unprotected.error == DatagramProtectionError::Rejected
+                          ? VideoError::NoData
+                          : VideoError::NackDecodeFailed);
+    }
+    return handle_control_datagram(workspace_.datagram_scratch.first(unprotected.bytes_written));
 }
 
 VideoStatus VideoTransportSender::handle_nack(const NackRequest& request) noexcept {
@@ -379,35 +410,45 @@ VideoStatus VideoTransportSender::send(std::span<const std::byte> datagram) noex
         return status(snapshot_.last_error);
     }
 
-    const RecoveryStatus cached =
-        cache_.store(packet.packet.header.payload_type, packet.packet.header.sequence_number,
-                     datagram);
-    if (!cached.ok()) {
-        remember(VideoError::RetransmissionCacheFailed);
-        return status(snapshot_.last_error);
-    }
-
-    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
-    if (!sent.ok()) {
-        const VideoError mapped = map_udp_send_error(sent.status.error);
-        if (mapped == VideoError::WouldBlock) {
-            telemetry_.record_send_would_block();
-        }
-        remember(mapped);
-        return status(mapped);
-    }
+    const VideoStatus sent = send_inner_datagram(datagram, true);
+    if (!sent.ok()) return sent;
 
     ++datagrams_emitted_in_message_;
     ++snapshot_.video_datagrams_sent;
-    snapshot_.video_bytes_sent += datagram.size();
-    telemetry_.record_datagram_sent(datagram.size());
-
     const VideoStatus fec = maybe_accept_fec_data(datagram);
     if (!fec.ok()) {
         remember(fec.error);
         return fec;
     }
 
+    return status(VideoError::None);
+}
+
+VideoStatus VideoTransportSender::send_inner_datagram(
+    const std::span<const std::byte> datagram,
+    const bool cache_for_retransmission) noexcept {
+    const PacketViewResult packet = decode_packet(datagram);
+    if (!packet.ok()) return status(VideoError::PacketEncodeFailed);
+    std::span<const std::byte> wire = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult protected_result =
+            config_.protector->protect(datagram, workspace_.protected_datagram_scratch);
+        if (!protected_result.ok()) return status(VideoError::UdpSendFailed);
+        wire = workspace_.protected_datagram_scratch.first(protected_result.bytes_written);
+    }
+    if (cache_for_retransmission) {
+        const RecoveryStatus cached = cache_.store(
+            packet.packet.header.payload_type, packet.packet.header.sequence_number, wire);
+        if (!cached.ok()) return status(VideoError::RetransmissionCacheFailed);
+    }
+    const UdpSendResult sent = socket_.send_to(wire, config_.remote_endpoint);
+    if (!sent.ok()) {
+        const VideoError mapped = map_udp_send_error(sent.status.error);
+        if (mapped == VideoError::WouldBlock) telemetry_.record_send_would_block();
+        return status(mapped);
+    }
+    snapshot_.video_bytes_sent += wire.size();
+    telemetry_.record_datagram_sent(wire.size());
     return status(VideoError::None);
 }
 
@@ -504,14 +545,11 @@ VideoStatus VideoTransportSender::send_parity(const FecParityView& parity) noexc
 
     const auto datagram = std::span<const std::byte>(workspace_.datagram_scratch.data(),
                                                      encoded.bytes_written);
-    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
-    if (!sent.ok()) {
-        return status(map_udp_send_error(sent.status.error));
-    }
+    const VideoStatus sent = send_inner_datagram(datagram, false);
+    if (!sent.ok()) return sent;
 
     ++snapshot_.next_control_sequence;
     ++snapshot_.fec_parity_packets;
-    telemetry_.record_datagram_sent(datagram.size());
     return status(VideoError::None);
 }
 
@@ -559,10 +597,10 @@ VideoTransportSender::send_session_control_payload(std::span<const std::byte> pa
     }
     const auto datagram =
         std::span<const std::byte>(workspace_.datagram_scratch.data(), encoded.bytes_written);
-    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
+    const VideoStatus sent = send_inner_datagram(datagram, false);
     if (!sent.ok()) {
-        remember(map_udp_send_error(sent.status.error));
-        return status(snapshot_.last_error);
+        remember(sent.error);
+        return sent;
     }
     ++snapshot_.next_control_sequence;
     telemetry_.record_datagram_sent(datagram.size());
@@ -580,13 +618,19 @@ VideoStatus VideoTransportSender::ensure_ready() noexcept {
 }
 
 VideoPacketizerConfig VideoTransportSender::packetizer_config() const noexcept {
+    const std::size_t wire_budget = config_.protector == nullptr
+                                        ? config_.max_wire_datagram_size
+                                        : config_.protector->inner_datagram_budget();
     const VideoSizeResult budget =
-        video_fragment_datagram_budget(config_.max_wire_datagram_size, config_.fec.enabled);
+        video_fragment_datagram_budget(wire_budget, config_.fec.enabled);
     return VideoPacketizerConfig{.max_datagram_size = budget.ok() ? budget.size : 0};
 }
 
 FecBlockConfig
 VideoTransportSender::current_fec_block_config(std::uint32_t base_sequence) const noexcept {
+    const std::size_t inner_budget = config_.protector == nullptr
+                                         ? config_.max_wire_datagram_size
+                                         : config_.protector->inner_datagram_budget();
     return FecBlockConfig{
         .rs =
             ReedSolomonConfig{
@@ -595,7 +639,7 @@ VideoTransportSender::current_fec_block_config(std::uint32_t base_sequence) cons
             },
         .target_payload_type = PayloadType::Video,
         .base_sequence_number = base_sequence,
-        .max_wire_datagram_size = config_.max_wire_datagram_size,
+        .max_wire_datagram_size = inner_budget,
     };
 }
 

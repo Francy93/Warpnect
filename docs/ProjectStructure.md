@@ -670,8 +670,8 @@ third_party/mbedtls-3.6.7/
 ```
 
 The Kotlin session package contains only cold-path ownership/configuration contracts. The portable
-native runtime owns WNSD keys, epochs, replay windows, and generic scope derivation. It is not yet
-attached to video, audio, input, NACK, or FEC transport objects.
+native runtime owns WNSD keys, epochs, replay windows, and generic scope derivation. RFC-005G
+attaches those scopes to prepared Video, Audio, Input, Telemetry, NACK, and FEC transport paths.
 
 ## RFC-005F Capability Negotiation
 
@@ -694,3 +694,35 @@ intersection, immutable snapshots, and bounded negotiation state. The control pa
 authenticated RFC-005E SessionControl records. The Android collector maps existing Phase 2/3/4
 probe results without starting resources. `AndroidBootstrapDatagramRouter` and the initiator UDP
 transport own the single-reader WNSD dispatch seam.
+
+## RFC-005G Session Setup
+
+```text
+app/src/main/java/io/warpnect/session/setup/
+  SessionSetupModel.kt
+  SessionSetupCodec.kt
+  SessionSetupPlanner.kt
+  SessionSetupController.kt
+  SessionSetupResources.kt
+app/src/main/java/io/warpnect/session/path/
+  DirectPathValidation.kt
+app/src/main/java/io/warpnect/platform/session/channel/
+  AndroidChannelEndpointAllocator.kt
+  NativePreparedChannelTransportPreparer.kt
+app/src/main/java/io/warpnect/platform/session/path/
+  AndroidDirectPathController.kt
+  AndroidDirectCandidateDatagramDispatcher.kt
+  AndroidDirectSessionPathCoordinator.kt
+app/src/main/java/io/warpnect/platform/session/setup/
+  AndroidExactStreamConfigurationValidator.kt
+  ScheduledSessionSetupTimer.kt
+app/src/main/cpp/include/
+  datagram_protection.h
+```
+
+The portable setup package defines strict WNSN representations, its bounded state machine,
+deterministic path/channel planning, and closeable stopped endpoint/protection leases. The Android
+channel allocator reserves path-local OS-selected ports; the native preparer adopts those same
+sockets into existing protected transports without starting workers. The Direct adapter uses public
+Wi-Fi Direct APIs, owns one Host group through bounded reference-counted leases, and validates a
+candidate endpoint with protected SessionControl. Android network APIs never enter portable SCL.

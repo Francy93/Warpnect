@@ -1485,6 +1485,49 @@ field. Application retry sends the same canonical WNCP bytes in a new protected 
 whereas RFC-005E retransmission reuses an exact existing protected datagram. Both sequence domains
 remain independent of `CapabilityNegotiationId`.
 
+## Session Setup Protocol Version 1
+
+RFC-005G defines `WNSN` only inside RFC-005E protected existing `SessionControl`; raw UDP WNSN is
+invalid. Its fixed 20-byte header is `WNSN`, version `1`, message type, zero flags, non-zero `u64`
+SessionSetupId, u16 body length, and zero reserved bytes. A complete WNSN message is at most 1024
+bytes and is never fragmented.
+
+V1 message types are ClientSetupRequest, HostPathDirective, DirectPathProbe, DirectPathAck,
+PathFailure, ClientEndpointOffer, HostConfigurationProposal, ClientConfigurationAccept,
+ClientConfigurationDecline, HostCommit, and SetupReject. Client endpoint offers contain only
+ChannelKind, instance zero, and an already-bound port; remote IP addresses are inherited from a
+validated SessionPath. HostConfigurationProposal uses fixed ChannelDescriptor records and ordered
+configuration TLVs for exact video, audio, input, telemetry, and recovery configuration.
+
+The message type numbers are frozen as `1` ClientSetupRequest, `2` HostPathDirective, `3`
+DirectPathProbe, `4` DirectPathAck, `5` PathFailure, `6` ClientEndpointOffer, `7`
+HostConfigurationProposal, `8` ClientConfigurationAccept, `9` ClientConfigurationDecline, `10`
+HostCommit, and `11` SetupReject. Directives have a 50-byte body; Probe/Ack use 40 bytes;
+PathFailure uses 44 bytes; endpoint offers use `36 + 4*N`; Accept and Commit use 96 bytes;
+Decline uses 40 bytes; Reject uses 36 bytes.
+
+The proposal prefix is 80 bytes followed by 20-byte ChannelDescriptor records and ordered
+`u16 type / u16 length / value` TLVs. ChannelDescriptor contains ChannelId, ChannelKind,
+ChannelDirection, zero instance/flags, PathId, Host and Client ports, secure datagram budget, and
+recovery flags. Configuration TLV types are `1` Video, `2` SystemAudio, `3` MicrophoneAudio, `4`
+Input, `5` Telemetry, `6` Recovery, and reserved V1 type `7` SessionTiming. V1 emits types 1-6;
+ClockSync remains the existing protected SessionControl protocol and no SessionTiming TLV is
+needed. Value sizes are 18 bytes for Video, 18 for either Audio configuration, 22 for Input, 8 for
+Telemetry, and 12 for Recovery. Video carries ChannelId, AVC codec ID, negotiated flags, exact
+width/height/fps/bitrate, and zero reserved. Audio carries ChannelId, Opus codec ID, exact sample
+rate/frame duration/channel count/bitrate, and zero reserved fields. Recovery carries ChannelId,
+enabled flags, FEC K/M, retransmission-cache slots, and zero reserved.
+
+WNSN hashes cover exact canonical header/body bytes. A semantic retry must send the same WNSN bytes
+in a new SCL/WNSD record, because an exact WNSD replay is anti-replay-protected by RFC-005E.
+`PathId`, `ChannelId`, UDP port, SCL sequence number, WNSD packet number, and SessionSetupId are
+separate identities. PacketHeader V1 remains unchanged.
+
+Direct path candidate validation uses the existing SessionControl protection context with no wire
+version change. Only a dedicated bounded candidate socket/window may authenticate an expected
+DirectPathProbe/Ack and authorize the one initial LAN-to-Direct endpoint rebind. Other valid
+SessionControl records from new endpoints do not migrate a path.
+
 ## Discovery Presence Schema V1
 
 RFC-005B's Discovery Presence Schema Version 1 is DNS-SD control-plane metadata only. Its

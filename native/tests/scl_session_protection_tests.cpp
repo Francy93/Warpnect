@@ -225,6 +225,30 @@ void test_context_isolation_and_root_consumption() {
                  SessionProtectionError::RootSecretAlreadyConsumed, "root input cannot initialize runtime twice");
 }
 
+void test_candidate_session_control_and_explicit_endpoint_rebind() {
+    RuntimePair pair;
+    const UdpEndpoint candidate = UdpEndpoint::loopback_v4(31998);
+    std::vector<std::byte> output(128);
+    const auto probe = protect(pair.client, inner_datagram(41));
+
+    expect(pair.host.unprotect_candidate_session_control(candidate, probe, output, 1).ok(),
+           "candidate mode authenticates SessionControl before endpoint binding");
+    expect(pair.host.set_expected_remote_endpoint(ProtectionScope::session_control(), candidate).ok(),
+           "explicit setup rebind updates only SessionControl endpoint");
+
+    const auto after_rebind = protect(pair.client, inner_datagram(42));
+    expect_equal(pair.host.unprotect(pair.client_endpoint, after_rebind, output, 2).error,
+                 SessionProtectionError::EndpointMismatch,
+                 "old endpoint is rejected after explicit initial-path rebind");
+    expect(pair.host.unprotect(candidate, after_rebind, output, 3).ok(),
+           "new authenticated candidate endpoint becomes the bound endpoint");
+
+    expect_equal(
+        pair.host.set_expected_remote_endpoint(ProtectionScope::session_control(), UdpEndpoint{}).error,
+        SessionProtectionError::InvalidConfig,
+        "unspecified endpoint cannot be installed");
+}
+
 } // namespace
 
 int main() {
@@ -233,6 +257,7 @@ int main() {
     test_replay_endpoint_and_ordering();
     test_epoch_overlap_and_budget();
     test_context_isolation_and_root_consumption();
+    test_candidate_session_control_and_explicit_endpoint_rebind();
     if (failures == 0) {
         std::cout << "All session packet protection tests passed.\n";
         return 0;

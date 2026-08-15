@@ -16,14 +16,16 @@ interface SecureSessionControlDatagramIo {
 
 /** Cold-path WNCP transport: each send builds one SCL SessionControl packet and one fresh WNSD record. */
 class AndroidSecureSessionControlTransport(
-    private val datagramIo: SecureSessionControlDatagramIo,
+    datagramIo: SecureSessionControlDatagramIo,
     private val runtime: SessionControlProtectionRuntime,
     private val receiveContextId: Long,
-    private val remoteEndpoint: HandshakeTransportEndpoint,
+    remoteEndpoint: HandshakeTransportEndpoint,
 ) : SecureSessionControlTransport {
     private val lock = Any()
+    private var datagramIo = datagramIo
     private var sequenceNumber = 0L
     private var listener: ((ByteArray) -> Unit)? = null
+    private var remoteEndpoint = remoteEndpoint
     private var closed = false
 
     override val maxPayloadBytes: Int
@@ -60,6 +62,59 @@ class AndroidSecureSessionControlTransport(
             return@synchronized SecureSessionControlSendResult(SessionProtectionError.CryptoFailure)
         }
         protected
+    }
+
+    override fun protectCandidate(payload: ByteArray): SecureSessionControlSendResult = synchronized(lock) {
+        if (closed) return@synchronized SecureSessionControlSendResult(SessionProtectionError.Closed)
+        if (payload.size > maxPayloadBytes) {
+            return@synchronized SecureSessionControlSendResult(SessionProtectionError.DatagramTooLarge)
+        }
+        val protected = runtime.protectSessionControl(
+            sequenceNumber,
+            SystemClock.elapsedRealtimeNanos() / 1_000L,
+            payload,
+        )
+        if (protected.isSuccess) sequenceNumber += 1
+        protected
+    }
+
+    override fun unprotectCandidate(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ) = synchronized(lock) {
+        if (closed) {
+            io.warpnect.session.control.SessionControlUnprotectResult(SessionProtectionError.Closed)
+        } else {
+            runtime.unprotectCandidateSessionControl(sourceEndpoint, protectedDatagram, nowUs)
+        }
+    }
+
+    override fun rebindRemoteEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError = synchronized(
+        lock,
+    ) {
+        if (closed) return@synchronized SessionProtectionError.Closed
+        val result = runtime.rebindSessionControlEndpoint(endpoint)
+        if (result == SessionProtectionError.None) remoteEndpoint = endpoint
+        result
+    }
+
+    fun rebindPath(
+        newDatagramIo: SecureSessionControlDatagramIo,
+        endpoint: HandshakeTransportEndpoint,
+    ): SessionProtectionError = synchronized(lock) {
+        if (closed) return@synchronized SessionProtectionError.Closed
+        val result = runtime.rebindSessionControlEndpoint(endpoint)
+        if (result != SessionProtectionError.None) return@synchronized result
+        datagramIo.setSecureControlListener(receiveContextId, null)
+        datagramIo = newDatagramIo
+        remoteEndpoint = endpoint
+        listener?.let {
+            datagramIo.setSecureControlListener(receiveContextId) { source, datagram ->
+                onProtectedDatagram(source, datagram)
+            }
+        }
+        result
     }
 
     private fun onProtectedDatagram(endpoint: HandshakeTransportEndpoint, datagram: ByteArray) {

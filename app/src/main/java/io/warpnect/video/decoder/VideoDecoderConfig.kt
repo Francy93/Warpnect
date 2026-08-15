@@ -4,6 +4,7 @@ data class VideoDecoderConfig(
     val codec: VideoDecoderCodec = VideoDecoderCodec.Avc,
     val width: Int,
     val height: Int,
+    val expectedFrameRate: Int? = null,
     val configGeneration: Long,
     val codecSpecificData: List<ByteArray>,
     val maxInputSizeBytes: Int? = null,
@@ -20,6 +21,7 @@ object VideoDecoderConfigValidator {
         config.codec != VideoDecoderCodec.Avc -> VideoDecoderError.UnsupportedCodec
         config.width <= 0 -> VideoDecoderError.InvalidConfiguration
         config.height <= 0 -> VideoDecoderError.InvalidConfiguration
+        config.expectedFrameRate != null && config.expectedFrameRate <= 0 -> VideoDecoderError.InvalidConfiguration
         config.configGeneration <= 0L -> VideoDecoderError.InvalidConfigGeneration
         config.codecSpecificData.isEmpty() -> VideoDecoderError.MissingCodecSpecificData
         config.codecSpecificData.size > VideoDecoderConfig.MAX_CSD_ENTRIES ->

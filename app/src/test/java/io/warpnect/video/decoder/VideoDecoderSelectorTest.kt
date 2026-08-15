@@ -63,6 +63,16 @@ class VideoDecoderSelectorTest {
     }
 
     @Test
+    fun unsupportedExpectedFrameRateIsRejected() {
+        val selected = VideoDecoderSelector.select(
+            config.copy(expectedFrameRate = 120),
+            listOf(candidate(name = "hardware-avc", sizeAndRateSupported = false)),
+        )
+
+        assertEquals(VideoDecoderError.UnsupportedFrameRate, selected.error)
+    }
+
+    @Test
     fun lowLatencyCapableDecoderIsPreferredButNotRequired() {
         val selected = VideoDecoderSelector.select(
             config,
@@ -106,6 +116,7 @@ class VideoDecoderSelectorTest {
         softwareOnly: Boolean? = false,
         alias: Boolean? = false,
         sizeSupported: Boolean = true,
+        sizeAndRateSupported: Boolean = true,
         lowLatency: Boolean? = null,
     ): VideoDecoderCandidate = VideoDecoderCandidate(
         info = VideoDecoderCodecInfo(
@@ -121,6 +132,7 @@ class VideoDecoderSelectorTest {
         widthSupported = sizeSupported,
         heightSupported = sizeSupported,
         sizeSupported = sizeSupported,
+        sizeAndRateSupported = sizeAndRateSupported,
         lowLatencyFeatureSupported = lowLatency,
         widthAlignment = 2,
         heightAlignment = 2,

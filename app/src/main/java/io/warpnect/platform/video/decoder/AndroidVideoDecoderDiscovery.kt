@@ -62,6 +62,15 @@ class AndroidVideoDecoderDiscovery : VideoDecoderDiscovery {
             sizeSupported = runCatching {
                 videoCapabilities.isSizeSupported(config.width, config.height)
             }.getOrDefault(false),
+            sizeAndRateSupported = config.expectedFrameRate?.let { frameRate ->
+                runCatching {
+                    videoCapabilities.areSizeAndRateSupported(
+                        config.width,
+                        config.height,
+                        frameRate.toDouble(),
+                    )
+                }.getOrDefault(false)
+            } ?: true,
             lowLatencyFeatureSupported = lowLatencySupported,
             widthAlignment = videoCapabilities.widthAlignment,
             heightAlignment = videoCapabilities.heightAlignment,

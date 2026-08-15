@@ -19,6 +19,7 @@ import java.net.SocketException
 /** One blocking reader for the advertised bootstrap socket; WNPB, WNSH and protected WNSD coexist. */
 class AndroidBootstrapDatagramRouter(
     private val socket: DatagramSocket,
+    private val maxSecureControlContexts: Int = MAX_SECURE_CONTROL_CONTEXTS,
 ) : SecureSessionControlDatagramIo, AutoCloseable {
     private val lock = Any()
     private var pairingListener: ((PairingTransportEndpoint, ByteArray) -> Unit)? = null
@@ -50,6 +51,11 @@ class AndroidBootstrapDatagramRouter(
         if (listener == null) {
             secureControlListeners.remove(receiveContextId)
         } else {
+            if (!secureControlListeners.containsKey(receiveContextId) &&
+                secureControlListeners.size >= maxSecureControlContexts.coerceIn(1, MAX_SECURE_CONTROL_CONTEXTS)
+            ) {
+                return@synchronized
+            }
             secureControlListeners[receiveContextId] = listener
             startReaderLocked()
         }
@@ -150,6 +156,7 @@ class AndroidBootstrapDatagramRouter(
         const val THREAD_NAME = "WarpnectBootstrapUdp"
         const val SECURE_HEADER_BYTES = 28
         const val SECURE_CONTEXT_ID_OFFSET = 8
+        const val MAX_SECURE_CONTROL_CONTEXTS = 32
         val PAIRING_MAGIC: ByteArray =
             byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'P'.code.toByte(), 'B'.code.toByte())
         val SECURE_MAGIC: ByteArray =

@@ -46,6 +46,10 @@ AudioTransportSender::~AudioTransportSender() noexcept {
     close();
 }
 
+void AudioTransportSender::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 AudioTransportStatus AudioTransportSender::open() noexcept {
     if (snapshot_.closed) {
         return status(AudioTransportError::Closed);
@@ -54,13 +58,28 @@ AudioTransportStatus AudioTransportSender::open() noexcept {
         remember(AudioTransportError::UnsupportedAudioMessageType);
         return status(snapshot_.last_error);
     }
-    const AudioTransportSizeResult budget =
-        audio_fragment_datagram_budget(config_.max_wire_datagram_size);
-    if (!budget.ok() || workspace_.datagram_scratch.size() < config_.max_wire_datagram_size) {
+    const std::size_t inner_budget = config_.protector == nullptr
+                                         ? config_.max_wire_datagram_size
+                                         : config_.protector->inner_datagram_budget();
+    const AudioTransportSizeResult budget = audio_fragment_datagram_budget(inner_budget);
+    if (!budget.ok() || workspace_.datagram_scratch.size() < inner_budget ||
+        (config_.protector != nullptr &&
+         workspace_.protected_datagram_scratch.size() < config_.protector->secure_datagram_budget())) {
         remember(AudioTransportError::InvalidDatagramBudget);
         return status(snapshot_.last_error);
     }
 
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || (config_.local_port != 0 && local.endpoint.port != config_.local_port) ||
+            local.endpoint.address.version != config_.remote_endpoint.address.version) {
+            remember(AudioTransportError::UdpBindFailed);
+            return status(snapshot_.last_error);
+        }
+        snapshot_.opened = true;
+        remember(AudioTransportError::None);
+        return status(AudioTransportError::None);
+    }
     const UdpStatus open_status = socket_.open(config_.remote_endpoint.address.version);
     if (!open_status.ok()) {
         remember(AudioTransportError::UdpOpenFailed);
@@ -200,7 +219,17 @@ void AudioTransportSender::close() noexcept {
 
 AudioTransportStatus
 AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) noexcept {
-    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
+    std::span<const std::byte> wire = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult protected_result =
+            config_.protector->protect(datagram, workspace_.protected_datagram_scratch);
+        if (!protected_result.ok()) {
+            ++snapshot_.send_failures;
+            return status(AudioTransportError::UdpSendFailed);
+        }
+        wire = workspace_.protected_datagram_scratch.first(protected_result.bytes_written);
+    }
+    const UdpSendResult sent = socket_.send_to(wire, config_.remote_endpoint);
     if (!sent.ok()) {
         const AudioTransportError mapped = map_udp_send_error(sent.status.error);
         if (mapped == AudioTransportError::WouldBlock) {
@@ -213,7 +242,7 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
     }
 
     ++snapshot_.datagrams_sent;
-    snapshot_.bytes_sent += datagram.size();
+    snapshot_.bytes_sent += wire.size();
     return status(AudioTransportError::None);
 }
 
@@ -228,8 +257,11 @@ AudioTransportStatus AudioTransportSender::ensure_ready() noexcept {
 }
 
 AudioPacketizerConfig AudioTransportSender::packetizer_config() const noexcept {
+    const std::size_t wire_budget = config_.protector == nullptr
+                                        ? config_.max_wire_datagram_size
+                                        : config_.protector->inner_datagram_budget();
     const AudioTransportSizeResult budget =
-        audio_fragment_datagram_budget(config_.max_wire_datagram_size);
+        audio_fragment_datagram_budget(wire_budget);
     return AudioPacketizerConfig{.max_datagram_size = budget.ok() ? budget.size : 0};
 }
 

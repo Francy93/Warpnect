@@ -5,6 +5,7 @@
 #include <type_traits>
 
 #include "input_transport.h"
+#include "monotonic_time.h"
 
 namespace warpnect::scl {
 namespace {
@@ -50,12 +51,21 @@ InputReceiverRuntime::~InputReceiverRuntime() noexcept {
     close();
 }
 
+void InputReceiverRuntime::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 InputReceiverError InputReceiverRuntime::open() noexcept {
     if (snapshot_.closed) {
         remember(InputReceiverError::Closed);
         return snapshot_.last_error;
     }
-    if (config_.max_wire_datagram_size != kInputReceiverMaxDatagramWireSize) {
+    const std::size_t expected_budget = config_.protector == nullptr
+                                            ? kInputReceiverMaxDatagramWireSize
+                                            : config_.protector->secure_datagram_budget();
+    if (config_.max_wire_datagram_size != expected_budget ||
+        (config_.protector != nullptr &&
+         config_.protector->inner_datagram_budget() < kInputReceiverMaxDatagramWireSize)) {
         remember(InputReceiverError::InvalidConfiguration);
         return snapshot_.last_error;
     }
@@ -64,6 +74,19 @@ InputReceiverError InputReceiverRuntime::open() noexcept {
         config_.local_endpoint.address.version != config_.expected_remote_endpoint.address.version) {
         remember(InputReceiverError::InvalidEndpoint);
         return snapshot_.last_error;
+    }
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || local.endpoint.port != config_.local_endpoint.port ||
+            local.endpoint.address.version != config_.local_endpoint.address.version) {
+            remember(InputReceiverError::UdpBindFailed);
+            return snapshot_.last_error;
+        }
+        snapshot_.local_endpoint_port = local.endpoint.port;
+        interrupted_.store(false, std::memory_order_release);
+        snapshot_.opened = true;
+        remember(InputReceiverError::None);
+        return InputReceiverError::None;
     }
     const UdpStatus opened = socket_.open(config_.local_endpoint.address.version);
     if (!opened.ok()) {
@@ -106,11 +129,21 @@ InputReceiverEvent InputReceiverRuntime::accept_datagram(std::span<const std::by
         ++snapshot_.unexpected_endpoint_drops;
         return event(InputReceiverEventType::UnexpectedEndpointDropped);
     }
-    if (datagram.size() > kInputReceiverMaxDatagramWireSize) {
+    if (datagram.size() > config_.max_wire_datagram_size) {
         ++snapshot_.oversize_datagram_drops;
         return event(InputReceiverEventType::OversizeDatagramDropped);
     }
-    const InputDatagramParseResult parsed = InputDatagramParser::parse(datagram);
+    std::span<const std::byte> inner = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult unprotected = config_.protector->unprotect(
+            source, datagram, unprotected_scratch_, monotonic_time_now_us().value);
+        if (!unprotected.ok()) {
+            ++snapshot_.malformed_datagram_drops;
+            return event(InputReceiverEventType::MalformedDatagramDropped);
+        }
+        inner = std::span<const std::byte>(unprotected_scratch_.data(), unprotected.bytes_written);
+    }
+    const InputDatagramParseResult parsed = InputDatagramParser::parse(inner);
     if (!parsed.ok()) {
         if (parsed.error == InputTransportError::UnexpectedPayloadType ||
             parsed.error == InputTransportError::FragmentedInputUnsupported ||

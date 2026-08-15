@@ -263,3 +263,17 @@ does not add an SCL payload type. WNCP is an application-level control record in
 Its semantic retry can send a new protected SCL datagram containing the identical WNCP bytes, while
 an exact protected-datagram replay is correctly handled by RFC-005E anti-replay. SCL sequence
 numbers, WNSD security packet numbers, and WNCP negotiation IDs are independent concepts.
+
+## Authenticated Session Setup
+
+Negotiated Session channels remain ordinary existing SCL payload streams wrapped by RFC-005E
+packet protection. Session Setup Protocol V1 adds no PacketHeader field or PayloadType.
+
+`PathId`, `ChannelId`, UDP endpoint, PacketHeader sequence number, WNSD security packet number, and
+SessionSetupId are independent identities. A remote channel IP is inherited from a validated
+SessionPath; only the bounded UDP port is negotiated.
+
+The negotiated secure datagram budget includes WNSD overhead before a packetizer is configured.
+Session Packet Protection is applied after SCL packetization and FEC construction and before UDP.
+On receive, WNSD authentication and anti-replay precede FEC, reassembly, and semantic input
+deduplication.

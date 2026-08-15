@@ -167,6 +167,7 @@ class VideoDecoderControllerCoreTest {
             widthSupported = true,
             heightSupported = true,
             sizeSupported = true,
+            sizeAndRateSupported = true,
             lowLatencyFeatureSupported = true,
             widthAlignment = 2,
             heightAlignment = 2,

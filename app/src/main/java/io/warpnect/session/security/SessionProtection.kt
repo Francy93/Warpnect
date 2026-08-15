@@ -116,7 +116,19 @@ interface SessionProtectionRuntime : SessionControlProtectionRuntime {
     val maxInnerSclDatagramSize: Int
 
     fun createChannelContext(channelId: ChannelId): SessionProtectionContextResult
+    fun createChannelContext(
+        channelId: ChannelId,
+        expectedRemoteEndpoint: HandshakeTransportEndpoint,
+    ): SessionProtectionContextResult = createChannelContext(channelId)
     fun destroyChannelContext(channelId: ChannelId): SessionProtectionError
+    override fun unprotectCandidateSessionControl(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult = unprotectSessionControl(sourceEndpoint, protectedDatagram, nowUs)
+
+    override fun rebindSessionControlEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError =
+        SessionProtectionError.InvalidConfig
     fun snapshot(): SessionProtectionSnapshot
     override fun protectSessionControl(
         sequenceNumber: Long,

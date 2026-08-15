@@ -14,6 +14,7 @@ data class VideoDecoderSupport(
     val widthSupported: Boolean,
     val heightSupported: Boolean,
     val sizeSupported: Boolean,
+    val sizeAndRateSupported: Boolean,
     val lowLatencyFeatureSupported: Boolean?,
     val widthAlignment: Int?,
     val heightAlignment: Int?,

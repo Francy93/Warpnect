@@ -54,6 +54,9 @@ namespace {
 
 [[nodiscard]] FecBlockConfig fec_block_config(const VideoReceiverConfig& config,
                                               std::uint32_t base_sequence) noexcept {
+    const std::size_t inner_budget = config.protector == nullptr
+                                         ? config.max_wire_datagram_size
+                                         : config.protector->inner_datagram_budget();
     return FecBlockConfig{
         .rs =
             ReedSolomonConfig{
@@ -62,7 +65,7 @@ namespace {
             },
         .target_payload_type = PayloadType::Video,
         .base_sequence_number = base_sequence,
-        .max_wire_datagram_size = config.max_wire_datagram_size,
+        .max_wire_datagram_size = inner_budget,
     };
 }
 
@@ -91,15 +94,19 @@ VideoReceiverRuntime::VideoReceiverRuntime(VideoReceiverConfig config)
     : config_(config), loss_slots_(config.loss_slot_count),
       loss_detector_(config.loss, std::span<LossSlot>(loss_slots_.data(), loss_slots_.size())),
       nack_scratch_(config.max_nacks_per_pump), datagram_buffer_(config.max_wire_datagram_size),
+      unprotected_datagram_buffer_(config.protector == nullptr ? 0 : config.protector->inner_datagram_budget()),
+      protected_control_scratch_(config.protector == nullptr ? 0 : config.protector->secure_datagram_budget()),
       control_datagram_scratch_(config.max_wire_datagram_size),
       ready_ring_(config.ready_slot_count),
       clock_sync_samples_(config.clock_sync_sample_capacity),
       clock_exchange_storage_(4),
       latest_csd_(kMaxVideoCsdEntriesV1) {
+    const std::size_t inner_budget = config_.protector == nullptr
+                                         ? config_.max_wire_datagram_size
+                                         : config_.protector->inner_datagram_budget();
     const VideoSizeResult budget =
-        video_receiver_fragment_datagram_budget(config_.max_wire_datagram_size,
-                                                config_.fec.enabled);
-    const std::size_t datagram_budget = budget.ok() ? budget.size : config_.max_wire_datagram_size;
+        video_receiver_fragment_datagram_budget(inner_budget, config_.fec.enabled);
+    const std::size_t datagram_budget = budget.ok() ? budget.size : inner_budget;
     const FragmentCountResult max_fragments = calculate_fragment_count(
         FragmentationConfig{.max_datagram_size = datagram_budget},
         config_.max_logical_payload_size);
@@ -173,17 +180,26 @@ VideoReceiverRuntime::~VideoReceiverRuntime() noexcept {
     close();
 }
 
+void VideoReceiverRuntime::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 VideoStatus VideoReceiverRuntime::open() noexcept {
     if (snapshot_.closed) {
         return status(VideoError::Closed);
     }
-    const VideoSizeResult budget =
-        video_receiver_fragment_datagram_budget(config_.max_wire_datagram_size,
-                                                config_.fec.enabled);
+    const std::size_t inner_budget = config_.protector == nullptr
+                                         ? config_.max_wire_datagram_size
+                                         : config_.protector->inner_datagram_budget();
+    const VideoSizeResult budget = video_receiver_fragment_datagram_budget(inner_budget,
+                                                                            config_.fec.enabled);
     if (!budget.ok() || config_.max_logical_payload_size == 0 ||
         config_.reassembly_slot_count == 0 || config_.ready_slot_count == 0 ||
         config_.loss_slot_count == 0 || config_.max_nacks_per_pump == 0 ||
-        datagram_buffer_.size() < config_.max_wire_datagram_size) {
+        datagram_buffer_.size() < config_.max_wire_datagram_size ||
+        (config_.protector != nullptr &&
+         (unprotected_datagram_buffer_.size() < inner_budget ||
+          protected_control_scratch_.size() < config_.protector->secure_datagram_budget()))) {
         remember(VideoError::InvalidDatagramBudget);
         return status(snapshot_.last_error);
     }
@@ -202,6 +218,17 @@ VideoStatus VideoReceiverRuntime::open() noexcept {
         return status(snapshot_.last_error);
     }
 
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || local.endpoint.port != config_.local_endpoint.port ||
+            local.endpoint.address.version != config_.local_endpoint.address.version) {
+            remember(VideoError::UdpBindFailed);
+            return status(snapshot_.last_error);
+        }
+        snapshot_.opened = true;
+        remember(VideoError::None);
+        return status(VideoError::None);
+    }
     const UdpStatus opened = socket_.open(config_.local_endpoint.address.version);
     if (!opened.ok()) {
         remember(VideoError::UdpOpenFailed);
@@ -261,12 +288,24 @@ VideoReceiverEvent VideoReceiverRuntime::pump(std::uint64_t timeout_us) noexcept
 VideoStatus VideoReceiverRuntime::accept_datagram(std::span<const std::byte> datagram,
                                                   const UdpEndpoint& source,
                                                   std::uint64_t now_us) noexcept {
-    const PacketViewResult decoded = decode_packet(datagram);
+    std::span<const std::byte> inner = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult unprotected = config_.protector->unprotect(
+            source, datagram, unprotected_datagram_buffer_, now_us);
+        if (!unprotected.ok()) {
+            return status(unprotected.error == DatagramProtectionError::Rejected
+                              ? VideoError::NoData
+                              : VideoError::PacketEncodeFailed);
+        }
+        inner = std::span<const std::byte>(unprotected_datagram_buffer_.data(),
+                                          unprotected.bytes_written);
+    }
+    const PacketViewResult decoded = decode_packet(inner);
     if (!decoded.ok()) {
         remember(VideoError::PacketEncodeFailed);
         return status(snapshot_.last_error);
     }
-    return process_packet(decoded.packet, datagram, source, now_us, false);
+    return process_packet(decoded.packet, inner, source, now_us, false);
 }
 
 VideoReceiverFillResult
@@ -536,14 +575,9 @@ VideoStatus VideoReceiverRuntime::receive_one(std::uint64_t timeout_us) noexcept
     if (!received.ok()) {
         return status(map_udp_error(received.status.error));
     }
-    const auto datagram =
-        std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received);
-    const PacketViewResult decoded = decode_packet(datagram);
-    if (!decoded.ok()) {
-        return status(VideoError::PacketEncodeFailed);
-    }
-    return process_packet(decoded.packet, datagram, received.source,
-                          monotonic_time_now_us().value, false);
+    return accept_datagram(
+        std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received),
+        received.source, monotonic_time_now_us().value);
 }
 
 VideoStatus VideoReceiverRuntime::process_packet(const PacketView& packet,
@@ -911,28 +945,9 @@ void VideoReceiverRuntime::send_nack(const NackRequest& request) noexcept {
     if (!encode_nack(request, std::span<std::byte>(nack_payload, kNackPayloadWireSize)).ok()) {
         return;
     }
-    PacketHeader header{
-        .protocol_version = kSclProtocolVersion,
-        .flags = 0,
-        .sequence_number = snapshot_.next_control_sequence,
-        .timestamp_us = 0,
-        .payload_type = PayloadType::SessionControl,
-        .slice_index = 0,
-        .total_slices = 1,
-    };
-    const PacketEncodeResult encoded = encode_packet(
-        header,
-        std::span<const std::byte>(nack_payload, kNackPayloadWireSize),
-        std::span<std::byte>(control_datagram_scratch_.data(),
-                             control_datagram_scratch_.size()));
-    if (!encoded.ok()) {
-        return;
-    }
-    const UdpSendResult sent = socket_.send_to(
-        std::span<const std::byte>(control_datagram_scratch_.data(), encoded.bytes_written),
-        *learned_remote_);
-    if (sent.ok()) {
-        ++snapshot_.next_control_sequence;
+    if (send_session_control_payload(
+            std::span<const std::byte>(nack_payload, kNackPayloadWireSize),
+            *learned_remote_).ok()) {
         ++snapshot_.nacks_sent;
     }
 }
@@ -990,9 +1005,15 @@ VideoReceiverRuntime::send_session_control_payload(std::span<const std::byte> pa
     if (!encoded.ok()) {
         return status(VideoError::PacketEncodeFailed);
     }
-    const UdpSendResult sent = socket_.send_to(
-        std::span<const std::byte>(control_datagram_scratch_.data(), encoded.bytes_written),
-        remote);
+    std::span<const std::byte> wire(control_datagram_scratch_.data(), encoded.bytes_written);
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult protected_result = config_.protector->protect(
+            wire, protected_control_scratch_);
+        if (!protected_result.ok()) return status(VideoError::UdpSendFailed);
+        wire = std::span<const std::byte>{protected_control_scratch_}.first(
+            protected_result.bytes_written);
+    }
+    const UdpSendResult sent = socket_.send_to(wire, remote);
     if (!sent.ok()) {
         return status(VideoError::UdpSendFailed);
     }

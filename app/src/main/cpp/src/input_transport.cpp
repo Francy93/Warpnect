@@ -81,12 +81,21 @@ InputTransportSender::~InputTransportSender() noexcept {
     close();
 }
 
+void InputTransportSender::adopt_prebound_socket(UdpSocket socket) noexcept {
+    if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
+}
+
 InputTransportStatus InputTransportSender::open() noexcept {
     if (snapshot_.closed) {
         return status(InputTransportError::Closed);
     }
-    const InputTransportSizeResult budget = input_datagram_budget(config_.max_wire_datagram_size);
-    if (!budget.ok() || workspace_.datagram_scratch.size() < kInputMaxDatagramWireSize) {
+    const std::size_t wire_budget = config_.protector == nullptr
+                                        ? config_.max_wire_datagram_size
+                                        : config_.protector->inner_datagram_budget();
+    const InputTransportSizeResult budget = input_datagram_budget(wire_budget);
+    if (!budget.ok() || workspace_.datagram_scratch.size() < kInputMaxDatagramWireSize ||
+        (config_.protector != nullptr &&
+         workspace_.protected_datagram_scratch.size() < config_.protector->secure_datagram_budget())) {
         remember(InputTransportError::InvalidDatagramBudget);
         return status(snapshot_.last_error);
     }
@@ -99,6 +108,20 @@ InputTransportStatus InputTransportSender::open() noexcept {
         snapshot_.local_endpoint_port = config_.local_port;
         snapshot_.local_endpoint_ip_version = config_.remote_endpoint.address.version;
         snapshot_.has_local_endpoint = config_.local_port != 0;
+        snapshot_.opened = true;
+        remember(InputTransportError::None);
+        return status(InputTransportError::None);
+    }
+    if (socket_.is_open()) {
+        const UdpEndpointResult local = socket_.local_endpoint();
+        if (!local.ok() || (config_.local_port != 0 && local.endpoint.port != config_.local_port) ||
+            local.endpoint.address.version != config_.remote_endpoint.address.version) {
+            remember(InputTransportError::UdpBindFailed);
+            return status(snapshot_.last_error);
+        }
+        snapshot_.local_endpoint_port = local.endpoint.port;
+        snapshot_.local_endpoint_ip_version = local.endpoint.address.version;
+        snapshot_.has_local_endpoint = true;
         snapshot_.opened = true;
         remember(InputTransportError::None);
         return status(InputTransportError::None);
@@ -236,7 +259,17 @@ InputTransportSender::send_input_datagram(std::span<const std::byte> datagram) n
         }
         return sent;
     }
-    const UdpSendResult sent = socket_.send_to(datagram, config_.remote_endpoint);
+    std::span<const std::byte> wire = datagram;
+    if (config_.protector != nullptr) {
+        const DatagramProtectionResult protected_result =
+            config_.protector->protect(datagram, workspace_.protected_datagram_scratch);
+        if (!protected_result.ok()) {
+            ++snapshot_.send_failure_count;
+            return status(InputTransportError::UdpSendFailed);
+        }
+        wire = workspace_.protected_datagram_scratch.first(protected_result.bytes_written);
+    }
+    const UdpSendResult sent = socket_.send_to(wire, config_.remote_endpoint);
     if (!sent.ok()) {
         const InputTransportError error = map_udp_send_error(sent.status.error);
         if (error == InputTransportError::WouldBlock) {
@@ -246,7 +279,7 @@ InputTransportSender::send_input_datagram(std::span<const std::byte> datagram) n
         }
         return status(error);
     }
-    if (sent.bytes_sent != datagram.size()) {
+    if (sent.bytes_sent != wire.size()) {
         ++snapshot_.send_failure_count;
         return status(InputTransportError::PartialDatagramSend);
     }

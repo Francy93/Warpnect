@@ -1,7 +1,9 @@
 #include "audio_receiver_runtime.h"
 #include "audio_transport.h"
+#include "session_protection.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -21,9 +23,17 @@ using warpnect::scl::AudioTransportError;
 using warpnect::scl::AudioTransportSender;
 using warpnect::scl::AudioTransportSenderConfig;
 using warpnect::scl::AudioTransportSenderWorkspace;
+using warpnect::scl::DatagramProtectionError;
+using warpnect::scl::DatagramProtectionResult;
+using warpnect::scl::DatagramProtector;
 using warpnect::scl::IpAddress;
 using warpnect::scl::PayloadType;
 using warpnect::scl::UdpEndpoint;
+using warpnect::scl::UdpSocket;
+using warpnect::scl::security::ProtectionScope;
+using warpnect::scl::security::SessionProtectionError;
+using warpnect::scl::security::SessionProtectionLocalRole;
+using warpnect::scl::security::SessionProtectionRuntime;
 
 int failures = 0;
 int skips = 0;
@@ -68,6 +78,72 @@ void skip(std::string_view message) {
                                std::span<const std::byte> rhs) noexcept {
     return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
 }
+
+[[nodiscard]] std::array<std::byte, 32> protection_root() {
+    std::array<std::byte, 32> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(index + 1U));
+    }
+    return value;
+}
+
+[[nodiscard]] std::array<std::byte, 16> protection_session_id() {
+    std::array<std::byte, 16> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(0x30U + index));
+    }
+    return value;
+}
+
+[[nodiscard]] std::array<std::byte, 32> protection_transcript() {
+    std::array<std::byte, 32> value{};
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        value[index] = byte(static_cast<std::uint8_t>(0x70U + index));
+    }
+    return value;
+}
+
+class RuntimeDatagramProtector final : public DatagramProtector {
+  public:
+    RuntimeDatagramProtector(SessionProtectionRuntime& runtime, ProtectionScope scope) noexcept
+        : runtime_(runtime), scope_(scope) {}
+
+    [[nodiscard]] std::size_t secure_datagram_budget() const noexcept override {
+        return runtime_.secure_datagram_budget();
+    }
+
+    [[nodiscard]] std::size_t inner_datagram_budget() const noexcept override {
+        return runtime_.inner_datagram_budget();
+    }
+
+    [[nodiscard]] DatagramProtectionResult protect(
+        std::span<const std::byte> inner,
+        std::span<std::byte> output) noexcept override {
+        const auto result = runtime_.protect(scope_, inner, output);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+    [[nodiscard]] DatagramProtectionResult unprotect(
+        const UdpEndpoint& source,
+        std::span<const std::byte> secure,
+        std::span<std::byte> output,
+        std::uint64_t now_us) noexcept override {
+        const auto result = runtime_.unprotect(source, secure, output, now_us);
+        return {.error = map(result.error), .bytes_written = result.bytes_written};
+    }
+
+  private:
+    [[nodiscard]] static DatagramProtectionError map(SessionProtectionError error) noexcept {
+        if (error == SessionProtectionError::None) return DatagramProtectionError::None;
+        if (error == SessionProtectionError::DatagramTooLarge) {
+            return DatagramProtectionError::DatagramTooLarge;
+        }
+        return DatagramProtectionError::Rejected;
+    }
+
+    SessionProtectionRuntime& runtime_;
+    ProtectionScope scope_{};
+};
 
 struct RuntimeAndSender final {
     AudioReceiverRuntime receiver;
@@ -242,10 +318,96 @@ void payload_filtering_and_ready_capacity_are_bounded() {
            "filtered payload counted");
 }
 
+void protected_audio_round_trip_uses_channel_scope_below_scl() {
+    constexpr std::size_t secure_budget = 1200;
+    UdpSocket sender_socket;
+    UdpSocket receiver_socket;
+    if (!sender_socket.open(warpnect::scl::IpVersion::V4).ok() ||
+        !receiver_socket.open(warpnect::scl::IpVersion::V4).ok() ||
+        !sender_socket.bind(UdpEndpoint::loopback_v4(0)).ok() ||
+        !receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok()) {
+        skip("protected audio UDP sockets unavailable");
+        return;
+    }
+    const auto sender_local = sender_socket.local_endpoint();
+    const auto receiver_local = receiver_socket.local_endpoint();
+    if (!sender_local.ok() || !receiver_local.ok()) {
+        skip("protected audio UDP endpoints unavailable");
+        return;
+    }
+
+    SessionProtectionRuntime client({});
+    SessionProtectionRuntime host({});
+    const auto root = protection_root();
+    const auto session = protection_session_id();
+    const auto transcript = protection_transcript();
+    expect(client.initialize(root, session, 1, transcript, SessionProtectionLocalRole::Client).ok(),
+           "protected audio client security initializes");
+    expect(host.initialize(root, session, 1, transcript, SessionProtectionLocalRole::Host).ok(),
+           "protected audio host security initializes");
+    const ProtectionScope scope = ProtectionScope::channel(9);
+    expect(client.create_context(scope, receiver_local.endpoint).ok(),
+           "protected audio client Channel context initializes");
+    expect(host.create_context(scope, sender_local.endpoint).ok(),
+           "protected audio host Channel context initializes");
+    RuntimeDatagramProtector sender_protector(client, scope);
+    RuntimeDatagramProtector receiver_protector(host, scope);
+
+    AudioReceiverRuntime receiver(
+        AudioReceiverConfig{.local_endpoint = receiver_local.endpoint,
+                            .remote_endpoint = sender_local.endpoint,
+                            .restrict_remote_endpoint = true,
+                            .payload_type = PayloadType::SystemAudio,
+                            .max_wire_datagram_size = secure_budget,
+                            .max_logical_audio_payload_size = 4096,
+                            .reassembly_slot_count = 2,
+                            .ready_slot_count = 2,
+                            .reassembly_timeout_us = 20'000,
+                            .protector = &receiver_protector});
+    receiver.adopt_prebound_socket(std::move(receiver_socket));
+
+    std::vector<std::byte> inner_scratch(client.inner_datagram_budget());
+    std::vector<std::byte> secure_scratch(client.secure_datagram_budget());
+    AudioTransportSender sender(
+        AudioTransportSenderConfig{.remote_endpoint = receiver_local.endpoint,
+                                   .local_port = sender_local.endpoint.port,
+                                   .max_wire_datagram_size = secure_budget,
+                                   .initial_audio_sequence = 0,
+                                   .payload_type = PayloadType::SystemAudio,
+                                   .protector = &sender_protector},
+        AudioTransportSenderWorkspace{.datagram_scratch = inner_scratch,
+                                      .protected_datagram_scratch = secure_scratch});
+    sender.adopt_prebound_socket(std::move(sender_socket));
+
+    expect(receiver.open().ok(), "protected audio receiver opens prebound endpoint");
+    expect(sender.open().ok(), "protected audio sender opens prebound endpoint");
+    expect(sender.submit_stream_config(48000, 1, 5000, 120).ok(),
+           "protected audio sender emits StreamConfig");
+    const auto config = pump_until(receiver, AudioReceiverEventType::StreamConfigReady);
+    expect_equal(config.type, AudioReceiverEventType::StreamConfigReady,
+                 "WNSD-authenticated StreamConfig reaches parser");
+
+    const auto opus = make_bytes(24, 33);
+    expect(sender.submit_audio_frame(as_bytes(opus), 240, 5'000'000,
+                                     AudioTimestampQuality::AudioRecordTimestamp, false).ok(),
+           "protected audio frame sends");
+    const auto frame = pump_until(receiver, AudioReceiverEventType::AudioFrameReady);
+    expect_equal(frame.type, AudioReceiverEventType::AudioFrameReady,
+                 "WNSD-authenticated audio frame reaches reassembly");
+    expect(bytes_equal(receiver.ready_slot_payload(frame.slot_index), as_bytes(opus)),
+           "protected audio preserves exact Opus payload");
+    expect(receiver.release_ready_slot(frame.slot_index).ok(), "protected audio slot releases");
+    expect_equal(client.snapshot().protected_packets, 2ULL,
+                 "Channel protection runs after two inner SCL datagrams");
+    expect_equal(host.snapshot().decrypted_packets, 2ULL,
+                 "Channel unprotect runs before audio delivery");
+}
+
 int run_all_tests() {
     stream_config_and_sequential_frames_arrive_exactly();
     fragmented_audio_frame_reassembles_to_one_ready_slot();
     payload_filtering_and_ready_capacity_are_bounded();
+    protected_audio_round_trip_uses_channel_scope_below_scl();
     return failures == 0 ? 0 : 1;
 }
 

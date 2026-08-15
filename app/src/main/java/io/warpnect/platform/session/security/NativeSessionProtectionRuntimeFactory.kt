@@ -60,14 +60,23 @@ object NativeSessionProtectionRuntimeFactory : SessionProtectionRuntimeFactory {
     }
 }
 
+internal interface NativeSessionProtectionHandleAccess {
+    fun nativeProtectionHandle(): Long
+}
+
+internal fun nativeProtectionHandle(runtime: SessionProtectionRuntime): Long =
+    (runtime as? NativeSessionProtectionHandleAccess)?.nativeProtectionHandle() ?: 0L
+
 private class NativeSessionProtectionRuntime(
     private var handle: Long,
     private val bootstrap: AuthenticatedSessionBootstrap,
     override val sessionControlContext: ProtectionContextIds,
     override val maxInnerSclDatagramSize: Int,
-) : SessionProtectionRuntime {
+) : SessionProtectionRuntime, NativeSessionProtectionHandleAccess {
     private val lock = Any()
     override val sessionId get() = bootstrap.sessionId
+
+    override fun nativeProtectionHandle(): Long = synchronized(lock) { handle }
 
     override fun createChannelContext(channelId: ChannelId): SessionProtectionContextResult = synchronized(lock) {
         if (handle == 0L) return@synchronized SessionProtectionContextResult(SessionProtectionError.Closed)
@@ -84,6 +93,22 @@ private class NativeSessionProtectionRuntime(
             null
         }
         SessionProtectionContextResult(error, contextIds)
+    }
+
+    override fun createChannelContext(
+        channelId: ChannelId,
+        expectedRemoteEndpoint: HandshakeTransportEndpoint,
+    ): SessionProtectionContextResult = synchronized(lock) {
+        if (handle == 0L) return@synchronized SessionProtectionContextResult(SessionProtectionError.Closed)
+        decodeContextResult(
+            NativeBridge.sessionProtectionCreateContext(
+                handle,
+                1,
+                channelId.value.toLong(),
+                expectedRemoteEndpoint.addressBytes(),
+                expectedRemoteEndpoint.port,
+            ),
+        )
     }
 
     override fun destroyChannelContext(channelId: ChannelId): SessionProtectionError = synchronized(lock) {
@@ -123,6 +148,38 @@ private class NativeSessionProtectionRuntime(
             ),
         ).let { (error, bytes) -> SessionControlUnprotectResult(error, bytes) }
     }
+
+    override fun unprotectCandidateSessionControl(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult = synchronized(lock) {
+        if (handle == 0L) return@synchronized SessionControlUnprotectResult(SessionProtectionError.Closed)
+        decodeControlResult(
+            NativeBridge.sessionProtectionUnprotectCandidateSessionControl(
+                handle,
+                sourceEndpoint.addressBytes(),
+                sourceEndpoint.port,
+                protectedDatagram,
+                nowUs,
+            ),
+        ).let { (error, bytes) -> SessionControlUnprotectResult(error, bytes) }
+    }
+
+    override fun rebindSessionControlEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError =
+        synchronized(lock) {
+            if (handle == 0L) {
+                SessionProtectionError.Closed
+            } else {
+                SessionProtectionError.fromNative(
+                    NativeBridge.sessionProtectionRebindSessionControl(
+                        handle,
+                        endpoint.addressBytes(),
+                        endpoint.port,
+                    ),
+                )
+            }
+        }
 
     override fun snapshot(): SessionProtectionSnapshot = synchronized(lock) {
         if (handle == 0L) return@synchronized closedSnapshot()
@@ -182,6 +239,15 @@ private class NativeSessionProtectionRuntime(
         return error to bytes.copyOfRange(CONTROL_RESULT_PREFIX_BYTES, bytes.size).takeIf {
             error == SessionProtectionError.None
         }
+    }
+
+    private fun decodeContextResult(values: LongArray): SessionProtectionContextResult {
+        if (values.size != 3) return SessionProtectionContextResult(SessionProtectionError.CryptoFailure)
+        val error = SessionProtectionError.fromNative(values[0].toInt())
+        return SessionProtectionContextResult(
+            error,
+            if (error == SessionProtectionError.None) ProtectionContextIds(values[1], values[2]) else null,
+        )
     }
 
     private companion object {

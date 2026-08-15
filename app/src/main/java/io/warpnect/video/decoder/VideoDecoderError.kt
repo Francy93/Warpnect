@@ -8,6 +8,7 @@ enum class VideoDecoderError {
     HardwareClassificationUnavailable,
 
     UnsupportedDimensions,
+    UnsupportedFrameRate,
     InvalidConfiguration,
     InvalidConfigGeneration,
     MissingCodecSpecificData,

@@ -489,6 +489,25 @@ media-side Kotlin crypto path, and returns only authenticated SessionControl pay
 WNSD continues to own AES-GCM, anti-replay, epoch, context-ID, and endpoint filtering. The bridge
 does not modify PacketHeader, PayloadType, packetizers, NACK, FEC, or media/input payloads.
 
+## RFC-005G Prepared Secure Channels
+
+RFC-005G performs one cold Kotlin/JNI preparation transition per selected channel. JNI adopts the
+already-bound UDP endpoint into the existing native Video, Audio, Input, or generic Telemetry
+transport and attaches an opaque RFC-005E `Channel(ChannelId)` protector. No traffic key is copied
+into the Kotlin prepared model.
+
+```text
+Video: MediaCodec callback -> existing JNI -> SCL packetize -> FEC -> WNSD protect -> UDP
+Audio: native Opus/SCL -> WNSD protect -> UDP
+Input: capture -> existing JNI -> SCL Input -> WNSD protect -> UDP
+Receive: UDP -> WNSD authenticate/anti-replay -> SCL/FEC/reassembly -> subsystem delivery
+```
+
+Video NACK control is authenticated before retransmission and the retransmission cache retains the
+exact protected wire datagram. Android Wi-Fi Direct and path-local socket selection remain in
+platform adapters; portable SCL contains no `WifiP2pManager`, Android `Network`, or process-binding
+API. Prepared transports own no media worker until later startup orchestration.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

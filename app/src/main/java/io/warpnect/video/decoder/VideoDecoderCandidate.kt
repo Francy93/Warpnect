@@ -6,6 +6,7 @@ data class VideoDecoderCandidate(
     val widthSupported: Boolean,
     val heightSupported: Boolean,
     val sizeSupported: Boolean,
+    val sizeAndRateSupported: Boolean = true,
     val lowLatencyFeatureSupported: Boolean? = null,
     val widthAlignment: Int? = null,
     val heightAlignment: Int? = null,
@@ -18,6 +19,7 @@ data class VideoDecoderCandidate(
         widthSupported = widthSupported,
         heightSupported = heightSupported,
         sizeSupported = sizeSupported,
+        sizeAndRateSupported = sizeAndRateSupported,
         lowLatencyFeatureSupported = lowLatencyFeatureSupported,
         widthAlignment = widthAlignment,
         heightAlignment = heightAlignment,
@@ -64,7 +66,12 @@ object VideoDecoderSelector {
             return unsupported(config, candidates, VideoDecoderError.UnsupportedDimensions)
         }
 
-        val selected = dimensions.sortedWith(
+        val frameRate = dimensions.filter { it.sizeAndRateSupported }
+        if (frameRate.isEmpty()) {
+            return unsupported(config, candidates, VideoDecoderError.UnsupportedFrameRate)
+        }
+
+        val selected = frameRate.sortedWith(
             compareBy<VideoDecoderCandidate>(
                 { it.lowLatencyFeatureSupported != true },
                 { it.info.alias == true },

@@ -50,6 +50,7 @@ struct VideoReceiverConfig final {
     std::uint64_t clock_sync_interval_us = 1'000'000;
     ClockSyncConfig clock_sync{};
     std::size_t clock_sync_sample_capacity = 16;
+    DatagramProtector* protector = nullptr;
 };
 
 struct VideoReceiverEvent final {
@@ -124,6 +125,7 @@ class VideoReceiverRuntime final {
     VideoReceiverRuntime& operator=(const VideoReceiverRuntime&) = delete;
 
     [[nodiscard]] VideoStatus open() noexcept;
+    void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] VideoReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] VideoStatus accept_datagram(std::span<const std::byte> datagram,
                                               const UdpEndpoint& source,
@@ -198,6 +200,8 @@ class VideoReceiverRuntime final {
     LossDetector loss_detector_;
     std::vector<NackRequest> nack_scratch_{};
     std::vector<std::byte> datagram_buffer_{};
+    std::vector<std::byte> unprotected_datagram_buffer_{};
+    std::vector<std::byte> protected_control_scratch_{};
     std::vector<std::byte> control_datagram_scratch_{};
     std::vector<ReceiverSlot> slots_{};
     std::vector<std::size_t> ready_ring_{};
