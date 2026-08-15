@@ -201,6 +201,18 @@ Current value:
 Session Packet Protection Version defines RFC-005E's outer `WNSD` envelope only. It is neither an
 SCL Protocol Version nor a media/input payload version and changes no frozen inner SCL wire field.
 
+## Capability Negotiation Protocol Version
+
+Current value:
+
+```text
+1
+```
+
+Capability Negotiation Protocol Version defines RFC-005F's encrypted `WNCP` application-control
+format inside existing `PayloadType.SessionControl`. It is independent from SCL, discovery,
+pairing, handshake, packet-protection, native ABI, and media/input payload version domains.
+
 Current value:
 
 ```text

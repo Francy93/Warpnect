@@ -484,3 +484,19 @@ duplicate media transmission.
 > AuthenticatedSessionRootSecret, session protection master material, traffic secrets, AES keys, and IVs are memory-only and must never be persisted or logged.
 
 > FEC protects/reconstructs inner SCL datagrams only after WNSD authentication at the receiver; a standby path, retransmission cache, or FEC recovery never permits unauthenticated inner traffic.
+
+## Phase 5 Capability Negotiation
+
+> Capability, current runtime availability, user preference, and negotiated session configuration are distinct concepts and must never be implicitly interchangeable.
+
+> A negotiated capability is not a reservation of hardware, privileged service, or network resource; exact runtime configuration is revalidated before startup.
+
+> Required session features never silently fall back to incompatible alternatives.
+
+> Capability Negotiation V1 is carried only through an RFC-005E protected SessionControl context.
+
+> Dynamic physical peripheral presence is not encoded as a stable device capability.
+
+> A platform probe does not imply a production capability. UHID accessibility alone never advertises stable or identity-preserving virtual gamepad support.
+
+> Video capability ceilings do not imply every tuple below those ceilings is valid; RFC-005G validates exact codec format tuples.

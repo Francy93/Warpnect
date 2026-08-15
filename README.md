@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session, discovery, pairing/trust, authenticated-handshake, and packet-protection foundations through RFC-005E.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 session, discovery, pairing/trust, authenticated-handshake, packet-protection, and secure capability-negotiation foundations through RFC-005F.
 
 Present:
 
@@ -59,14 +59,15 @@ Present:
 - A bounded untrusted-presence cache with strict Discovery Presence Schema Version 1 TXT parsing, route loss/expiry, availability visibility policy, contact-port reservation without a receive protocol, typed Android permission/capability planning, and one `WarpnectDiscovery` control context.
 - Persistent local identity and explicit pairing/trust bootstrap. A non-zero DeviceId is bound to an Android Keystore P-256 signing key; explicit LAN pairing uses fresh ECDH, signed transcript commitment, a six-digit SAS, and two human confirmations before storing a bounded `DeviceId -> public key` trust binding.
 - Mutually authenticated WNSH session handshakes. A trusted Host authenticates first inside encrypted handshake records, then both peers produce a fresh forward-secret root secret without creating a media session.
-- Session Packet Protection V1: a portable native WNSD AES-128-GCM envelope with scoped directional keys, bounded anti-replay windows, monotonic key epochs, and cold JNI runtime/context ownership. It is not yet attached to a media, audio, input, or control transport.
+- Session Packet Protection V1: a portable native WNSD AES-128-GCM envelope with scoped directional keys, bounded anti-replay windows, monotonic key epochs, and cold JNI runtime/context ownership.
+- Authenticated capability and feature negotiation through bounded WNCP Version 1 records carried only inside encrypted RFC-005E SessionControl datagrams. Frozen Client/Host capability snapshots, explicit Required/Preferred/Disabled requests, and Host policy produce one immutable profile without starting media, audio, input, or Direct resources.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Capability/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
+- Endpoint/channel negotiation, Wi-Fi Direct connection, path failover, reconnect strategy, telemetry UI, or telemetry wire streaming.
 
 ## Repository Layout
 
@@ -239,6 +240,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-005C Pairing & Trust Bootstrap](docs/rfc/RFC-005C-Pairing-Trust-Bootstrap.md)
 - [RFC-005D Authenticated Session Handshake](docs/rfc/RFC-005D-Authenticated-Session-Handshake.md)
 - [RFC-005E Session Keys, Packet Authentication & Anti-Replay](docs/rfc/RFC-005E-Session-Keys-Packet-Authentication-Anti-Replay.md)
+- [RFC-005F Capability, Role & Feature Negotiation](docs/rfc/RFC-005F-Capability-Role-Feature-Negotiation.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -257,6 +259,6 @@ Phase 3 audio is implementation-complete. RFC-003A implements PCM capture founda
 
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
-Phase 5 now includes RFC-005A through RFC-005E. The session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. RFC-005B adds unauthenticated ephemeral LAN/Direct discovery, RFC-005C adds explicit human-verified DeviceId-to-P-256-key trust, and RFC-005D creates an authenticated forward-secret bootstrap. RFC-005E consumes that root once into a portable WNSD AES-128-GCM runtime with directional scoped keys, bounded anti-replay, and epoch rotation. No negotiated channel is attached yet: capability negotiation, channel establishment, Direct connection, failover, and reconnect remain later work.
+Phase 5 now includes RFC-005A through RFC-005F. The session core keeps device identity, peer identity, SessionId, network path, channel, and session-scoped logical peripheral identity separate. RFC-005B adds unauthenticated ephemeral LAN/Direct discovery, RFC-005C adds explicit human-verified DeviceId-to-P-256-key trust, RFC-005D creates an authenticated forward-secret bootstrap, and RFC-005E protects SessionControl. RFC-005F then freezes an authenticated capability profile over WNSD without opening a channel or starting a pipeline. Endpoint/channel establishment, Direct connection, failover, and reconnect remain later work.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

@@ -278,6 +278,9 @@ interface AuthenticatedSessionAdmissionReservation : AutoCloseable {
     val sessionId: SessionId
     val peerDeviceId: DeviceId
     val expiresAtMonotonicMs: Long
+
+    /** Extends the same bounded Host admission slot; it never reserves an additional session. */
+    fun renew(lifetimeMs: Long): Boolean = false
     override fun close()
 }
 

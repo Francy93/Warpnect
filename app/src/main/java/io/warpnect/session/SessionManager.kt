@@ -232,6 +232,21 @@ class SessionManager(
         if (authenticatedReservations.remove(sessionId) == null) SessionError.AdmissionReservationNotFound else SessionError.None
     }
 
+    /** Renews the existing authenticated admission in place without changing capacity accounting. */
+    fun renewAuthenticatedAdmission(sessionId: SessionId, lifetimeUs: Long): SessionAdmissionResult =
+        synchronized(lock) {
+            if (closed) return@synchronized SessionAdmissionResult(SessionError.Closed)
+            if (lifetimeUs <= 0L) return@synchronized SessionAdmissionResult(SessionError.InvalidPolicy)
+            expireReservationsLocked()
+            val current = authenticatedReservations[sessionId]
+                ?: return@synchronized SessionAdmissionResult(SessionError.AdmissionReservationNotFound)
+            val now = monotonicNowUs()
+            val expiresAt = if (lifetimeUs > Long.MAX_VALUE - now) Long.MAX_VALUE else now + lifetimeUs
+            val renewed = current.copy(expiresAtMonotonicUs = expiresAt)
+            authenticatedReservations[sessionId] = renewed
+            SessionAdmissionResult(SessionError.None, renewed)
+        }
+
     /** Future Phase 5 negotiation may atomically consume this reservation when registering Created. */
     fun consumeAuthenticatedAdmission(request: SessionCreateRequest): SessionOperationResult = synchronized(lock) {
         if (closed) return@synchronized failed(SessionError.Closed)

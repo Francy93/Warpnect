@@ -333,3 +333,12 @@ and unprotect operations perform bounded native work with no JNI hop or heap all
 creation, context management, and snapshots use a short handle lock only; they are never packet
 operations. Replay/epoch state, FEC ordering, and endpoint filtering are local native transport
 concerns and never enter media codec, audio callback, or Android input-dispatch threads.
+
+## RFC-005F Capability Negotiation Control
+
+Capability collection coordination, WNCP canonical parsing/selection, semantic deduplication,
+bounded retry timers, completion-cache expiry, and admission-lease progression execute on the
+existing serialized Phase 5 secure SessionControl context. The controller owns no per-session
+thread, queue, reorder buffer, polling loop, or worker pool. Capability collection is cold-path
+only and must never start or run in MediaCodec callbacks, AudioRecord/Oboe loops, input capture,
+input injection, or native media receive paths.

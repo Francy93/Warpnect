@@ -473,6 +473,22 @@ or decrypts a packet. AES-GCM, HKDF, epoch/replay state, and WNSD parsing stay i
 path. Mbed TLS 3.6.7 contributes only `mbedcrypto`; TLS, DTLS, X.509, media, input, and Binder
 paths remain outside this boundary.
 
+## RFC-005F Secure SessionControl
+
+RFC-005F adds one cold control-message bridge, not media integration:
+
+```text
+Kotlin WNCP model and codec
+        -> existing PacketHeader V1 / PayloadType.SessionControl framing
+        -> native RFC-005E WNSD protect or unprotect
+        -> UDP
+```
+
+The JNI bridge accepts at most one 1024-byte WNCP payload per control submission, creates no
+media-side Kotlin crypto path, and returns only authenticated SessionControl payloads. Native
+WNSD continues to own AES-GCM, anti-replay, epoch, context-ID, and endpoint filtering. The bridge
+does not modify PacketHeader, PayloadType, packetizers, NACK, FEC, or media/input payloads.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

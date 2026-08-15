@@ -2,6 +2,7 @@
 
 package io.warpnect.platform.session.bootstrap
 
+import io.warpnect.platform.session.control.SecureSessionControlDatagramIo
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.handshake.SessionHandshakeProtocol
 import io.warpnect.session.handshake.SessionHandshakeTransport
@@ -15,11 +16,14 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketException
 
-/** One blocking reader for the advertised bootstrap socket; it recognizes only WNPB and WNSH. */
-class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoCloseable {
+/** One blocking reader for the advertised bootstrap socket; WNPB, WNSH and protected WNSD coexist. */
+class AndroidBootstrapDatagramRouter(
+    private val socket: DatagramSocket,
+) : SecureSessionControlDatagramIo, AutoCloseable {
     private val lock = Any()
     private var pairingListener: ((PairingTransportEndpoint, ByteArray) -> Unit)? = null
     private var handshakeListener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)? = null
+    private val secureControlListeners = LinkedHashMap<Long, (HandshakeTransportEndpoint, ByteArray) -> Unit>()
     private var reader: Thread? = null
     private var closed = false
 
@@ -38,6 +42,19 @@ class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoC
         startReaderLocked()
     }
 
+    override fun setSecureControlListener(
+        receiveContextId: Long,
+        listener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)?,
+    ) = synchronized(lock) {
+        if (closed) return@synchronized
+        if (listener == null) {
+            secureControlListeners.remove(receiveContextId)
+        } else {
+            secureControlListeners[receiveContextId] = listener
+            startReaderLocked()
+        }
+    }
+
     fun send(host: String, port: Int, bytes: ByteArray): PairingTransportSendResult = try {
         socket.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(host), port))
         PairingTransportSendResult.Sent
@@ -49,7 +66,7 @@ class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoC
         PairingTransportSendResult.Failed
     }
 
-    fun send(endpoint: HandshakeTransportEndpoint, bytes: ByteArray): Boolean = try {
+    override fun send(endpoint: HandshakeTransportEndpoint, bytes: ByteArray): Boolean = try {
         socket.send(
             DatagramPacket(bytes, bytes.size, InetAddress.getByAddress(endpoint.addressBytes()), endpoint.port),
         )
@@ -86,10 +103,11 @@ class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoC
                 if (packet.length < 4 || packet.length > SessionHandshakeProtocol.MAX_DATAGRAM_BYTES) continue
                 val bytes = packet.data.copyOf(packet.length)
                 val address = packet.address ?: continue
+                val hostAddress = address.hostAddress ?: continue
                 when {
                     bytes.copyOfRange(0, 4).contentEquals(PAIRING_MAGIC) -> synchronized(lock) {
                         pairingListener
-                    }?.invoke(PairingTransportEndpoint(address.hostAddress, packet.port), bytes)
+                    }?.invoke(PairingTransportEndpoint(hostAddress, packet.port), bytes)
                     bytes.copyOfRange(
                         0,
                         4,
@@ -102,6 +120,14 @@ class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoC
                         synchronized(lock) {
                             handshakeListener
                         }?.invoke(endpoint, bytes)
+                    }
+                    bytes.copyOfRange(0, 4).contentEquals(SECURE_MAGIC) && packet.length >= SECURE_HEADER_BYTES -> {
+                        val contextId = readU64(bytes, SECURE_CONTEXT_ID_OFFSET)
+                        HandshakeTransportEndpoint.from(address.address, packet.port)?.let { endpoint ->
+                            synchronized(lock) {
+                                secureControlListeners[contextId]
+                            }?.invoke(endpoint, bytes)
+                        }
                     }
                 }
             }
@@ -116,13 +142,21 @@ class AndroidBootstrapDatagramRouter(private val socket: DatagramSocket) : AutoC
             closed = true
             pairingListener = null
             handshakeListener = null
+            secureControlListeners.clear()
             socket.close()
         }
     }
     private companion object {
         const val THREAD_NAME = "WarpnectBootstrapUdp"
+        const val SECURE_HEADER_BYTES = 28
+        const val SECURE_CONTEXT_ID_OFFSET = 8
         val PAIRING_MAGIC: ByteArray =
             byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'P'.code.toByte(), 'B'.code.toByte())
+        val SECURE_MAGIC: ByteArray =
+            byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'S'.code.toByte(), 'D'.code.toByte())
+
+        fun readU64(bytes: ByteArray, offset: Int): Long =
+            (0 until 8).fold(0L) { result, index -> (result shl 8) or (bytes[offset + index].toLong() and 0xffL) }
     }
 }
 
@@ -144,7 +178,9 @@ private class RoutedPairingTransport(private val router: AndroidBootstrapDatagra
     }
 }
 
-private class RoutedSessionHandshakeTransport(private val router: AndroidBootstrapDatagramRouter) : SessionHandshakeTransport {
+private class RoutedSessionHandshakeTransport(
+    private val router: AndroidBootstrapDatagramRouter,
+) : SessionHandshakeTransport, SecureSessionControlDatagramIo {
     override fun setDatagramListener(listener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)?) =
         router.setHandshakeListener(listener)
     override fun send(endpoint: HandshakeTransportEndpoint, datagram: ByteArray): Boolean =
@@ -152,4 +188,9 @@ private class RoutedSessionHandshakeTransport(private val router: AndroidBootstr
     override fun close() {
         router.setHandshakeListener(null)
     }
+
+    override fun setSecureControlListener(
+        receiveContextId: Long,
+        listener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)?,
+    ) = router.setSecureControlListener(receiveContextId, listener)
 }

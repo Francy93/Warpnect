@@ -107,6 +107,21 @@ class SessionProtectionControllerTest {
             SessionProtectionContextResult(SessionProtectionError.None, ProtectionContextIds(3L, 4L))
         override fun destroyChannelContext(channelId: io.warpnect.session.ChannelId): SessionProtectionError =
             SessionProtectionError.None
+        override fun protectSessionControl(
+            sequenceNumber: Long,
+            timestampUs: Long,
+            payload: ByteArray,
+        ): io.warpnect.session.control.SecureSessionControlSendResult =
+            io.warpnect.session.control.SecureSessionControlSendResult(SessionProtectionError.None, payload.copyOf())
+        override fun unprotectSessionControl(
+            sourceEndpoint: HandshakeTransportEndpoint,
+            protectedDatagram: ByteArray,
+            nowUs: Long,
+        ): io.warpnect.session.control.SessionControlUnprotectResult =
+            io.warpnect.session.control.SessionControlUnprotectResult(
+                SessionProtectionError.None,
+                protectedDatagram.copyOf(),
+            )
         override fun snapshot(): SessionProtectionSnapshot = SessionProtectionSnapshot(
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, SessionProtectionError.None,
         )

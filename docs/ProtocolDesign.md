@@ -1467,6 +1467,24 @@ WNSD has 44 bytes of fixed overhead. It does not modify PacketHeader, PayloadTyp
 V1, Audio Payload V1, Input Payload V1, NACK, FEC, ClockSync, VideoResyncRequest, the discovery
 schema, the pairing bootstrap, or WNSH. Its packet numbers are a separate security sequence space.
 
+## Capability Negotiation Protocol Version 1
+
+RFC-005F defines WNCP inside an RFC-005E protected existing SCL `SessionControl` payload. WNCP is
+never a raw UDP protocol. Its fixed 20-byte header is `WNCP`, version 1, type, zero flags, nonzero
+u64 negotiation ID, u16 body length, and zero reserved bytes. The complete WNCP message is at most
+1024 bytes and uses no fragmentation.
+
+V1 messages are ClientOffer, HostSelection, ClientConfirm, HostComplete, and NegotiationReject.
+Capability sections are ascending, unique `u16 type / u16 length / value` TLVs. Unknown optional
+TLVs remain in message hashes; unknown critical TLVs reject. ClientOffer and HostSelection hashes
+cover the exact WNCP header and body. ClientConfirm and HostComplete carry the ClientOffer,
+HostSelection, and negotiated-profile hashes.
+
+WNCP uses existing PacketHeader V1 and `PayloadType.SessionControl`; it adds no payload type or SCL
+field. Application retry sends the same canonical WNCP bytes in a new protected SCL/WNSD record,
+whereas RFC-005E retransmission reuses an exact existing protected datagram. Both sequence domains
+remain independent of `CapabilityNegotiationId`.
+
 ## Discovery Presence Schema V1
 
 RFC-005B's Discovery Presence Schema Version 1 is DNS-SD control-plane metadata only. Its

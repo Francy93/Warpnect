@@ -2,6 +2,7 @@
 
 package io.warpnect.platform.session.handshake
 
+import io.warpnect.platform.session.control.SecureSessionControlDatagramIo
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.handshake.SessionHandshakeProtocol
 import io.warpnect.session.handshake.SessionHandshakeTransport
@@ -15,9 +16,10 @@ import java.net.SocketException
 /** Dedicated initiator socket only. Advertised responder sockets use AndroidBootstrapDatagramRouter. */
 class AndroidDatagramSessionHandshakeTransport private constructor(
     private val socket: DatagramSocket,
-) : SessionHandshakeTransport {
+) : SessionHandshakeTransport, SecureSessionControlDatagramIo {
     private val lock = Any()
     private var listener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)? = null
+    private val secureControlListeners = LinkedHashMap<Long, (HandshakeTransportEndpoint, ByteArray) -> Unit>()
     private var reader: Thread? = null
     private var closed = false
 
@@ -53,6 +55,24 @@ class AndroidDatagramSessionHandshakeTransport private constructor(
         }
     }
 
+    override fun setSecureControlListener(
+        receiveContextId: Long,
+        listener: ((HandshakeTransportEndpoint, ByteArray) -> Unit)?,
+    ) = synchronized(lock) {
+        if (closed) return@synchronized
+        if (listener == null) {
+            secureControlListeners.remove(receiveContextId)
+        } else {
+            secureControlListeners[receiveContextId] = listener
+            if (reader == null) {
+                reader = Thread(::readLoop, THREAD_NAME).apply {
+                    isDaemon = true
+                    start()
+                }
+            }
+        }
+    }
+
     private fun readLoop() {
         try {
             while (!socket.isClosed) {
@@ -69,7 +89,14 @@ class AndroidDatagramSessionHandshakeTransport private constructor(
                     return
                 }
                 val endpoint = packet.address?.let { HandshakeTransportEndpoint.from(it.address, packet.port) } ?: continue
-                synchronized(lock) { listener }?.invoke(endpoint, packet.data.copyOf(packet.length))
+                val bytes = packet.data.copyOf(packet.length)
+                if (bytes.size >= SECURE_HEADER_BYTES && bytes.copyOfRange(0, 4).contentEquals(SECURE_MAGIC)) {
+                    synchronized(
+                        lock,
+                    ) { secureControlListeners[readU64(bytes, SECURE_CONTEXT_ID_OFFSET)] }?.invoke(endpoint, bytes)
+                } else {
+                    synchronized(lock) { listener }?.invoke(endpoint, bytes)
+                }
             }
         } finally {
             synchronized(lock) { reader = null }
@@ -80,12 +107,22 @@ class AndroidDatagramSessionHandshakeTransport private constructor(
         if (!closed) {
             closed = true
             listener = null
+            secureControlListeners.clear()
             socket.close()
         }
     }
 
     companion object {
         private const val THREAD_NAME = "WarpnectSessionHandshakeUdp"
+        private const val SECURE_HEADER_BYTES = 28
+        private const val SECURE_CONTEXT_ID_OFFSET = 8
+        private val SECURE_MAGIC =
+            byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'S'.code.toByte(), 'D'.code.toByte())
+
+        private fun readU64(bytes: ByteArray, offset: Int): Long = (0 until 8).fold(0L) { result, index ->
+            (result shl 8) or (bytes[offset + index].toLong() and 0xffL)
+        }
+
         fun createEphemeral(): AndroidDatagramSessionHandshakeTransport? = try {
             val socket = DatagramSocket(null).apply {
                 reuseAddress = false

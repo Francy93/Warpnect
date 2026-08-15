@@ -672,3 +672,25 @@ third_party/mbedtls-3.6.7/
 The Kotlin session package contains only cold-path ownership/configuration contracts. The portable
 native runtime owns WNSD keys, epochs, replay windows, and generic scope derivation. It is not yet
 attached to video, audio, input, NACK, or FEC transport objects.
+
+## RFC-005F Capability Negotiation
+
+```text
+app/src/main/java/io/warpnect/session/capability/
+  CapabilityModel.kt
+  CapabilityNegotiationCodec.kt
+  CapabilityNegotiator.kt
+  CapabilityNegotiationController.kt
+app/src/main/java/io/warpnect/session/control/
+  SecureSessionControl.kt
+app/src/main/java/io/warpnect/platform/session/control/
+  AndroidSecureSessionControlTransport.kt
+app/src/main/java/io/warpnect/platform/session/capability/
+  AndroidLocalCapabilityCollector.kt
+```
+
+The capability package is platform-neutral and owns WNCP models, strict codecs, deterministic
+intersection, immutable snapshots, and bounded negotiation state. The control package bridges only
+authenticated RFC-005E SessionControl records. The Android collector maps existing Phase 2/3/4
+probe results without starting resources. `AndroidBootstrapDatagramRouter` and the initiator UDP
+transport own the single-reader WNSD dispatch seam.

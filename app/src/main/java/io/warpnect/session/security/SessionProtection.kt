@@ -4,7 +4,11 @@ import io.warpnect.session.ChannelId
 import io.warpnect.session.SessionBounds
 import io.warpnect.session.SessionId
 import io.warpnect.session.SessionRole
+import io.warpnect.session.control.SecureSessionControlSendResult
+import io.warpnect.session.control.SessionControlProtectionRuntime
+import io.warpnect.session.control.SessionControlUnprotectResult
 import io.warpnect.session.handshake.AuthenticatedSessionBootstrap
+import io.warpnect.session.handshake.HandshakeTransportEndpoint
 
 /** Session Packet Protection V1 is an outer WNSD envelope, never a change to SCL packet formats. */
 object SessionProtectionProtocol {
@@ -106,7 +110,7 @@ data class SessionProtectionSnapshot(
     val lastError: SessionProtectionError,
 )
 
-interface SessionProtectionRuntime : AutoCloseable {
+interface SessionProtectionRuntime : SessionControlProtectionRuntime {
     val sessionId: SessionId
     val sessionControlContext: ProtectionContextIds
     val maxInnerSclDatagramSize: Int
@@ -114,6 +118,20 @@ interface SessionProtectionRuntime : AutoCloseable {
     fun createChannelContext(channelId: ChannelId): SessionProtectionContextResult
     fun destroyChannelContext(channelId: ChannelId): SessionProtectionError
     fun snapshot(): SessionProtectionSnapshot
+    override fun protectSessionControl(
+        sequenceNumber: Long,
+        timestampUs: Long,
+        payload: ByteArray,
+    ): SecureSessionControlSendResult
+
+    override fun unprotectSessionControl(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult
+
+    override val maxPayloadBytes: Int
+        get() = maxInnerSclDatagramSize - 21
     override fun close()
 }
 

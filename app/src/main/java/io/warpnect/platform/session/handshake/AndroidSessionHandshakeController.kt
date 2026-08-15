@@ -4,9 +4,12 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
+import io.warpnect.platform.session.control.AndroidSecureSessionControlTransport
+import io.warpnect.platform.session.control.SecureSessionControlDatagramIo
 import io.warpnect.session.SessionId
 import io.warpnect.session.SessionManager
 import io.warpnect.session.discovery.LocalDiscoveryController
+import io.warpnect.session.handshake.AuthenticatedSessionBootstrap
 import io.warpnect.session.handshake.CurrentDiscoveryPresenceProvider
 import io.warpnect.session.handshake.DiscoveryPresenceBinding
 import io.warpnect.session.handshake.ExpectedPeerConstraint
@@ -20,6 +23,7 @@ import io.warpnect.session.handshake.SessionHandshakeSnapshot
 import io.warpnect.session.handshake.SessionHandshakeTransport
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
 import io.warpnect.session.pairing.PairingCryptoProvider
+import io.warpnect.session.security.SessionProtectionRuntime
 import io.warpnect.session.trust.TrustedPeerStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
@@ -29,7 +33,7 @@ class AndroidSessionHandshakeController(
     localSigner: LocalDeviceIdentitySigner,
     trustedPeers: TrustedPeerStore,
     sessionManager: SessionManager,
-    transport: SessionHandshakeTransport,
+    private val transport: SessionHandshakeTransport,
     crypto: PairingCryptoProvider,
     private val config: SessionHandshakeConfig = SessionHandshakeConfig(),
     discovery: LocalDiscoveryController? = null,
@@ -70,6 +74,20 @@ class AndroidSessionHandshakeController(
     }
 
     fun snapshot(): SessionHandshakeSnapshot = onControl(controller::snapshot)
+
+    /** Reuses the existing bound handshake endpoint; it never opens a second client UDP socket. */
+    fun borrowSecureSessionControlTransport(
+        bootstrap: AuthenticatedSessionBootstrap,
+        protection: SessionProtectionRuntime,
+    ): AndroidSecureSessionControlTransport? = onControl {
+        val datagramIo = transport as? SecureSessionControlDatagramIo ?: return@onControl null
+        AndroidSecureSessionControlTransport(
+            datagramIo,
+            protection,
+            protection.sessionControlContext.receiveContextId,
+            bootstrap.endpoint,
+        )
+    }
 
     override fun close() {
         if (closed) return

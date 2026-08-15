@@ -22,6 +22,7 @@
 #include "input_receiver_runtime.h"
 #include "input_transport.h"
 #include "native_bridge.h"
+#include "packet_codec.h"
 #include "retransmission_cache.h"
 #include "session_protection.h"
 #include "udp_endpoint.h"
@@ -70,6 +71,9 @@ using warpnect::scl::InputTransportSender;
 using warpnect::scl::InputTransportSenderConfig;
 using warpnect::scl::InputTransportSenderWorkspace;
 using warpnect::scl::InputTransportStatus;
+using warpnect::scl::IpVersion;
+using warpnect::scl::PacketHeader;
+using warpnect::scl::PayloadType;
 using warpnect::scl::VideoError;
 using warpnect::scl::VideoReceiverConfig;
 using warpnect::scl::VideoReceiverEventType;
@@ -348,6 +352,41 @@ struct NativeSessionProtectionHandle final {
     env->GetByteArrayRegion(array, 0, static_cast<jsize>(output.size()),
                             reinterpret_cast<jbyte*>(output.data()));
     return !env->ExceptionCheck();
+}
+
+[[nodiscard]] bool copy_bounded_byte_array(JNIEnv* env, jbyteArray array, const std::size_t maximum,
+                                            std::vector<std::byte>& output) noexcept {
+    if (array == nullptr) return false;
+    const jsize length = env->GetArrayLength(array);
+    if (length < 0 || static_cast<std::size_t>(length) > maximum) return false;
+    output.resize(static_cast<std::size_t>(length));
+    if (length > 0) {
+        env->GetByteArrayRegion(array, 0, length, reinterpret_cast<jbyte*>(output.data()));
+    }
+    return !env->ExceptionCheck();
+}
+
+[[nodiscard]] jbyteArray session_control_result(JNIEnv* env, const SessionProtectionError error,
+                                                 const std::span<const std::byte> payload) noexcept {
+    constexpr std::size_t prefix_size = 4;
+    if (payload.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max()) - prefix_size) {
+        return nullptr;
+    }
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(prefix_size + payload.size()));
+    if (result == nullptr) return nullptr;
+    std::array<std::byte, prefix_size> prefix{};
+    const auto code = static_cast<std::uint32_t>(static_cast<std::uint8_t>(error));
+    prefix[0] = std::byte((code >> 24U) & 0xffU);
+    prefix[1] = std::byte((code >> 16U) & 0xffU);
+    prefix[2] = std::byte((code >> 8U) & 0xffU);
+    prefix[3] = std::byte(code & 0xffU);
+    env->SetByteArrayRegion(result, 0, static_cast<jsize>(prefix.size()),
+                            reinterpret_cast<const jbyte*>(prefix.data()));
+    if (!payload.empty()) {
+        env->SetByteArrayRegion(result, static_cast<jsize>(prefix.size()), static_cast<jsize>(payload.size()),
+                                reinterpret_cast<const jbyte*>(payload.data()));
+    }
+    return env->ExceptionCheck() ? nullptr : result;
 }
 
 [[nodiscard]] constexpr jint session_protection_error_code(
@@ -1221,19 +1260,24 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
     jint max_contexts,
     jlong max_packets_per_epoch,
     jlong previous_epoch_retention_us,
-    jlong max_protected_retransmission_age_us) {
+    jlong max_protected_retransmission_age_us,
+    jbyteArray expected_remote_address,
+    jint expected_remote_port) {
     jlong values[kNativeSessionProtectionCreateValues]{};
     values[1] = session_protection_error_code(SessionProtectionError::InvalidConfig);
     try {
         SecretByteArray<32> root{};
         std::array<std::byte, 16> sid{};
         std::array<std::byte, 32> transcript{};
+        std::vector<std::byte> remote_address{};
         if (session_generation <= 0 || max_secure_datagram_size <= 0 || replay_window_size <= 0 ||
             max_contexts <= 0 || max_packets_per_epoch <= 0 || previous_epoch_retention_us <= 0 ||
             max_protected_retransmission_age_us < 0 ||
             !copy_exact_byte_array(env, root_secret, root.bytes) ||
             !copy_exact_byte_array(env, session_id, sid) ||
-            !copy_exact_byte_array(env, transcript_hash, transcript)) {
+            !copy_exact_byte_array(env, transcript_hash, transcript) ||
+            !copy_bounded_byte_array(env, expected_remote_address, 16, remote_address) ||
+            (remote_address.size() != 4 && remote_address.size() != 16) || !valid_port(expected_remote_port, false)) {
             values[1] = session_protection_error_code(SessionProtectionError::InvalidConfig);
         } else {
             const SessionProtectionConfig config{
@@ -1257,7 +1301,14 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
             if (!initialized.ok()) {
                 values[1] = session_protection_error_code(initialized.error);
             } else {
-                const auto context = handle->runtime->create_context(ProtectionScope::session_control());
+                UdpEndpoint endpoint{};
+                endpoint.address.version = remote_address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
+                for (std::size_t index = 0; index < remote_address.size(); ++index) {
+                    endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(remote_address[index]);
+                }
+                endpoint.port = static_cast<std::uint16_t>(expected_remote_port);
+                const auto context = handle->runtime->create_context(
+                    ProtectionScope::session_control(), endpoint);
                 if (!context.ok()) {
                     values[1] = session_protection_error_code(context.error);
                 } else {
@@ -1371,6 +1422,79 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionSnapshot(
         env->SetLongArrayRegion(array, 0, kNativeSessionProtectionSnapshotValues, values);
     }
     return array;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionProtectSessionControl(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jlong sequence_number, jlong timestamp_us,
+    jbyteArray payload) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_u32(sequence_number) ||
+        timestamp_us < 0) {
+        return session_control_result(env, SessionProtectionError::InvalidConfig, {});
+    }
+    std::vector<std::byte> control_payload{};
+    std::vector<std::byte> inner{};
+    std::vector<std::byte> secure{};
+    if (!copy_bounded_byte_array(env, payload, native_handle->runtime->inner_datagram_budget(), control_payload)) {
+        return session_control_result(env, SessionProtectionError::DatagramTooLarge, {});
+    }
+    std::lock_guard guard(native_handle->lock);
+    const auto inner_size = warpnect::scl::encoded_packet_size(control_payload.size());
+    if (!inner_size.ok()) return session_control_result(env, SessionProtectionError::DatagramTooLarge, {});
+    inner.resize(inner_size.bytes_written);
+    const PacketHeader header{
+        .protocol_version = warpnect::scl::kSclProtocolVersion,
+        .flags = 0,
+        .sequence_number = static_cast<std::uint32_t>(sequence_number),
+        .timestamp_us = static_cast<std::uint64_t>(timestamp_us),
+        .payload_type = PayloadType::SessionControl,
+        .slice_index = 0,
+        .total_slices = 1,
+    };
+    const auto encoded = warpnect::scl::encode_packet(header, control_payload, inner);
+    if (!encoded.ok()) return session_control_result(env, SessionProtectionError::CryptoFailure, {});
+    secure.resize(native_handle->runtime->secure_datagram_budget());
+    const auto protected_result = native_handle->runtime->protect(
+        ProtectionScope::session_control(), std::span<const std::byte>(inner.data(), encoded.bytes_written), secure);
+    if (!protected_result.ok()) return session_control_result(env, protected_result.error, {});
+    return session_control_result(
+        env, SessionProtectionError::None,
+        std::span<const std::byte>(secure.data(), protected_result.bytes_written));
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionUnprotectSessionControl(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jbyteArray source_address, jint source_port,
+    jbyteArray protected_datagram, jlong now_us) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || !valid_port(source_port, false) ||
+        now_us < 0) {
+        return session_control_result(env, SessionProtectionError::InvalidConfig, {});
+    }
+    std::vector<std::byte> address{};
+    std::vector<std::byte> secure{};
+    if (!copy_bounded_byte_array(env, source_address, 16, address) ||
+        !copy_bounded_byte_array(env, protected_datagram, native_handle->runtime->secure_datagram_budget(), secure) ||
+        (address.size() != 4 && address.size() != 16)) {
+        return session_control_result(env, SessionProtectionError::InvalidEnvelope, {});
+    }
+    UdpEndpoint endpoint{};
+    endpoint.address.version = address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
+    for (std::size_t index = 0; index < address.size(); ++index) {
+        endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(address[index]);
+    }
+    endpoint.port = static_cast<std::uint16_t>(source_port);
+    std::lock_guard guard(native_handle->lock);
+    std::vector<std::byte> inner(native_handle->runtime->inner_datagram_budget());
+    const auto unprotected = native_handle->runtime->unprotect(endpoint, secure, inner, static_cast<std::uint64_t>(now_us));
+    if (!unprotected.ok()) return session_control_result(env, unprotected.error, {});
+    const auto packet = warpnect::scl::decode_packet(
+        std::span<const std::byte>(inner.data(), unprotected.bytes_written));
+    if (!packet.ok() || packet.packet.header.payload_type != PayloadType::SessionControl) {
+        return session_control_result(env, SessionProtectionError::InvalidEnvelope, {});
+    }
+    return session_control_result(env, SessionProtectionError::None, packet.packet.payload);
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

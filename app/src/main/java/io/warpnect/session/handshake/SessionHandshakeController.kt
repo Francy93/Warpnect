@@ -438,7 +438,17 @@ private class SessionManagerHandshakeAdmission(
             object : AuthenticatedSessionAdmissionReservation {
                 override val sessionId = reservation.sessionId
                 override val peerDeviceId = reservation.peerDeviceId
-                override val expiresAtMonotonicMs: Long = clock.nowMs().coerceAtLeast(0L) + lifetimeMs
+                private var expiresAtMs: Long = clock.nowMs().coerceAtLeast(0L) + lifetimeMs
+                override val expiresAtMonotonicMs: Long get() = expiresAtMs
+
+                override fun renew(lifetimeMs: Long): Boolean {
+                    if (lifetimeMs <= 0L) return false
+                    val renewed = manager.renewAuthenticatedAdmission(sessionId, lifetimeMs * 1_000L)
+                    if (!renewed.isSuccess) return false
+                    expiresAtMs = clock.nowMs().coerceAtLeast(0L) + lifetimeMs
+                    return true
+                }
+
                 override fun close() {
                     manager.releaseAuthenticatedAdmission(sessionId)
                 }

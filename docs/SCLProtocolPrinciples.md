@@ -255,3 +255,11 @@ RFC-004G preserves Input Payload V1. Input sequence numbers may support bounded 
 and duplicate suppression without converting Input V1 into a reliable ordered byte stream.
 Critical-transition redundancy uses independent one-datagram SCL submissions and introduces no ACK
 or reliability wire protocol.
+
+## Capability Negotiation
+
+RFC-005F uses the existing `PayloadType::SessionControl` for encrypted capability negotiation; it
+does not add an SCL payload type. WNCP is an application-level control record inside RFC-005E WNSD.
+Its semantic retry can send a new protected SCL datagram containing the identical WNCP bytes, while
+an exact protected-datagram replay is correctly handled by RFC-005E anti-replay. SCL sequence
+numbers, WNSD security packet numbers, and WNCP negotiation IDs are independent concepts.

@@ -29,6 +29,8 @@ internal object NativeBridge {
         maxPacketsPerEpoch: Long,
         previousEpochRetentionUs: Long,
         maxProtectedRetransmissionAgeUs: Long,
+        expectedRemoteAddress: ByteArray,
+        expectedRemotePort: Int,
     ): LongArray
 
     @JvmStatic
@@ -42,6 +44,23 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeSessionProtectionSnapshot(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeSessionProtectionProtectSessionControl(
+        handle: Long,
+        sequenceNumber: Long,
+        timestampUs: Long,
+        payload: ByteArray,
+    ): ByteArray?
+
+    @JvmStatic
+    private external fun nativeSessionProtectionUnprotectSessionControl(
+        handle: Long,
+        sourceAddress: ByteArray,
+        sourcePort: Int,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): ByteArray?
 
     @JvmStatic
     private external fun nativeAudioEncoderCreate(
@@ -500,6 +519,8 @@ internal object NativeBridge {
         maxPacketsPerEpoch: Long,
         previousEpochRetentionUs: Long,
         maxProtectedRetransmissionAgeUs: Long,
+        expectedRemoteAddress: ByteArray,
+        expectedRemotePort: Int,
     ): LongArray = nativeSessionProtectionCreate(
         rootSecret,
         sessionId,
@@ -512,6 +533,8 @@ internal object NativeBridge {
         maxPacketsPerEpoch,
         previousEpochRetentionUs,
         maxProtectedRetransmissionAgeUs,
+        expectedRemoteAddress,
+        expectedRemotePort,
     )
 
     fun sessionProtectionDestroy(handle: Long): Int = nativeSessionProtectionDestroy(handle)
@@ -523,6 +546,27 @@ internal object NativeBridge {
         nativeSessionProtectionDestroyContext(handle, scopeType, scopeId)
 
     fun sessionProtectionSnapshot(handle: Long): LongArray = nativeSessionProtectionSnapshot(handle)
+
+    fun sessionProtectionProtectSessionControl(
+        handle: Long,
+        sequenceNumber: Long,
+        timestampUs: Long,
+        payload: ByteArray,
+    ): ByteArray? = nativeSessionProtectionProtectSessionControl(handle, sequenceNumber, timestampUs, payload)
+
+    fun sessionProtectionUnprotectSessionControl(
+        handle: Long,
+        sourceAddress: ByteArray,
+        sourcePort: Int,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): ByteArray? = nativeSessionProtectionUnprotectSessionControl(
+        handle,
+        sourceAddress,
+        sourcePort,
+        protectedDatagram,
+        nowUs,
+    )
 
     fun audioEncoderCreate(
         source: Int,

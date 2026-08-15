@@ -2,7 +2,10 @@ package io.warpnect.platform.session.security
 
 import io.warpnect.NativeBridge
 import io.warpnect.session.ChannelId
+import io.warpnect.session.control.SecureSessionControlSendResult
+import io.warpnect.session.control.SessionControlUnprotectResult
 import io.warpnect.session.handshake.AuthenticatedSessionBootstrap
+import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.security.ProtectionContextIds
 import io.warpnect.session.security.SessionProtectionConfig
 import io.warpnect.session.security.SessionProtectionContextResult
@@ -32,6 +35,8 @@ object NativeSessionProtectionRuntimeFactory : SessionProtectionRuntimeFactory {
             maxPacketsPerEpoch = config.maxPacketsPerEpoch,
             previousEpochRetentionUs = config.previousEpochRetentionUs,
             maxProtectedRetransmissionAgeUs = config.maxProtectedRetransmissionAgeUs,
+            expectedRemoteAddress = bootstrap.endpoint.addressBytes(),
+            expectedRemotePort = bootstrap.endpoint.port,
         )
         if (values.size != 5) return SessionProtectionCreationResult(SessionProtectionError.CryptoFailure)
         val error = SessionProtectionError.fromNative(values[1].toInt())
@@ -91,6 +96,34 @@ private class NativeSessionProtectionRuntime(
         }
     }
 
+    override fun protectSessionControl(
+        sequenceNumber: Long,
+        timestampUs: Long,
+        payload: ByteArray,
+    ): SecureSessionControlSendResult = synchronized(lock) {
+        if (handle == 0L) return@synchronized SecureSessionControlSendResult(SessionProtectionError.Closed)
+        decodeControlResult(
+            NativeBridge.sessionProtectionProtectSessionControl(handle, sequenceNumber, timestampUs, payload),
+        ).let { (error, bytes) -> SecureSessionControlSendResult(error, bytes) }
+    }
+
+    override fun unprotectSessionControl(
+        sourceEndpoint: HandshakeTransportEndpoint,
+        protectedDatagram: ByteArray,
+        nowUs: Long,
+    ): SessionControlUnprotectResult = synchronized(lock) {
+        if (handle == 0L) return@synchronized SessionControlUnprotectResult(SessionProtectionError.Closed)
+        decodeControlResult(
+            NativeBridge.sessionProtectionUnprotectSessionControl(
+                handle,
+                sourceEndpoint.addressBytes(),
+                sourceEndpoint.port,
+                protectedDatagram,
+                nowUs,
+            ),
+        ).let { (error, bytes) -> SessionControlUnprotectResult(error, bytes) }
+    }
+
     override fun snapshot(): SessionProtectionSnapshot = synchronized(lock) {
         if (handle == 0L) return@synchronized closedSnapshot()
         val values = NativeBridge.sessionProtectionSnapshot(handle)
@@ -137,5 +170,21 @@ private class NativeSessionProtectionRuntime(
             currentReceiveEpoch = 0,
             lastError = error,
         )
+    }
+
+    private fun decodeControlResult(bytes: ByteArray?): Pair<SessionProtectionError, ByteArray?> {
+        if (bytes == null || bytes.size < CONTROL_RESULT_PREFIX_BYTES) {
+            return SessionProtectionError.CryptoFailure to null
+        }
+        val errorCode = ((bytes[0].toInt() and 0xff) shl 24) or ((bytes[1].toInt() and 0xff) shl 16) or
+            ((bytes[2].toInt() and 0xff) shl 8) or (bytes[3].toInt() and 0xff)
+        val error = SessionProtectionError.fromNative(errorCode)
+        return error to bytes.copyOfRange(CONTROL_RESULT_PREFIX_BYTES, bytes.size).takeIf {
+            error == SessionProtectionError.None
+        }
+    }
+
+    private companion object {
+        const val CONTROL_RESULT_PREFIX_BYTES = 4
     }
 }
