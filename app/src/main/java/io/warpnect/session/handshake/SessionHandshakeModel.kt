@@ -26,6 +26,10 @@ object SessionHandshakeProtocol {
     const val DEFAULT_COOKIE_ROTATION_MS: Long = 600_000L
     const val HARD_MAX_INCOMING_ATTEMPTS: Int = 8
     const val DEFAULT_MAX_INCOMING_ATTEMPTS: Int = 4
+    const val HARD_MAX_OUTGOING_ATTEMPTS: Int = 8
+    const val DEFAULT_MAX_OUTGOING_ATTEMPTS: Int = 4
+    const val RECENT_COMPLETED_CAPACITY: Int = 64
+    const val RECENT_COMPLETED_RETENTION_MS: Long = 30_000L
     val RETRY_DELAYS_MS: LongArray = longArrayOf(100L, 250L, 500L, 1_000L, 2_000L)
     val MAGIC: ByteArray = byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'S'.code.toByte(), 'H'.code.toByte())
 }

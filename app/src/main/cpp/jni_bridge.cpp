@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include <mbedtls/platform_util.h>
+
 #include "audio_oboe_playback.h"
 #include "audio_opus_decoder.h"
 #include "audio_opus_encoder.h"
@@ -21,6 +23,7 @@
 #include "input_transport.h"
 #include "native_bridge.h"
 #include "retransmission_cache.h"
+#include "session_protection.h"
 #include "udp_endpoint.h"
 #include "video_receiver_runtime.h"
 #include "video_resync_control.h"
@@ -77,6 +80,12 @@ using warpnect::scl::VideoTransportFecConfig;
 using warpnect::scl::VideoTransportSender;
 using warpnect::scl::VideoTransportSenderConfig;
 using warpnect::scl::VideoTransportSenderWorkspace;
+using warpnect::scl::security::ProtectionScope;
+using warpnect::scl::security::ProtectionScopeType;
+using warpnect::scl::security::SessionProtectionConfig;
+using warpnect::scl::security::SessionProtectionError;
+using warpnect::scl::security::SessionProtectionLocalRole;
+using warpnect::scl::security::SessionProtectionRuntime;
 
 using warpnect::audio::AudioBitrateMode;
 using warpnect::audio::AudioCaptureSource;
@@ -116,6 +125,9 @@ inline constexpr jsize kNativeVideoTransportSnapshotValues = 25;
 inline constexpr jsize kNativeVideoReceiverEventValues = 9;
 inline constexpr jsize kNativeVideoReceiverFillValues = 7;
 inline constexpr jsize kNativeVideoReceiverSnapshotValues = 39;
+inline constexpr jsize kNativeSessionProtectionCreateValues = 5;
+inline constexpr jsize kNativeSessionProtectionContextValues = 3;
+inline constexpr jsize kNativeSessionProtectionSnapshotValues = 13;
 
 [[nodiscard]] constexpr jint error_code(VideoError error) noexcept {
     return static_cast<jint>(static_cast<std::uint8_t>(error));
@@ -254,6 +266,11 @@ struct NativeAudioReceiverHandle final {
     std::vector<jobject> ready_slot_views{};
 };
 
+struct NativeSessionProtectionHandle final {
+    std::mutex lock{};
+    std::unique_ptr<SessionProtectionRuntime> runtime{};
+};
+
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
     if (handle == 0) {
         return nullptr;
@@ -316,6 +333,36 @@ struct NativeAudioReceiverHandle final {
     }
     return reinterpret_cast<NativeAudioReceiverHandle*>(static_cast<std::intptr_t>(handle));
 }
+
+[[nodiscard]] NativeSessionProtectionHandle* session_protection_handle_from(jlong handle) noexcept {
+    if (handle == 0) {
+        return nullptr;
+    }
+    return reinterpret_cast<NativeSessionProtectionHandle*>(static_cast<std::intptr_t>(handle));
+}
+
+[[nodiscard]] bool copy_exact_byte_array(JNIEnv* env, jbyteArray array, std::span<std::byte> output) noexcept {
+    if (array == nullptr || env->GetArrayLength(array) != static_cast<jsize>(output.size())) {
+        return false;
+    }
+    env->GetByteArrayRegion(array, 0, static_cast<jsize>(output.size()),
+                            reinterpret_cast<jbyte*>(output.data()));
+    return !env->ExceptionCheck();
+}
+
+[[nodiscard]] constexpr jint session_protection_error_code(
+    const SessionProtectionError error) noexcept {
+    return static_cast<jint>(static_cast<std::uint8_t>(error));
+}
+
+template <std::size_t Size>
+struct SecretByteArray final {
+    std::array<std::byte, Size> bytes{};
+
+    ~SecretByteArray() noexcept {
+        mbedtls_platform_zeroize(bytes.data(), bytes.size());
+    }
+};
 
 [[nodiscard]] bool valid_port(jint port, bool allow_zero) noexcept {
     return (allow_zero ? port >= 0 : port > 0) &&
@@ -1158,6 +1205,172 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeProtocolAbiVersion(JNIEnv* /* env */, jclass /* clazz */) {
     const auto info = warpnect::scl::bridge::native_core_info();
     return static_cast<jint>(info.protocol_abi_version);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jbyteArray root_secret,
+    jbyteArray session_id,
+    jint session_generation,
+    jbyteArray transcript_hash,
+    jint local_role,
+    jint max_secure_datagram_size,
+    jint replay_window_size,
+    jint max_contexts,
+    jlong max_packets_per_epoch,
+    jlong previous_epoch_retention_us,
+    jlong max_protected_retransmission_age_us) {
+    jlong values[kNativeSessionProtectionCreateValues]{};
+    values[1] = session_protection_error_code(SessionProtectionError::InvalidConfig);
+    try {
+        SecretByteArray<32> root{};
+        std::array<std::byte, 16> sid{};
+        std::array<std::byte, 32> transcript{};
+        if (session_generation <= 0 || max_secure_datagram_size <= 0 || replay_window_size <= 0 ||
+            max_contexts <= 0 || max_packets_per_epoch <= 0 || previous_epoch_retention_us <= 0 ||
+            max_protected_retransmission_age_us < 0 ||
+            !copy_exact_byte_array(env, root_secret, root.bytes) ||
+            !copy_exact_byte_array(env, session_id, sid) ||
+            !copy_exact_byte_array(env, transcript_hash, transcript)) {
+            values[1] = session_protection_error_code(SessionProtectionError::InvalidConfig);
+        } else {
+            const SessionProtectionConfig config{
+                .max_secure_datagram_size = static_cast<std::size_t>(max_secure_datagram_size),
+                .replay_window_size = static_cast<std::size_t>(replay_window_size),
+                .max_contexts = static_cast<std::size_t>(max_contexts),
+                .max_packets_per_epoch = static_cast<std::uint64_t>(max_packets_per_epoch),
+                .previous_epoch_retention_us = static_cast<std::uint64_t>(previous_epoch_retention_us),
+                .max_protected_retransmission_age_us =
+                    static_cast<std::uint64_t>(max_protected_retransmission_age_us),
+            };
+            const auto role = local_role == static_cast<jint>(SessionProtectionLocalRole::Client)
+                                  ? SessionProtectionLocalRole::Client
+                                  : local_role == static_cast<jint>(SessionProtectionLocalRole::Host)
+                                        ? SessionProtectionLocalRole::Host
+                                        : static_cast<SessionProtectionLocalRole>(0);
+            auto handle = std::make_unique<NativeSessionProtectionHandle>();
+            handle->runtime = std::make_unique<SessionProtectionRuntime>(config);
+            const auto initialized = handle->runtime->initialize(
+                root.bytes, sid, static_cast<std::uint32_t>(session_generation), transcript, role);
+            if (!initialized.ok()) {
+                values[1] = session_protection_error_code(initialized.error);
+            } else {
+                const auto context = handle->runtime->create_context(ProtectionScope::session_control());
+                if (!context.ok()) {
+                    values[1] = session_protection_error_code(context.error);
+                } else {
+                    values[0] = reinterpret_cast<jlong>(handle.release());
+                    values[1] = session_protection_error_code(SessionProtectionError::None);
+                    values[2] = static_cast<jlong>(context.send_context_id);
+                    values[3] = static_cast<jlong>(context.receive_context_id);
+                    values[4] = static_cast<jlong>(max_secure_datagram_size - 44);
+                }
+            }
+        }
+        mbedtls_platform_zeroize(sid.data(), sid.size());
+        mbedtls_platform_zeroize(transcript.data(), transcript.size());
+    } catch (...) {
+        values[0] = 0;
+        values[1] = session_protection_error_code(SessionProtectionError::CryptoFailure);
+    }
+    jlongArray array = env->NewLongArray(kNativeSessionProtectionCreateValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeSessionProtectionCreateValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroy(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return session_protection_error_code(SessionProtectionError::Closed);
+    }
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->runtime->close();
+    }
+    delete native_handle;
+    return session_protection_error_code(SessionProtectionError::None);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionCreateContext(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jint scope_type, jlong scope_id) {
+    jlong values[kNativeSessionProtectionContextValues]{};
+    values[0] = session_protection_error_code(SessionProtectionError::InvalidConfig);
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle != nullptr && native_handle->runtime != nullptr && scope_id >= 0 &&
+        scope_id <= static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
+        const auto type = scope_type == static_cast<jint>(ProtectionScopeType::SessionControl)
+                              ? ProtectionScopeType::SessionControl
+                              : scope_type == static_cast<jint>(ProtectionScopeType::Channel)
+                                    ? ProtectionScopeType::Channel
+                                    : static_cast<ProtectionScopeType>(255);
+        std::lock_guard guard(native_handle->lock);
+        const auto result = native_handle->runtime->create_context(
+            ProtectionScope{.type = type, .id = static_cast<std::uint32_t>(scope_id)});
+        values[0] = session_protection_error_code(result.error);
+        values[1] = static_cast<jlong>(result.send_context_id);
+        values[2] = static_cast<jlong>(result.receive_context_id);
+    }
+    jlongArray array = env->NewLongArray(kNativeSessionProtectionContextValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeSessionProtectionContextValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionDestroyContext(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle, jint scope_type, jlong scope_id) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr || scope_id < 0 ||
+        scope_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
+        return session_protection_error_code(SessionProtectionError::InvalidConfig);
+    }
+    const auto type = scope_type == static_cast<jint>(ProtectionScopeType::SessionControl)
+                          ? ProtectionScopeType::SessionControl
+                          : scope_type == static_cast<jint>(ProtectionScopeType::Channel)
+                                ? ProtectionScopeType::Channel
+                                : static_cast<ProtectionScopeType>(255);
+    std::lock_guard guard(native_handle->lock);
+    return session_protection_error_code(native_handle->runtime->destroy_context(
+        ProtectionScope{.type = type, .id = static_cast<std::uint32_t>(scope_id)}).error);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionSnapshot(
+    JNIEnv* env, jclass /* clazz */, jlong handle) {
+    jlong values[kNativeSessionProtectionSnapshotValues]{};
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle != nullptr && native_handle->runtime != nullptr) {
+        std::lock_guard guard(native_handle->lock);
+        const auto snapshot = native_handle->runtime->snapshot();
+        values[0] = static_cast<jlong>(snapshot.active_contexts);
+        values[1] = static_cast<jlong>(snapshot.protected_packets);
+        values[2] = static_cast<jlong>(snapshot.decrypted_packets);
+        values[3] = static_cast<jlong>(snapshot.replay_drops);
+        values[4] = static_cast<jlong>(snapshot.too_old_drops);
+        values[5] = static_cast<jlong>(snapshot.unknown_context_drops);
+        values[6] = static_cast<jlong>(snapshot.endpoint_filter_drops);
+        values[7] = static_cast<jlong>(snapshot.auth_failures);
+        values[8] = static_cast<jlong>(snapshot.key_updates_sent);
+        values[9] = static_cast<jlong>(snapshot.key_updates_accepted);
+        values[10] = static_cast<jlong>(snapshot.current_send_epoch);
+        values[11] = static_cast<jlong>(snapshot.current_receive_epoch);
+        values[12] = session_protection_error_code(snapshot.last_error);
+    } else {
+        values[12] = session_protection_error_code(SessionProtectionError::Closed);
+    }
+    jlongArray array = env->NewLongArray(kNativeSessionProtectionSnapshotValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kNativeSessionProtectionSnapshotValues, values);
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

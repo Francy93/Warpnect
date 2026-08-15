@@ -1456,6 +1456,17 @@ Payload V1, Input Payload V1, ClockSync, NACK, FEC, or VideoResyncRequest.
 Input Payload V1 device slots remain session-scoped portable peripheral identifiers. They are not
 global peer identity, Android device identity, or a replacement for a future SessionId.
 
+## Session Packet Protection Version 1
+
+RFC-005E defines a new outer secure datagram envelope, not an SCL packet format. WNSD has a fixed
+28-byte clear authenticated header: `WNSD`, version 1, zero flags, zero reserved bytes, an opaque
+u64 protection context ID, u32 key epoch, and u64 security packet number. The header is AES-128-GCM
+AAD. The ciphertext is exactly one existing complete SCL datagram and is followed by a 16-byte tag.
+
+WNSD has 44 bytes of fixed overhead. It does not modify PacketHeader, PayloadType, Video Payload
+V1, Audio Payload V1, Input Payload V1, NACK, FEC, ClockSync, VideoResyncRequest, the discovery
+schema, the pairing bootstrap, or WNSH. Its packet numbers are a separate security sequence space.
+
 ## Discovery Presence Schema V1
 
 RFC-005B's Discovery Presence Schema Version 1 is DNS-SD control-plane metadata only. Its

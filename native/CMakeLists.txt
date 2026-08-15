@@ -7,6 +7,18 @@ enable_testing()
 set(SCL_CPP_ROOT "${CMAKE_CURRENT_LIST_DIR}/../app/src/main/cpp")
 set(WARPNNECT_THIRD_PARTY_DIR "${CMAKE_CURRENT_LIST_DIR}/../third_party")
 
+set(MBEDTLS_TARGET_PREFIX warpnect_)
+set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON CACHE BOOL "" FORCE)
+add_subdirectory(
+    "${WARPNNECT_THIRD_PARTY_DIR}/mbedtls-3.6.7"
+    "${CMAKE_CURRENT_BINARY_DIR}/mbedtls-3.6.7"
+    EXCLUDE_FROM_ALL
+)
+set_target_properties(warpnect_mbedtls warpnect_mbedx509 PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
 set(WARPNNECT_BUILD_TESTING "${BUILD_TESTING}")
 set(BUILD_TESTING OFF)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -46,6 +58,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/recovery_control.cpp"
     "${SCL_CPP_ROOT}/src/reed_solomon.cpp"
     "${SCL_CPP_ROOT}/src/retransmission_cache.cpp"
+    "${SCL_CPP_ROOT}/src/session_protection.cpp"
     "${SCL_CPP_ROOT}/src/telemetry.cpp"
     "${SCL_CPP_ROOT}/src/udp_endpoint.cpp"
     "${SCL_CPP_ROOT}/src/udp_socket.cpp"
@@ -96,7 +109,7 @@ if(WIN32)
     target_link_libraries(scl_native_core PUBLIC ws2_32)
 endif()
 
-target_link_libraries(scl_native_core PUBLIC Opus::opus)
+target_link_libraries(scl_native_core PUBLIC Opus::opus warpnect_mbedcrypto)
 
 add_library(
     scl_native_test_support
@@ -191,6 +204,10 @@ add_executable(scl_input_receiver_runtime_tests tests/scl_input_receiver_runtime
 configure_native_target(scl_input_receiver_runtime_tests)
 target_link_libraries(scl_input_receiver_runtime_tests PRIVATE scl_native_core)
 
+add_executable(scl_session_protection_tests tests/scl_session_protection_tests.cpp)
+configure_native_target(scl_session_protection_tests)
+target_link_libraries(scl_session_protection_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -269,6 +286,19 @@ target_include_directories(
 )
 target_link_libraries(scl_phase4_input_benchmarks PRIVATE scl_native_core)
 
+add_executable(
+    scl_session_protection_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/scl_session_protection_benchmarks.cpp
+)
+configure_native_target(scl_session_protection_benchmarks)
+target_include_directories(
+    scl_session_protection_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(scl_session_protection_benchmarks PRIVATE scl_native_core)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)
@@ -288,3 +318,4 @@ add_test(NAME scl_audio_receiver_runtime_tests COMMAND scl_audio_receiver_runtim
 add_test(NAME scl_input_protocol_tests COMMAND scl_input_protocol_tests)
 add_test(NAME scl_input_transport_tests COMMAND scl_input_transport_tests)
 add_test(NAME scl_input_receiver_runtime_tests COMMAND scl_input_receiver_runtime_tests)
+add_test(NAME scl_session_protection_tests COMMAND scl_session_protection_tests)

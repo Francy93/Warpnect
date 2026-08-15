@@ -324,3 +324,12 @@ identity signatures, AES-GCM, retries/timeouts, and bounded admission reservatio
 bootstrap router has one blocking contact-socket reader and only dispatches WNPB/WNSH. No media,
 audio, input, native receive, UI permission, per-datagram worker, or busy-poll work enters this
 context.
+
+## RFC-005E Session Packet Protection
+
+RFC-005E adds no worker thread, coroutine, queue, polling loop, or UI work. A native protection
+runtime is owned by its future caller-serialized transport/channel. Its steady-state WNSD protect
+and unprotect operations perform bounded native work with no JNI hop or heap allocation. Cold JNI
+creation, context management, and snapshots use a short handle lock only; they are never packet
+operations. Replay/epoch state, FEC ordering, and endpoint filtering are local native transport
+concerns and never enter media codec, audio callback, or Android input-dispatch threads.

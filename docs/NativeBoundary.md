@@ -453,9 +453,25 @@ RFC-005D remains Android/Kotlin control-plane work:
 bootstrap UDP/router -> SessionHandshakeTransport -> SessionHandshakeEngine -> JCA/Android Keystore
 ```
 
-It adds no JNI method, native SCL structure, PacketHeader field, payload field, or media/input
-hot-path work. The resulting root secret remains in Kotlin memory for RFC-005E and is not sent to
-native code.
+It adds no PacketHeader field, payload field, or media/input hot-path work. The resulting root
+secret remains in Kotlin memory until RFC-005E performs its one-time cold-path transfer into native
+packet-protection state.
+
+## RFC-005E Session Packet Protection
+
+RFC-005E moves only per-datagram protection into the portable C++20 core:
+
+```text
+AuthenticatedSessionRootSecret (cold Kotlin ownership transfer)
+        -> cold JNI runtime/context creation
+        -> native SessionProtectionRuntime / mbedcrypto
+        -> future negotiated SCL transport attachment
+```
+
+JNI creates, destroys, configures, and snapshots native protection contexts only. It never encrypts
+or decrypts a packet. AES-GCM, HKDF, epoch/replay state, and WNSD parsing stay in the native hot
+path. Mbed TLS 3.6.7 contributes only `mbedcrypto`; TLS, DTLS, X.509, media, input, and Binder
+paths remain outside this boundary.
 
 ## Error Handling
 

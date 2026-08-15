@@ -470,3 +470,17 @@ duplicate media transmission.
 > AuthenticatedSessionRootSecret is memory-only RFC-005E keying material and must never directly protect media or input.
 
 > UDP return-routability cookies limit bootstrap allocation but do not authenticate a peer.
+
+## Phase 5 Session Packet Protection
+
+> Session Packet Protection V1 wraps a complete existing SCL datagram in WNSD and must never reinterpret or modify the inner PacketHeader or payload bytes.
+
+> ProtectionContextId is an opaque directional demultiplexing value, not a DeviceId, SessionId, credential, or peer identity.
+
+> Security packet numbers are independent of SCL packet sequence numbers and may never be rolled back or reused after encryption reservation.
+
+> Receive replay state changes only after AEAD authentication succeeds; an unauthenticated record must not advance a replay window or epoch.
+
+> AuthenticatedSessionRootSecret, session protection master material, traffic secrets, AES keys, and IVs are memory-only and must never be persisted or logged.
+
+> FEC protects/reconstructs inner SCL datagrams only after WNSD authentication at the receiver; a standby path, retransmission cache, or FEC recovery never permits unauthenticated inner traffic.

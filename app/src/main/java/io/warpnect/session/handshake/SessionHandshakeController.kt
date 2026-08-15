@@ -11,11 +11,15 @@ import io.warpnect.session.trust.TrustedPeerStore
 
 data class SessionHandshakeConfig(
     val maxIncomingAttempts: Int = SessionHandshakeProtocol.DEFAULT_MAX_INCOMING_ATTEMPTS,
+    val maxOutgoingAttempts: Int = SessionHandshakeProtocol.DEFAULT_MAX_OUTGOING_ATTEMPTS,
     val attemptTimeoutMs: Long = SessionHandshakeProtocol.DEFAULT_ATTEMPT_TIMEOUT_MS,
     val admissionReservationMs: Long = SessionHandshakeProtocol.DEFAULT_RESERVATION_MS,
 ) {
     init {
-        require(maxIncomingAttempts in 1..SessionHandshakeProtocol.HARD_MAX_INCOMING_ATTEMPTS)
+        require(
+            maxIncomingAttempts in 1..SessionHandshakeProtocol.HARD_MAX_INCOMING_ATTEMPTS &&
+                maxOutgoingAttempts in 1..SessionHandshakeProtocol.HARD_MAX_OUTGOING_ATTEMPTS,
+        )
         require(attemptTimeoutMs > 0 && admissionReservationMs > 0)
     }
 }
@@ -98,6 +102,9 @@ class SessionHandshakeController(
             )
         }
         expireCompletedLocked()
+        if (active.values.count { !it.incoming } >= config.maxOutgoingAttempts) {
+            return@synchronized record(SessionHandshakeEngineResult(SessionHandshakeError.AtCapacity))
+        }
         val started = SessionHandshakeEngine.initiate(
             attemptId,
             endpoint,
@@ -299,7 +306,15 @@ class SessionHandshakeController(
             lastPeer = bootstrap.remoteDeviceId
             lastSession = bootstrap.sessionId
             lastDurationMs = now() - managed.startedAtMs
-            if (managed.incoming && managed.outbound.isNotEmpty()) completed[managed.engine.attemptId] = CompletedAttempt(managed.endpoint, bootstrap.sessionId, managed.outbound.last().copyOf(), now() + SessionHandshakeProtocol.DEFAULT_RESERVATION_MS)
+            if (managed.incoming && managed.outbound.isNotEmpty()) {
+                trimCompletedToCapacityLocked()
+                completed[managed.engine.attemptId] = CompletedAttempt(
+                    managed.endpoint,
+                    bootstrap.sessionId,
+                    managed.outbound.last().copyOf(),
+                    now() + SessionHandshakeProtocol.RECENT_COMPLETED_RETENTION_MS,
+                )
+            }
             active.remove(managed.engine.attemptId)
             eventListener?.onAuthenticated(bootstrap)
         }
@@ -352,6 +367,14 @@ class SessionHandshakeController(
         val now = now()
         completed.entries.removeIf { it.value.expiresAtMs <= now }
     }
+    private fun trimCompletedToCapacityLocked() {
+        while (completed.size >= SessionHandshakeProtocol.RECENT_COMPLETED_CAPACITY) {
+            val eldest = completed.entries.iterator()
+            if (!eldest.hasNext()) return
+            eldest.next()
+            eldest.remove()
+        }
+    }
     private fun now(): Long = clock.nowMs().coerceAtLeast(0L)
     private fun nextAttemptId(): SessionHandshakeAttemptId {
         while (true) {
@@ -365,6 +388,7 @@ class SessionHandshakeController(
             active.values.forEach { it.engine.close() }
             active.clear()
             completed.clear()
+            cookieManager.close()
             transport.setDatagramListener(null)
             transport.close()
             controllerState = SessionHandshakeControllerState.Closed

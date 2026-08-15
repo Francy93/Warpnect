@@ -17,6 +17,33 @@ internal object NativeBridge {
     private external fun nativeProtocolAbiVersion(): Int
 
     @JvmStatic
+    private external fun nativeSessionProtectionCreate(
+        rootSecret: ByteArray,
+        sessionId: ByteArray,
+        sessionGeneration: Int,
+        transcriptHash: ByteArray,
+        localRole: Int,
+        maxSecureDatagramSize: Int,
+        replayWindowSize: Int,
+        maxContexts: Int,
+        maxPacketsPerEpoch: Long,
+        previousEpochRetentionUs: Long,
+        maxProtectedRetransmissionAgeUs: Long,
+    ): LongArray
+
+    @JvmStatic
+    private external fun nativeSessionProtectionDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeSessionProtectionCreateContext(handle: Long, scopeType: Int, scopeId: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeSessionProtectionDestroyContext(handle: Long, scopeType: Int, scopeId: Long): Int
+
+    @JvmStatic
+    private external fun nativeSessionProtectionSnapshot(handle: Long): LongArray
+
+    @JvmStatic
     private external fun nativeAudioEncoderCreate(
         source: Int,
         sampleRateHz: Int,
@@ -460,6 +487,42 @@ internal object NativeBridge {
         protocolVersion = nativeProtocolVersion(),
         nativeBridgeAbiVersion = nativeProtocolAbiVersion(),
     )
+
+    fun sessionProtectionCreate(
+        rootSecret: ByteArray,
+        sessionId: ByteArray,
+        sessionGeneration: Int,
+        transcriptHash: ByteArray,
+        localRole: Int,
+        maxSecureDatagramSize: Int,
+        replayWindowSize: Int,
+        maxContexts: Int,
+        maxPacketsPerEpoch: Long,
+        previousEpochRetentionUs: Long,
+        maxProtectedRetransmissionAgeUs: Long,
+    ): LongArray = nativeSessionProtectionCreate(
+        rootSecret,
+        sessionId,
+        sessionGeneration,
+        transcriptHash,
+        localRole,
+        maxSecureDatagramSize,
+        replayWindowSize,
+        maxContexts,
+        maxPacketsPerEpoch,
+        previousEpochRetentionUs,
+        maxProtectedRetransmissionAgeUs,
+    )
+
+    fun sessionProtectionDestroy(handle: Long): Int = nativeSessionProtectionDestroy(handle)
+
+    fun sessionProtectionCreateContext(handle: Long, scopeType: Int, scopeId: Long): LongArray =
+        nativeSessionProtectionCreateContext(handle, scopeType, scopeId)
+
+    fun sessionProtectionDestroyContext(handle: Long, scopeType: Int, scopeId: Long): Int =
+        nativeSessionProtectionDestroyContext(handle, scopeType, scopeId)
+
+    fun sessionProtectionSnapshot(handle: Long): LongArray = nativeSessionProtectionSnapshot(handle)
 
     fun audioEncoderCreate(
         source: Int,

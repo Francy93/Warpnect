@@ -190,6 +190,17 @@ Current value:
 Session Handshake Protocol Version defines RFC-005D's standalone pre-session `WNSH` datagram
 format. It is distinct from the SCL, discovery, pairing, and trusted-store version domains.
 
+## Session Packet Protection Version
+
+Current value:
+
+```text
+1
+```
+
+Session Packet Protection Version defines RFC-005E's outer `WNSD` envelope only. It is neither an
+SCL Protocol Version nor a media/input payload version and changes no frozen inner SCL wire field.
+
 Current value:
 
 ```text

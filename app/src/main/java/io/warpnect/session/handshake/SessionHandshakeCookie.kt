@@ -66,6 +66,12 @@ class SessionHandshakeCookieManager(
         }
     }
 
+    fun close() {
+        current.key.wipe()
+        previous?.key?.wipe()
+        previous = null
+    }
+
     private fun rotateIfNeeded() {
         val now = clock.nowMs().coerceAtLeast(0L)
         if (now - current.createdAtMs < keyRotationMs) return

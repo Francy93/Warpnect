@@ -651,3 +651,24 @@ result; no UHID backend is present.
 ```
 
 CI builds debug, runs ktlint, runs Android lint, runs unit tests, and compiles the native header smoke target.
+
+## RFC-005E Session Packet Protection
+
+```text
+app/src/main/java/io/warpnect/session/security/
+  SessionProtection.kt
+app/src/main/java/io/warpnect/platform/session/security/
+  NativeSessionProtectionRuntimeFactory.kt
+app/src/main/cpp/include/
+  session_protection.h
+app/src/main/cpp/src/
+  session_protection.cpp
+native/tests/
+  scl_session_protection_tests.cpp
+third_party/mbedtls-3.6.7/
+  WARPNECT_UPSTREAM.md
+```
+
+The Kotlin session package contains only cold-path ownership/configuration contracts. The portable
+native runtime owns WNSD keys, epochs, replay windows, and generic scope derivation. It is not yet
+attached to video, audio, input, NACK, or FEC transport objects.
