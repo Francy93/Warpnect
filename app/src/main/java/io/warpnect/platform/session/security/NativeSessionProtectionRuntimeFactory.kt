@@ -121,6 +121,24 @@ private class NativeSessionProtectionRuntime(
         }
     }
 
+    override fun rebindChannelEndpoint(
+        channelId: ChannelId,
+        endpoint: HandshakeTransportEndpoint,
+    ): SessionProtectionError = synchronized(lock) {
+        if (handle == 0L) {
+            SessionProtectionError.Closed
+        } else {
+            SessionProtectionError.fromNative(
+                NativeBridge.sessionProtectionRebindChannel(
+                    handle,
+                    channelId.value.toLong(),
+                    endpoint.addressBytes(),
+                    endpoint.port,
+                ),
+            )
+        }
+    }
+
     override fun protectSessionControl(
         sequenceNumber: Long,
         timestampUs: Long,
@@ -180,6 +198,10 @@ private class NativeSessionProtectionRuntime(
                 )
             }
         }
+
+    override fun lastAuthenticatedReceiveMonotonicUs(): Long = synchronized(lock) {
+        if (handle == 0L) 0L else NativeBridge.sessionProtectionLastAuthenticatedReceiveUs(handle).coerceAtLeast(0L)
+    }
 
     override fun snapshot(): SessionProtectionSnapshot = synchronized(lock) {
         if (handle == 0L) return@synchronized closedSnapshot()

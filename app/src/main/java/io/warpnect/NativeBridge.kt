@@ -52,6 +52,9 @@ internal object NativeBridge {
     private external fun nativeSessionProtectionSnapshot(handle: Long): LongArray
 
     @JvmStatic
+    private external fun nativeSessionProtectionLastAuthenticatedReceiveUs(handle: Long): Long
+
+    @JvmStatic
     private external fun nativeSessionProtectionProtectSessionControl(
         handle: Long,
         sequenceNumber: Long,
@@ -80,6 +83,14 @@ internal object NativeBridge {
     @JvmStatic
     private external fun nativeSessionProtectionRebindSessionControl(
         handle: Long,
+        remoteAddress: ByteArray,
+        remotePort: Int,
+    ): Int
+
+    @JvmStatic
+    private external fun nativeSessionProtectionRebindChannel(
+        handle: Long,
+        channelId: Long,
         remoteAddress: ByteArray,
         remotePort: Int,
     ): Int
@@ -618,6 +629,9 @@ internal object NativeBridge {
 
     fun sessionProtectionSnapshot(handle: Long): LongArray = nativeSessionProtectionSnapshot(handle)
 
+    fun sessionProtectionLastAuthenticatedReceiveUs(handle: Long): Long =
+        nativeSessionProtectionLastAuthenticatedReceiveUs(handle)
+
     fun sessionProtectionProtectSessionControl(
         handle: Long,
         sequenceNumber: Long,
@@ -655,6 +669,9 @@ internal object NativeBridge {
 
     fun sessionProtectionRebindSessionControl(handle: Long, remoteAddress: ByteArray, remotePort: Int): Int =
         nativeSessionProtectionRebindSessionControl(handle, remoteAddress, remotePort)
+
+    fun sessionProtectionRebindChannel(handle: Long, channelId: Long, remoteAddress: ByteArray, remotePort: Int): Int =
+        nativeSessionProtectionRebindChannel(handle, channelId, remoteAddress, remotePort)
 
     fun preparedUdpEndpointCreate(localAddress: String): LongArray = nativePreparedUdpEndpointCreate(localAddress)
 

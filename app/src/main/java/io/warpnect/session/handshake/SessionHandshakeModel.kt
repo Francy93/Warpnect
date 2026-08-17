@@ -160,6 +160,21 @@ sealed interface ExpectedPeerConstraint {
     data object AnyTrustedPeer : ExpectedPeerConstraint
 }
 
+/** Local-only handshake intent; WNSH V1 bytes already carry the resulting SessionId/generation. */
+sealed interface SessionHandshakeIntent {
+    data class FreshSession(val sessionId: SessionId) : SessionHandshakeIntent
+    data class ReconnectSession(
+        val sessionId: SessionId,
+        val nextGeneration: SessionGeneration,
+        val expectedPeer: DeviceId,
+    ) : SessionHandshakeIntent
+}
+
+/** Host policy for accepting an already-known in-memory recovery generation after Client authentication. */
+fun interface SessionHandshakeRecoveryAdmissionResolver {
+    fun admissionFor(sessionId: SessionId, generation: SessionGeneration): SessionHandshakeAdmission?
+}
+
 data class HandshakeTransportEndpoint private constructor(
     private val address: ImmutableBytes,
     val port: Int,

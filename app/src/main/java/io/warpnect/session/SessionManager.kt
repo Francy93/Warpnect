@@ -26,6 +26,8 @@ class SessionManager(
     private val lock = Any()
     private val sessions = LinkedHashMap<SessionId, ManagedSession>()
     private val authenticatedReservations = LinkedHashMap<SessionId, AuthenticatedSessionAdmissionReservation>()
+    private val lifecycleAdmissions = LinkedHashMap<SessionId, LifecycleSessionAdmission>()
+    private val recoveryAdmissions = LinkedHashMap<SessionId, SessionRecoveryAdmission>()
     private var policy = config.initialPolicy
     private var lastError = SessionError.None
     private var closed = false
@@ -40,13 +42,15 @@ class SessionManager(
         if (closed) return@synchronized failed(SessionError.Closed)
         expireReservationsLocked()
         validateRequest(request)?.let { return@synchronized failed(it) }
-        if (sessions.containsKey(request.sessionId) || authenticatedReservations.containsKey(request.sessionId)) {
+        if (sessions.containsKey(request.sessionId) || authenticatedReservations.containsKey(request.sessionId) ||
+            lifecycleAdmissions.containsKey(request.sessionId) || recoveryAdmissions.containsKey(request.sessionId)
+        ) {
             return@synchronized failed(SessionError.DuplicateSessionId)
         }
-        if (sessions.size + authenticatedReservations.size >= config.maxSessions) {
+        if (occupiedSessionSlots() >= config.maxSessions) {
             return@synchronized failed(SessionError.SessionCapacityExceeded)
         }
-        if (request.localRole == SessionRole.Host && hostLiveSessionCount() >= policy.maxConcurrentClients) {
+        if (request.localRole == SessionRole.Host && hostOccupiedClientSlots() >= policy.maxConcurrentClients) {
             return@synchronized failed(SessionError.SessionCapacityExceeded)
         }
         if (request.localRole == SessionRole.Host &&
@@ -89,7 +93,7 @@ class SessionManager(
         expireReservationsLocked()
         if (replacement.validate() != SessionError.None ||
             replacement.maxConcurrentClients > config.maxSessions ||
-            hostLiveSessionCount() > replacement.maxConcurrentClients
+            hostOccupiedClientSlots() > replacement.maxConcurrentClients
         ) {
             return@synchronized failed(SessionError.InvalidPolicy)
         }
@@ -199,11 +203,13 @@ class SessionManager(
             )
         }
         expireReservationsLocked()
-        if (sessions.containsKey(sessionId) || authenticatedReservations.containsKey(sessionId)) {
+        if (sessions.containsKey(sessionId) || authenticatedReservations.containsKey(sessionId) ||
+            lifecycleAdmissions.containsKey(sessionId) || recoveryAdmissions.containsKey(sessionId)
+        ) {
             return@synchronized SessionAdmissionResult(SessionError.DuplicateSessionId)
         }
-        if (sessions.size + authenticatedReservations.size >= config.maxSessions ||
-            hostLiveSessionCount() + authenticatedReservations.size >= policy.maxConcurrentClients
+        if (occupiedSessionSlots() >= config.maxSessions ||
+            hostLiveSessionCount() + authenticatedReservations.size + lifecycleAdmissions.size + recoveryAdmissions.size >= policy.maxConcurrentClients
         ) {
             return@synchronized SessionAdmissionResult(SessionError.SessionCapacityExceeded)
         }
@@ -212,7 +218,9 @@ class SessionManager(
                 sessions.values.any {
                     it.localParticipant.role == SessionRole.Host && it.remoteParticipant.deviceId == peerDeviceId && it.state.isLive()
                 } ||
-                    authenticatedReservations.values.any { it.peerDeviceId == peerDeviceId }
+                    authenticatedReservations.values.any { it.peerDeviceId == peerDeviceId } ||
+                    lifecycleAdmissions.values.any { it.peerDeviceId == peerDeviceId } ||
+                    recoveryAdmissions.values.any { it.peerDeviceId == peerDeviceId }
                 )
         ) {
             return@synchronized SessionAdmissionResult(SessionError.DuplicatePeerSessionNotAllowed)
@@ -264,6 +272,98 @@ class SessionManager(
         result
     }
 
+    /** Transfers one existing authenticated reservation into lifecycle ownership without another capacity allocation. */
+    fun promoteAuthenticatedAdmissionToLifecycle(
+        sessionId: SessionId,
+        peerDeviceId: DeviceId,
+        generation: SessionGeneration,
+    ): LifecycleAdmissionResult = synchronized(lock) {
+        if (closed) return@synchronized LifecycleAdmissionResult(SessionError.Closed)
+        expireReservationsLocked()
+        val reservation = authenticatedReservations[sessionId] ?: return@synchronized LifecycleAdmissionResult(SessionError.AdmissionReservationNotFound)
+        if (reservation.peerDeviceId != peerDeviceId || reservation.generation != generation || lifecycleAdmissions.containsKey(sessionId)) {
+            return@synchronized LifecycleAdmissionResult(SessionError.InvalidRoleCombination)
+        }
+        authenticatedReservations.remove(sessionId)
+        val lifecycle = LifecycleSessionAdmission(sessionId, peerDeviceId, generation, reservation.participantIndex)
+        lifecycleAdmissions[sessionId] = lifecycle
+        LifecycleAdmissionResult(SessionError.None, lifecycle)
+    }
+
+    /** Moves exactly one lifecycle-owned Host slot into the bounded in-memory recovery window. */
+    fun beginLifecycleRecovery(
+        sessionId: SessionId,
+        peerDeviceId: DeviceId,
+        generation: SessionGeneration,
+        lifetimeUs: Long,
+    ): SessionRecoveryAdmissionResult = synchronized(lock) {
+        if (closed) return@synchronized SessionRecoveryAdmissionResult(SessionError.Closed)
+        if (lifetimeUs <= 0L) return@synchronized SessionRecoveryAdmissionResult(SessionError.InvalidPolicy)
+        expireReservationsLocked()
+        val lifecycle = lifecycleAdmissions[sessionId] ?: return@synchronized SessionRecoveryAdmissionResult(SessionError.LifecycleAdmissionNotFound)
+        if (lifecycle.peerDeviceId != peerDeviceId || lifecycle.generation != generation || recoveryAdmissions.containsKey(sessionId)) {
+            return@synchronized SessionRecoveryAdmissionResult(SessionError.RecoveryLeaseConflict)
+        }
+        lifecycleAdmissions.remove(sessionId)
+        val now = monotonicNowUs()
+        val expiry = if (lifetimeUs > Long.MAX_VALUE - now) Long.MAX_VALUE else now + lifetimeUs
+        val recovery = SessionRecoveryAdmission(sessionId, peerDeviceId, generation, lifecycle.participantIndex, expiry)
+        recoveryAdmissions[sessionId] = recovery
+        SessionRecoveryAdmissionResult(SessionError.None, recovery)
+    }
+
+    /** Claims a recovery slot after RFC-005D authenticated the exact expected peer and next generation. */
+    fun claimRecoveryAdmission(
+        sessionId: SessionId,
+        peerDeviceId: DeviceId,
+        generation: SessionGeneration,
+        lifetimeUs: Long,
+    ): SessionAdmissionResult = synchronized(lock) {
+        if (closed) return@synchronized SessionAdmissionResult(SessionError.Closed)
+        if (lifetimeUs <= 0L) return@synchronized SessionAdmissionResult(SessionError.InvalidPolicy)
+        expireReservationsLocked()
+        val recovery = recoveryAdmissions[sessionId] ?: return@synchronized SessionAdmissionResult(SessionError.RecoveryLeaseNotFound)
+        val expected = recovery.previousGeneration.value.takeIf {
+            it != UInt.MAX_VALUE
+        }?.let { SessionGeneration.from(it + 1u) }
+            ?: return@synchronized SessionAdmissionResult(SessionError.RecoveryGenerationMismatch)
+        if (recovery.peerDeviceId != peerDeviceId || generation != expected) {
+            return@synchronized SessionAdmissionResult(SessionError.RecoveryGenerationMismatch)
+        }
+        recoveryAdmissions.remove(sessionId)
+        val now = monotonicNowUs()
+        val expiry = if (lifetimeUs > Long.MAX_VALUE - now) Long.MAX_VALUE else now + lifetimeUs
+        val reservation =
+            AuthenticatedSessionAdmissionReservation(
+                sessionId,
+                peerDeviceId,
+                generation,
+                recovery.participantIndex,
+                expiry,
+            )
+        authenticatedReservations[sessionId] = reservation
+        SessionAdmissionResult(SessionError.None, reservation)
+    }
+
+    /** Pre-auth lookup only. It is never an identity assertion; RFC-005D still authenticates the peer. */
+    fun hasPendingRecoveryAdmission(sessionId: SessionId, generation: SessionGeneration): Boolean = synchronized(lock) {
+        if (closed) return@synchronized false
+        expireReservationsLocked()
+        val recovery = recoveryAdmissions[sessionId] ?: return@synchronized false
+        recovery.previousGeneration.value.takeIf { it != UInt.MAX_VALUE }
+            ?.let { SessionGeneration.from(it + 1u) } == generation
+    }
+
+    fun releaseLifecycleAdmission(sessionId: SessionId): SessionError = synchronized(lock) {
+        if (closed) return@synchronized SessionError.Closed
+        if (lifecycleAdmissions.remove(sessionId) != null) SessionError.None else SessionError.LifecycleAdmissionNotFound
+    }
+
+    fun releaseRecoveryAdmission(sessionId: SessionId): SessionError = synchronized(lock) {
+        if (closed) return@synchronized SessionError.Closed
+        if (recoveryAdmissions.remove(sessionId) != null) SessionError.None else SessionError.RecoveryLeaseNotFound
+    }
+
     fun snapshot(): SessionManagerSnapshot = synchronized(lock) {
         expireReservationsLocked()
         snapshotLocked()
@@ -274,6 +374,8 @@ class SessionManager(
             if (closed) return
             sessions.clear()
             authenticatedReservations.clear()
+            lifecycleAdmissions.clear()
+            recoveryAdmissions.clear()
             closed = true
         }
     }
@@ -298,7 +400,9 @@ class SessionManager(
                     it.localParticipant.role == SessionRole.Host &&
                         it.participantIndex == requested &&
                         it.state.isLive()
-                }
+                } || authenticatedReservations.values.any { it.participantIndex == requested } ||
+                lifecycleAdmissions.values.any { it.participantIndex == requested } ||
+                recoveryAdmissions.values.any { it.participantIndex == requested }
             ) {
                 null
             } else {
@@ -312,12 +416,17 @@ class SessionManager(
                     it.localParticipant.role == SessionRole.Host &&
                         it.participantIndex == candidate &&
                         it.state.isLive()
-                }
+                } && authenticatedReservations.values.none { it.participantIndex == candidate } &&
+                    lifecycleAdmissions.values.none { it.participantIndex == candidate } &&
+                    recoveryAdmissions.values.none { it.participantIndex == candidate }
             }
     }
 
     private fun hostLiveSessionCount(): Int =
         sessions.values.count { it.localParticipant.role == SessionRole.Host && it.state.isLive() }
+
+    private fun hostOccupiedClientSlots(): Int =
+        hostLiveSessionCount() + authenticatedReservations.size + lifecycleAdmissions.size + recoveryAdmissions.size
 
     private fun nextReservationParticipantIndex(): ParticipantIndex? =
         (0 until SessionBounds.HARD_MAX_CONCURRENT_CLIENTS).mapNotNull(
@@ -326,12 +435,15 @@ class SessionManager(
             sessions.values.none {
                 it.localParticipant.role == SessionRole.Host && it.participantIndex == candidate && it.state.isLive()
             } &&
-                authenticatedReservations.values.none { it.participantIndex == candidate }
+                authenticatedReservations.values.none { it.participantIndex == candidate } &&
+                lifecycleAdmissions.values.none { it.participantIndex == candidate } &&
+                recoveryAdmissions.values.none { it.participantIndex == candidate }
         }
 
     private fun expireReservationsLocked() {
         val now = monotonicNowUs()
         authenticatedReservations.entries.removeIf { it.value.expiresAtMonotonicUs <= now }
+        recoveryAdmissions.entries.removeIf { it.value.expiresAtMonotonicUs <= now }
     }
 
     private fun findMutableSession(sessionId: SessionId): ManagedSession? {
@@ -365,6 +477,8 @@ class SessionManager(
             maxConcurrentClients = policy.maxConcurrentClients,
             maxSessions = config.maxSessions,
             authenticatedReservationCount = authenticatedReservations.size,
+            lifecycleAdmissionCount = lifecycleAdmissions.size,
+            recoveryLeaseCount = recoveryAdmissions.size,
             hostSessions = sessions.values.count { it.localParticipant.role == SessionRole.Host },
             clientSessions = sessions.values.count { it.localParticipant.role == SessionRole.Client },
             sessionsByState = immutableList(
@@ -386,6 +500,9 @@ class SessionManager(
     }
 
     private fun monotonicNowUs(): Long = clock.nowUs().coerceAtLeast(0L)
+
+    private fun occupiedSessionSlots(): Int =
+        sessions.size + authenticatedReservations.size + lifecycleAdmissions.size + recoveryAdmissions.size
 }
 
 private class ManagedSession(

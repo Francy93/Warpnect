@@ -21,6 +21,7 @@ import io.warpnect.session.handshake.SessionHandshakeEventListener
 import io.warpnect.session.handshake.SessionHandshakeMonotonicClock
 import io.warpnect.session.handshake.SessionHandshakeSnapshot
 import io.warpnect.session.handshake.SessionHandshakeTransport
+import io.warpnect.session.handshake.SessionManagerRecoveryHandshakeAdmissionResolver
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
 import io.warpnect.session.pairing.PairingCryptoProvider
 import io.warpnect.session.security.SessionProtectionRuntime
@@ -43,8 +44,21 @@ class AndroidSessionHandshakeController(
     private val handler = Handler(thread.looper)
     private val dispatched = HandlerDispatchingSessionHandshakeTransport(transport, handler, ::scheduleNextLocked)
     private val controller = SessionHandshakeController(
-        dispatched, localSigner, trustedPeers, sessionManager, crypto, config, AndroidHandshakeClock,
-        CurrentDiscoveryPresenceProvider { discovery?.currentAdvertisingPresenceId() }, eventListener,
+        transport = dispatched,
+        localSigner = localSigner,
+        trustedPeers = trustedPeers,
+        sessionManager = sessionManager,
+        crypto = crypto,
+        config = config,
+        clock = AndroidHandshakeClock,
+        presenceProvider = CurrentDiscoveryPresenceProvider {
+            discovery?.currentAdvertisingPresenceId()
+        },
+        recoveryAdmissionResolver = SessionManagerRecoveryHandshakeAdmissionResolver(
+            sessionManager,
+            AndroidHandshakeClock,
+        ),
+        eventListener = eventListener,
     )
 
     @Volatile private var closed = false

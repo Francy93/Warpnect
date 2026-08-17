@@ -3,6 +3,7 @@ package io.warpnect.session.handshake
 import io.warpnect.session.DeviceId
 import io.warpnect.session.DuplicatePeerSessionPolicy
 import io.warpnect.session.SessionBehaviorPolicy
+import io.warpnect.session.SessionGeneration
 import io.warpnect.session.SessionId
 import io.warpnect.session.SessionManager
 import io.warpnect.session.SessionManagerConfig
@@ -88,6 +89,84 @@ class SessionHandshakeControllerTest {
             (SessionHandshakeProtocol.RECENT_COMPLETED_CAPACITY + 1).toLong(),
             server.snapshot().successfulHandshakes,
         )
+        client.close()
+        server.close()
+    }
+
+    @Test
+    fun reconnectIntentUsesSameSessionAndNextGenerationWithExactTrustedPeer() {
+        val clientSigner = signer(41u)
+        val serverSigner = signer(42u)
+        val sessionId = session(77u)
+        val serverManager = manager(serverSigner.identity.deviceId)
+        assertTrue(
+            serverManager.reserveAuthenticatedAdmission(
+                sessionId,
+                clientSigner.identity.deviceId,
+                SessionGeneration.Initial,
+                30_000_000L,
+            ).isSuccess,
+        )
+        assertTrue(
+            serverManager.promoteAuthenticatedAdmissionToLifecycle(
+                sessionId,
+                clientSigner.identity.deviceId,
+                SessionGeneration.Initial,
+            ).isSuccess,
+        )
+        assertTrue(
+            serverManager.beginLifecycleRecovery(
+                sessionId,
+                clientSigner.identity.deviceId,
+                SessionGeneration.Initial,
+                30_000_000L,
+            ).isSuccess,
+        )
+
+        val clientTransport = QueuedTransport()
+        val serverTransport = QueuedTransport()
+        var clientGeneration: SessionGeneration? = null
+        var serverGeneration: SessionGeneration? = null
+        val client = SessionHandshakeController(
+            clientTransport,
+            clientSigner,
+            trust(serverSigner),
+            manager(clientSigner.identity.deviceId),
+            crypto,
+            eventListener = SessionHandshakeEventListener { bootstrap ->
+                clientGeneration = bootstrap.generation
+                bootstrap.rootSecret.close()
+            },
+        )
+        val server = SessionHandshakeController(
+            serverTransport,
+            serverSigner,
+            trust(clientSigner),
+            serverManager,
+            crypto,
+            recoveryAdmissionResolver = SessionManagerRecoveryHandshakeAdmissionResolver(
+                serverManager,
+                SystemSessionHandshakeMonotonicClock,
+            ),
+            eventListener = SessionHandshakeEventListener { bootstrap ->
+                serverGeneration = bootstrap.generation
+                bootstrap.rootSecret.close()
+            },
+        )
+
+        val generation = SessionGeneration.requireValid(2u)
+        assertEquals(
+            SessionHandshakeError.None,
+            client.startInitiator(
+                serverEndpoint,
+                SessionHandshakeIntent.ReconnectSession(sessionId, generation, serverSigner.identity.deviceId),
+            ).error,
+        )
+        drain(clientTransport, serverTransport, client, server)
+
+        assertEquals(generation, clientGeneration)
+        assertEquals(generation, serverGeneration)
+        assertEquals(1, serverManager.snapshot().authenticatedReservationCount)
         client.close()
         server.close()
     }

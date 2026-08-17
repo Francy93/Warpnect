@@ -354,3 +354,16 @@ Endpoint sockets may be bound during preparation, but Video, Audio, Input, and T
 remain stopped. When later started, native WNSD protection is synchronous at the final SCL
 datagram boundary. RFC-005G adds no crypto worker, no permanent thread per channel, no setup queue,
 no reorder queue, and no standby media queue.
+
+## RFC-005H Session Lifecycle Control
+
+`WarpnectSessionLifecycle` is the shared serialized Phase 5 control context for Android network
+hints, WNSL decoding, idle-health timers, endpoint migration, graceful close, and bounded
+reconnect orchestration. `AndroidNetworkPathMonitor` registers at most one callback per represented
+SessionPath and posts only path facts into that context; it neither authenticates peers nor runs
+media work.
+
+The lifecycle owns one bounded next-wake timer per Session, not a heartbeat worker per Channel.
+Media, audio, and input paths observe only an inexpensive transport-gate/endpoint binding when
+started later. RFC-005H creates no media outage queue, migration packet queue, crypto worker, or
+callback-thread lifecycle execution.

@@ -104,6 +104,37 @@ class SessionManagerTest {
     }
 
     @Test
+    fun lifecycleRecoveryRetainsExactlyOneHostCapacitySlotAcrossGenerationClaim() {
+        val manager = hostManager()
+        val sessionId = session(93uL)
+        val peer = device(193uL)
+        assertTrue(manager.reserveAuthenticatedAdmission(sessionId, peer, SessionGeneration.Initial, 30_000L).isSuccess)
+        assertTrue(
+            manager.promoteAuthenticatedAdmissionToLifecycle(sessionId, peer, SessionGeneration.Initial).isSuccess,
+        )
+        assertEquals(1, manager.snapshot().lifecycleAdmissionCount)
+        assertEquals(0, manager.snapshot().authenticatedReservationCount)
+        assertTrue(manager.beginLifecycleRecovery(sessionId, peer, SessionGeneration.Initial, 30_000L).isSuccess)
+        assertEquals(1, manager.snapshot().recoveryLeaseCount)
+        assertEquals(1, manager.snapshot().lifecycleAdmissionCount + manager.snapshot().recoveryLeaseCount)
+
+        val next = SessionGeneration.requireValid(2u)
+        assertTrue(manager.hasPendingRecoveryAdmission(sessionId, next))
+        assertFalse(manager.claimRecoveryAdmission(sessionId, peer, SessionGeneration.Initial, 30_000L).isSuccess)
+        assertTrue(manager.claimRecoveryAdmission(sessionId, peer, next, 30_000L).isSuccess)
+        assertEquals(1, manager.snapshot().authenticatedReservationCount)
+        assertEquals(0, manager.snapshot().recoveryLeaseCount)
+        assertFalse(
+            manager.reserveAuthenticatedAdmission(
+                session(94uL),
+                device(194uL),
+                SessionGeneration.Initial,
+                30_000L,
+            ).isSuccess,
+        )
+    }
+
+    @Test
     fun multiClientAndSamePeerPoliciesAreExplicitAndBounded() {
         val singlePeerManager = hostManager(
             policy = SessionBehaviorPolicy(maxConcurrentClients = 2),

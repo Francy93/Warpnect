@@ -508,6 +508,20 @@ exact protected wire datagram. Android Wi-Fi Direct and path-local socket select
 platform adapters; portable SCL contains no `WifiP2pManager`, Android `Network`, or process-binding
 API. Prepared transports own no media worker until later startup orchestration.
 
+## RFC-005H Lifecycle Rebind and Reconnect
+
+Same-generation migration is a cold control-plane operation:
+
+```text
+Lifecycle controller -> allocate target path socket -> protected WNSL validation
+        -> native endpoint rebind -> unchanged Channel protection context -> UDP
+```
+
+The additive JNI surface rebinds a SessionControl or `Channel(ChannelId)` expected endpoint and
+reads a monotonic `lastAuthenticatedReceive` diagnostic. It does not copy keys, reset security
+packet numbers, create a per-packet JNI call, or perform media work. A reconnect destroys the old
+runtime and builds a new one only after fresh WNSH ECDH, then repeats WNCP and WNSN preparation.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

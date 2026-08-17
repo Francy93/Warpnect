@@ -121,6 +121,10 @@ interface SessionProtectionRuntime : SessionControlProtectionRuntime {
         expectedRemoteEndpoint: HandshakeTransportEndpoint,
     ): SessionProtectionContextResult = createChannelContext(channelId)
     fun destroyChannelContext(channelId: ChannelId): SessionProtectionError
+
+    /** RFC-005H control-plane rebind: only the endpoint filter changes, never channel key state. */
+    fun rebindChannelEndpoint(channelId: ChannelId, endpoint: HandshakeTransportEndpoint): SessionProtectionError =
+        SessionProtectionError.InvalidConfig
     override fun unprotectCandidateSessionControl(
         sourceEndpoint: HandshakeTransportEndpoint,
         protectedDatagram: ByteArray,
@@ -129,6 +133,9 @@ interface SessionProtectionRuntime : SessionControlProtectionRuntime {
 
     override fun rebindSessionControlEndpoint(endpoint: HandshakeTransportEndpoint): SessionProtectionError =
         SessionProtectionError.InvalidConfig
+
+    /** Zero means no authenticated datagram has been received by this generation yet. */
+    fun lastAuthenticatedReceiveMonotonicUs(): Long = 0L
     fun snapshot(): SessionProtectionSnapshot
     override fun protectSessionControl(
         sequenceNumber: Long,

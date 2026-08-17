@@ -1676,6 +1676,15 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionSnapshot(
     return array;
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionLastAuthenticatedReceiveUs(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr) return 0;
+    std::lock_guard guard(native_handle->state->lock);
+    return static_cast<jlong>(native_handle->state->runtime->last_authenticated_receive_us());
+}
+
 extern "C" JNIEXPORT jbyteArray JNICALL
 Java_io_warpnect_NativeBridge_nativeSessionProtectionProtectSessionControl(
     JNIEnv* env, jclass /* clazz */, jlong handle, jlong sequence_number, jlong timestamp_us,
@@ -1789,6 +1798,31 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionRebindSessionControl(
     return session_protection_error_code(
         native_handle->state->runtime->set_expected_remote_endpoint(
             ProtectionScope::session_control(), endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeSessionProtectionRebindChannel(
+    JNIEnv* env, jclass /* clazz */, jlong handle, jlong channel_id,
+    jbyteArray remote_address, jint remote_port) {
+    NativeSessionProtectionHandle* native_handle = session_protection_handle_from(handle);
+    std::vector<std::byte> address{};
+    if (native_handle == nullptr || native_handle->state->runtime == nullptr || channel_id <= 0 ||
+        channel_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max()) ||
+        !valid_port(remote_port, false) ||
+        !copy_bounded_byte_array(env, remote_address, 16, address) ||
+        (address.size() != 4 && address.size() != 16)) {
+        return session_protection_error_code(SessionProtectionError::InvalidConfig);
+    }
+    UdpEndpoint endpoint{};
+    endpoint.address.version = address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
+    for (std::size_t index = 0; index < address.size(); ++index) {
+        endpoint.address.bytes[index] = std::to_integer<std::uint8_t>(address[index]);
+    }
+    endpoint.port = static_cast<std::uint16_t>(remote_port);
+    std::lock_guard guard(native_handle->state->lock);
+    return session_protection_error_code(
+        native_handle->state->runtime->set_expected_remote_endpoint(
+            ProtectionScope::channel(static_cast<std::uint32_t>(channel_id)), endpoint).error);
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

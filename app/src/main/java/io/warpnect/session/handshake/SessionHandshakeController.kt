@@ -72,6 +72,7 @@ class SessionHandshakeController(
     private val config: SessionHandshakeConfig = SessionHandshakeConfig(),
     private val clock: SessionHandshakeMonotonicClock = SystemSessionHandshakeMonotonicClock,
     private val presenceProvider: CurrentDiscoveryPresenceProvider = CurrentDiscoveryPresenceProvider { null },
+    private val recoveryAdmissionResolver: SessionHandshakeRecoveryAdmissionResolver? = null,
     private val eventListener: SessionHandshakeEventListener? = null,
 ) : AutoCloseable {
     private val lock = Any()
@@ -95,6 +96,23 @@ class SessionHandshakeController(
         attemptId: SessionHandshakeAttemptId = nextAttemptId(),
         targetPresence: DiscoveryPresenceBinding = DiscoveryPresenceBinding.None,
         expectedPeer: ExpectedPeerConstraint = ExpectedPeerConstraint.AnyTrustedPeer,
+    ): SessionHandshakeEngineResult = startInitiator(
+        endpoint,
+        SessionHandshakeIntent.FreshSession(sessionId),
+        attemptId,
+        targetPresence,
+        expectedPeer,
+    )
+
+    fun startInitiator(
+        endpoint: HandshakeTransportEndpoint,
+        intent: SessionHandshakeIntent,
+        attemptId: SessionHandshakeAttemptId = nextAttemptId(),
+        targetPresence: DiscoveryPresenceBinding = DiscoveryPresenceBinding.None,
+        expectedPeer: ExpectedPeerConstraint = when (intent) {
+            is SessionHandshakeIntent.FreshSession -> ExpectedPeerConstraint.AnyTrustedPeer
+            is SessionHandshakeIntent.ReconnectSession -> ExpectedPeerConstraint.ExactTrustedPeer(intent.expectedPeer)
+        },
     ): SessionHandshakeEngineResult = synchronized(lock) {
         if (controllerState != SessionHandshakeControllerState.Running) {
             return@synchronized SessionHandshakeEngineResult(
@@ -108,7 +126,14 @@ class SessionHandshakeController(
         val started = SessionHandshakeEngine.initiate(
             attemptId,
             endpoint,
-            sessionId,
+            when (intent) {
+                is SessionHandshakeIntent.FreshSession -> intent.sessionId
+                is SessionHandshakeIntent.ReconnectSession -> intent.sessionId
+            },
+            generation = when (intent) {
+                is SessionHandshakeIntent.FreshSession -> io.warpnect.session.SessionGeneration.Initial
+                is SessionHandshakeIntent.ReconnectSession -> intent.nextGeneration
+            },
             targetPresence = targetPresence,
             localSigner = localSigner,
             trustedPeers = trustedPeers,
@@ -260,7 +285,15 @@ class SessionHandshakeController(
             return
         }
         counters.cookieValidated += 1
-        val admission = SessionManagerHandshakeAdmission(sessionManager, clock, config.admissionReservationMs)
+        val admission = if (hello.generation == io.warpnect.session.SessionGeneration.Initial) {
+            SessionManagerHandshakeAdmission(sessionManager, clock, config.admissionReservationMs)
+        } else {
+            recoveryAdmissionResolver?.admissionFor(hello.sessionId, hello.generation)
+                ?: run {
+                    sendReject(endpoint, packet.header.attemptId, SessionHandshakeRejectReason.InvalidRole)
+                    return
+                }
+        }
         val started = SessionHandshakeEngine.respond(
             endpoint,
             initial,
@@ -340,7 +373,12 @@ class SessionHandshakeController(
     }
 
     private fun validHello(hello: SessionHandshakeMessage.ClientHello): Boolean =
-        hello.suite == 1 && hello.generation == io.warpnect.session.SessionGeneration.Initial && hello.initiatorRole == io.warpnect.session.SessionRole.Client && hello.responderRole == io.warpnect.session.SessionRole.Host
+        hello.suite == 1 && hello.initiatorRole == io.warpnect.session.SessionRole.Client &&
+            hello.responderRole == io.warpnect.session.SessionRole.Host &&
+            (
+                hello.generation == io.warpnect.session.SessionGeneration.Initial ||
+                    recoveryAdmissionResolver?.admissionFor(hello.sessionId, hello.generation) != null
+                )
     private fun presenceMatches(binding: DiscoveryPresenceBinding): Boolean {
         if (binding.isAbsent) return true
         val id = presenceProvider.currentPresenceId() ?: return false
@@ -454,6 +492,52 @@ private class SessionManagerHandshakeAdmission(
                 }
             },
         )
+    }
+}
+
+/** Reclaims exactly one pre-existing RFC-005H recovery slot after Client authentication completes. */
+class SessionManagerRecoveryHandshakeAdmissionResolver(
+    private val manager: SessionManager,
+    private val clock: SessionHandshakeMonotonicClock,
+    private val lifetimeMs: Long = SessionHandshakeProtocol.DEFAULT_RESERVATION_MS,
+) : SessionHandshakeRecoveryAdmissionResolver {
+    override fun admissionFor(
+        sessionId: io.warpnect.session.SessionId,
+        generation: io.warpnect.session.SessionGeneration,
+    ): SessionHandshakeAdmission? {
+        if (!manager.hasPendingRecoveryAdmission(sessionId, generation)) return null
+        return SessionHandshakeAdmission { requestedSessionId, peerDeviceId, requestedGeneration ->
+            val claimed = manager.claimRecoveryAdmission(
+                requestedSessionId,
+                peerDeviceId,
+                requestedGeneration,
+                lifetimeMs * 1_000L,
+            )
+            val reservation = claimed.reservation ?: return@SessionHandshakeAdmission SessionHandshakeAdmissionResult(
+                claimed.error.toHandshakeError(),
+            )
+            SessionHandshakeAdmissionResult(
+                SessionHandshakeError.None,
+                object : AuthenticatedSessionAdmissionReservation {
+                    override val sessionId = reservation.sessionId
+                    override val peerDeviceId = reservation.peerDeviceId
+                    private var expiresAtMs: Long = clock.nowMs().coerceAtLeast(0L) + lifetimeMs
+                    override val expiresAtMonotonicMs: Long get() = expiresAtMs
+
+                    override fun renew(lifetimeMs: Long): Boolean {
+                        if (lifetimeMs <= 0L) return false
+                        val renewed = manager.renewAuthenticatedAdmission(sessionId, lifetimeMs * 1_000L)
+                        if (!renewed.isSuccess) return false
+                        expiresAtMs = clock.nowMs().coerceAtLeast(0L) + lifetimeMs
+                        return true
+                    }
+
+                    override fun close() {
+                        manager.releaseAuthenticatedAdmission(sessionId)
+                    }
+                },
+            )
+        }
     }
 }
 

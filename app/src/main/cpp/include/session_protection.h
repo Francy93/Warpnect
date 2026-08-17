@@ -220,6 +220,7 @@ class SessionProtectionRuntime final {
         const UdpEndpoint& endpoint) noexcept;
 
     [[nodiscard]] SessionProtectionSnapshot snapshot() const noexcept;
+    [[nodiscard]] std::uint64_t last_authenticated_receive_us() const noexcept;
     [[nodiscard]] bool is_initialized() const noexcept;
     [[nodiscard]] bool is_closed() const noexcept;
     [[nodiscard]] std::size_t secure_datagram_budget() const noexcept;

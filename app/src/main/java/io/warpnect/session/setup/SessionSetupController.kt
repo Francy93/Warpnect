@@ -1141,6 +1141,7 @@ class SessionSetupController(
             now,
             now + config.preparedBootstrapTtlMs,
             setup.directLease,
+            requireNotNull(setup.proposalHash).copyOf(),
         )
         setup.preparedChannels.clear()
         setup.localEndpointLeases.clear()

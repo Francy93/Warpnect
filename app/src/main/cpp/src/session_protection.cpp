@@ -505,6 +505,7 @@ struct SessionProtectionRuntime::Impl final {
     std::array<Context, kMaximumProtectionContexts> contexts{};
     SessionProtectionLocalRole local_role = SessionProtectionLocalRole::Client;
     SessionProtectionSnapshot snapshot{};
+    std::uint64_t last_authenticated_receive_us = 0;
     bool root_consumed = false;
     bool initialized = false;
     bool closed = false;
@@ -837,12 +838,17 @@ SessionProtectionDatagramResult SessionProtectionRuntime::unprotect_internal(
     epoch->replay_commit(decoded.header.packet_number);
     ++impl_->snapshot.decrypted_packets;
     impl_->snapshot.current_receive_epoch = direction.current().epoch();
+    impl_->last_authenticated_receive_us = std::max(impl_->last_authenticated_receive_us, now_us);
     return {.bytes_written = plaintext_size};
 }
 
 SessionProtectionSnapshot SessionProtectionRuntime::snapshot() const noexcept {
     return impl_ == nullptr ? SessionProtectionSnapshot{.last_error = SessionProtectionError::CryptoFailure}
                             : impl_->snapshot;
+}
+
+std::uint64_t SessionProtectionRuntime::last_authenticated_receive_us() const noexcept {
+    return impl_ == nullptr ? 0 : impl_->last_authenticated_receive_us;
 }
 
 bool SessionProtectionRuntime::is_initialized() const noexcept {

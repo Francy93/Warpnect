@@ -21,6 +21,7 @@ import io.warpnect.session.capability.CapabilityNegotiationController
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.handshake.SessionHandshakeController
 import io.warpnect.session.identity.LocalDeviceIdentityRepository
+import io.warpnect.session.lifecycle.SessionLifecycleController
 import io.warpnect.session.pairing.PairingController
 import io.warpnect.session.security.SessionProtectionController
 import io.warpnect.session.setup.SessionSetupController
@@ -73,6 +74,7 @@ class CoreOrchestrator(
     val sessionProtectionController: SessionProtectionController? = null,
     val capabilityNegotiationController: CapabilityNegotiationController? = null,
     val sessionSetupController: SessionSetupController? = null,
+    val sessionLifecycleController: SessionLifecycleController? = null,
     val sessionManager: SessionManager? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
@@ -91,6 +93,7 @@ class CoreOrchestrator(
     }
 
     fun shutdown() {
+        sessionLifecycleController?.close()
         sessionSetupController?.close()
         capabilityNegotiationController?.close()
         sessionProtectionController?.close()

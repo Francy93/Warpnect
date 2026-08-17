@@ -226,6 +226,19 @@ is carried only inside RFC-005E protected existing `PayloadType.SessionControl` 
 not alter SCL, discovery, pairing, handshake, packet-protection, capability-negotiation, native
 ABI, or existing media/input payload version domains.
 
+## Session Lifecycle Protocol Version
+
+Current value:
+
+```text
+1
+```
+
+Session Lifecycle Protocol Version defines RFC-005H's protected `WNSL` application-control format
+inside existing `PayloadType.SessionControl`. It does not alter Architecture Version 1.0, SCL
+Protocol Version 1, Native Bridge ABI Version 1, or any discovery, pairing, handshake,
+packet-protection, capability, setup, video, audio, or input wire version.
+
 ## Application Version
 
 Current value:

@@ -514,3 +514,17 @@ duplicate media transmission.
 > Exact stream configuration is independently validated from WNCP capability ceilings. Every prepared authenticated channel owns an independent RFC-005E Channel(ChannelId) protection scope and ProtectedRequired semantics.
 
 > Session setup prepares bounded sockets, protection scopes, and configuration only. It does not transition a Session to Running or start a media/input pipeline.
+
+## Phase 5 Session Lifecycle
+
+> Path migration and Session reconnection are distinct. A same-generation path migration preserves SessionGeneration and packet-protection state; reconnect increments SessionGeneration and creates fresh authenticated keying material.
+
+> Security packet numbers, key epochs, and replay windows never reset during same-generation migration. Traffic keys from one SessionGeneration are never reused by another generation.
+
+> Reconnection preserves the logical SessionId but performs a fresh authenticated RFC-005D ECDH handshake, followed by fresh RFC-005E, RFC-005F, and RFC-005G state.
+
+> A Session with no usable path never buffers real-time media or input for later replay. Network and Wi-Fi Direct callbacks are lifecycle hints, not peer authentication.
+
+> A new endpoint becomes active only after authenticated path validation and an explicit migration commit. A graceful authenticated disconnect disables automatic recovery for that logical Session.
+
+> Recoverable Sessions retain Host capacity only for their bounded recovery window.

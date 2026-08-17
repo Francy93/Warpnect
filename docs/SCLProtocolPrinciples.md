@@ -277,3 +277,15 @@ The negotiated secure datagram budget includes WNSD overhead before a packetizer
 Session Packet Protection is applied after SCL packetization and FEC construction and before UDP.
 On receive, WNSD authentication and anti-replay precede FEC, reassembly, and semantic input
 deduplication.
+
+## Session Lifecycle
+
+RFC-005H uses existing `PayloadType::SessionControl` for WNSL lifecycle records. Path migration
+changes path-bound socket and endpoint bindings only: SCL packet identities, WNSD security packet
+numbers, key epochs, and replay windows continue for the current SessionGeneration. Real-time data
+is not queued while a session has no usable path.
+
+Reconnection is not path migration. It establishes a new SessionGeneration with fresh WNSH ECDH and
+new RFC-005E contexts, then reruns capability and setup negotiation. `PathId`, `ChannelId`, UDP
+endpoint, SCL packet sequence, WNSD packet number, LifecycleMessageId, and PathMigrationId remain
+independent identities.

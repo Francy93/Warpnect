@@ -249,6 +249,41 @@ void test_candidate_session_control_and_explicit_endpoint_rebind() {
         "unspecified endpoint cannot be installed");
 }
 
+void test_channel_endpoint_rebind_preserves_context_and_replay_state() {
+    RuntimePair pair;
+    constexpr ProtectionScope channel_scope = ProtectionScope::channel(7);
+    const auto client_context = pair.client.create_context(channel_scope, pair.host_endpoint);
+    const auto host_context = pair.host.create_context(channel_scope, pair.client_endpoint);
+    expect(client_context.ok() && host_context.ok(), "channel context initializes for migration");
+
+    std::vector<std::byte> first(128);
+    const auto first_inner = inner_datagram(71);
+    const auto first_protected = [&] {
+        std::vector<std::byte> result(first_inner.size() + warpnect::scl::security::kSecureDatagramOverhead);
+        const auto status = pair.client.protect(channel_scope, first_inner, result);
+        expect(status.ok(), "channel packet before rebind protects");
+        result.resize(status.bytes_written);
+        return result;
+    }();
+    expect(pair.host.unprotect(pair.client_endpoint, first_protected, first, 1).ok(),
+           "channel packet before rebind decrypts");
+
+    const UdpEndpoint migrated_client = UdpEndpoint::loopback_v4(31997);
+    expect(pair.host.set_expected_remote_endpoint(channel_scope, migrated_client).ok(),
+           "channel endpoint rebind preserves context state");
+    const auto second_inner = inner_datagram(72);
+    std::vector<std::byte> second(second_inner.size() + warpnect::scl::security::kSecureDatagramOverhead);
+    const auto protected_second = pair.client.protect(channel_scope, second_inner, second);
+    expect(protected_second.ok(), "channel packet after rebind protects");
+    second.resize(protected_second.bytes_written);
+    expect_equal(pair.host.unprotect(pair.client_endpoint, second, first, 2).error,
+                 SessionProtectionError::EndpointMismatch, "old channel endpoint is dropped after migration");
+    expect(pair.host.unprotect(migrated_client, second, first, 3).ok(),
+           "new channel endpoint decrypts with the original context");
+    expect_equal(pair.host.unprotect(migrated_client, first_protected, first, 4).error,
+                 SessionProtectionError::ReplayDuplicate, "old replay state survives channel endpoint migration");
+}
+
 } // namespace
 
 int main() {
@@ -258,6 +293,7 @@ int main() {
     test_epoch_overlap_and_budget();
     test_context_isolation_and_root_consumption();
     test_candidate_session_control_and_explicit_endpoint_rebind();
+    test_channel_endpoint_rebind_preserves_context_and_replay_state();
     if (failures == 0) {
         std::cout << "All session packet protection tests passed.\n";
         return 0;

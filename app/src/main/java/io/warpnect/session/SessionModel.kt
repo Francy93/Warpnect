@@ -29,6 +29,10 @@ enum class SessionError {
     InvalidStateTransition,
     SessionNotFound,
     AdmissionReservationNotFound,
+    LifecycleAdmissionNotFound,
+    RecoveryLeaseNotFound,
+    RecoveryLeaseConflict,
+    RecoveryGenerationMismatch,
     Closed,
 }
 
@@ -252,6 +256,8 @@ data class SessionManagerSnapshot(
     val maxConcurrentClients: Int,
     val maxSessions: Int,
     val authenticatedReservationCount: Int,
+    val lifecycleAdmissionCount: Int,
+    val recoveryLeaseCount: Int,
     val hostSessions: Int,
     val clientSessions: Int,
     val sessionsByState: List<SessionStateCount>,
@@ -286,6 +292,37 @@ data class SessionAdmissionResult(
     val reservation: AuthenticatedSessionAdmissionReservation? = null,
 ) {
     val isSuccess: Boolean get() = error == SessionError.None && reservation != null
+}
+
+/** Host capacity owned by RFC-005H lifecycle control, not a Running media session. */
+data class LifecycleSessionAdmission(
+    val sessionId: SessionId,
+    val peerDeviceId: DeviceId,
+    val generation: SessionGeneration,
+    val participantIndex: ParticipantIndex?,
+)
+
+/** Bounded, in-memory-only recovery capacity. It contains no RFC-005D or RFC-005E secrets. */
+data class SessionRecoveryAdmission(
+    val sessionId: SessionId,
+    val peerDeviceId: DeviceId,
+    val previousGeneration: SessionGeneration,
+    val participantIndex: ParticipantIndex?,
+    val expiresAtMonotonicUs: Long,
+)
+
+data class LifecycleAdmissionResult(
+    val error: SessionError,
+    val lifecycle: LifecycleSessionAdmission? = null,
+) {
+    val isSuccess: Boolean get() = error == SessionError.None && lifecycle != null
+}
+
+data class SessionRecoveryAdmissionResult(
+    val error: SessionError,
+    val recovery: SessionRecoveryAdmission? = null,
+) {
+    val isSuccess: Boolean get() = error == SessionError.None && recovery != null
 }
 
 fun SessionChannelKind.defaultDirection(): SessionChannelDirection = when (this) {

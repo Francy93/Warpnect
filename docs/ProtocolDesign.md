@@ -1528,6 +1528,40 @@ version change. Only a dedicated bounded candidate socket/window may authenticat
 DirectPathProbe/Ack and authorize the one initial LAN-to-Direct endpoint rebind. Other valid
 SessionControl records from new endpoints do not migrate a path.
 
+## Session Lifecycle Protocol Version 1
+
+RFC-005H defines `WNSL` only inside RFC-005E protected existing `PayloadType.SessionControl`.
+Raw UDP WNSL is invalid. Every record is at most 512 bytes and has the 20-byte header:
+
+```text
+0..3   ASCII WNSL
+4      version = 1
+5      message type
+6..7   flags = 0
+8..15  non-zero u64 LifecycleMessageId, big endian
+16..17 u16 body length, big endian
+18..19 reserved = 0
+```
+
+Message types are `1` Heartbeat, `2` HeartbeatAck, `3` PathChallenge, `4` PathResponse,
+`5` PathMigrationPrepare, `6` PathMigrationReady, `7` PathMigrationCommit,
+`8` PathMigrationAck, `9` DisconnectNotice, and `10` DisconnectAck. Unknown types, non-zero
+flags/reserved fields, zero IDs, malformed body lengths, trailing bytes, and records over the bound
+are rejected before lifecycle semantics run.
+
+Heartbeat and Ack have a 16-byte body: non-zero u64 heartbeat ID, u32 active PathId, and zero u32
+reserved. Challenge and Response have a 32-byte body: non-zero u64 PathMigrationId, u32 target
+PathId, explicit path-kind byte, three zero reserved bytes, and a fresh 16-byte challenge.
+Prepare/Ready carry migration ID, target PathId, channel count, three zero bytes, the 32-byte
+committed WNSN configuration hash, and sorted unique 8-byte `(ChannelId, local port, zero)` entries.
+Commit/Ack carry migration ID, target PathId, zero u32, and `MigrationPlanHash`, defined as SHA-256
+of exact canonical Prepare bytes concatenated with exact canonical Ready bytes. Disconnect has the
+12-byte `(reason, zero flags, zero reserved, SessionGeneration, active PathId)` body.
+
+An application-level WNSL retry preserves canonical message bytes and its LifecycleMessageId but
+uses a fresh SCL sequence and WNSD security packet number. This is distinct from RFC-005E exact
+protected-datagram retransmission, which anti-replay intentionally handles before WNSL.
+
 ## Discovery Presence Schema V1
 
 RFC-005B's Discovery Presence Schema Version 1 is DNS-SD control-plane metadata only. Its

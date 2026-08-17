@@ -478,13 +478,21 @@ interface DirectPathLease : AutoCloseable {
 }
 
 class PreparedChannel(
-    val descriptor: ChannelDescriptor,
-    val localLease: ChannelEndpointLease,
-    val remoteAddress: String,
+    descriptor: ChannelDescriptor,
+    localLease: ChannelEndpointLease,
+    remoteAddress: String,
     configuration: List<SetupConfiguration>,
     val protection: PreparedChannelProtection,
-    val transport: PreparedChannelTransport,
+    transport: PreparedChannelTransport,
 ) : AutoCloseable {
+    var descriptor: ChannelDescriptor = descriptor
+        private set
+    var localLease: ChannelEndpointLease = localLease
+        private set
+    var remoteAddress: String = remoteAddress
+        private set
+    var transport: PreparedChannelTransport = transport
+        private set
     var configuration: List<SetupConfiguration> = configuration.toList()
         private set
 
@@ -495,6 +503,27 @@ class PreparedChannel(
     internal fun closePreparation() {
         transport.close()
         protection.close()
+    }
+
+    /** Same-generation endpoint swap: the Channel protection lease remains unchanged. */
+    internal fun replaceEndpoint(
+        replacementDescriptor: ChannelDescriptor,
+        replacementLease: ChannelEndpointLease,
+        replacementRemoteAddress: String,
+        replacementTransport: PreparedChannelTransport,
+    ) {
+        require(
+            replacementDescriptor.channelId == descriptor.channelId && replacementDescriptor.kind == descriptor.kind,
+        )
+        require(replacementTransport.protectedRequired && !replacementTransport.started)
+        val oldTransport = transport
+        val oldLease = localLease
+        descriptor = replacementDescriptor
+        localLease = replacementLease
+        remoteAddress = replacementRemoteAddress
+        transport = replacementTransport
+        oldTransport.close()
+        oldLease.close()
     }
 
     override fun close() {
@@ -521,9 +550,26 @@ class PreparedSessionBootstrap(
     val createdAtMonotonicMs: Long,
     val expiresAtMonotonicMs: Long,
     private val directLease: DirectPathLease? = null,
+    /** Canonical committed RFC-005G proposal hash, retained only for same-generation migration correlation. */
+    val preparedConfigurationHash: ByteArray = ByteArray(32),
 ) : AutoCloseable {
     private var closed = false
     private var expiryHandle: AutoCloseable? = null
+
+    /**
+     * RFC-005H takes deterministic ownership before the RFC-005G prepared TTL fires. This does
+     * not start a pipeline and does not duplicate any prepared endpoint or security context.
+     */
+    @Synchronized
+    fun transferToLifecycle(nowMonotonicMs: Long): Boolean {
+        if (closed || nowMonotonicMs < createdAtMonotonicMs || nowMonotonicMs >= expiresAtMonotonicMs) return false
+        expiryHandle?.close()
+        expiryHandle = null
+        return true
+    }
+
+    @Synchronized
+    fun isClosed(): Boolean = closed
 
     @Synchronized
     internal fun armExpiry(handle: AutoCloseable) {
@@ -543,6 +589,7 @@ class PreparedSessionBootstrap(
         expiryHandle = null
         channels.asReversed().forEach(PreparedChannel::close)
         secureSessionControl.close()
+        protectionRuntime.close()
         directLease?.close()
         admissionReservation?.close()
     }

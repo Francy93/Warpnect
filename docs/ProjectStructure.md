@@ -726,3 +726,22 @@ channel allocator reserves path-local OS-selected ports; the native preparer ado
 sockets into existing protected transports without starting workers. The Direct adapter uses public
 Wi-Fi Direct APIs, owns one Host group through bounded reference-counted leases, and validates a
 candidate endpoint with protected SessionControl. Android network APIs never enter portable SCL.
+
+## RFC-005H Session Lifecycle
+
+```text
+app/src/main/java/io/warpnect/session/lifecycle/
+  SessionLifecycleModel.kt
+  SessionLifecycleCodec.kt
+  SessionLifecycleEngine.kt
+  SessionLifecycleController.kt
+  SessionLifecycleCapacity.kt
+app/src/main/java/io/warpnect/platform/session/lifecycle/
+  AndroidNetworkPathMonitor.kt
+  PreparedSessionMigrationAdapter.kt
+```
+
+The portable lifecycle package owns WNSL, bounded health/recovery state, path-migration control,
+and generation transition intent. The platform adapter observes Android path loss and allocates
+replacement stopped channel endpoints before commit. It rebinds native protected transports without
+rebuilding same-generation security state; no lifecycle work runs in media or input callbacks.
