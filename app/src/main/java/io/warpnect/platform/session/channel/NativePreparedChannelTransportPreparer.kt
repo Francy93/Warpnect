@@ -123,6 +123,9 @@ class NativePreparedChannelTransportPreparer(
         return if (handle.handle == 0L) {
             failure(SessionSetupError.TransportPreparationFailed)
         } else {
+            // Native construction has consumed the pre-bound socket. Keep the lease only as
+            // channel descriptor metadata; the stopped transport is now its sole socket owner.
+            (request.localEndpoint as? NativeChannelEndpointLeaseAccess)?.markNativeEndpointAdopted(endpointHandle)
             ChannelTransportPreparationResult(SessionSetupError.None, handle)
         }
     }
@@ -285,7 +288,11 @@ class NativePreparedChannelTransportPreparer(
     private fun failure(error: SessionSetupError) = ChannelTransportPreparationResult(error)
 }
 
-private enum class NativePreparedTransportKind {
+/**
+ * Platform-only transport identity used for the one-time 005G -> Phase 2/3/4 handle transfer.
+ * It deliberately does not leak into portable session setup models.
+ */
+internal enum class NativePreparedTransportKind {
     VideoSender,
     VideoReceiver,
     AudioSender,
@@ -295,14 +302,29 @@ private enum class NativePreparedTransportKind {
     Generic,
 }
 
-private class NativePreparedTransportHandle(
+/**
+ * Narrow ownership bridge for a stopped native transport prepared by RFC-005G.  A consumer must
+ * take the handle exactly once; after that the receiving phase controller owns its destruction.
+ */
+internal interface NativePreparedChannelTransportAccess {
+    fun takeNativeHandle(expectedKind: NativePreparedTransportKind): Long
+}
+
+internal class NativePreparedTransportHandle(
     var handle: Long,
     private val kind: NativePreparedTransportKind,
-) : PreparedChannelTransport {
+) : PreparedChannelTransport, NativePreparedChannelTransportAccess {
     private val lock = Any()
 
     override val protectedRequired: Boolean = true
     override val started: Boolean = false
+
+    override fun takeNativeHandle(expectedKind: NativePreparedTransportKind): Long = synchronized(lock) {
+        if (kind != expectedKind) return@synchronized 0L
+        val transferred = handle
+        handle = 0L
+        transferred
+    }
 
     override fun close() = synchronized(lock) {
         if (handle == 0L) return
@@ -317,6 +339,19 @@ private class NativePreparedTransportHandle(
         }
         handle = 0L
     }
+}
+
+/** Returns zero when a prepared transport is not the expected native secure channel handle. */
+internal fun PreparedChannelTransport.takeNativePreparedHandle(expectedKind: NativePreparedTransportKind): Long =
+    (this as? NativePreparedChannelTransportAccess)?.takeNativeHandle(expectedKind) ?: 0L
+
+/** The live native transport consumes this already-bound RFC-005H replacement socket exactly once. */
+internal fun io.warpnect.session.setup.ChannelEndpointLease.nativeEndpointHandleForLiveRebind(): Long =
+    (this as? NativeChannelEndpointLeaseAccess)?.nativeEndpointHandle() ?: 0L
+
+/** Called only after a successful JNI rebind has consumed this prepared socket. */
+internal fun io.warpnect.session.setup.ChannelEndpointLease.markNativeEndpointAdopted(handle: Long) {
+    (this as? NativeChannelEndpointLeaseAccess)?.markNativeEndpointAdopted(handle)
 }
 
 private fun io.warpnect.session.setup.ChannelDescriptor.remotePortFor(role: SessionRole): Int =

@@ -89,6 +89,7 @@ class VideoTransportSender final : private DatagramSink {
 
     [[nodiscard]] VideoStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] VideoStatus rebind_prebound_socket(UdpSocket socket, UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] VideoStatus submit_stream_config(std::uint16_t width, std::uint16_t height,
                                                    std::span<const CsdEntryView> csd_entries) noexcept;
     [[nodiscard]] VideoStatus submit_access_unit(std::span<const std::byte> access_unit,

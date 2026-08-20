@@ -289,3 +289,10 @@ Reconnection is not path migration. It establishes a new SessionGeneration with 
 new RFC-005E contexts, then reruns capability and setup negotiation. `PathId`, `ChannelId`, UDP
 endpoint, SCL packet sequence, WNSD packet number, LifecycleMessageId, and PathMigrationId remain
 independent identities.
+
+## Session Integration
+
+Production Phase 5 sessions use negotiated endpoints and `ProtectedRequired` transports. Manual
+unprotected endpoints remain explicit legacy/developer paths and are never an integration fallback.
+Pipeline startup and lifecycle recovery add no queue of stale real-time data and alter none of SCL
+packet identity, packetization, FEC, NACK, ClockSync, or media/input payload semantics.

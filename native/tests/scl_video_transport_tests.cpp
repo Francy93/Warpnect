@@ -1167,6 +1167,119 @@ void test_protected_video_nack_retransmits_exact_cached_wnsd() {
                  "protected sender counts one exact retransmission");
 }
 
+void test_adopted_protected_video_transport_rebind_preserves_security_state() {
+    constexpr std::size_t secure_budget = 1200;
+    UdpSocket old_sender_socket;
+    UdpSocket old_receiver_socket;
+    if (!old_sender_socket.open(IpVersion::V4).ok() || !old_receiver_socket.open(IpVersion::V4).ok() ||
+        !old_sender_socket.bind(UdpEndpoint::loopback_v4(0)).ok() ||
+        !old_receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok()) {
+        skip("adopted protected Video transport UDP sockets unavailable");
+        return;
+    }
+    const auto old_sender_endpoint = old_sender_socket.local_endpoint();
+    const auto old_receiver_endpoint = old_receiver_socket.local_endpoint();
+    if (!old_sender_endpoint.ok() || !old_receiver_endpoint.ok()) return;
+
+    SessionProtectionRuntime sender_security({});
+    SessionProtectionRuntime receiver_security({});
+    const auto root = protection_root();
+    const auto session = protection_session_id();
+    const auto transcript = protection_transcript();
+    expect(sender_security.initialize(root, session, 1, transcript, SessionProtectionLocalRole::Host).ok(),
+           "adopted transport sender security initializes");
+    expect(receiver_security.initialize(root, session, 1, transcript, SessionProtectionLocalRole::Client).ok(),
+           "adopted transport receiver security initializes");
+    constexpr ProtectionScope scope = ProtectionScope::channel(29);
+    expect(sender_security.create_context(scope, old_receiver_endpoint.endpoint).ok(),
+           "adopted transport sender Channel context initializes");
+    expect(receiver_security.create_context(scope, old_sender_endpoint.endpoint).ok(),
+           "adopted transport receiver Channel context initializes");
+    RuntimeDatagramProtector sender_protector(sender_security, scope);
+    RuntimeDatagramProtector receiver_protector(receiver_security, scope);
+
+    SenderStorage storage(secure_budget, 8, VideoTransportFecConfig{});
+    VideoTransportSender sender(
+        VideoTransportSenderConfig{
+            .remote_endpoint = old_receiver_endpoint.endpoint,
+            .local_port = old_sender_endpoint.endpoint.port,
+            .max_wire_datagram_size = secure_budget,
+            .initial_video_sequence = 900,
+            .initial_control_sequence = 901,
+            .initial_frame_id = 902,
+            .retransmission_cache_slots = 8,
+            .fec = {},
+            .protector = &sender_protector,
+        },
+        storage.workspace());
+    sender.adopt_prebound_socket(std::move(old_sender_socket));
+    expect(sender.open().ok(), "prepared Video sender adopts the running socket");
+
+    const std::array<std::byte, 2> csd{byte(0x67), byte(0x01)};
+    const std::array<CsdEntryView, 1> csd_entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(sender.submit_stream_config(640, 480, csd_entries).ok(),
+           "adopted Video transport sends config before migration");
+    std::vector<std::byte> config_wire;
+    UdpEndpoint config_source{};
+    if (!receive_secure_datagram(old_receiver_socket, config_wire, config_source)) return;
+    CapturedDatagram config_inner;
+    if (!unprotect_captured(receiver_protector, config_source, config_wire, config_inner, 1)) return;
+
+    const std::array<std::byte, 3> before_au{byte(1), byte(2), byte(3)};
+    expect(sender.submit_access_unit(as_bytes(before_au), 10'000, true).ok(),
+           "adopted Video transport sends before migration");
+    std::vector<std::byte> before_wire;
+    UdpEndpoint before_source{};
+    if (!receive_secure_datagram(old_receiver_socket, before_wire, before_source)) return;
+    CapturedDatagram before_inner;
+    if (!unprotect_captured(receiver_protector, before_source, before_wire, before_inner, 2)) return;
+    const auto before_header = warpnect::scl::security::decode_secure_datagram_header(
+        std::span<const std::byte>(before_wire.data(), warpnect::scl::security::kSecureDatagramHeaderSize));
+    expect(before_header.ok(), "protected packet before live rebind has WNSD header");
+
+    UdpSocket migrated_sender_socket;
+    UdpSocket migrated_receiver_socket;
+    if (!migrated_sender_socket.open(IpVersion::V4).ok() || !migrated_receiver_socket.open(IpVersion::V4).ok() ||
+        !migrated_sender_socket.bind(UdpEndpoint::loopback_v4(0)).ok() ||
+        !migrated_receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok()) {
+        skip("migrated protected Video transport UDP sockets unavailable");
+        return;
+    }
+    const auto migrated_sender_endpoint = migrated_sender_socket.local_endpoint();
+    const auto migrated_receiver_endpoint = migrated_receiver_socket.local_endpoint();
+    if (!migrated_sender_endpoint.ok() || !migrated_receiver_endpoint.ok()) return;
+    expect(receiver_security.set_expected_remote_endpoint(scope, migrated_sender_endpoint.endpoint).ok(),
+           "receiver Channel context accepts only the migrated sender endpoint");
+    expect(sender.rebind_prebound_socket(std::move(migrated_sender_socket), migrated_receiver_endpoint.endpoint).ok(),
+           "already-adopted Video transport rebinds in place");
+
+    const std::array<std::byte, 3> after_au{byte(4), byte(5), byte(6)};
+    expect(sender.submit_access_unit(as_bytes(after_au), 11'000, true).ok(),
+           "same adopted Video transport sends after migration");
+    std::vector<std::byte> after_wire;
+    UdpEndpoint after_source{};
+    if (!receive_secure_datagram(migrated_receiver_socket, after_wire, after_source)) return;
+    const auto after_header = warpnect::scl::security::decode_secure_datagram_header(
+        std::span<const std::byte>(after_wire.data(), warpnect::scl::security::kSecureDatagramHeaderSize));
+    expect(after_header.ok(), "protected packet after live rebind has WNSD header");
+    if (before_header.ok() && after_header.ok()) {
+        expect_equal(after_header.header.protection_context_id, before_header.header.protection_context_id,
+                     "adopted transport keeps its Channel ProtectionContextId");
+        expect_equal(after_header.header.packet_number, before_header.header.packet_number + 1U,
+                     "adopted transport continues the WNSD packet-number space");
+    }
+    CapturedDatagram after_inner;
+    expect(unprotect_captured(receiver_protector, after_source, after_wire, after_inner, 3),
+           "migrated endpoint decrypts with the original Channel context");
+    std::array<std::byte, 2048> replay_output{};
+    expect_equal(receiver_protector.unprotect(before_source, as_bytes(after_wire), replay_output, 4).error,
+                 DatagramProtectionError::Rejected,
+                 "old remote endpoint is rejected after committed live rebind");
+    expect_equal(receiver_protector.unprotect(after_source, as_bytes(before_wire), replay_output, 5).error,
+                 DatagramProtectionError::Rejected,
+                 "replay state survives the adopted transport rebind");
+}
+
 void test_protected_video_fec_unprotects_before_recovery() {
     constexpr std::size_t secure_budget = 1200;
     UdpSocket sender_socket;
@@ -1435,6 +1548,7 @@ int run_all_tests() {
     test_nack_fallback_after_fec_capacity_exceeded();
     test_protected_video_fec_unprotects_before_recovery();
     test_protected_video_nack_retransmits_exact_cached_wnsd();
+    test_adopted_protected_video_transport_rebind_preserves_security_state();
     test_video_transport_sender_udp_loopback_and_nack();
     return failures == 0 ? 0 : 1;
 }

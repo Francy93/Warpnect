@@ -268,6 +268,15 @@ internal object NativeBridge {
     private external fun nativeAudioTransportDestroy(handle: Long): Int
 
     @JvmStatic
+    private external fun nativeAudioTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
+
+    @JvmStatic
     private external fun nativeAudioTransportSubmitConfig(
         handle: Long,
         sampleRateHz: Int,
@@ -308,6 +317,15 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeInputTransportDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeInputTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
 
     @JvmStatic
     private external fun nativeInputTransportSubmitKey(
@@ -411,6 +429,15 @@ internal object NativeBridge {
     private external fun nativeInputReceiverDestroy(handle: Long): Int
 
     @JvmStatic
+    private external fun nativeInputReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
+
+    @JvmStatic
     private external fun nativeInputReceiverWait(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int
 
     @JvmStatic
@@ -442,6 +469,15 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeAudioReceiverDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeAudioReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
 
     @JvmStatic
     private external fun nativeAudioReceiverPump(handle: Long, timeoutUs: Long): LongArray
@@ -476,6 +512,15 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeVideoTransportDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeVideoTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
 
     @JvmStatic
     private external fun nativeVideoTransportSubmitConfig(
@@ -541,6 +586,15 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeVideoReceiverDestroy(handle: Long): Int
+
+    @JvmStatic
+    private external fun nativeVideoReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int
 
     @JvmStatic
     private external fun nativeVideoReceiverPump(handle: Long, timeoutUs: Long): LongArray
@@ -899,6 +953,14 @@ internal object NativeBridge {
 
     fun audioTransportDestroy(handle: Long): Int = nativeAudioTransportDestroy(handle)
 
+    fun audioTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeAudioTransportRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
+
     fun audioTransportSubmitConfig(
         handle: Long,
         sampleRateHz: Int,
@@ -958,6 +1020,14 @@ internal object NativeBridge {
     )
 
     fun inputTransportDestroy(handle: Long): Int = nativeInputTransportDestroy(handle)
+
+    fun inputTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeInputTransportRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
 
     fun inputTransportSubmitKey(
         handle: Long,
@@ -1121,6 +1191,14 @@ internal object NativeBridge {
 
     fun inputReceiverDestroy(handle: Long): Int = nativeInputReceiverDestroy(handle)
 
+    fun inputReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeInputReceiverRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
+
     fun inputReceiverWait(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int =
         nativeInputReceiverWait(handle, timeoutUs, bridgeBuffer)
 
@@ -1163,6 +1241,14 @@ internal object NativeBridge {
     )
 
     fun audioReceiverDestroy(handle: Long): Int = nativeAudioReceiverDestroy(handle)
+
+    fun audioReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeAudioReceiverRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
 
     fun audioReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeAudioReceiverPump(handle, timeoutUs)
 
@@ -1208,6 +1294,14 @@ internal object NativeBridge {
     )
 
     fun videoTransportDestroy(handle: Long): Int = nativeVideoTransportDestroy(handle)
+
+    fun videoTransportRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeVideoTransportRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
 
     fun videoTransportSubmitConfig(handle: Long, width: Int, height: Int, codecSpecificData: Array<ByteArray>): Int =
         nativeVideoTransportSubmitConfig(handle, width, height, codecSpecificData)
@@ -1293,6 +1387,14 @@ internal object NativeBridge {
     )
 
     fun videoReceiverDestroy(handle: Long): Int = nativeVideoReceiverDestroy(handle)
+
+    fun videoReceiverRebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = nativeVideoReceiverRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
 
     fun videoReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeVideoReceiverPump(handle, timeoutUs)
 

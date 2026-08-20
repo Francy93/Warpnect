@@ -472,6 +472,15 @@ interface PreparedChannelTransport : AutoCloseable {
     override fun close()
 }
 
+/**
+ * Cold-control-path owner of a Channel transport after RFC-005I adopts the stopped RFC-005G
+ * native handle into a running Phase 2/3/4 controller. It changes only path-bound endpoint
+ * state; the ChannelId and RFC-005E context remain owned by this PreparedChannel.
+ */
+fun interface LiveChannelTransportRebinder {
+    fun rebind(localEndpoint: ChannelEndpointLease, remoteAddress: String, remotePort: Int): Boolean
+}
+
 /** A real Direct group/path resource is shared separately from prepared media channel endpoints. */
 interface DirectPathLease : AutoCloseable {
     override fun close()
@@ -495,6 +504,7 @@ class PreparedChannel(
         private set
     var configuration: List<SetupConfiguration> = configuration.toList()
         private set
+    private var liveTransportRebinder: LiveChannelTransportRebinder? = null
 
     internal fun updateConfiguration(value: List<SetupConfiguration>) {
         configuration = value.toList()
@@ -503,6 +513,43 @@ class PreparedChannel(
     internal fun closePreparation() {
         transport.close()
         protection.close()
+    }
+
+    /**
+     * RFC-005I transfers the native handle exactly once, then registers its final controller as
+     * the only endpoint-rebind owner. Registration is deliberately one-shot per generation.
+     */
+    internal fun adoptLiveTransport(rebinder: LiveChannelTransportRebinder) {
+        check(liveTransportRebinder == null) { "Live Channel transport already adopted" }
+        liveTransportRebinder = rebinder
+    }
+
+    internal fun hasLiveTransport(): Boolean = liveTransportRebinder != null
+
+    /**
+     * Same-generation migration keeps the adopted transport object and its RFC-005E state. Only
+     * the path socket/remote endpoint changes; the prior spent endpoint lease is released.
+     */
+    internal fun replaceLiveEndpoint(
+        replacementDescriptor: ChannelDescriptor,
+        replacementLease: ChannelEndpointLease,
+        replacementRemoteAddress: String,
+    ): Boolean {
+        require(
+            replacementDescriptor.channelId == descriptor.channelId && replacementDescriptor.kind == descriptor.kind,
+        )
+        val remotePort = replacementDescriptor.remotePortForMigration(replacementLease.localPort)
+        if (remotePort !in 1..0xffff ||
+            liveTransportRebinder?.rebind(replacementLease, replacementRemoteAddress, remotePort) != true
+        ) {
+            return false
+        }
+        val oldLease = localLease
+        descriptor = replacementDescriptor
+        localLease = replacementLease
+        remoteAddress = replacementRemoteAddress
+        oldLease.close()
+        return true
     }
 
     /** Same-generation endpoint swap: the Channel protection lease remains unchanged. */
@@ -532,6 +579,9 @@ class PreparedChannel(
     }
 }
 
+private fun ChannelDescriptor.remotePortForMigration(localPort: Int): Int =
+    if (hostLocalPort == localPort) clientLocalPort else hostLocalPort
+
 class PreparedSessionBootstrap(
     val sessionId: SessionId,
     val generation: SessionGeneration,
@@ -552,6 +602,13 @@ class PreparedSessionBootstrap(
     private val directLease: DirectPathLease? = null,
     /** Canonical committed RFC-005G proposal hash, retained only for same-generation migration correlation. */
     val preparedConfigurationHash: ByteArray = ByteArray(32),
+    /** Existing protected SessionControl endpoint retained for RFC-005H lifecycle path ownership. */
+    val initialControlEndpoint: io.warpnect.session.handshake.HandshakeTransportEndpoint? = null,
+    /**
+     * Authenticated control endpoints keyed by their committed PathId. These are in-memory route
+     * bindings only, never negotiated IP fields; RFC-005H uses them for standby revalidation.
+     */
+    val pathControlEndpoints: Map<PathId, io.warpnect.session.handshake.HandshakeTransportEndpoint> = emptyMap(),
 ) : AutoCloseable {
     private var closed = false
     private var expiryHandle: AutoCloseable? = null

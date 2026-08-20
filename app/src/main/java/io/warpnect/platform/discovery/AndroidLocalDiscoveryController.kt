@@ -10,6 +10,7 @@ import io.warpnect.session.discovery.DiscoveryAvailability
 import io.warpnect.session.discovery.DiscoveryBackend
 import io.warpnect.session.discovery.DiscoveryConfig
 import io.warpnect.session.discovery.DiscoveryMonotonicClock
+import io.warpnect.session.discovery.DiscoveryOpaqueRouteLocator
 import io.warpnect.session.discovery.DiscoveryOperationResult
 import io.warpnect.session.discovery.DiscoveryPresenceId
 import io.warpnect.session.discovery.DiscoveryPresenceIdGenerator
@@ -47,6 +48,7 @@ class AndroidLocalDiscoveryController(
         presenceIdGenerator = presenceIdGenerator,
         availabilityProvider = availabilityProvider,
     )
+    private var directBackend: AndroidWifiDirectDnsSdDiscoveryBackend? = null
 
     @Volatile
     private var closed = false
@@ -116,6 +118,17 @@ class AndroidLocalDiscoveryController(
 
     override fun currentAdvertisingPresenceId(): DiscoveryPresenceId? = delegate.currentAdvertisingPresenceId()
 
+    override fun discoveredPresences() = delegate.discoveredPresences()
+
+    /**
+     * Resolves an opaque RFC-005B Direct route to the current Android P2P device address.
+     * The address never enters discovery snapshots or portable SCL state; RFC-005G consumes it
+     * only to request `WifiP2pManager.connect()` before its authenticated Direct probe.
+     */
+    fun directPeerAddress(locator: DiscoveryOpaqueRouteLocator): String? = onControl {
+        directBackend?.directPeer(locator)?.deviceAddress?.takeIf(String::isNotBlank)
+    }
+
     override fun snapshot() = delegate.snapshot()
 
     override fun close() {
@@ -140,12 +153,12 @@ class AndroidLocalDiscoveryController(
             )
         }
         if (config.enableDirectDiscovery) {
-            add(
-                AndroidWifiDirectDnsSdDiscoveryBackend(
-                    context = appContext,
-                    controlHandler = controlHandler,
-                ),
+            val direct = AndroidWifiDirectDnsSdDiscoveryBackend(
+                context = appContext,
+                controlHandler = controlHandler,
             )
+            directBackend = direct
+            add(direct)
         }
     }
 

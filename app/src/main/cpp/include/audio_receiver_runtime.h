@@ -93,6 +93,8 @@ class AudioReceiverRuntime final {
 
     [[nodiscard]] AudioTransportStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] AudioTransportStatus rebind_prebound_socket(UdpSocket socket,
+                                                               UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] AudioReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] AudioTransportStatus accept_datagram(std::span<const std::byte> datagram,
                                                        const UdpEndpoint& source,

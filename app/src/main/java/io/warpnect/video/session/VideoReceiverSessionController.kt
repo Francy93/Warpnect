@@ -24,6 +24,9 @@ interface VideoReceiverSessionController : VideoRenderTargetListener, AutoClosea
 
     fun snapshot(): VideoReceiverSessionSnapshot
 
+    /** RFC-005H continuity hook; it reuses VideoResyncRequest V1 on the existing receiver. */
+    fun requestContinuityResync()
+
     override fun close()
 }
 
@@ -162,6 +165,15 @@ class DefaultVideoReceiverSessionController(
             lastFrameId = receiverRuntimeController.snapshot().lastFrameId,
             lastError = lastError,
         )
+    }
+
+    override fun requestContinuityResync() {
+        synchronized(lock) {
+            if (core.state != VideoSessionState.Closed) {
+                receiverRuntimeController.setAwaitingKeyFrame(true)
+                requestResyncLocked(VideoResyncReason.NeedKeyFrame)
+            }
+        }
     }
 
     override fun close() {

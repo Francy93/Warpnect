@@ -77,6 +77,8 @@ class InputTransportSender final : private InputDatagramSink {
 
     [[nodiscard]] InputTransportStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] InputTransportStatus rebind_prebound_socket(UdpSocket socket,
+                                                               UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] InputTransportStatus submit_key(std::uint64_t event_time_us,
                                                   const InputKeyEvent& event) noexcept;
     [[nodiscard]] InputTransportStatus submit_touch_frame(std::uint64_t event_time_us,

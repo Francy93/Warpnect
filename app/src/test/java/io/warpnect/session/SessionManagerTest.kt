@@ -135,6 +135,74 @@ class SessionManagerTest {
     }
 
     @Test
+    fun expiredRecoveryLeaseReleasesItsSingleHostCapacitySlotExactlyOnce() {
+        val clock = ManualClock(1_000L)
+        val manager = hostManager(clock = clock)
+        val sessionId = session(95uL)
+        val peer = device(195uL)
+        assertTrue(manager.reserveAuthenticatedAdmission(sessionId, peer, SessionGeneration.Initial, 100L).isSuccess)
+        assertTrue(
+            manager.promoteAuthenticatedAdmissionToLifecycle(sessionId, peer, SessionGeneration.Initial).isSuccess,
+        )
+        assertTrue(manager.beginLifecycleRecovery(sessionId, peer, SessionGeneration.Initial, 100L).isSuccess)
+        assertEquals(1, manager.snapshot().recoveryLeaseCount)
+
+        clock.nowUs = 1_100L
+        assertEquals(0, manager.snapshot().recoveryLeaseCount)
+        assertEquals(SessionError.RecoveryLeaseNotFound, manager.releaseRecoveryAdmission(sessionId))
+        assertTrue(
+            manager.reserveAuthenticatedAdmission(
+                session(96uL),
+                device(196uL),
+                SessionGeneration.Initial,
+                100L,
+            ).isSuccess,
+        )
+    }
+
+    @Test
+    fun recoveryClaimRequiresExpectedPeerExactlyNextGenerationAndHasOneWinner() {
+        val manager = hostManager()
+        val sessionId = session(97uL)
+        val expectedPeer = device(197uL)
+        assertTrue(
+            manager.reserveAuthenticatedAdmission(
+                sessionId,
+                expectedPeer,
+                SessionGeneration.Initial,
+                30_000L,
+            ).isSuccess,
+        )
+        assertTrue(
+            manager.promoteAuthenticatedAdmissionToLifecycle(
+                sessionId,
+                expectedPeer,
+                SessionGeneration.Initial,
+            ).isSuccess,
+        )
+        assertTrue(
+            manager.beginLifecycleRecovery(sessionId, expectedPeer, SessionGeneration.Initial, 30_000L).isSuccess,
+        )
+        val next = SessionGeneration.requireValid(2u)
+
+        assertFalse(manager.claimRecoveryAdmission(sessionId, device(198uL), next, 30_000L).isSuccess)
+        assertFalse(
+            manager.claimRecoveryAdmission(sessionId, expectedPeer, SessionGeneration.Initial, 30_000L).isSuccess,
+        )
+        assertFalse(
+            manager.claimRecoveryAdmission(
+                sessionId,
+                expectedPeer,
+                SessionGeneration.requireValid(3u),
+                30_000L,
+            ).isSuccess,
+        )
+        assertTrue(manager.claimRecoveryAdmission(sessionId, expectedPeer, next, 30_000L).isSuccess)
+        assertFalse(manager.claimRecoveryAdmission(sessionId, expectedPeer, next, 30_000L).isSuccess)
+        assertEquals(1, manager.snapshot().authenticatedReservationCount)
+    }
+
+    @Test
     fun multiClientAndSamePeerPoliciesAreExplicitAndBounded() {
         val singlePeerManager = hostManager(
             policy = SessionBehaviorPolicy(maxConcurrentClients = 2),
@@ -466,6 +534,7 @@ class SessionManagerTest {
         maxChannels: Int = SessionBounds.DEFAULT_MAX_CHANNELS_PER_SESSION,
         maxPaths: Int = SessionBounds.DEFAULT_MAX_PATHS_PER_SESSION,
         maxPeripherals: Int = SessionBounds.DEFAULT_MAX_PERIPHERALS_PER_SESSION,
+        clock: SessionMonotonicClock = TestClock(),
     ): SessionManager = SessionManager(
         config = SessionManagerConfig(
             localDeviceId = device(10uL),
@@ -474,7 +543,7 @@ class SessionManagerTest {
             maxPathsPerSession = maxPaths,
             maxPeripheralsPerSession = maxPeripherals,
         ),
-        clock = TestClock(),
+        clock = clock,
     )
 
     private fun hostRequest(sessionValue: ULong, peer: DeviceId): SessionCreateRequest = SessionCreateRequest(
@@ -499,5 +568,9 @@ class SessionManagerTest {
         private var nowUs = 1_000L
 
         override fun nowUs(): Long = nowUs++
+    }
+
+    private class ManualClock(var nowUs: Long) : SessionMonotonicClock {
+        override fun nowUs(): Long = nowUs
     }
 }

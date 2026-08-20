@@ -745,3 +745,19 @@ The portable lifecycle package owns WNSL, bounded health/recovery state, path-mi
 and generation transition intent. The platform adapter observes Android path loss and allocates
 replacement stopped channel endpoints before commit. It rebinds native protected transports without
 rebuilding same-generation security state; no lifecycle work runs in media or input callbacks.
+
+## RFC-005I Session Integration
+
+```text
+app/src/main/java/io/warpnect/session/integration/
+  SessionIntegrationModel.kt
+  SecureSessionCoordinator.kt
+  ControllerBackedClientSessionPhaseDriver.kt
+  SessionPipelineRuntime.kt
+  ControllerManagedLifecycleSession.kt
+  HostSessionRuntimeRegistry.kt
+```
+
+This package is a per-logical-session composition and ownership layer. It delegates discovery,
+pairing, handshake, capability, setup, and lifecycle work to their existing controllers; it does
+not define another protocol implementation or a global current Session.

@@ -522,6 +522,19 @@ reads a monotonic `lastAuthenticatedReceive` diagnostic. It does not copy keys, 
 packet numbers, create a per-packet JNI call, or perform media work. A reconnect destroys the old
 runtime and builds a new one only after fresh WNSH ECDH, then repeats WNCP and WNSN preparation.
 
+## RFC-005I Running Channel Integration
+
+`AndroidSessionPipelineFactory` consumes RFC-005G stopped endpoint leases rather than reopening
+guessed ports. Its final paths are `Surface capture -> MediaCodec -> SCL/FEC -> Channel protection
+-> UDP` for Host Video, the inverse for Client Video, `Opus/SCL -> Channel protection -> UDP` for
+Audio, and `Input V1 -> native transport -> Channel protection -> UDP -> convergence/mapping/
+injection` for Input. Receive authenticates WNSD before FEC, reassembly, or input convergence.
+
+Pipeline composition adds no per-packet JNI or Kotlin crypto. RFC-005H rebinds the adopted native
+transport in place with its pre-bound replacement socket; it does not recreate the Channel context,
+keys, packet-number space, or replay state. Android Surface and per-socket network binding remain
+platform-owned; portable SCL remains free of Android network APIs.
+
 ## Error Handling
 
 Future native errors should cross the JNI boundary as explicit status values or structured results. Exceptions must not become the primary hot-path error mechanism.

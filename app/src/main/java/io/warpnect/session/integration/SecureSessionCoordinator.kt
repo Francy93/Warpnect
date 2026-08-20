@@ -1,0 +1,605 @@
+package io.warpnect.session.integration
+
+import io.warpnect.session.SessionRole
+import io.warpnect.session.discovery.DiscoveryPresenceStatus
+import io.warpnect.session.lifecycle.DisconnectReason
+import io.warpnect.session.setup.PreparedSessionBootstrap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * RFC-005I per-logical-session composition root. The driver owns RFC-005B through RFC-005G
+ * controller calls; this class owns their ordered handoff to RFC-005H and real local pipelines.
+ */
+class SecureSessionCoordinator(
+    private val localRole: SessionRole,
+    private val phaseDriver: SecureSessionPhaseDriver,
+    private val pipelineFactory: SessionPipelineFactory,
+    private val lifecycleFactory: SessionLifecycleSessionFactory,
+    private val hostRegistry: HostSessionRuntimeRegistry? = null,
+) : AutoCloseable {
+    private val lock = Any()
+    private var state = SecureSessionCoordinatorState.Idle
+    private var selectedRequest: SecureSessionConnectRequest? = null
+    private var pairingVerificationPrompt: io.warpnect.session.pairing.PairingVerificationPrompt? = null
+    private var runtime: RunningSessionRuntime? = null
+
+    /** Generation-N runtime retained solely until RFC-005H confirms a fresh prepared bootstrap. */
+    private var reconnectingRuntime: RunningSessionRuntime? = null
+    private var currentToken = 0L
+    private var lastStage: SecureSessionIntegrationStage? = null
+    private var lastError = SecureSessionIntegrationError.None
+    private var closed = false
+
+    private val _snapshot = MutableStateFlow(snapshotLocked())
+    val snapshot: StateFlow<SecureSessionCoordinatorSnapshot> = _snapshot.asStateFlow()
+
+    fun startDiscovery(): SessionIntegrationResult {
+        val permitted = synchronized(lock) {
+            if (closed) return@synchronized false
+            if (state !in setOf(SecureSessionCoordinatorState.Idle, SecureSessionCoordinatorState.Discovering)) {
+                lastError = SecureSessionIntegrationError.Busy
+                publishLocked()
+                return@synchronized false
+            }
+            state = SecureSessionCoordinatorState.Discovering
+            lastStage = SecureSessionIntegrationStage.Discovery
+            lastError = SecureSessionIntegrationError.None
+            publishLocked()
+            true
+        }
+        if (!permitted) return result(lastError())
+        val error = phaseDriver.startDiscovery(localRole)
+        if (error != SecureSessionIntegrationError.None) fail(0L, SecureSessionIntegrationStage.Discovery, error)
+        return result(error)
+    }
+
+    /** Called by the existing Phase 5 control scheduler; it never starts a per-session worker. */
+    fun advance() {
+        synchronized(lock) {
+            if (closed || state in setOf(
+                    SecureSessionCoordinatorState.Closed,
+                    SecureSessionCoordinatorState.Failed,
+                )
+            ) {
+                return
+            }
+        }
+        phaseDriver.advance()
+        synchronized(lock) { runtime }?.advance()
+    }
+
+    /** Exposes only the bounded ephemeral discovery cache needed by the normal Client chooser. */
+    fun discoveredPresences(): List<io.warpnect.session.discovery.DiscoveredPresence> =
+        phaseDriver.discoveredPresences()
+
+    /** Starts a Client connection solely from RFC-005B presence; no manual IP/port exists here. */
+    fun connect(request: SecureSessionConnectRequest): SessionIntegrationResult {
+        if (localRole != SessionRole.Client || request.presence.offeredRole != SessionRole.Host ||
+            request.presence.status != DiscoveryPresenceStatus.Usable
+        ) {
+            return result(SecureSessionIntegrationError.InvalidPresence)
+        }
+        val token = synchronized(lock) {
+            if (closed) return@synchronized null
+            if (state !in setOf(SecureSessionCoordinatorState.Idle, SecureSessionCoordinatorState.Discovering)) {
+                lastError = SecureSessionIntegrationError.Busy
+                publishLocked()
+                return@synchronized null
+            }
+            selectedRequest = request
+            pairingVerificationPrompt = null
+            state = SecureSessionCoordinatorState.Connecting
+            lastStage = SecureSessionIntegrationStage.Authentication
+            lastError = SecureSessionIntegrationError.None
+            ++currentToken
+        }
+        if (token == null) return result(lastError())
+        synchronized(lock) { publishLocked() }
+        val error = phaseDriver.beginConnection(request, listenerFor(token))
+        if (error != SecureSessionIntegrationError.None) {
+            fail(
+                token,
+                SecureSessionIntegrationStage.Authentication,
+                error,
+            )
+        }
+        return result(error)
+    }
+
+    /** Pairing is opt-in. Success deliberately creates a fresh RFC-005D connection attempt. */
+    fun beginExplicitPairing(): SessionIntegrationResult {
+        val requestAndToken = synchronized(lock) {
+            val request = selectedRequest
+            if (closed || state != SecureSessionCoordinatorState.PairingRequired || request == null) {
+                return@synchronized null
+            }
+            state = SecureSessionCoordinatorState.Pairing
+            lastStage = SecureSessionIntegrationStage.Pairing
+            pairingVerificationPrompt = null
+            publishLocked()
+            request to currentToken
+        } ?: return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
+        val error = phaseDriver.beginExplicitPairing(requestAndToken.first, listenerFor(requestAndToken.second))
+        if (error != SecureSessionIntegrationError.None) {
+            fail(
+                requestAndToken.second,
+                SecureSessionIntegrationStage.Pairing,
+                error,
+            )
+        }
+        return result(error)
+    }
+
+    fun approvePairing(): SessionIntegrationResult {
+        val token = synchronized(lock) {
+            if (closed || state != SecureSessionCoordinatorState.Pairing) null else currentToken
+        } ?: return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
+        val error = phaseDriver.approvePairing()
+        if (error != SecureSessionIntegrationError.None) fail(token, SecureSessionIntegrationStage.Pairing, error)
+        return result(error)
+    }
+
+    /**
+     * RFC-005I Host handoff. The responder controllers have already completed RFC-005D through
+     * RFC-005G; from here Host and Client share the exact lifecycle and pipeline transaction.
+     */
+    fun acceptPreparedHostSession(bootstrap: PreparedSessionBootstrap): SessionIntegrationResult {
+        if (localRole != SessionRole.Host || bootstrap.localRole != SessionRole.Host) {
+            bootstrap.close()
+            return result(SecureSessionIntegrationError.InvalidPresence)
+        }
+        val intake = synchronized(lock) {
+            if (closed || state !in setOf(
+                    SecureSessionCoordinatorState.Idle,
+                    SecureSessionCoordinatorState.Discovering,
+                    SecureSessionCoordinatorState.Recovering,
+                )
+            ) {
+                null
+            } else {
+                val prior = if (state == SecureSessionCoordinatorState.Recovering) reconnectingRuntime else null
+                state = SecureSessionCoordinatorState.ConfiguringSession
+                lastStage = SecureSessionIntegrationStage.Setup
+                lastError = SecureSessionIntegrationError.None
+                HostPreparedIntake(++currentToken, prior)
+            }
+        }
+        if (intake == null) {
+            bootstrap.close()
+            return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
+        }
+        val token = intake.token
+        val previous = intake.previous
+        if (previous != null) {
+            if (previous.lifecycle.acceptFreshGeneration(bootstrap) != SecureSessionIntegrationError.None) {
+                bootstrap.close()
+                fail(token, SecureSessionIntegrationStage.Lifecycle, SecureSessionIntegrationError.LifecycleStartFailed)
+                return result(SecureSessionIntegrationError.LifecycleStartFailed)
+            }
+            synchronized(lock) {
+                hostRegistry?.remove(previous.sessionId, previous.generation)
+                previous.disposeForReconnect()
+                reconnectingRuntime = null
+                runtime = null
+            }
+        }
+        synchronized(lock) { publishLocked() }
+        consumePrepared(token, bootstrap)
+        return result(SecureSessionIntegrationError.None)
+    }
+
+    /** User cancellation is terminal for this coordinator and cannot leave later callbacks alive. */
+    fun disconnect(reason: DisconnectReason = DisconnectReason.UserRequested): SessionIntegrationResult {
+        val owned = synchronized(lock) {
+            if (closed) return@synchronized null
+            state = SecureSessionCoordinatorState.Stopping
+            ++currentToken
+            reconnectingRuntime = null
+            runtime.also { runtime = null }
+        }
+        if (owned != null) {
+            hostRegistry?.remove(owned.sessionId, owned.generation)
+            owned.close(reason)
+        }
+        phaseDriver.cancel()
+        synchronized(lock) {
+            state = if (localRole == SessionRole.Host) {
+                SecureSessionCoordinatorState.Discovering
+            } else {
+                SecureSessionCoordinatorState.Closed
+            }
+            lastError = SecureSessionIntegrationError.None
+            publishLocked()
+        }
+        return result(SecureSessionIntegrationError.None)
+    }
+
+    /** Disables Host advertising/responder ownership while retaining the application composition. */
+    fun stopHostReadiness(): SessionIntegrationResult {
+        if (localRole != SessionRole.Host) return result(SecureSessionIntegrationError.InvalidPresence)
+        val disconnected = disconnect(DisconnectReason.HostClosing)
+        phaseDriver.stopDiscovery()
+        synchronized(lock) {
+            if (!closed) {
+                state = SecureSessionCoordinatorState.Idle
+                lastStage = SecureSessionIntegrationStage.Discovery
+                lastError = SecureSessionIntegrationError.None
+                publishLocked()
+            }
+        }
+        return disconnected
+    }
+
+    override fun close() {
+        val owned = synchronized(lock) {
+            if (closed) return
+            closed = true
+            state = SecureSessionCoordinatorState.Stopping
+            ++currentToken
+            reconnectingRuntime = null
+            runtime.also { runtime = null }
+        }
+        owned?.let {
+            hostRegistry?.remove(it.sessionId, it.generation)
+            it.close(DisconnectReason.ApplicationStopping)
+        }
+        phaseDriver.cancel()
+        phaseDriver.stopDiscovery()
+        phaseDriver.close()
+        synchronized(lock) {
+            state = SecureSessionCoordinatorState.Closed
+            publishLocked()
+        }
+    }
+
+    private fun listenerFor(token: Long): SecureSessionPhaseListener = object : SecureSessionPhaseListener {
+        override fun onPairingRequired() {
+            synchronized(lock) {
+                if (!isCurrentLocked(token)) return
+                state = SecureSessionCoordinatorState.PairingRequired
+                lastStage = SecureSessionIntegrationStage.Pairing
+                lastError = SecureSessionIntegrationError.PairingRequired
+                publishLocked()
+            }
+        }
+
+        override fun onPairingVerificationPrompt(prompt: io.warpnect.session.pairing.PairingVerificationPrompt) {
+            synchronized(lock) {
+                if (!isCurrentLocked(token)) return
+                pairingVerificationPrompt = prompt
+                state = SecureSessionCoordinatorState.Pairing
+                lastStage = SecureSessionIntegrationStage.Pairing
+                lastError = SecureSessionIntegrationError.None
+                publishLocked()
+            }
+        }
+
+        override fun onPairingCompleted() {
+            val request = synchronized(lock) {
+                if (!isCurrentLocked(token)) return
+                selectedRequest
+            } ?: return
+            synchronized(lock) {
+                if (!isCurrentLocked(token)) return
+                state = SecureSessionCoordinatorState.Connecting
+                lastStage = SecureSessionIntegrationStage.Authentication
+                lastError = SecureSessionIntegrationError.None
+                pairingVerificationPrompt = null
+                publishLocked()
+            }
+            val error = phaseDriver.beginConnection(request, listenerFor(token))
+            if (error != SecureSessionIntegrationError.None) {
+                fail(
+                    token,
+                    SecureSessionIntegrationStage.Authentication,
+                    error,
+                )
+            }
+        }
+
+        override fun onAuthenticated(bootstrap: io.warpnect.session.handshake.AuthenticatedSessionBootstrap) {
+            if (!setState(token, SecureSessionCoordinatorState.Securing, SecureSessionIntegrationStage.Security)) {
+                bootstrap.rootSecret.close()
+                bootstrap.admissionReservation?.close()
+                return
+            }
+            val secure = phaseDriver.createSecureCapabilityBootstrap(bootstrap)
+            if (!secure.isSuccess) {
+                fail(token, SecureSessionIntegrationStage.Security, secure.error)
+                return
+            }
+            val request = synchronized(lock) { selectedRequest } ?: run {
+                fail(token, SecureSessionIntegrationStage.Security, SecureSessionIntegrationError.Cancelled)
+                return
+            }
+            if (!setState(
+                    token,
+                    SecureSessionCoordinatorState.NegotiatingCapabilities,
+                    SecureSessionIntegrationStage.Capabilities,
+                )
+            ) {
+                return
+            }
+            val error = phaseDriver.beginCapabilities(requireNotNull(secure.bootstrap), request, listenerFor(token))
+            if (error != SecureSessionIntegrationError.None) {
+                fail(
+                    token,
+                    SecureSessionIntegrationStage.Capabilities,
+                    error,
+                )
+            }
+        }
+
+        override fun onCapabilitiesNegotiated(bootstrap: io.warpnect.session.capability.NegotiatedSessionBootstrap) {
+            val request = synchronized(lock) {
+                if (!isCurrentLocked(token)) return
+                selectedRequest
+            } ?: return
+            if (!setState(
+                    token,
+                    SecureSessionCoordinatorState.ConfiguringSession,
+                    SecureSessionIntegrationStage.Setup,
+                )
+            ) {
+                return
+            }
+            val error = phaseDriver.beginSetup(bootstrap, request, listenerFor(token))
+            if (error != SecureSessionIntegrationError.None) fail(token, SecureSessionIntegrationStage.Setup, error)
+        }
+
+        override fun onPrepared(bootstrap: PreparedSessionBootstrap) {
+            consumePreparedOrReconnect(token, bootstrap)
+        }
+
+        override fun onFailed(stage: SecureSessionIntegrationStage, error: SecureSessionIntegrationError) {
+            fail(token, stage, error)
+        }
+    }
+
+    private fun consumePrepared(token: Long, bootstrap: PreparedSessionBootstrap) {
+        if (!setState(token, SecureSessionCoordinatorState.Starting, SecureSessionIntegrationStage.Lifecycle)) {
+            bootstrap.close()
+            return
+        }
+        val pipelineResult = pipelineFactory.create(bootstrap)
+        if (!pipelineResult.isSuccess) {
+            bootstrap.close()
+            fail(token, stageFor(pipelineResult.error), pipelineResult.error)
+            return
+        }
+        val pipeline = SessionPipelineRuntime(bootstrap, pipelineResult.components)
+        val lifecycleResult = lifecycleFactory.create(bootstrap, pipeline, lifecycleListenerFor(token))
+        if (!lifecycleResult.isSuccess) {
+            pipeline.close()
+            bootstrap.close()
+            fail(token, SecureSessionIntegrationStage.Lifecycle, lifecycleResult.error)
+            return
+        }
+        val lifecycle = requireNotNull(lifecycleResult.lifecycle)
+        val lifecycleError = lifecycle.start()
+        if (lifecycleError != SecureSessionIntegrationError.None) {
+            lifecycle.close()
+            pipeline.close()
+            fail(token, SecureSessionIntegrationStage.Lifecycle, lifecycleError)
+            return
+        }
+        val pipelineError = pipeline.start()
+        if (pipelineError != SecureSessionIntegrationError.None) {
+            lifecycle.gracefulDisconnect(DisconnectReason.FatalError)
+            lifecycle.close()
+            pipeline.close()
+            fail(token, stageFor(pipelineError), pipelineError)
+            return
+        }
+        val candidate = RunningSessionRuntime(lifecycle, pipeline)
+        val registryError = if (localRole == SessionRole.Host) {
+            hostRegistry?.register(candidate) ?: SecureSessionIntegrationError.RegistryCapacityExceeded
+        } else {
+            SecureSessionIntegrationError.None
+        }
+        if (registryError != SecureSessionIntegrationError.None) {
+            candidate.close(DisconnectReason.FatalError)
+            fail(token, SecureSessionIntegrationStage.Lifecycle, registryError)
+            return
+        }
+        synchronized(lock) {
+            if (!isCurrentLocked(token)) {
+                if (localRole == SessionRole.Host) hostRegistry?.remove(candidate.sessionId, candidate.generation)
+                candidate.close(DisconnectReason.SupersededGeneration)
+                return
+            }
+            runtime = candidate
+            state = SecureSessionCoordinatorState.Running
+            lastStage = null
+            lastError = SecureSessionIntegrationError.None
+            publishLocked()
+        }
+        phaseDriver.refreshHostAvailability()
+    }
+
+    private fun consumePreparedOrReconnect(token: Long, bootstrap: PreparedSessionBootstrap) {
+        val previous = synchronized(lock) {
+            if (!isCurrentLocked(token)) return@synchronized null
+            reconnectingRuntime
+        }
+        if (previous == null) {
+            consumePrepared(token, bootstrap)
+            return
+        }
+        if (previous.lifecycle.acceptFreshGeneration(bootstrap) != SecureSessionIntegrationError.None) {
+            bootstrap.close()
+            fail(token, SecureSessionIntegrationStage.Lifecycle, SecureSessionIntegrationError.LifecycleStartFailed)
+            return
+        }
+        synchronized(lock) {
+            if (!isCurrentLocked(token)) {
+                bootstrap.close()
+                return
+            }
+            hostRegistry?.remove(previous.sessionId, previous.generation)
+            previous.disposeForReconnect()
+            reconnectingRuntime = null
+            runtime = null
+        }
+        consumePrepared(token, bootstrap)
+    }
+
+    private fun lifecycleListenerFor(token: Long): SessionLifecycleRuntimeListener =
+        object : SessionLifecycleRuntimeListener {
+            override fun onRecovering() {
+                setState(token, SecureSessionCoordinatorState.Recovering, SecureSessionIntegrationStage.Lifecycle)
+                phaseDriver.refreshHostAvailability()
+            }
+
+            override fun onFreshGenerationPrepared(bootstrap: PreparedSessionBootstrap) {
+                consumePreparedOrReconnect(token, bootstrap)
+            }
+
+            override fun onClosed() {
+                val owned = synchronized(lock) {
+                    if (!isCurrentLocked(token)) return
+                    runtime.also { runtime = null }
+                }
+                owned?.let { hostRegistry?.remove(it.sessionId, it.generation) }
+                owned?.pipeline?.close()
+                synchronized(lock) {
+                    if (!isCurrentLocked(token)) return
+                    state = if (localRole == SessionRole.Host) {
+                        SecureSessionCoordinatorState.Discovering
+                    } else {
+                        SecureSessionCoordinatorState.Closed
+                    }
+                    publishLocked()
+                }
+                phaseDriver.cancel()
+                phaseDriver.refreshHostAvailability()
+            }
+        }
+
+    private fun setState(
+        token: Long,
+        next: SecureSessionCoordinatorState,
+        stage: SecureSessionIntegrationStage,
+    ): Boolean = synchronized(lock) {
+        if (!isCurrentLocked(token)) return@synchronized false
+        state = next
+        lastStage = stage
+        lastError = SecureSessionIntegrationError.None
+        publishLocked()
+        true
+    }
+
+    private fun fail(token: Long, stage: SecureSessionIntegrationStage, error: SecureSessionIntegrationError) {
+        synchronized(lock) {
+            if (token != 0L && !isCurrentLocked(token)) return
+            lastStage = stage
+            lastError = error
+            state = if (localRole == SessionRole.Host) {
+                SecureSessionCoordinatorState.Discovering
+            } else {
+                SecureSessionCoordinatorState.Failed
+            }
+            publishLocked()
+        }
+        if (localRole == SessionRole.Client) phaseDriver.cancel()
+        phaseDriver.refreshHostAvailability()
+    }
+
+    /** Called only by the RFC-005H recovery delegate; it never reuses generation-N keys. */
+    fun beginReconnect(
+        record: io.warpnect.session.lifecycle.RecoverableSessionRecord,
+        nextGeneration: io.warpnect.session.SessionGeneration,
+    ): SecureSessionIntegrationError {
+        val requestAndToken = synchronized(lock) {
+            val request = selectedRequest
+            if (closed || request == null || state != SecureSessionCoordinatorState.Recovering) {
+                return@synchronized null
+            }
+            val existing = runtime ?: return@synchronized null
+            reconnectingRuntime = existing
+            ++currentToken
+            lastStage = SecureSessionIntegrationStage.Authentication
+            lastError = SecureSessionIntegrationError.None
+            request to currentToken
+        } ?: return if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy
+        synchronized(lock) { publishLocked() }
+        val error = phaseDriver.beginReconnect(
+            record,
+            nextGeneration,
+            requestAndToken.first,
+            listenerFor(requestAndToken.second),
+        )
+        if (error != SecureSessionIntegrationError.None) {
+            fail(requestAndToken.second, SecureSessionIntegrationStage.Authentication, error)
+        }
+        return error
+    }
+
+    /** The Host stays a WNSH responder; it retains only the existing logical runtime lease. */
+    fun awaitResponderReconnect(): SecureSessionIntegrationError = synchronized(lock) {
+        if (closed) return@synchronized SecureSessionIntegrationError.Closed
+        if (localRole != SessionRole.Host || state != SecureSessionCoordinatorState.Recovering || runtime == null) {
+            return@synchronized SecureSessionIntegrationError.Busy
+        }
+        reconnectingRuntime = runtime
+        SecureSessionIntegrationError.None
+    }
+
+    private fun stageFor(error: SecureSessionIntegrationError): SecureSessionIntegrationStage = when (error) {
+        SecureSessionIntegrationError.VideoPipelineStartFailed,
+        SecureSessionIntegrationError.RenderTargetUnavailable,
+        -> SecureSessionIntegrationStage.Video
+        SecureSessionIntegrationError.SystemAudioStartFailed -> SecureSessionIntegrationStage.SystemAudio
+        SecureSessionIntegrationError.MicrophoneStartFailed -> SecureSessionIntegrationStage.MicrophoneAudio
+        SecureSessionIntegrationError.InputPipelineStartFailed -> SecureSessionIntegrationStage.Input
+        SecureSessionIntegrationError.TelemetryStartFailed -> SecureSessionIntegrationStage.Telemetry
+        else -> SecureSessionIntegrationStage.Lifecycle
+    }
+
+    private fun isCurrentLocked(token: Long): Boolean = !closed && token == currentToken
+
+    private fun result(error: SecureSessionIntegrationError): SessionIntegrationResult = synchronized(lock) {
+        if (error != SecureSessionIntegrationError.None && error != SecureSessionIntegrationError.PairingRequired &&
+            error != lastError
+        ) {
+            lastError = error
+            publishLocked()
+        }
+        SessionIntegrationResult(error, _snapshot.value)
+    }
+
+    private fun lastError(): SecureSessionIntegrationError = synchronized(lock) {
+        if (closed) SecureSessionIntegrationError.Closed else lastError
+    }
+
+    private fun publishLocked() {
+        _snapshot.value = snapshotLocked()
+    }
+
+    private fun snapshotLocked(): SecureSessionCoordinatorSnapshot {
+        val owned = runtime
+        return SecureSessionCoordinatorSnapshot(
+            state = state,
+            localRole = localRole,
+            selectedPresenceAlias = selectedRequest?.presence?.displayAlias?.value,
+            sessionId = owned?.sessionId,
+            generation = owned?.generation,
+            remoteDeviceId = selectedRequest?.expectedPeer.let { expected ->
+                (expected as? io.warpnect.session.handshake.ExpectedPeerConstraint.ExactTrustedPeer)?.deviceId
+            },
+            activePathKind = owned?.lifecycle?.activePathKind,
+            runningChannels = owned?.pipeline?.snapshot()?.selectedChannels ?: emptySet(),
+            activeRuntimeCount = hostRegistry?.snapshotCount() ?: if (owned == null) 0 else 1,
+            pairingVerificationPrompt = pairingVerificationPrompt ?: phaseDriver.pendingPairingVerificationPrompt(),
+            lastStage = lastStage,
+            lastError = lastError,
+        )
+    }
+
+    private data class HostPreparedIntake(
+        val token: Long,
+        val previous: RunningSessionRuntime?,
+    )
+}

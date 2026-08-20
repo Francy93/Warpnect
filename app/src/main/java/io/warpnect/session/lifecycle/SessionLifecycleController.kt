@@ -30,6 +30,14 @@ interface SessionContinuityParticipant {
     fun onSessionSuspended() = Unit
     fun onSessionReconnected() = Unit
     fun onSessionClosing() = Unit
+
+    /** Target-side input integration clears AllSlots/ResetState; no new Input wire format is used. */
+    fun onInputSafetyReset(reason: LifecycleInputSafetyResetReason) = Unit
+}
+
+enum class LifecycleInputSafetyResetReason {
+    PathUnavailable,
+    SessionClosing,
 }
 
 data class LifecyclePathBinding(
@@ -52,7 +60,7 @@ interface ChannelMigrationPreparation : AutoCloseable {
  * Platform/control adapter. It allocates target-path sockets before ports are sent, and commits
  * endpoint replacement without rebuilding the RFC-005E runtime or any Channel context.
  */
-interface SessionLifecycleMigrationAdapter {
+interface SessionLifecycleMigrationAdapter : AutoCloseable {
     fun armCandidateWindow(binding: LifecyclePathBinding, migrationId: PathMigrationId, timeoutMs: Long): Boolean
     fun disarmCandidateWindow(migrationId: PathMigrationId)
     fun sendCandidate(binding: LifecyclePathBinding, protectedDatagram: ByteArray): Boolean
@@ -62,9 +70,11 @@ interface SessionLifecycleMigrationAdapter {
         preparation: ChannelMigrationPreparation,
         remoteEntries: List<PathMigrationEntry>,
     ): SessionLifecycleError
+
+    override fun close() = Unit
 }
 
-interface SessionLifecycleReconnectDelegate {
+fun interface SessionLifecycleReconnectDelegate {
     fun onReconnectRequired(record: RecoverableSessionRecord, nextGeneration: io.warpnect.session.SessionGeneration)
 }
 
@@ -116,6 +126,8 @@ class SessionLifecycleController(
     private var observedRuntimeAuthenticatedReceiveUs = 0L
     private var timerHandle: AutoCloseable? = null
     private var closed = false
+    private var closingNotified = false
+    private var inputSafetyResetInvoked = false
     private var lastError = SessionLifecycleError.None
 
     init {
@@ -189,18 +201,47 @@ class SessionLifecycleController(
     fun receiveCandidate(sourceEndpoint: HandshakeTransportEndpoint, protectedDatagram: ByteArray, nowUs: Long) =
         synchronized(lock) {
             if (closed) return@synchronized
-            val transaction = candidate ?: return@synchronized
-            if (sourceEndpoint != transaction.binding.remoteControlEndpoint) return@synchronized
-            if (nowUs / 1_000L > transaction.deadlineMs) {
-                abortMigration(SessionLifecycleError.PathMigrationTimeout, transaction.oldPathStillUsable)
+            val existing = candidate
+            val binding = existing?.binding ?: responderCandidateBinding(sourceEndpoint) ?: return@synchronized
+            if (sourceEndpoint != binding.remoteControlEndpoint) return@synchronized
+            if (existing != null && nowUs / 1_000L > existing.deadlineMs) {
+                abortMigration(SessionLifecycleError.PathMigrationTimeout, existing.oldPathStillUsable)
                 return@synchronized
             }
             val unprotected = control.unprotectCandidate(sourceEndpoint, protectedDatagram, nowUs)
             if (!unprotected.isSuccess) return@synchronized
-            handleDecision(engine.onAuthenticatedReceive(nowUs / 1_000L))
-            SessionLifecycleCodec.decode(requireNotNull(unprotected.payload))?.let { decoded ->
-                receiveDecoded(decoded, candidatePath = true)
+            val decoded = SessionLifecycleCodec.decode(requireNotNull(unprotected.payload)) ?: run {
+                record(SessionLifecycleError.MalformedMessage)
+                return@synchronized
             }
+            if (existing == null) {
+                val challenge = decoded.message as? SessionLifecycleMessage.PathChallenge ?: return@synchronized
+                val standby = engine.standbyPath()
+                if (
+                    bootstrap.localRole != SessionRole.Host ||
+                    standby?.pathId != challenge.targetPathId ||
+                    standby.kind != challenge.targetPathKind ||
+                    challenge.challenge.size != SessionLifecycleProtocol.CHALLENGE_BYTES ||
+                    !migrationAdapter.armCandidateWindow(
+                        binding,
+                        challenge.migrationId,
+                        healthConfig.pathCandidateValidationTimeoutMs,
+                    )
+                ) {
+                    record(SessionLifecycleError.PathValidationFailed)
+                    return@synchronized
+                }
+                candidate = CandidateMigration(
+                    challenge.migrationId,
+                    binding,
+                    challenge.challenge.copyOf(),
+                    nowUs / 1_000L + healthConfig.pathCandidateValidationTimeoutMs,
+                    oldPathStillUsable = engine.activePath()?.health != LifecyclePathHealth.LocallyLost,
+                )
+                continuityParticipants.forEach(SessionContinuityParticipant::onPathMigrationStarting)
+            }
+            handleDecision(engine.onAuthenticatedReceive(nowUs / 1_000L))
+            receiveDecoded(decoded, candidatePath = true)
         }
 
     fun snapshot(): SessionLifecycleSnapshot = synchronized(lock) { engine.snapshot(now()) }
@@ -208,7 +249,8 @@ class SessionLifecycleController(
     fun gracefulDisconnect(reason: DisconnectReason): SessionLifecycleError = synchronized(lock) {
         if (closed) return@synchronized SessionLifecycleError.Closed
         handleDecision(engine.beginDisconnect())
-        continuityParticipants.forEach(SessionContinuityParticipant::onSessionClosing)
+        notifySessionClosing()
+        invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
         val active = engine.activePath()?.pathId ?: return@synchronized finishClose()
         val notice = SessionLifecycleMessage.DisconnectNotice(
             header(SessionLifecycleMessageType.DisconnectNotice),
@@ -235,7 +277,7 @@ class SessionLifecycleController(
         // The old generation is terminal. The caller owns the new bootstrap and creates a new controller.
         continuityParticipants.forEach(SessionContinuityParticipant::onSessionReconnected)
         capacityOwner?.handoffToFreshGeneration()
-        close()
+        finishClose(notifyContinuityClosing = false)
         SessionLifecycleError.None
     }
 
@@ -295,24 +337,19 @@ class SessionLifecycleController(
 
     private fun handlePathChallenge(message: SessionLifecycleMessage.PathChallenge) {
         val standby = engine.standbyPath()
-        if (standby?.pathId != message.targetPathId || standby.kind != message.targetPathKind || message.challenge.size != SessionLifecycleProtocol.CHALLENGE_BYTES) {
-            record(SessionLifecycleError.PathValidationFailed)
-            return
-        }
-        val binding = pathProvider.bindingFor(message.targetPathId) ?: run {
-            record(SessionLifecycleError.PathValidationFailed)
-            return
-        }
-        if (!migrationAdapter.armCandidateWindow(
-                binding,
-                message.migrationId,
-                healthConfig.pathCandidateValidationTimeoutMs,
-            )
+        val existing = candidate
+        if (
+            bootstrap.localRole != SessionRole.Host ||
+            standby?.pathId != message.targetPathId ||
+            standby.kind != message.targetPathKind ||
+            existing?.id != message.migrationId ||
+            existing?.binding?.plan?.pathId != message.targetPathId ||
+            existing?.challenge?.contentEquals(message.challenge) != true ||
+            message.challenge.size != SessionLifecycleProtocol.CHALLENGE_BYTES
         ) {
             record(SessionLifecycleError.PathValidationFailed)
             return
         }
-        candidate = CandidateMigration(message.migrationId, binding, message.challenge.copyOf(), now() + healthConfig.pathCandidateValidationTimeoutMs, oldPathStillUsable = true)
         sendMessage(
             SessionLifecycleMessage.PathResponse(
                 header(SessionLifecycleMessageType.PathResponse),
@@ -490,7 +527,8 @@ class SessionLifecycleController(
     private fun handleDisconnectNotice(message: SessionLifecycleMessage.DisconnectNotice) {
         if (message.sessionGeneration != engine.currentGeneration() || message.activePathId != engine.activePath()?.pathId) return
         handleDecision(engine.beginDisconnect())
-        continuityParticipants.forEach(SessionContinuityParticipant::onSessionClosing)
+        notifySessionClosing()
+        invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
         sendMessage(
             SessionLifecycleMessage.DisconnectAck(
                 header(SessionLifecycleMessageType.DisconnectAck),
@@ -519,6 +557,7 @@ class SessionLifecycleController(
                 SessionContinuityParticipant::onPathMigrationCommitted,
             )
             is LifecycleDecision.Suspended -> {
+                invokeInputSafetyReset(LifecycleInputSafetyResetReason.PathUnavailable)
                 continuityParticipants.forEach(SessionContinuityParticipant::onSessionSuspended)
                 beginReconnect(decision.recoveryDeadlineMs)
             }
@@ -640,15 +679,21 @@ class SessionLifecycleController(
         record(error)
     }
 
-    private fun finishClose(markClosed: Boolean = true): SessionLifecycleError {
+    private fun finishClose(
+        markClosed: Boolean = true,
+        notifyContinuityClosing: Boolean = true,
+    ): SessionLifecycleError {
         if (closed) return SessionLifecycleError.None
         closed = true
+        if (notifyContinuityClosing) notifySessionClosing()
+        invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
         timerHandle?.close()
         timerHandle = null
         activeMigration?.preparation?.close()
         activeMigration = null
         candidate?.let { migrationAdapter.disarmCandidateWindow(it.id) }
         candidate = null
+        migrationAdapter.close()
         control.setPayloadListener(null)
         if (markClosed) engine.finishDisconnect()
         bootstrap.close()
@@ -673,6 +718,29 @@ class SessionLifecycleController(
         if (receivedUs <= observedRuntimeAuthenticatedReceiveUs) return
         observedRuntimeAuthenticatedReceiveUs = receivedUs
         handleDecision(engine.onAuthenticatedReceive(receivedUs / 1_000L))
+    }
+
+    /**
+     * The Host has no prior migration transaction when the Client's first candidate challenge
+     * arrives. It may admit only that one authenticated challenge from the known standby route;
+     * all other candidate traffic remains ignored until the transaction has been armed.
+     */
+    private fun responderCandidateBinding(sourceEndpoint: HandshakeTransportEndpoint): LifecyclePathBinding? {
+        if (bootstrap.localRole != SessionRole.Host) return null
+        val standby = engine.standbyPath() ?: return null
+        return pathProvider.bindingFor(standby.pathId)?.takeIf { it.remoteControlEndpoint == sourceEndpoint }
+    }
+
+    private fun invokeInputSafetyReset(reason: LifecycleInputSafetyResetReason) {
+        if (inputSafetyResetInvoked) return
+        inputSafetyResetInvoked = true
+        continuityParticipants.forEach { it.onInputSafetyReset(reason) }
+    }
+
+    private fun notifySessionClosing() {
+        if (closingNotified) return
+        closingNotified = true
+        continuityParticipants.forEach(SessionContinuityParticipant::onSessionClosing)
     }
 
     private fun List<PathMigrationEntry>.matchesChannelSet(): Boolean =

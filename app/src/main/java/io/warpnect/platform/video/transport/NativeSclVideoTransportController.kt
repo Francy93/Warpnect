@@ -1,6 +1,9 @@
 package io.warpnect.platform.video.transport
 
 import io.warpnect.NativeBridge
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import io.warpnect.video.encoder.VideoCodec
 import io.warpnect.video.encoder.VideoEncoderOutputFormat
 import io.warpnect.video.transport.VideoTransportCloseResult
@@ -16,6 +19,43 @@ import java.nio.ByteBuffer
 class NativeSclVideoTransportController : VideoTransportController {
     private var nativeHandle: Long = 0
     private var localSnapshot = VideoTransportSnapshot()
+
+    /**
+     * Cold-path RFC-005I adoption. The handle was created by RFC-005G with the negotiated socket
+     * lease and Channel protection context already attached, so open() must not create another.
+     */
+    internal fun adoptPreparedTransport(handle: Long): VideoTransportError {
+        if (handle == 0L || nativeHandle != 0L || localSnapshot.state == VideoTransportState.Closed) {
+            return VideoTransportError.InvalidHandle
+        }
+        nativeHandle = handle
+        localSnapshot = snapshot()
+        return VideoTransportError.None
+    }
+
+    /** RFC-005H rebinds this already-adopted native sender; it never creates a second transport. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val handle = nativeHandle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = handle != 0L && endpointHandle != 0L &&
+            VideoTransportError.fromNativeCode(
+                NativeBridge.videoTransportRebind(
+                    handle,
+                    remoteAddress,
+                    remotePort,
+                    localEndpoint.localPort,
+                    endpointHandle,
+                ),
+            ) == VideoTransportError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
 
     override fun open(config: VideoTransportConfig): VideoTransportOpenResult {
         if (localSnapshot.state == VideoTransportState.Closed) {

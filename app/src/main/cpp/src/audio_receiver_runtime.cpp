@@ -91,6 +91,22 @@ void AudioReceiverRuntime::adopt_prebound_socket(UdpSocket socket) noexcept {
     if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
 }
 
+AudioTransportStatus AudioReceiverRuntime::rebind_prebound_socket(
+    UdpSocket socket, const UdpEndpoint remote_endpoint) noexcept {
+    if (snapshot_.closed) return status(AudioTransportError::Closed);
+    if (!snapshot_.opened || !socket.is_open() || !endpoint_is_valid_remote(remote_endpoint)) {
+        return status(AudioTransportError::UdpOpenFailed);
+    }
+    const UdpEndpointResult local = socket.local_endpoint();
+    if (!local.ok() || local.endpoint.address.version != remote_endpoint.address.version) {
+        return status(AudioTransportError::UdpBindFailed);
+    }
+    config_.local_endpoint = local.endpoint;
+    config_.remote_endpoint = remote_endpoint;
+    socket_ = std::move(socket);
+    return status(AudioTransportError::None);
+}
+
 AudioTransportStatus AudioReceiverRuntime::open() noexcept {
     if (snapshot_.closed) {
         return status(AudioTransportError::Closed);

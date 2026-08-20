@@ -1142,6 +1142,23 @@ class SessionSetupController(
             now + config.preparedBootstrapTtlMs,
             setup.directLease,
             requireNotNull(setup.proposalHash).copyOf(),
+            if (selection.active.kind == NetworkPathKind.Direct) {
+                setup.directCandidate?.controlEndpoint ?: setup.binding.bootstrap.endpoint
+            } else {
+                setup.binding.bootstrap.endpoint
+            },
+            buildMap {
+                selection.active.takeIf { it.kind == NetworkPathKind.Lan }?.let {
+                    put(it.pathId, setup.binding.bootstrap.endpoint)
+                }
+                selection.standby?.takeIf { it.kind == NetworkPathKind.Lan }?.let {
+                    put(it.pathId, setup.binding.bootstrap.endpoint)
+                }
+                setup.directCandidate?.controlEndpoint?.let { endpoint ->
+                    selection.active.takeIf { it.kind == NetworkPathKind.Direct }?.let { put(it.pathId, endpoint) }
+                    selection.standby?.takeIf { it.kind == NetworkPathKind.Direct }?.let { put(it.pathId, endpoint) }
+                }
+            },
         )
         setup.preparedChannels.clear()
         setup.localEndpointLeases.clear()

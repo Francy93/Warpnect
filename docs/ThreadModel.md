@@ -367,3 +367,12 @@ The lifecycle owns one bounded next-wake timer per Session, not a heartbeat work
 Media, audio, and input paths observe only an inexpensive transport-gate/endpoint binding when
 started later. RFC-005H creates no media outage queue, migration packet queue, crypto worker, or
 callback-thread lifecycle execution.
+
+## RFC-005I Integration Ownership
+
+`SecureSessionCoordinator` runs on the existing serialized Phase 5 control owner. It advances
+existing bounded controller timers and creates no per-session or per-channel media thread.
+`SessionPipelineRuntime` coordinates start/stop ownership only: MediaCodec callbacks, AudioRecord,
+Oboe realtime callbacks, native UDP receive paths, Android input dispatch, and the privileged
+UserService retain their established execution contexts. No WNSL or allocation-heavy integration
+work runs in an audio, codec, or input hot callback.

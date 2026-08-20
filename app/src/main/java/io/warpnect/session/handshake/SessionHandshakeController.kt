@@ -54,6 +54,9 @@ data class SessionHandshakeSnapshot(
 
 fun interface SessionHandshakeEventListener {
     fun onAuthenticated(bootstrap: AuthenticatedSessionBootstrap)
+
+    /** A terminal attempt result for RFC-005I; listeners must not treat it as a pairing approval. */
+    fun onFailed(error: SessionHandshakeError) = Unit
 }
 fun interface CurrentDiscoveryPresenceProvider {
     fun currentPresenceId(): DiscoveryPresenceId?
@@ -193,12 +196,14 @@ class SessionHandshakeController(
                 active.remove(managed.engine.attemptId)
                 counters.timeouts += 1
                 lastError = SessionHandshakeError.Timeout
+                eventListener?.onFailed(SessionHandshakeError.Timeout)
             } else if (now >= managed.nextRetryAtMs) {
                 if (managed.retryIndex >= SessionHandshakeProtocol.RETRY_DELAYS_MS.size) {
                     managed.engine.close()
                     active.remove(managed.engine.attemptId)
                     counters.timeouts += 1
                     lastError = SessionHandshakeError.Timeout
+                    eventListener?.onFailed(SessionHandshakeError.Timeout)
                 } else {
                     managed.outbound.forEach { transport.send(managed.endpoint, it) }
                     counters.transportRetries += 1
@@ -353,6 +358,7 @@ class SessionHandshakeController(
         }
         if (result.error != SessionHandshakeError.None || managed.engine.state in setOf(SessionHandshakeState.Failed, SessionHandshakeState.Rejected, SessionHandshakeState.Closed)) {
             active.remove(managed.engine.attemptId)
+            if (result.error != SessionHandshakeError.None) eventListener?.onFailed(result.error)
         }
         return result
     }

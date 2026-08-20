@@ -14,6 +14,7 @@ import io.warpnect.session.trust.InMemoryTrustedPeerStorePersistence
 import io.warpnect.session.trust.TrustedPeerRecord
 import io.warpnect.session.trust.TrustedPeerStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -167,6 +168,82 @@ class SessionHandshakeControllerTest {
         assertEquals(generation, clientGeneration)
         assertEquals(generation, serverGeneration)
         assertEquals(1, serverManager.snapshot().authenticatedReservationCount)
+        client.close()
+        server.close()
+    }
+
+    @Test
+    fun reconnectCreatesFreshHandshakeAttemptAndRootForTheNextGeneration() {
+        val clientSigner = signer(51u)
+        val serverSigner = signer(52u)
+        val sessionId = session(78u)
+        val serverManager = manager(serverSigner.identity.deviceId)
+        val clientTransport = QueuedTransport()
+        val serverTransport = QueuedTransport()
+        val clientAttempts = mutableListOf<SessionHandshakeAttemptId>()
+        val clientRoots = mutableListOf<ByteArray>()
+        val client = SessionHandshakeController(
+            clientTransport,
+            clientSigner,
+            trust(serverSigner),
+            manager(clientSigner.identity.deviceId),
+            crypto,
+            eventListener = SessionHandshakeEventListener { bootstrap ->
+                clientAttempts += bootstrap.attemptId
+                clientRoots += bootstrap.rootSecret.withSecretBytes(ByteArray::copyOf)
+                bootstrap.rootSecret.close()
+            },
+        )
+        val server = SessionHandshakeController(
+            serverTransport,
+            serverSigner,
+            trust(clientSigner),
+            serverManager,
+            crypto,
+            recoveryAdmissionResolver = SessionManagerRecoveryHandshakeAdmissionResolver(
+                serverManager,
+                SystemSessionHandshakeMonotonicClock,
+            ),
+            eventListener = SessionHandshakeEventListener { bootstrap ->
+                bootstrap.rootSecret.close()
+            },
+        )
+
+        assertEquals(SessionHandshakeError.None, client.startInitiator(serverEndpoint, sessionId).error)
+        drain(clientTransport, serverTransport, client, server)
+        assertTrue(
+            serverManager.promoteAuthenticatedAdmissionToLifecycle(
+                sessionId,
+                clientSigner.identity.deviceId,
+                SessionGeneration.Initial,
+            ).isSuccess,
+        )
+        assertTrue(
+            serverManager.beginLifecycleRecovery(
+                sessionId,
+                clientSigner.identity.deviceId,
+                SessionGeneration.Initial,
+                30_000_000L,
+            ).isSuccess,
+        )
+
+        assertEquals(
+            SessionHandshakeError.None,
+            client.startInitiator(
+                serverEndpoint,
+                SessionHandshakeIntent.ReconnectSession(
+                    sessionId,
+                    SessionGeneration.requireValid(2u),
+                    serverSigner.identity.deviceId,
+                ),
+            ).error,
+        )
+        drain(clientTransport, serverTransport, client, server)
+
+        assertEquals(2, clientAttempts.size)
+        assertNotEquals(clientAttempts[0], clientAttempts[1])
+        assertEquals(2, clientRoots.size)
+        assertNotEquals(clientRoots[0].toList(), clientRoots[1].toList())
         client.close()
         server.close()
     }

@@ -239,6 +239,12 @@ inside existing `PayloadType.SessionControl`. It does not alter Architecture Ver
 Protocol Version 1, Native Bridge ABI Version 1, or any discovery, pairing, handshake,
 packet-protection, capability, setup, video, audio, or input wire version.
 
+## RFC-005I Integration
+
+RFC-005I is integration-only. It introduces no protocol version and does not bump Architecture,
+SCL, Native ABI, Discovery, Pairing, Handshake, Packet Protection, Capability Negotiation, Session
+Setup, Session Lifecycle, Video, Audio, or Input versions.
+
 ## Application Version
 
 Current value:

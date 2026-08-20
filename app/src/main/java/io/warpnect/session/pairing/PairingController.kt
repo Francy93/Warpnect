@@ -54,6 +54,14 @@ fun interface PairingEventListener {
     fun onVerificationPrompt(prompt: PairingVerificationPrompt)
 }
 
+/**
+ * Cold-path notification emitted only after the trusted-peer store has accepted the completed
+ * SAS exchange. It lets RFC-005I begin a new WNSH attempt without treating a prompt as trust.
+ */
+fun interface PairingCompletedListener {
+    fun onPairingCompleted(record: TrustedPeerRecord)
+}
+
 enum class PairingControllerState {
     NotPairable,
     Pairable,
@@ -107,6 +115,7 @@ class PairingController(
     private val monotonicClock: PairingMonotonicClock = SystemPairingMonotonicClock,
     private val wallClock: PairingWallClock = SystemPairingWallClock,
     private val eventListener: PairingEventListener? = null,
+    private val completedListener: PairingCompletedListener? = null,
 ) : AutoCloseable {
     private val attempts = LinkedHashMap<PairingAttemptId, ManagedAttempt>()
     private val prompts = HashMap<PairingAttemptId, PairingVerificationPrompt>()
@@ -343,8 +352,14 @@ class PairingController(
             ),
         )
         when (stored.error) {
-            TrustStoreError.None -> counters.successfulPairings += 1
-            TrustStoreError.AlreadyTrusted -> counters.alreadyTrusted += 1
+            TrustStoreError.None -> {
+                counters.successfulPairings += 1
+                completedListener?.onPairingCompleted(requireNotNull(stored.record))
+            }
+            TrustStoreError.AlreadyTrusted -> {
+                counters.alreadyTrusted += 1
+                completedListener?.onPairingCompleted(requireNotNull(stored.record))
+            }
             TrustStoreError.PeerIdentityKeyChanged,
             TrustStoreError.IdentityBindingConflict,
             -> counters.identityKeyMismatches += 1

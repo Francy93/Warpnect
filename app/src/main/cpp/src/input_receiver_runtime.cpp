@@ -55,6 +55,27 @@ void InputReceiverRuntime::adopt_prebound_socket(UdpSocket socket) noexcept {
     if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
 }
 
+InputReceiverError InputReceiverRuntime::rebind_prebound_socket(
+    UdpSocket socket, const UdpEndpoint remote_endpoint) noexcept {
+    if (snapshot_.closed) {
+        remember(InputReceiverError::Closed);
+        return snapshot_.last_error;
+    }
+    if (!snapshot_.opened || !socket.is_open() || !valid_remote_endpoint(remote_endpoint)) {
+        remember(InputReceiverError::UdpOpenFailed);
+        return snapshot_.last_error;
+    }
+    const UdpEndpointResult local = socket.local_endpoint();
+    if (!local.ok() || local.endpoint.address.version != remote_endpoint.address.version) {
+        remember(InputReceiverError::UdpBindFailed);
+        return snapshot_.last_error;
+    }
+    config_.local_endpoint = local.endpoint;
+    config_.expected_remote_endpoint = remote_endpoint;
+    socket_ = std::move(socket);
+    return InputReceiverError::None;
+}
+
 InputReceiverError InputReceiverRuntime::open() noexcept {
     if (snapshot_.closed) {
         remember(InputReceiverError::Closed);

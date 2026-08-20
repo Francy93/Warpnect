@@ -17,7 +17,9 @@ data class InputReceiverConfig(
         !localAddress.isNumericEndpointAddress() || !expectedRemoteAddress.isNumericEndpointAddress() ->
             InputReceiverError.InvalidEndpoint
         localPort !in 1..U16_MAX || expectedRemotePort !in 1..U16_MAX -> InputReceiverError.InvalidEndpoint
-        maxWireDatagramSize != INPUT_MAX_DATAGRAM_WIRE_SIZE -> InputReceiverError.InvalidConfiguration
+        // 417 bytes remains the frozen Input V1 structural datagram minimum. RFC-005G may pass
+        // a larger outer WNSD budget; that never widens Input V1 logical-message validation.
+        maxWireDatagramSize < INPUT_MAX_DATAGRAM_WIRE_SIZE -> InputReceiverError.InvalidConfiguration
         else -> InputReceiverError.None
     }
 

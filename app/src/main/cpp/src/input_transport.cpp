@@ -85,6 +85,26 @@ void InputTransportSender::adopt_prebound_socket(UdpSocket socket) noexcept {
     if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
 }
 
+InputTransportStatus InputTransportSender::rebind_prebound_socket(
+    UdpSocket socket, const UdpEndpoint remote_endpoint) noexcept {
+    if (snapshot_.closed) return status(InputTransportError::Closed);
+    if (!snapshot_.opened || !socket.is_open() || remote_endpoint.port == 0 ||
+        !is_supported_ip_version(remote_endpoint.address.version)) {
+        return status(InputTransportError::UdpOpenFailed);
+    }
+    const UdpEndpointResult local = socket.local_endpoint();
+    if (!local.ok() || local.endpoint.address.version != remote_endpoint.address.version) {
+        return status(InputTransportError::UdpBindFailed);
+    }
+    config_.remote_endpoint = remote_endpoint;
+    config_.local_port = local.endpoint.port;
+    socket_ = std::move(socket);
+    snapshot_.local_endpoint_port = local.endpoint.port;
+    snapshot_.local_endpoint_ip_version = local.endpoint.address.version;
+    snapshot_.has_local_endpoint = true;
+    return status(InputTransportError::None);
+}
+
 InputTransportStatus InputTransportSender::open() noexcept {
     if (snapshot_.closed) {
         return status(InputTransportError::Closed);

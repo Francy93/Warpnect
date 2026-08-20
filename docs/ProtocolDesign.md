@@ -1581,3 +1581,15 @@ The protocol carries no SessionId and changes no SCL PacketHeader, PayloadType, 
 Audio Payload V1, Input Payload V1, ClockSync, NACK, FEC, VideoResyncRequest, or Discovery
 Presence Schema V1. It establishes a persistent DeviceId-to-public-key trust binding only; live
 session authentication and packet protection remain later Phase 5 work.
+
+## RFC-005I Integration Sequence
+
+RFC-005I adds no packet, payload, or control format. It composes the existing sequence
+`Presence -> WNPB when explicitly authorized -> WNSH -> WNSD -> WNCP -> WNSN -> WNSL`. After WNSD
+decrypts an existing `PayloadType.SessionControl` record, the session-state router dispatches only
+the protocol expected for its current phase: WNCP during capability negotiation, WNSN during setup,
+and WNSL during lifecycle operation, with existing protected ClockSync exceptions. Late control
+records are ignored idempotently and cannot move a Session backwards.
+
+RFC-005I defines no version. PacketHeader V1, all existing payload formats, and all Phase 5 wire
+formats remain byte-for-byte unchanged.

@@ -2,6 +2,7 @@ package io.warpnect.platform.session.pairing
 
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
+import io.warpnect.session.pairing.PairingCompletedListener
 import io.warpnect.session.pairing.PairingConfig
 import io.warpnect.session.pairing.PairingEventListener
 import io.warpnect.session.trust.TrustedPeerStore
@@ -13,8 +14,9 @@ object AndroidPairingControllerFactory {
         trustedPeerStore: TrustedPeerStore,
         config: PairingConfig = PairingConfig(),
         eventListener: PairingEventListener? = null,
+        completedListener: PairingCompletedListener? = null,
     ): AndroidPairingController? = AndroidDatagramPairingTransport.createEphemeral()?.let { transport ->
-        AndroidPairingController(localSigner, trustedPeerStore, transport, config, eventListener)
+        AndroidPairingController(localSigner, trustedPeerStore, transport, config, eventListener, completedListener)
     }
 
     /** Uses the exact live RFC-005B contact port; discovery retains socket ownership. */
@@ -24,7 +26,8 @@ object AndroidPairingControllerFactory {
         trustedPeerStore: TrustedPeerStore,
         config: PairingConfig = PairingConfig(),
         eventListener: PairingEventListener? = null,
+        completedListener: PairingCompletedListener? = null,
     ): AndroidPairingController? = discovery.borrowPairingTransport()?.let { transport ->
-        AndroidPairingController(localSigner, trustedPeerStore, transport, config, eventListener)
+        AndroidPairingController(localSigner, trustedPeerStore, transport, config, eventListener, completedListener)
     }
 }

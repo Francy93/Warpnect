@@ -9,6 +9,7 @@ import io.warpnect.session.discovery.DiscoveryRouteDescriptor
 import io.warpnect.session.discovery.DiscoveryRouteKind
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
+import io.warpnect.session.pairing.PairingCompletedListener
 import io.warpnect.session.pairing.PairingConfig
 import io.warpnect.session.pairing.PairingController
 import io.warpnect.session.pairing.PairingControllerResult
@@ -33,6 +34,7 @@ class AndroidPairingController(
     transport: PairingTransport,
     private val config: PairingConfig = PairingConfig(),
     eventListener: PairingEventListener? = null,
+    completedListener: PairingCompletedListener? = null,
 ) : AutoCloseable {
     private val controlThread = HandlerThread(THREAD_NAME).apply { start() }
     private val controlHandler = Handler(controlThread.looper)
@@ -49,6 +51,7 @@ class AndroidPairingController(
         monotonicClock = AndroidPairingMonotonicClock,
         wallClock = PairingWallClock { System.currentTimeMillis() },
         eventListener = eventListener,
+        completedListener = completedListener,
     )
 
     @Volatile

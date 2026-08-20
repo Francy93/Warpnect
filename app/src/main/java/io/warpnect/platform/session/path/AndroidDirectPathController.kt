@@ -28,17 +28,37 @@ class AndroidDirectPathController(
     private val lock = Any()
     private val appContext = context.applicationContext
     private val closed = AtomicBoolean(false)
+
+    // WifiP2pManager has no synchronous public enabled-state query. This matches the RFC-005B
+    // backend's optimistic pre-broadcast state and is corrected by every P2P state broadcast.
+    private val p2pEnabled = AtomicBoolean(true)
     private val pendingHost = mutableListOf<(AndroidDirectResult) -> Unit>()
     private val pendingClient = mutableListOf<(AndroidDirectResult) -> Unit>()
     private var clientGroupLeases = 0
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) refreshConnectionState()
+            when (intent?.action) {
+                WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
+                    val enabled = intent.getIntExtra(
+                        WifiP2pManager.EXTRA_WIFI_STATE,
+                        WifiP2pManager.WIFI_P2P_STATE_DISABLED,
+                    ) == WifiP2pManager.WIFI_P2P_STATE_ENABLED
+                    p2pEnabled.set(enabled)
+                    if (!enabled) {
+                        completeHost(AndroidDirectResult.Failure(PathFailureReason.DirectUnavailable))
+                        completeClient(AndroidDirectResult.Failure(PathFailureReason.DirectUnavailable))
+                    }
+                }
+                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> refreshConnectionState()
+            }
         }
     }
 
     init {
-        val filter = IntentFilter(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+        val filter = IntentFilter().apply {
+            addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+            addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             appContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -135,6 +155,9 @@ class AndroidDirectPathController(
 
     fun acquireHostGroupLease(): DirectPathLease? = hostGroupManager.acquireLease()
 
+    /** Capability negotiation may expose Direct only while Android reports the P2P subsystem enabled. */
+    fun isP2pEnabled(): Boolean = !closed.get() && p2pEnabled.get()
+
     fun acquireClientGroupLease(): DirectPathLease? = synchronized(lock) {
         if (closed.get()) return@synchronized null
         clientGroupLeases += 1
@@ -145,6 +168,7 @@ class AndroidDirectPathController(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        p2pEnabled.set(false)
         try {
             appContext.unregisterReceiver(receiver)
         } catch (_: IllegalArgumentException) {

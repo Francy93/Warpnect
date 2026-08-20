@@ -73,6 +73,40 @@ class SessionProtectionControllerTest {
         assertTrue(secondReservation.closed)
     }
 
+    @Test
+    fun reconnectUsesANewControllerAfterGenerationNIsClosed() {
+        var creations = 0
+        val controller = SessionProtectionController(
+            SessionProtectionRuntimeFactory { _, bootstrap, _ ->
+                creations += 1
+                SessionProtectionCreationResult(SessionProtectionError.None, TestRuntime(bootstrap.sessionId))
+            },
+        )
+
+        assertTrue(controller.createSessionProtection(bootstrap(TestReservation(), sessionLow = 1uL)).isSuccess)
+        controller.close()
+        val nextGeneration = controller.freshGenerationController()
+
+        assertTrue(nextGeneration.createSessionProtection(bootstrap(TestReservation(), sessionLow = 1uL)).isSuccess)
+        assertEquals(2, creations)
+    }
+
+    @Test
+    fun closedRuntimeIsPrunedBeforeTheHostAdmitsAnotherSession() {
+        val controller = SessionProtectionController(
+            factory = SessionProtectionRuntimeFactory { _, bootstrap, _ ->
+                SessionProtectionCreationResult(SessionProtectionError.None, TestRuntime(bootstrap.sessionId))
+            },
+            config = SessionProtectionConfig(maxRuntimes = 1),
+        )
+        val first = controller.createSessionProtection(bootstrap(TestReservation(), sessionLow = 1uL))
+        assertTrue(first.isSuccess)
+        requireNotNull(first.runtime).close()
+
+        assertTrue(controller.createSessionProtection(bootstrap(TestReservation(), sessionLow = 2uL)).isSuccess)
+        assertEquals(1, controller.snapshotCount())
+    }
+
     private fun bootstrap(reservation: TestReservation, sessionLow: ULong = 1uL): AuthenticatedSessionBootstrap {
         return AuthenticatedSessionBootstrap(
             sessionId = SessionId.requireValid(0uL, sessionLow),
@@ -99,8 +133,9 @@ class SessionProtectionControllerTest {
         }
     }
 
-    private class TestRuntime : SessionProtectionRuntime {
-        override val sessionId: SessionId = SessionId.requireValid(0uL, 1uL)
+    private class TestRuntime(
+        override val sessionId: SessionId = SessionId.requireValid(0uL, 1uL),
+    ) : SessionProtectionRuntime {
         override val sessionControlContext: ProtectionContextIds = ProtectionContextIds(1L, 2L)
         override val maxInnerSclDatagramSize: Int = 1_156
         override fun createChannelContext(channelId: io.warpnect.session.ChannelId): SessionProtectionContextResult =
@@ -122,9 +157,13 @@ class SessionProtectionControllerTest {
                 SessionProtectionError.None,
                 protectedDatagram.copyOf(),
             )
+        private var closed = false
         override fun snapshot(): SessionProtectionSnapshot = SessionProtectionSnapshot(
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, SessionProtectionError.None,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            if (closed) SessionProtectionError.Closed else SessionProtectionError.None,
         )
-        override fun close() = Unit
+        override fun close() {
+            closed = true
+        }
     }
 }

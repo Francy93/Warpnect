@@ -528,3 +528,23 @@ duplicate media transmission.
 > A new endpoint becomes active only after authenticated path validation and an explicit migration commit. A graceful authenticated disconnect disables automatic recovery for that logical Session.
 
 > Recoverable Sessions retain Host capacity only for their bounded recovery window.
+
+## Phase 5 Integration
+
+> The RFC-005I production workflow is discovery/session managed and never requires a user-supplied
+> peer IP address or media/input UDP port. The normal Android Host/Client surface owns this workflow;
+> legacy manual controls remain explicitly separate diagnostics.
+
+> A Session is Running only after every locally selected and committed pipeline starts. A committed
+> channel never silently disappears during startup.
+
+> Physical sources start only after their local processors and negotiated protected transports are
+> ready. Local codec, privilege, permission, or pipeline failure is not a network path failure.
+
+> RFC-005I composes existing Phase 2 through Phase 5 systems. Same-generation migration retains
+> healthy pipeline/protection state; a generation reconnect rebuilds runtime from fresh RFC-005D,
+> RFC-005E, RFC-005F, and RFC-005G output.
+
+> The application-scoped Android Direct backend owns the single ref-counted Host Group Owner resource.
+> Per-Session Direct coordinators receive only bounded path leases and candidate sockets; normal
+> operation never uses process-wide network binding.

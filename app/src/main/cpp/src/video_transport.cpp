@@ -77,6 +77,23 @@ void VideoTransportSender::adopt_prebound_socket(UdpSocket socket) noexcept {
     if (!snapshot_.opened && !snapshot_.closed) socket_ = std::move(socket);
 }
 
+VideoStatus VideoTransportSender::rebind_prebound_socket(UdpSocket socket,
+                                                          const UdpEndpoint remote_endpoint) noexcept {
+    if (snapshot_.closed) return status(VideoError::Closed);
+    if (!snapshot_.opened || !socket.is_open() || remote_endpoint.port == 0 ||
+        !is_supported_ip_version(remote_endpoint.address.version)) {
+        return status(VideoError::UdpOpenFailed);
+    }
+    const UdpEndpointResult local = socket.local_endpoint();
+    if (!local.ok() || local.endpoint.address.version != remote_endpoint.address.version) {
+        return status(VideoError::UdpBindFailed);
+    }
+    config_.remote_endpoint = remote_endpoint;
+    config_.local_port = local.endpoint.port;
+    socket_ = std::move(socket);
+    return status(VideoError::None);
+}
+
 VideoStatus VideoTransportSender::open() noexcept {
     if (snapshot_.closed) {
         return status(VideoError::Closed);

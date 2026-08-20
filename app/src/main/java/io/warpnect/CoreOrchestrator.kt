@@ -21,6 +21,8 @@ import io.warpnect.session.capability.CapabilityNegotiationController
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.handshake.SessionHandshakeController
 import io.warpnect.session.identity.LocalDeviceIdentityRepository
+import io.warpnect.session.integration.SecureSessionApplicationController
+import io.warpnect.session.integration.SecureSessionCoordinator
 import io.warpnect.session.lifecycle.SessionLifecycleController
 import io.warpnect.session.pairing.PairingController
 import io.warpnect.session.security.SessionProtectionController
@@ -76,6 +78,10 @@ class CoreOrchestrator(
     val sessionSetupController: SessionSetupController? = null,
     val sessionLifecycleController: SessionLifecycleController? = null,
     val sessionManager: SessionManager? = null,
+    /** RFC-005I normal Session flow. Legacy manual pipeline controllers remain explicit diagnostics. */
+    val secureSessionCoordinator: SecureSessionCoordinator? = null,
+    /** Application-facing Host/Client composition; it never accepts a manually entered endpoint. */
+    val secureSessionApplicationController: SecureSessionApplicationController? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
@@ -93,6 +99,8 @@ class CoreOrchestrator(
     }
 
     fun shutdown() {
+        secureSessionApplicationController?.close()
+        secureSessionCoordinator?.close()
         sessionLifecycleController?.close()
         sessionSetupController?.close()
         capabilityNegotiationController?.close()

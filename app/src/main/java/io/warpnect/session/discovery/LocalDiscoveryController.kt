@@ -41,6 +41,9 @@ interface LocalDiscoveryController : AutoCloseable {
     /** Current local RFC-005B advertising epoch only; it is not a DeviceId or trust assertion. */
     fun currentAdvertisingPresenceId(): DiscoveryPresenceId?
 
+    /** Bounded, ephemeral RFC-005B observations for an application chooser; never peer identity. */
+    fun discoveredPresences(): List<DiscoveredPresence> = emptyList()
+
     fun snapshot(): DiscoverySnapshot
 }
 
@@ -240,6 +243,9 @@ class DefaultLocalDiscoveryController(
 
     @Synchronized
     override fun currentAdvertisingPresenceId(): DiscoveryPresenceId? = ownPresenceId
+
+    @Synchronized
+    override fun discoveredPresences(): List<DiscoveredPresence> = cache.snapshot().candidates
 
     @Synchronized
     override fun snapshot(): DiscoverySnapshot = snapshotLocked()

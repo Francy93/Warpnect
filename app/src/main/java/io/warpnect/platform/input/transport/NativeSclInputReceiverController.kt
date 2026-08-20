@@ -11,6 +11,9 @@ import io.warpnect.input.transport.InputReceiverSnapshot
 import io.warpnect.input.transport.InputReceiverState
 import io.warpnect.input.transport.InputReceiverWaitResult
 import io.warpnect.input.transport.InputReceiverWaitStatus
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -24,6 +27,14 @@ internal interface InputReceiverNativeApi {
     ): Long
 
     fun destroy(handle: Long): Int
+
+    fun rebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = InputReceiverError.InvalidHandle.code
 
     fun waitForEvent(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int
 
@@ -51,6 +62,20 @@ internal object NativeBridgeInputReceiverApi : InputReceiverNativeApi {
 
     override fun destroy(handle: Long): Int = NativeBridge.inputReceiverDestroy(handle)
 
+    override fun rebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = NativeBridge.inputReceiverRebind(
+        handle,
+        remoteAddress,
+        remotePort,
+        localPort,
+        preparedEndpointHandle,
+    )
+
     override fun waitForEvent(handle: Long, timeoutUs: Long, bridgeBuffer: ByteBuffer): Int =
         NativeBridge.inputReceiverWait(handle, timeoutUs, bridgeBuffer)
 
@@ -70,11 +95,45 @@ class NativeSclInputReceiverController internal constructor(
     private var bridge: ByteBuffer? = null
     private var cachedSnapshot = InputReceiverSnapshot()
 
+    /** RFC-005I adopts the stopped RFC-005G protected Input receiver and preserves its socket. */
+    internal fun adoptPreparedTransport(handle: Long): InputReceiverError {
+        if (handle == 0L || this.handle != 0L || state == InputReceiverState.Closed) {
+            return InputReceiverError.InvalidHandle
+        }
+        this.handle = handle
+        bridge = ByteBuffer.allocateDirect(INPUT_RECEIVER_BRIDGE_CAPACITY_BYTES).order(ByteOrder.nativeOrder())
+        state = InputReceiverState.Prepared
+        cachedSnapshot = snapshot()
+        return InputReceiverError.None
+    }
+
+    /** RFC-005H rebinds the same receiver handle without replacing Input convergence state. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val activeHandle = handle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = activeHandle != 0L && endpointHandle != 0L &&
+            InputReceiverError.fromNativeCode(
+                nativeApi.rebind(activeHandle, remoteAddress, remotePort, localEndpoint.localPort, endpointHandle),
+            ) == InputReceiverError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = handle
+
     override fun prepare(config: InputReceiverConfig): InputReceiverResult {
         if (state == InputReceiverState.Closed) return result(InputReceiverError.Closed)
         val validation = config.validate()
         if (validation != InputReceiverError.None) return result(validation)
-        if (handle != 0L) stop()
+        if (handle != 0L) {
+            val adopted = state == InputReceiverState.Prepared
+            if (adopted) return result(InputReceiverError.None)
+            stop()
+        }
         state = InputReceiverState.Preparing
         val created = nativeApi.create(
             config.localAddress,

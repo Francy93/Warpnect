@@ -115,6 +115,8 @@ class InputReceiverRuntime final {
 
     [[nodiscard]] InputReceiverError open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] InputReceiverError rebind_prebound_socket(UdpSocket socket,
+                                                             UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] InputReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] InputReceiverEvent accept_datagram(std::span<const std::byte> datagram,
                                                      const UdpEndpoint& source) noexcept;

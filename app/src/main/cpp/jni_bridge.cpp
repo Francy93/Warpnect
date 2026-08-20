@@ -264,6 +264,7 @@ struct NativeInputTransportHandle final {
     std::array<std::byte, warpnect::scl::kInputMaxDatagramWireSize> datagram_scratch{};
     std::vector<std::byte> protected_datagram_scratch{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::mutex lock{};
     std::unique_ptr<InputTransportSender> sender{};
 
     [[nodiscard]] InputTransportSenderWorkspace workspace() noexcept {
@@ -275,6 +276,7 @@ struct NativeInputTransportHandle final {
 };
 
 struct NativeInputReceiverHandle final {
+    std::mutex lock{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
     std::unique_ptr<InputReceiverRuntime> runtime{};
 };
@@ -336,6 +338,42 @@ struct NativeSessionProtectionHandle final {
     }
     prepared->consumed = true;
     return std::optional<UdpSocket>{std::move(prepared->socket)};
+}
+
+struct LiveTransportRebind final {
+    UdpSocket socket{};
+    UdpEndpoint remote_endpoint{};
+};
+
+[[nodiscard]] std::optional<LiveTransportRebind> take_live_transport_rebind(
+    JNIEnv* env,
+    jstring remote_address,
+    const jint remote_port,
+    const jint local_port,
+    const jlong prepared_endpoint_handle) noexcept {
+    if (remote_address == nullptr || remote_port <= 0 || local_port <= 0 ||
+        remote_port > static_cast<jint>(std::numeric_limits<std::uint16_t>::max()) ||
+        local_port > static_cast<jint>(std::numeric_limits<std::uint16_t>::max()) ||
+        prepared_endpoint_handle == 0) {
+        return std::nullopt;
+    }
+    const char* remote_chars = env->GetStringUTFChars(remote_address, nullptr);
+    if (remote_chars == nullptr) return std::nullopt;
+    const auto parsed = warpnect::scl::parse_numeric_ip_address(std::string_view(remote_chars));
+    env->ReleaseStringUTFChars(remote_address, remote_chars);
+    if (!parsed.ok()) return std::nullopt;
+    auto socket = take_prepared_udp_socket(
+        prepared_endpoint_handle,
+        static_cast<std::uint16_t>(local_port),
+        parsed.address.version);
+    if (!socket.has_value()) return std::nullopt;
+    return LiveTransportRebind{
+        .socket = std::move(*socket),
+        .remote_endpoint = UdpEndpoint{
+            .address = parsed.address,
+            .port = static_cast<std::uint16_t>(remote_port),
+        },
+    };
 }
 
 class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProtector {
@@ -2803,7 +2841,10 @@ Java_io_warpnect_NativeBridge_nativeInputTransportDestroy(JNIEnv* /* env */,
     if (native_handle == nullptr || native_handle->sender == nullptr) {
         return input_transport_error_code(InputTransportError::InvalidHandle);
     }
-    native_handle->sender->close();
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->sender->close();
+    }
     delete native_handle;
     return input_transport_error_code(InputTransportError::None);
 }
@@ -2837,6 +2878,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitKey(JNIEnv* /* env */,
         .repeat_count = static_cast<std::uint16_t>(repeat_count),
         .modifier_mask = static_cast<std::uint16_t>(modifier_mask),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(
         native_handle->sender->submit_key(static_cast<std::uint64_t>(event_time_us), event).error);
 }
@@ -2893,6 +2935,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitTouchFrame(
             .size = static_cast<std::uint16_t>(contact[6]),
         };
     }
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(native_handle->sender
                                           ->submit_touch_frame(static_cast<std::uint64_t>(event_time_us), frame)
                                           .error);
@@ -2928,6 +2971,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitPointerAbsolute(
         .pointer_flags = static_cast<std::uint16_t>(pointer_flags),
         .pressure = static_cast<std::uint16_t>(pressure),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(native_handle->sender
                                           ->submit_pointer_absolute(
                                               static_cast<std::uint64_t>(event_time_us), event)
@@ -2959,6 +3003,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitPointerRelative(
         .delta_y_q16_16 = static_cast<std::int32_t>(delta_y_q16_16),
         .button_mask = static_cast<std::uint16_t>(button_mask),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(native_handle->sender
                                           ->submit_pointer_relative(
                                               static_cast<std::uint64_t>(event_time_us), event)
@@ -2989,6 +3034,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitScroll(JNIEnv* /* env */
         .vertical_q8_8 = static_cast<std::int16_t>(vertical_q8_8),
         .button_mask = static_cast<std::uint16_t>(button_mask),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(
         native_handle->sender->submit_scroll(static_cast<std::uint64_t>(event_time_us), event).error);
 }
@@ -3028,6 +3074,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitGamepadState(
         .left_trigger = static_cast<std::uint16_t>(left_trigger),
         .right_trigger = static_cast<std::uint16_t>(right_trigger),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(native_handle->sender
                                           ->submit_gamepad_state(
                                               static_cast<std::uint64_t>(event_time_us), state)
@@ -3056,6 +3103,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSubmitReset(JNIEnv* /* env */,
         .scope = static_cast<InputResetScope>(static_cast<std::uint8_t>(scope)),
         .reason = static_cast<InputResetReason>(static_cast<std::uint8_t>(reason)),
     };
+    std::lock_guard guard(native_handle->lock);
     return input_transport_error_code(native_handle->sender
                                           ->submit_reset_state(static_cast<std::uint64_t>(event_time_us), reset)
                                           .error);
@@ -3071,6 +3119,7 @@ Java_io_warpnect_NativeBridge_nativeInputTransportSnapshot(JNIEnv* env,
         values[26] = input_transport_error_code(InputTransportError::InvalidHandle);
         values[31] = 1;
     } else {
+        std::lock_guard guard(native_handle->lock);
         const auto snapshot = native_handle->sender->snapshot();
         values[0] = static_cast<jlong>(snapshot.next_input_sequence);
         values[1] = static_cast<jlong>(snapshot.events_submitted);
@@ -3144,7 +3193,10 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverDestroy(JNIEnv* /* env */,
     if (native_handle == nullptr || native_handle->runtime == nullptr) {
         return static_cast<jint>(InputReceiverError::Closed);
     }
-    native_handle->runtime->close();
+    {
+        std::lock_guard guard(native_handle->lock);
+        native_handle->runtime->close();
+    }
     delete native_handle;
     return static_cast<jint>(InputReceiverError::None);
 }
@@ -3171,6 +3223,7 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverWait(JNIEnv* env,
         return input_receiver_result_code(InputReceiverEventType::SocketFailure,
                                           InputReceiverError::BridgeBufferTooSmall);
     }
+    std::lock_guard guard(native_handle->lock);
     const auto received = native_handle->runtime->pump(static_cast<std::uint64_t>(timeout_us));
     InputReceiverError error = received.error;
     if (received.type == InputReceiverEventType::EventReady) {
@@ -3191,6 +3244,8 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverInterrupt(JNIEnv* /* env */,
     if (native_handle == nullptr || native_handle->runtime == nullptr) {
         return static_cast<jint>(InputReceiverError::Closed);
     }
+    // interrupt() is intentionally concurrent with pump() so lifecycle shutdown can wake a
+    // blocked receive immediately. Socket replacement itself remains serialized by lock.
     native_handle->runtime->interrupt();
     return static_cast<jint>(InputReceiverError::None);
 }
@@ -3203,6 +3258,7 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverWake(JNIEnv* /* env */,
     if (native_handle == nullptr || native_handle->runtime == nullptr) {
         return static_cast<jint>(InputReceiverError::Closed);
     }
+    // wake() has the same concurrent wakeup contract as interrupt().
     native_handle->runtime->wake();
     return static_cast<jint>(InputReceiverError::None);
 }
@@ -3216,6 +3272,7 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverSnapshot(JNIEnv* env,
     if (native_handle == nullptr || native_handle->runtime == nullptr) {
         values[22] = static_cast<jlong>(InputReceiverError::Closed);
     } else {
+        std::lock_guard guard(native_handle->lock);
         const auto snapshot = native_handle->runtime->snapshot();
         values[0] = snapshot.opened ? 1 : 0;
         values[1] = snapshot.closed ? 1 : 0;
@@ -3245,6 +3302,132 @@ Java_io_warpnect_NativeBridge_nativeInputReceiverSnapshot(JNIEnv* env,
         env->SetLongArrayRegion(array, 0, kNativeInputReceiverSnapshotValues, values);
     }
     return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoTransportRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeVideoTransportHandle* native_handle = handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return error_code(VideoError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return error_code(native_handle->sender->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeVideoReceiverHandle* native_handle = receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return error_code(VideoError::InvalidHandle);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return error_code(VideoError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return error_code(native_handle->runtime->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioTransportRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeAudioTransportHandle* native_handle = audio_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return audio_transport_error_code(AudioTransportError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return audio_transport_error_code(native_handle->sender->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioReceiverRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeAudioReceiverHandle* native_handle = audio_receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return audio_transport_error_code(AudioTransportError::InvalidHandle);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return audio_transport_error_code(AudioTransportError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return audio_transport_error_code(native_handle->runtime->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputTransportRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeInputTransportHandle* native_handle = input_transport_handle_from(handle);
+    if (native_handle == nullptr || native_handle->sender == nullptr) {
+        return input_transport_error_code(InputTransportError::InvalidHandle);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return input_transport_error_code(InputTransportError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return input_transport_error_code(native_handle->sender->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint).error);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeInputReceiverRebind(
+    JNIEnv* env,
+    jclass /* clazz */,
+    jlong handle,
+    jstring remote_address,
+    jint remote_port,
+    jint local_port,
+    jlong prepared_endpoint_handle) {
+    NativeInputReceiverHandle* native_handle = input_receiver_handle_from(handle);
+    if (native_handle == nullptr || native_handle->runtime == nullptr) {
+        return static_cast<jint>(InputReceiverError::Closed);
+    }
+    auto rebind = take_live_transport_rebind(
+        env, remote_address, remote_port, local_port, prepared_endpoint_handle);
+    if (!rebind.has_value()) return static_cast<jint>(InputReceiverError::UdpBindFailed);
+    std::lock_guard guard(native_handle->lock);
+    return static_cast<jint>(native_handle->runtime->rebind_prebound_socket(
+        std::move(rebind->socket), rebind->remote_endpoint));
 }
 
 extern "C" JNIEXPORT jlong JNICALL

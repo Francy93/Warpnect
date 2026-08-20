@@ -26,16 +26,26 @@ interface LifecycleCandidateDatagramIo {
 }
 
 /**
- * Replaces path-bound endpoint leases while retaining the existing RFC-005E runtime and channel
- * contexts. Because RFC-005G transports are stopped, a replacement stopped transport can be
- * built before commit without starting capture, receive loops, codecs or audio.
+ * Replaces path-bound endpoint leases while retaining the existing RFC-005E runtime and Channel
+ * contexts. Before RFC-005I adopts the stopped transport, migration builds a stopped replacement.
+ * Once a Phase 2/3/4 controller owns the native handle, the same adapter rebinds that live handle
+ * instead: no replacement transport or protection context is created.
  */
 class PreparedSessionMigrationAdapter(
     private val bootstrap: PreparedSessionBootstrap,
     private val endpointAllocator: ChannelEndpointAllocator,
     private val transportPreparer: ChannelTransportPreparer,
     private val candidateIo: LifecycleCandidateDatagramIo,
+    /**
+     * Production Android migration transfers the candidate socket into SessionControl. Existing
+     * non-Android callers keep the frozen endpoint-only rebind path.
+     */
+    private val commitControlPath: ((LifecyclePathBinding) -> Boolean)? = null,
 ) : SessionLifecycleMigrationAdapter {
+    override fun close() {
+        (candidateIo as? AutoCloseable)?.close()
+    }
+
     override fun armCandidateWindow(
         binding: LifecyclePathBinding,
         migrationId: PathMigrationId,
@@ -65,7 +75,12 @@ class PreparedSessionMigrationAdapter(
             }
             leases += lease
         }
-        return PreparedMigration(bootstrap.channels, leases, binding)
+        val adopted = bootstrap.channels.count(PreparedChannel::hasLiveTransport)
+        if (adopted != 0 && adopted != bootstrap.channels.size) {
+            leases.asReversed().forEach(ChannelEndpointLease::close)
+            return null
+        }
+        return PreparedMigration(bootstrap.channels, leases, binding, adopted == bootstrap.channels.size)
     }
 
     override fun commit(
@@ -81,11 +96,100 @@ class PreparedSessionMigrationAdapter(
             return SessionLifecycleError.PathMigrationConflict
         }
         val remoteByChannel = remoteEntries.associateBy { it.channelId }
+        return if (prepared.liveTransports) {
+            commitLive(binding, prepared, remoteByChannel)
+        } else {
+            commitPrepared(binding, prepared, remoteByChannel)
+        }
+    }
+
+    private fun commitLive(
+        binding: LifecyclePathBinding,
+        prepared: PreparedMigration,
+        remoteByChannel: Map<io.warpnect.session.ChannelId, PathMigrationEntry>,
+    ): SessionLifecycleError {
+        val replacements = ArrayList<LiveTransportReplacement>(bootstrap.channels.size)
+        bootstrap.channels.forEachIndexed { index, channel ->
+            val lease = prepared.leases[index]
+            val remotePort = requireNotNull(remoteByChannel[channel.descriptor.channelId]).localPort
+            val descriptor = channel.descriptor.forMigration(
+                binding.plan.pathId,
+                bootstrap.localRole,
+                lease.localPort,
+                remotePort,
+            )
+                ?: return SessionLifecycleError.PathMigrationConflict
+            val newEndpoint = endpointFor(binding.plan.remoteAddress, descriptor.remotePortFor(bootstrap.localRole))
+                ?: return SessionLifecycleError.TransportRebindFailed
+            val oldEndpoint = endpointFor(
+                channel.remoteAddress,
+                channel.descriptor.remotePortFor(bootstrap.localRole),
+            ) ?: return SessionLifecycleError.TransportRebindFailed
+            replacements += LiveTransportReplacement(
+                channel,
+                descriptor,
+                lease,
+                binding.plan.remoteAddress,
+                oldEndpoint,
+                newEndpoint,
+            )
+        }
+
+        val reboundContexts = ArrayList<LiveTransportReplacement>(replacements.size)
+        replacements.forEach { replacement ->
+            if (bootstrap.protectionRuntime.rebindChannelEndpoint(
+                    replacement.channel.descriptor.channelId,
+                    replacement.newEndpoint,
+                ) !=
+                io.warpnect.session.security.SessionProtectionError.None
+            ) {
+                reboundContexts.asReversed().forEach { prior ->
+                    bootstrap.protectionRuntime.rebindChannelEndpoint(
+                        prior.channel.descriptor.channelId,
+                        prior.oldEndpoint,
+                    )
+                }
+                return SessionLifecycleError.TransportRebindFailed
+            }
+            reboundContexts += replacement
+        }
+        if (!rebindControlPath(binding)) {
+            reboundContexts.asReversed().forEach { prior ->
+                bootstrap.protectionRuntime.rebindChannelEndpoint(prior.channel.descriptor.channelId, prior.oldEndpoint)
+            }
+            return SessionLifecycleError.TransportRebindFailed
+        }
+
+        replacements.forEach { replacement ->
+            if (!replacement.channel.replaceLiveEndpoint(
+                    replacement.descriptor,
+                    replacement.lease,
+                    replacement.remoteAddress,
+                )
+            ) {
+                return SessionLifecycleError.TransportRebindFailed
+            }
+            prepared.markLeaseAdopted(replacement.lease)
+        }
+        prepared.transferred = true
+        return SessionLifecycleError.None
+    }
+
+    private fun commitPrepared(
+        binding: LifecyclePathBinding,
+        prepared: PreparedMigration,
+        remoteByChannel: Map<io.warpnect.session.ChannelId, PathMigrationEntry>,
+    ): SessionLifecycleError {
         val replacements = ArrayList<TransportReplacement>(bootstrap.channels.size)
         bootstrap.channels.forEachIndexed { index, channel ->
             val lease = prepared.leases[index]
             val remotePort = requireNotNull(remoteByChannel[channel.descriptor.channelId]).localPort
-            val descriptor = channel.descriptor.forMigration(bootstrap.localRole, lease.localPort, remotePort)
+            val descriptor = channel.descriptor.forMigration(
+                binding.plan.pathId,
+                bootstrap.localRole,
+                lease.localPort,
+                remotePort,
+            )
                 ?: return closeReplacements(replacements, SessionLifecycleError.PathMigrationConflict)
             val created = transportPreparer.prepare(
                 ChannelTransportPreparationRequest(
@@ -151,10 +255,7 @@ class PreparedSessionMigrationAdapter(
             }
             reboundChannels += replacement
         }
-        if (
-            bootstrap.secureSessionControl.rebindRemoteEndpoint(binding.remoteControlEndpoint) !=
-            io.warpnect.session.security.SessionProtectionError.None
-        ) {
+        if (!rebindControlPath(binding)) {
             reboundChannels.asReversed().forEach { prior ->
                 bootstrap.protectionRuntime.rebindChannelEndpoint(prior.channel.descriptor.channelId, prior.oldEndpoint)
             }
@@ -182,6 +283,11 @@ class PreparedSessionMigrationAdapter(
         return error
     }
 
+    private fun rebindControlPath(binding: LifecyclePathBinding): Boolean = commitControlPath?.invoke(binding) ?: (
+        bootstrap.secureSessionControl.rebindRemoteEndpoint(binding.remoteControlEndpoint) ==
+            io.warpnect.session.security.SessionProtectionError.None
+        )
+
     private fun endpointFor(address: String, port: Int): io.warpnect.session.handshake.HandshakeTransportEndpoint? =
         try {
             io.warpnect.session.handshake.HandshakeTransportEndpoint.from(InetAddress.getByName(address).address, port)
@@ -203,28 +309,53 @@ class PreparedSessionMigrationAdapter(
         val newEndpoint: io.warpnect.session.handshake.HandshakeTransportEndpoint,
     )
 
+    private data class LiveTransportReplacement(
+        val channel: PreparedChannel,
+        val descriptor: ChannelDescriptor,
+        val lease: ChannelEndpointLease,
+        val remoteAddress: String,
+        val oldEndpoint: io.warpnect.session.handshake.HandshakeTransportEndpoint,
+        val newEndpoint: io.warpnect.session.handshake.HandshakeTransportEndpoint,
+    )
+
     private class PreparedMigration(
         private val channels: List<PreparedChannel>,
         val leases: List<ChannelEndpointLease>,
         val binding: LifecyclePathBinding,
+        val liveTransports: Boolean,
     ) : ChannelMigrationPreparation {
         var transferred = false
+        private val adoptedLeases = LinkedHashSet<ChannelEndpointLease>()
         override val entries: List<PathMigrationEntry> = channels.indices.map { index ->
             PathMigrationEntry(channels[index].descriptor.channelId, leases[index].localPort)
         }
 
+        /** A live native transport has consumed this endpoint and now owns its close lifecycle. */
+        fun markLeaseAdopted(lease: ChannelEndpointLease) {
+            adoptedLeases += lease
+        }
+
         override fun close() {
-            if (!transferred) leases.asReversed().forEach(ChannelEndpointLease::close)
+            if (!transferred) {
+                leases.asReversed()
+                    .filterNot(adoptedLeases::contains)
+                    .forEach(ChannelEndpointLease::close)
+            }
         }
     }
 }
 
-private fun ChannelDescriptor.forMigration(role: SessionRole, localPort: Int, remotePort: Int): ChannelDescriptor? {
+private fun ChannelDescriptor.forMigration(
+    targetPathId: io.warpnect.session.PathId,
+    role: SessionRole,
+    localPort: Int,
+    remotePort: Int,
+): ChannelDescriptor? {
     if (localPort !in 1..0xffff || remotePort !in 1..0xffff) return null
     return if (role == SessionRole.Host) {
-        copy(hostLocalPort = localPort, clientLocalPort = remotePort)
+        copy(pathId = targetPathId, hostLocalPort = localPort, clientLocalPort = remotePort)
     } else {
-        copy(hostLocalPort = remotePort, clientLocalPort = localPort)
+        copy(pathId = targetPathId, hostLocalPort = remotePort, clientLocalPort = localPort)
     }
 }
 

@@ -204,6 +204,8 @@ class SessionSetupControllerTest {
         val prepared = fixture.hostCompletions.single()
         assertEquals(NetworkPathKind.Direct, prepared.activePath.kind)
         assertEquals(NetworkPathKind.Lan, prepared.standbyPath?.kind)
+        assertTrue(prepared.activePath.pathId in prepared.pathControlEndpoints)
+        assertTrue(requireNotNull(prepared.standbyPath).pathId in prepared.pathControlEndpoints)
         assertEquals(2, prepared.channels.size)
         assertEquals(1, direct.hostCalls)
         assertEquals(1, direct.clientCalls)
@@ -362,6 +364,15 @@ class SessionSetupControllerTest {
             profileHash.copyOf(),
             runtime,
             transport,
+            HandshakeTransportEndpoint.requireValid(
+                byteArrayOf(
+                    192.toByte(),
+                    168.toByte(),
+                    10,
+                    if (role == SessionRole.Host) 2 else 1,
+                ),
+                42_000,
+            ),
             admission,
         )
 

@@ -1,6 +1,9 @@
 package io.warpnect.platform.video.transport
 
 import io.warpnect.NativeBridge
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import io.warpnect.video.decoder.VideoDecoderError
 import io.warpnect.video.decoder.VideoDecoderInputResult
 import io.warpnect.video.decoder.VideoDecoderInputSource
@@ -32,6 +35,38 @@ class NativeSclVideoReceiverController(
     private var worker: Thread? = null
 
     private var localSnapshot = VideoReceiverRuntimeSnapshot()
+
+    /** RFC-005I adopts the stopped RFC-005G protected receiver instead of opening a UDP port. */
+    internal fun adoptPreparedTransport(handle: Long): VideoTransportError {
+        if (handle == 0L || nativeHandle != 0L || running) return VideoTransportError.InvalidHandle
+        nativeHandle = handle
+        localSnapshot = snapshot().copy(state = VideoReceiverRuntimeState.Stopped)
+        return VideoTransportError.None
+    }
+
+    /** RFC-005H replaces only this receiver's path socket/peer endpoint under its native lock. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val handle = nativeHandle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = handle != 0L && endpointHandle != 0L &&
+            VideoTransportError.fromNativeCode(
+                NativeBridge.videoReceiverRebind(
+                    handle,
+                    remoteAddress,
+                    remotePort,
+                    localEndpoint.localPort,
+                    endpointHandle,
+                ),
+            ) == VideoTransportError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
 
     override val inputSource: VideoDecoderInputSource = object : VideoDecoderInputSource {
         override fun fillInput(target: ByteBuffer, capacity: Int): VideoDecoderInputResult =

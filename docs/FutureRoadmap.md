@@ -77,7 +77,10 @@ game-specific compatibility remain device-specific validation work.
 
 ## Phase 5 - Discovery and Secure Session Management
 
-Status: Started. RFC-005A through RFC-005H are complete; RFC-005I is next.
+Status: implementation-complete. RFC-005I integrates the normal Android Host/Client composition,
+the public-API LAN and Wi-Fi Direct backends, concrete Phase 2-4 prepared-transport adoption, and
+live-transport migration ownership. Real-device validation remains separate from implementation
+status.
 
 - RFC-005A - Session Identity & Core Session Model [complete]
 - RFC-005B - Local Network Discovery & Presence [complete]
@@ -87,9 +90,11 @@ Status: Started. RFC-005A through RFC-005H are complete; RFC-005I is next.
 - RFC-005F - Capability, Role & Feature Negotiation [complete]
 - RFC-005G - Endpoint, Channel & Stream Negotiation [complete]
 - RFC-005H - Session Lifecycle, Disconnect & Reconnection [complete]
-- RFC-005I - End-to-End Discovery & Secure Session Integration [next]
+- RFC-005I - End-to-End Discovery & Secure Session Integration [complete]
 
 ## Phase 6 - Telemetry and Diagnostics
+
+Next: RFC-006A - Unified Runtime Telemetry Model.
 
 Implement:
 

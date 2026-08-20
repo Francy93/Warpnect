@@ -126,6 +126,7 @@ class VideoReceiverRuntime final {
 
     [[nodiscard]] VideoStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] VideoStatus rebind_prebound_socket(UdpSocket socket, UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] VideoReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] VideoStatus accept_datagram(std::span<const std::byte> datagram,
                                               const UdpEndpoint& source,

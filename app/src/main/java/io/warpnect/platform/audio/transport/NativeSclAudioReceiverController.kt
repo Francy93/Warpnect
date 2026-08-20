@@ -15,6 +15,9 @@ import io.warpnect.audio.transport.AudioReceiverRuntimeSnapshot
 import io.warpnect.audio.transport.AudioReceiverRuntimeState
 import io.warpnect.audio.transport.AudioReceiverStreamConfig
 import io.warpnect.audio.transport.AudioTransportError
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import java.nio.ByteBuffer
 
 class NativeSclAudioReceiverController(
@@ -32,8 +35,41 @@ class NativeSclAudioReceiverController(
     private var currentConfig: AudioReceiverRuntimeConfig? = null
     private var localSnapshot = AudioReceiverRuntimeSnapshot()
 
+    /** RFC-005I adopts the stopped RFC-005G protected receiver without rebinding a UDP port. */
+    internal fun adoptPreparedTransport(handle: Long): AudioTransportError {
+        if (handle == 0L || nativeHandle != 0L || running) return AudioTransportError.InvalidHandle
+        nativeHandle = handle
+        localSnapshot = snapshot().copy(state = AudioReceiverRuntimeState.Stopped)
+        return AudioTransportError.None
+    }
+
+    /** RFC-005H replaces only the bound socket/peer endpoint of this live receiver. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val handle = nativeHandle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = handle != 0L && endpointHandle != 0L &&
+            AudioTransportError.fromNativeCode(
+                NativeBridge.audioReceiverRebind(
+                    handle,
+                    remoteAddress,
+                    remotePort,
+                    localEndpoint.localPort,
+                    endpointHandle,
+                ),
+            ) == AudioTransportError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
+
     override fun open(config: AudioReceiverRuntimeConfig): AudioReceiverRuntimeResult {
         if (nativeHandle != 0L) {
+            currentConfig = config
             return AudioReceiverRuntimeResult(AudioTransportError.None, snapshot())
         }
         val validation = validateConfig(config)

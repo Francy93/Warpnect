@@ -24,6 +24,7 @@ fun MainScreen(
     onIdleSelected: () -> Unit,
     onReceiverSelected: () -> Unit,
     onTransmitterSelected: () -> Unit,
+    onBackToSecureSession: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -34,7 +35,7 @@ fun MainScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "Warpnect",
+            text = "Developer Manual Transport",
             fontSize = 32.sp,
             fontWeight = FontWeight.SemiBold,
         )
@@ -72,6 +73,12 @@ fun MainScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = "Idle")
+        }
+        OutlinedButton(
+            onClick = onBackToSecureSession,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(text = "Back to Secure Session")
         }
     }
 }

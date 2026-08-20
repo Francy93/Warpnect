@@ -152,20 +152,28 @@ void test_protection_and_authentication() {
     const auto result = pair.host.unprotect(pair.client_endpoint, secure, decrypted, 1);
     expect(result.ok(), "host authenticates client datagram");
     expect_equal(decrypted, inner, "decrypted datagram preserves frozen inner SCL bytes");
+    expect_equal(pair.host.last_authenticated_receive_us(), 1ULL,
+                 "only a successfully authenticated packet advances liveness");
 
     auto tampered = secure;
     tampered.back() ^= byte(1);
     expect_equal(pair.host.unprotect(pair.client_endpoint, tampered, decrypted, 2).error,
                  SessionProtectionError::ReplayDuplicate,
                  "authenticated packet is replay-dropped before tampered duplicate is parsed");
+    expect_equal(pair.host.last_authenticated_receive_us(), 1ULL,
+                 "replay duplicate does not advance authenticated liveness");
 
     const auto second = protect(pair.client, inner_datagram(8));
     auto bad_aad = second;
     bad_aad[20] ^= byte(1);
     expect_equal(pair.host.unprotect(pair.client_endpoint, bad_aad, decrypted, 3).error,
                  SessionProtectionError::AuthFailure, "header AAD tamper fails authentication");
+    expect_equal(pair.host.last_authenticated_receive_us(), 1ULL,
+                 "AEAD failure does not advance authenticated liveness");
     expect(pair.host.unprotect(pair.client_endpoint, second, decrypted, 4).ok(),
            "failed AEAD did not advance replay state");
+    expect_equal(pair.host.last_authenticated_receive_us(), 4ULL,
+                 "a later authenticated packet advances liveness monotonically");
 }
 
 void test_replay_endpoint_and_ordering() {
@@ -182,6 +190,8 @@ void test_replay_endpoint_and_ordering() {
     const auto third = protect(pair.client, inner_datagram(3));
     expect_equal(pair.host.unprotect(UdpEndpoint::loopback_v4(31999), third, output, 4).error,
                  SessionProtectionError::EndpointMismatch, "endpoint filter runs before AEAD");
+    expect_equal(pair.host.last_authenticated_receive_us(), 2ULL,
+                 "endpoint mismatch does not advance authenticated liveness");
     expect(pair.host.unprotect(pair.client_endpoint, third, output, 5).ok(),
            "endpoint-filtered packet was not marked as replayed");
 }
@@ -267,6 +277,9 @@ void test_channel_endpoint_rebind_preserves_context_and_replay_state() {
     }();
     expect(pair.host.unprotect(pair.client_endpoint, first_protected, first, 1).ok(),
            "channel packet before rebind decrypts");
+    const auto first_header = warpnect::scl::security::decode_secure_datagram_header(
+        std::span<const std::byte>(first_protected.data(), warpnect::scl::security::kSecureDatagramHeaderSize));
+    expect(first_header.ok(), "first channel packet has a valid secure header");
 
     const UdpEndpoint migrated_client = UdpEndpoint::loopback_v4(31997);
     expect(pair.host.set_expected_remote_endpoint(channel_scope, migrated_client).ok(),
@@ -276,6 +289,11 @@ void test_channel_endpoint_rebind_preserves_context_and_replay_state() {
     const auto protected_second = pair.client.protect(channel_scope, second_inner, second);
     expect(protected_second.ok(), "channel packet after rebind protects");
     second.resize(protected_second.bytes_written);
+    const auto second_header = warpnect::scl::security::decode_secure_datagram_header(
+        std::span<const std::byte>(second.data(), warpnect::scl::security::kSecureDatagramHeaderSize));
+    expect(second_header.ok(), "second channel packet has a valid secure header");
+    expect_equal(second_header.header.packet_number, first_header.header.packet_number + 1U,
+                 "channel packet number continues across endpoint migration");
     expect_equal(pair.host.unprotect(pair.client_endpoint, second, first, 2).error,
                  SessionProtectionError::EndpointMismatch, "old channel endpoint is dropped after migration");
     expect(pair.host.unprotect(migrated_client, second, first, 3).ok(),

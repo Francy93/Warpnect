@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and the Phase 5 foundations through authenticated endpoint, channel, and exact stream preparation in RFC-005G.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and Phase 5 discovery, secure-session, lifecycle, and RFC-005I integration.
 
 Present:
 
@@ -62,13 +62,14 @@ Present:
 - Session Packet Protection V1: a portable native WNSD AES-128-GCM envelope with scoped directional keys, bounded anti-replay windows, monotonic key epochs, and cold JNI runtime/context ownership.
 - Authenticated capability and feature negotiation through bounded WNCP Version 1 records carried only inside encrypted RFC-005E SessionControl datagrams. Frozen Client/Host capability snapshots, explicit Required/Preferred/Disabled requests, and Host policy produce one immutable profile without starting media, audio, input, or Direct resources.
 - Authenticated RFC-005G Session Setup V1 over protected SessionControl: strict bounded WNSN state machines, explicit LAN/Direct path policy, public-API Android Wi-Fi Direct Group Owner reuse, authenticated Direct candidate probing, path-bound endpoint leases, deterministic PathId/ChannelId allocation, exact stream validation, and independent protected native channel transports. The result is a bounded `PreparedSessionBootstrap`; no media pipeline is started.
+- RFC-005H lifecycle ownership and RFC-005I integration composition. The normal Host/Client application surface begins from discovered presence rather than manually entered endpoints, keeps pairing explicit, carries WNCP/WNSN/WNSL over protected SessionControl, and adopts RFC-005G prepared native transports into the existing Video/Audio/Input controllers. The application-scoped Direct backend owns one shared Host Group Owner resource and bounded per-Session Direct coordinators. The legacy Receiver/Transmitter shell is an explicit Developer Manual surface, never a secure-session fallback.
 - Architecture Version 1.0 documentation.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Running-session lifecycle, path health, automatic live failover, disconnect/reconnect/resume, full Phase 5 startup orchestration, telemetry UI, or an unbounded telemetry wire stream.
+- Cloud rendezvous, Internet relay/NAT traversal, process-death Session resume, a background-session policy, telemetry UI, or an unbounded telemetry wire stream.
 
 ## Repository Layout
 
@@ -244,6 +245,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-005F Capability, Role & Feature Negotiation](docs/rfc/RFC-005F-Capability-Role-Feature-Negotiation.md)
 - [RFC-005G Endpoint, Channel & Stream Negotiation](docs/rfc/RFC-005G-Endpoint-Channel-Stream-Negotiation.md)
 - [RFC-005H Session Lifecycle, Disconnect & Reconnection](docs/rfc/RFC-005H-Session-Lifecycle-Disconnect-Reconnection.md)
+- [RFC-005I End-to-End Discovery & Secure Session Integration](docs/rfc/RFC-005I-End-to-End-Discovery-Secure-Session-Integration.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -262,6 +264,6 @@ Phase 3 audio is implementation-complete. RFC-003A implements PCM capture founda
 
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
-Phase 5 now includes RFC-005A through RFC-005H. The session core keeps device identity, peer identity, SessionId, SessionGeneration, network path, channel, and session-scoped logical peripheral identity separate. RFC-005F freezes an authenticated capability profile, RFC-005G prepares authenticated Direct/LAN paths, endpoints, channel contexts, and exact stream configuration without starting a pipeline, and RFC-005H adds bounded lifecycle ownership. A healthy lifecycle uses one Active path and optionally one ValidatedStandby path; authenticated idle heartbeats and platform path events trigger explicit same-generation migration. All-path loss enters a bounded reconnect window that preserves SessionId, increments SessionGeneration, destroys old traffic protection, and reruns RFC-005D, RFC-005E, RFC-005F, and RFC-005G. Normal media, audio, and input traffic is never duplicated or queued during migration/recovery. RFC-005I remains responsible for complete pipeline startup.
+Phase 5 is implementation-complete through RFC-005I. `SecureSessionCoordinator` composes trusted/pairing identity, WNSH, WNSD, WNCP, WNSN, and WNSL into a transactional startup model with no manual endpoint or plaintext fallback. The Android composition root and normal Host/Client UI adopt each RFC-005G prepared protected transport into the existing Video, Audio, and Input runtime controllers. The final current-worktree Gradle/native matrix is green; Android and two-device validation remain explicitly tracked separately.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

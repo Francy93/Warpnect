@@ -60,6 +60,8 @@ class AudioTransportSender final : private AudioDatagramSink {
 
     [[nodiscard]] AudioTransportStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
+    [[nodiscard]] AudioTransportStatus rebind_prebound_socket(UdpSocket socket,
+                                                               UdpEndpoint remote_endpoint) noexcept;
     [[nodiscard]] AudioTransportStatus submit_stream_config(std::uint32_t sample_rate_hz,
                                                             std::uint8_t channel_count,
                                                             std::uint32_t frame_duration_us,

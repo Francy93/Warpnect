@@ -39,6 +39,12 @@ class AndroidChannelEndpointAllocator : ChannelEndpointAllocator {
 
 internal interface NativeChannelEndpointLeaseAccess {
     fun nativeEndpointHandle(): Long
+
+    /**
+     * The native transport has consumed the socket from this endpoint holder. The lease remains
+     * as descriptor metadata, but it must no longer attempt to destroy a socket it does not own.
+     */
+    fun markNativeEndpointAdopted(handle: Long)
 }
 
 private class AndroidChannelEndpointLease(
@@ -50,6 +56,10 @@ private class AndroidChannelEndpointLease(
     private val lock = Any()
 
     override fun nativeEndpointHandle(): Long = synchronized(lock) { handle }
+
+    override fun markNativeEndpointAdopted(handle: Long) = synchronized(lock) {
+        if (this.handle == handle) this.handle = 0L
+    }
 
     override fun close() = synchronized(lock) {
         if (handle == 0L) return

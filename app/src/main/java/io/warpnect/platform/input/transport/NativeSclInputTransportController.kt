@@ -16,6 +16,9 @@ import io.warpnect.input.transport.InputTransportError
 import io.warpnect.input.transport.InputTransportResult
 import io.warpnect.input.transport.InputTransportSnapshot
 import io.warpnect.input.transport.InputTransportState
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -29,6 +32,14 @@ internal interface InputTransportNativeApi {
     ): Long
 
     fun destroy(handle: Long): Int
+
+    fun rebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = InputTransportError.InvalidHandle.ordinal
 
     fun submitKey(
         handle: Long,
@@ -118,6 +129,20 @@ internal object NativeBridgeInputTransportApi : InputTransportNativeApi {
     )
 
     override fun destroy(handle: Long): Int = NativeBridge.inputTransportDestroy(handle)
+
+    override fun rebind(
+        handle: Long,
+        remoteAddress: String,
+        remotePort: Int,
+        localPort: Int,
+        preparedEndpointHandle: Long,
+    ): Int = NativeBridge.inputTransportRebind(
+        handle,
+        remoteAddress,
+        remotePort,
+        localPort,
+        preparedEndpointHandle,
+    )
 
     override fun submitKey(
         handle: Long,
@@ -275,12 +300,45 @@ class NativeSclInputTransportController private constructor(
     private var touchScratch: InputTouchScratch? = null
     private var localSnapshot = InputTransportSnapshot()
 
+    /** RFC-005I adopts the RFC-005G protected Input sender in lieu of a manual UDP transport. */
+    internal fun adoptPreparedTransport(handle: Long): InputTransportError {
+        if (handle == 0L || nativeHandle != 0L || localSnapshot.state == InputTransportState.Closed) {
+            return InputTransportError.InvalidHandle
+        }
+        nativeHandle = handle
+        localSnapshot = nativeSnapshot(InputTransportState.Prepared)
+        return InputTransportError.None
+    }
+
+    /** The controller owns the adopted native handle and is the sole RFC-005H rebind target. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val handle = nativeHandle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = handle != 0L && endpointHandle != 0L &&
+            InputTransportError.fromNativeCode(
+                nativeApi.rebind(handle, remoteAddress, remotePort, localEndpoint.localPort, endpointHandle),
+            ) == InputTransportError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
+
     override fun prepare(config: InputTransportConfig): InputTransportResult {
         if (localSnapshot.state == InputTransportState.Closed) {
             return result(InputTransportError.Closed)
         }
         if (nativeHandle != 0L) {
-            return result(InputTransportError.InvalidConfiguration)
+            val validation = config.validate()
+            if (validation != InputTransportError.None) return result(validation)
+            this.config = config
+            touchScratch = touchScratch ?: InputTouchScratch()
+            localSnapshot = nativeSnapshot(InputTransportState.Prepared)
+            return InputTransportResult(InputTransportError.None, localSnapshot)
         }
         val validation = config.validate()
         if (validation != InputTransportError.None) {

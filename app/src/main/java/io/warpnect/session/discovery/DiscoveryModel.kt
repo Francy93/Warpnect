@@ -299,8 +299,13 @@ class SessionManagerHostAvailabilityProvider(
 ) : HostAvailabilityProvider {
     override fun availability(): DiscoveryAvailability {
         val snapshot = sessionManager.snapshot()
-        val liveHostSessions = snapshot.sessions.count(SessionSnapshot::isLiveHostSession)
-        return if (liveHostSessions < snapshot.policy.maxConcurrentClients) {
+        // Admission, lifecycle, and recovery ownership all reserve the same bounded Host slot.
+        // Advertising a free slot while one of those records exists would race RFC-005D/005H.
+        val occupiedHostSlots = snapshot.sessions.count(SessionSnapshot::isLiveHostSession) +
+            snapshot.authenticatedReservationCount +
+            snapshot.lifecycleAdmissionCount +
+            snapshot.recoveryLeaseCount
+        return if (occupiedHostSlots < snapshot.policy.maxConcurrentClients) {
             DiscoveryAvailability.Available
         } else {
             DiscoveryAvailability.AtCapacity

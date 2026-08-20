@@ -66,8 +66,10 @@ which RFC-005E anti-replay drops before WNSL.
 
 The Client is the V1 migration coordinator. It arms a 1000 ms candidate window for its standby
 path, sends PathChallenge, and accepts only a successfully authenticated expected PathResponse with
-matching migration ID, path, kind, and challenge. A valid SessionControl packet from a new endpoint
-does not rebind anything outside that narrow window.
+matching migration ID, path, kind, and challenge. The responder can bootstrap only that first
+authenticated PathChallenge from its already-known standby endpoint; it immediately arms the same
+bounded transaction and ignores every other candidate message. A valid SessionControl packet from
+a new endpoint does not rebind anything outside that narrow window.
 
 After validation, the initiator allocates real target-path channel sockets before advertising ports,
 sends Prepare, receives the responder's already-bound port list in Ready, then sends Commit.
@@ -83,10 +85,10 @@ failover backlog. Existing short-lived NACK behavior is not extended by lifecycl
 ## Input and Continuity Hooks
 
 `SessionContinuityParticipant` gives later pipeline integration bounded migration, suspend,
-reconnect, and close callbacks. It cannot request a media queue. The input recovery seam resets
-remote target state on suspension/close; later input integration can emit the existing Input V1
-ResetState and then rebuild known source state. Gamepad snapshots and normal pointer/button state
-continue to use their existing V1 semantics. No new media or input payload is introduced.
+reconnect, and close callbacks. It cannot request a media queue. Its idempotent
+`onInputSafetyReset` hook explicitly instructs target-side integration to apply AllSlots/ResetState
+on suspension or final close; later input integration can then rebuild known source state with the
+existing Input V1 semantics. No new media or input payload is introduced.
 
 ## Disconnect
 
@@ -152,9 +154,11 @@ a second slot.
 ## Tests and Runtime Status
 
 Pure JVM coverage exercises WNSL canonical encode/decode, malformed records, health timing,
-heartbeat threshold, path migration state, recovery deadline/backoff, generation progression,
+heartbeat threshold, controller-level two-peer migration, candidate admission, semantic retry,
+graceful close, input-safety hooks, recovery deadline/backoff, generation progression,
 SessionManager recovery-capacity transfer, and reconnect handshake intent. Native protection tests
-exercise endpoint rebind while preserving context identity and replay state. Android callback,
+exercise endpoint rebind while preserving context identity, packet-number continuity, replay state,
+and authenticated-liveness rejection for invalid traffic. Android callback,
 Wi-Fi Direct loss, two-device migration/reconnect, and real pipeline recovery are runtime tests and
 must be reported only when an attached device setup actually executes them.
 

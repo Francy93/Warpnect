@@ -12,6 +12,9 @@ import io.warpnect.audio.transport.AudioTransportOpenResult
 import io.warpnect.audio.transport.AudioTransportSnapshot
 import io.warpnect.audio.transport.AudioTransportState
 import io.warpnect.audio.transport.AudioTransportSubmitResult
+import io.warpnect.platform.session.channel.markNativeEndpointAdopted
+import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
+import io.warpnect.session.setup.ChannelEndpointLease
 import java.nio.ByteBuffer
 
 class NativeSclAudioTransportController : AudioTransportController {
@@ -19,11 +22,46 @@ class NativeSclAudioTransportController : AudioTransportController {
     private var config: AudioTransportConfig? = null
     private var localSnapshot = AudioTransportSnapshot()
 
+    /** RFC-005I adopts the exact RFC-005G sender handle; no replacement socket is created. */
+    internal fun adoptPreparedTransport(handle: Long): AudioTransportError {
+        if (handle == 0L || nativeHandle != 0L || localSnapshot.state == AudioTransportState.Closed) {
+            return AudioTransportError.InvalidHandle
+        }
+        nativeHandle = handle
+        localSnapshot = snapshot()
+        return AudioTransportError.None
+    }
+
+    /** RFC-005H updates this native Opus sender in place and preserves its security packet space. */
+    internal fun rebindLiveTransport(
+        localEndpoint: ChannelEndpointLease,
+        remoteAddress: String,
+        remotePort: Int,
+    ): Boolean {
+        val handle = nativeHandle
+        val endpointHandle = localEndpoint.nativeEndpointHandleForLiveRebind()
+        val rebound = handle != 0L && endpointHandle != 0L &&
+            AudioTransportError.fromNativeCode(
+                NativeBridge.audioTransportRebind(
+                    handle,
+                    remoteAddress,
+                    remotePort,
+                    localEndpoint.localPort,
+                    endpointHandle,
+                ),
+            ) == AudioTransportError.None
+        if (rebound) localEndpoint.markNativeEndpointAdopted(endpointHandle)
+        return rebound
+    }
+
+    internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
+
     override fun open(config: AudioTransportConfig): AudioTransportOpenResult {
         if (localSnapshot.state == AudioTransportState.Closed) {
             return AudioTransportOpenResult(AudioTransportError.Closed, localSnapshot)
         }
         if (nativeHandle != 0L) {
+            this.config = config
             return AudioTransportOpenResult(AudioTransportError.None, snapshot())
         }
         val validation = validateConfig(config)

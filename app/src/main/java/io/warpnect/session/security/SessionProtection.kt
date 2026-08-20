@@ -195,6 +195,7 @@ class SessionProtectionController(
             config.validate().takeIf { it != SessionProtectionError.None }?.let {
                 return@synchronized fail(bootstrap, it)
             }
+            pruneClosedRuntimesLocked()
             if (runtimes.containsKey(bootstrap.sessionId) || runtimes.size >= config.maxRuntimes) {
                 return@synchronized fail(bootstrap, SessionProtectionError.Busy)
             }
@@ -214,6 +215,12 @@ class SessionProtectionController(
 
     fun snapshotCount(): Int = synchronized(lock) { runtimes.size }
 
+    /**
+     * RFC-005H reconnects create a new owner for a new generation. The old controller is
+     * terminal after it destroys generation-N runtimes and may never be revived.
+     */
+    fun freshGenerationController(): SessionProtectionController = SessionProtectionController(factory, config)
+
     override fun close() {
         synchronized(lock) {
             if (closed) return
@@ -230,6 +237,18 @@ class SessionProtectionController(
         bootstrap.rootSecret.close()
         bootstrap.admissionReservation?.close()
         return SessionProtectionCreationResult(error)
+    }
+
+    /** Reclaims only native runtimes that their lifecycle owner has already closed. */
+    private fun pruneClosedRuntimesLocked() {
+        val iterator = runtimes.entries.iterator()
+        while (iterator.hasNext()) {
+            val runtime = iterator.next().value
+            if (runtime.snapshot().lastError == SessionProtectionError.Closed) {
+                runtime.close()
+                iterator.remove()
+            }
+        }
     }
 }
 

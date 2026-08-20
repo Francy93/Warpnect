@@ -44,6 +44,8 @@ data class NegotiatedSessionBootstrap(
     val profileHash: ByteArray,
     val protection: SessionProtectionRuntime,
     val secureSessionControl: SecureSessionControlTransport,
+    /** RFC-005D authenticated bootstrap endpoint retained for RFC-005G LAN binding/fallback. */
+    val endpoint: HandshakeTransportEndpoint,
     val admissionReservation: AuthenticatedSessionAdmissionReservation? = null,
 )
 
@@ -540,6 +542,7 @@ class CapabilityNegotiationController(
                 profileHash.copyOf(),
                 managed.binding.bootstrap.protection,
                 managed.binding.transport,
+                managed.binding.bootstrap.endpoint,
                 managed.binding.bootstrap.admissionReservation,
             ),
         )
