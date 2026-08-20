@@ -105,6 +105,32 @@ class AndroidExactStreamConfigurationValidatorTest {
     }
 
     @Test
+    fun systemAudioUsesHostCaptureAndClientPlaybackForTheExactStereoProfile() {
+        var hostCaptureQueries = 0
+        val mode = AudioStreamMode(48_000, 5_000, 2, 128_000)
+        val configuration = listOf(SetupConfiguration.SystemAudio(channelId(1), mode))
+        val host = validator(
+            systemAudio = ExactAudioCaptureCapabilityQuery { request ->
+                hostCaptureQueries += 1
+                AudioCaptureCapabilities(
+                    source = request.source,
+                    available = true,
+                    supportedSampleRatesHz = listOf(48_000),
+                    selectedSampleRateHz = request.preferredSampleRateHz,
+                    channelCount = request.channelCount,
+                    timestampSupport = AudioTimestampQuality.AudioRecordTimestamp,
+                )
+            },
+        )
+        val client = validator()
+        val profile = profile(CapabilityBits.CHANNEL_SYSTEM_AUDIO)
+
+        assertEquals(SessionSetupError.None, host.validate(SessionRole.Host, profile, configuration))
+        assertEquals(1, hostCaptureQueries)
+        assertEquals(SessionSetupError.None, client.validate(SessionRole.Client, profile, configuration))
+    }
+
+    @Test
     fun hostInputRequiresLiveInjectionBackendAndExactConvergenceProfile() {
         val config = InputStreamConfiguration(
             inputKinds = CapabilityBits.INPUT_KEYBOARD,
@@ -127,11 +153,13 @@ class AndroidExactStreamConfigurationValidatorTest {
     private fun validator(
         encoder: RecordingEncoderDiscovery = RecordingEncoderDiscovery(true),
         decoder: RecordingDecoderDiscovery = RecordingDecoderDiscovery(true, true),
+        systemAudio: ExactAudioCaptureCapabilityQuery? = null,
         microphone: ExactAudioCaptureCapabilityQuery? = null,
         inputInjection: ExactInputBackendAvailability = ExactInputBackendAvailability { false },
     ) = AndroidExactStreamConfigurationValidator(
         videoEncoderDiscovery = encoder,
         videoDecoderDiscovery = decoder,
+        systemAudioCapture = systemAudio,
         microphoneCapture = microphone,
         inputInjectionAvailable = inputInjection,
     )

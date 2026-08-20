@@ -33,6 +33,7 @@ import io.warpnect.session.security.SessionProtectionError
 import io.warpnect.session.setup.SessionSetupController
 import io.warpnect.session.setup.SessionSetupError
 import io.warpnect.session.setup.SessionSetupRuntime
+import io.warpnect.session.setup.retainOnlySelectedChannels
 import java.net.InetAddress
 import java.security.SecureRandom
 
@@ -266,6 +267,7 @@ class ControllerBackedClientSessionPhaseDriver(
         if (closed) return SecureSessionIntegrationError.Closed
         val runtime = setupRuntimeFactory.create(bootstrap, request)
             ?: return SecureSessionIntegrationError.SessionSetupFailed
+        val preferences = request.setupPreferences.retainOnlySelectedChannels(bootstrap.profile)
         val controller = setupFactory.create { prepared -> this.listener?.onPrepared(prepared) }
         synchronized(lock) {
             if (closed || setup != null) {
@@ -275,7 +277,7 @@ class ControllerBackedClientSessionPhaseDriver(
             this.listener = listener
             setup = controller
         }
-        return controller.beginClient(bootstrap, runtime, request.setupPreferences).toIntegrationError()
+        return controller.beginClient(bootstrap, runtime, preferences).toIntegrationError()
     }
 
     override fun beginReconnect(

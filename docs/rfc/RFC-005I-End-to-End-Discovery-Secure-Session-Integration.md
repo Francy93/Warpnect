@@ -18,7 +18,7 @@ rebinds that adopted live native transport in place, retaining its ChannelId and
 Generation reconnection closes the generation-N protection controller and creates a fresh
 generation-N+1 controller from the new WNSH root; a closed protection controller is never revived.
 
-The final current-worktree verification passed: `ktlintCheck`, `lintDebug`, 422 JVM tests,
+The final current-worktree verification passed: `ktlintCheck`, `lintDebug`, 425 JVM tests,
 `assembleDebug`, `assembleDebugAndroidTest`, three Android native ABIs, native Debug/Release builds,
 and 20/20 CTest in both configurations. `adb` was found and executed but reported zero devices, so
 Android, Wi-Fi Direct, real-media, migration, reconnect, and multi-device results remain validation
@@ -68,6 +68,13 @@ the RFC-005A hard maximum of eight while the configured Host client policy remai
 It maps one logical SessionId to its current generation and never consumes a second slot.
 
 `SessionPipelineRuntime` validates that components cover exactly the committed selected channels.
+The normal production request requires Video and Input and prefers SystemAudio when the current Host
+privileged AudioPolicy capture probe and Client Opus/Oboe playback probe both succeed. It retains
+the RFC-003H stereo profile of 48 kHz, 5 ms, and 128 kb/s. If those probes or exact setup validation
+fail, SystemAudio is not selected; if it is selected, startup must succeed or the complete Session
+rolls back. MicrophoneAudio remains disabled because no legitimate Host sink is implemented, and
+Telemetry remains disabled because no bounded Phase 5 adopter exists.
+
 The startup transaction is:
 
 ```text
@@ -97,11 +104,16 @@ leaves 1156 bytes of inner SCL after the fixed 44-byte WNSD overhead. FEC remain
 and authenticated NACK retransmits the exact protected cached datagram. RFC-005I adds no packet
 queue, PCM queue, encoded AU queue, jitter buffer, per-packet Kotlin crypto, or per-packet JNI.
 
-SystemAudio and MicrophoneAudio retain RFC-005G's exact Phase 3 Opus selection, normally 48 kHz and
-5 ms, with no new recovery policy. Separate microphone routing remains one independent
-MicrophoneAudio ChannelId per Session; this RFC adds no mixer. One Input Channel continues to carry
-multiple session-scoped controller `deviceSlot` values. InputManager limitations do not become a
-claim of stable gamepad identity or a production UHID backend.
+For a selected SystemAudio channel, the Host path is privileged AudioPolicy loopback capture,
+shared PCM ring, RestrictedLowDelay Opus, and the adopted protected sender. The Client path is the
+adopted protected receiver, Opus decode, existing bounded playback ring, and Oboe. The existing
+audio Session controllers open/adopt transport and prepare Opus before physical capture begins;
+the receiver starts its protected runtime before the first live frame is relied upon. No new audio
+queue, NACK, FEC, or reorder wait is introduced. MicrophoneAudio remains disabled because no
+legitimate Host destination is implemented, so this RFC adds no mixer, virtual microphone, or OS
+microphone injection. One Input Channel continues to carry multiple session-scoped controller
+`deviceSlot` values. InputManager limitations do not become a claim of stable gamepad identity or a
+production UHID backend.
 
 ## Lifecycle, Limits, and Audit
 

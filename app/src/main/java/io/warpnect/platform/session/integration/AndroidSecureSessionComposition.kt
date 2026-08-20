@@ -101,6 +101,8 @@ import io.warpnect.session.pairing.PairingError
 import io.warpnect.session.pairing.PairingEventListener
 import io.warpnect.session.pairing.PairingVerificationPrompt
 import io.warpnect.session.security.SessionProtectionController
+import io.warpnect.session.setup.AudioStreamMode
+import io.warpnect.session.setup.AudioStreamPreference
 import io.warpnect.session.setup.HostSessionSetupPolicy
 import io.warpnect.session.setup.PathSocketBinding
 import io.warpnect.session.setup.PreparedSessionBootstrap
@@ -396,7 +398,7 @@ class AndroidSecureSessionComposition private constructor(
                 AudioCaptureRequest(
                     source = AudioCaptureSource.SystemAudio,
                     preferredSampleRateHz = 48_000,
-                    channelCount = 1,
+                    channelCount = 2,
                     targetChunkDurationUs = 5_000L,
                 ),
             )
@@ -412,9 +414,9 @@ class AndroidSecureSessionComposition private constructor(
                 AudioEncoderRequest(
                     source = AudioCaptureSource.SystemAudio,
                     sampleRateHz = 48_000,
-                    channelCount = 1,
+                    channelCount = 2,
                     frameDurationUs = 5_000,
-                    bitrateBps = 64_000,
+                    bitrateBps = 128_000,
                 ),
             )
             val injection = if (role == SessionRole.Host) {
@@ -585,9 +587,8 @@ class AndroidSecureSessionComposition private constructor(
 
         private fun productionCapabilityRequest(): CapabilityRequest = CapabilityRequest(
             requiredChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
-            preferredChannels = 0,
-            disabledChannels = CapabilityBits.CHANNEL_SYSTEM_AUDIO or CapabilityBits.CHANNEL_MICROPHONE_AUDIO or
-                CapabilityBits.CHANNEL_TELEMETRY,
+            preferredChannels = CapabilityBits.CHANNEL_SYSTEM_AUDIO,
+            disabledChannels = CapabilityBits.CHANNEL_MICROPHONE_AUDIO or CapabilityBits.CHANNEL_TELEMETRY,
             requiredInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
             preferredInputKinds = 0,
             microphonePolicyPrimary = MicrophoneRoutingSelection.NotApplicable,
@@ -600,7 +601,8 @@ class AndroidSecureSessionComposition private constructor(
         )
 
         private fun productionHostCapabilityPolicy(): HostCapabilityPolicy = HostCapabilityPolicy(
-            allowedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
+            allowedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_SYSTEM_AUDIO or
+                CapabilityBits.CHANNEL_INPUT,
             mandatoryChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
             // Availability still comes from WNCP snapshots; this policy merely permits the
             // production RFC-005G backend when Android currently makes it usable.
@@ -624,6 +626,16 @@ class AndroidSecureSessionComposition private constructor(
                         fps = 60,
                         bitrateBps = 8_000_000L,
                         flags = CapabilityBits.VIDEO_KEYFRAME_REQUEST or CapabilityBits.VIDEO_RESYNC,
+                    ),
+                ),
+            ),
+            systemAudio = AudioStreamPreference(
+                listOf(
+                    AudioStreamMode(
+                        sampleRateHz = 48_000,
+                        frameDurationUs = 5_000,
+                        channelCount = 2,
+                        bitrateBps = 128_000,
                     ),
                 ),
             ),

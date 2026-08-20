@@ -28,6 +28,28 @@ class CapabilityNegotiatorTest {
     }
 
     @Test
+    fun productionLikePolicySelectsPreferredSystemAudioWhenTheHostAndClientRolesSupportIt() {
+        val request = request(
+            required = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
+            preferred = CapabilityBits.CHANNEL_SYSTEM_AUDIO,
+            disabled = CapabilityBits.CHANNEL_MICROPHONE_AUDIO or CapabilityBits.CHANNEL_TELEMETRY,
+        )
+        val policy = HostCapabilityPolicy(
+            allowedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_SYSTEM_AUDIO or
+                CapabilityBits.CHANNEL_INPUT,
+            mandatoryChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
+        )
+
+        val result = CapabilityNegotiator.negotiate(client(), request, host(), policy)
+
+        assertTrue(result.isSuccess)
+        val profile = requireNotNull(result.profile)
+        assertTrue(profile.selectedChannels and CapabilityBits.CHANNEL_SYSTEM_AUDIO != 0)
+        assertEquals(2, profile.systemAudioMaxChannels)
+        assertEquals(NegotiatedCapabilityProfile.AUDIO_CODEC_OPUS, profile.audioCodec)
+    }
+
+    @Test
     fun directDiscoveryCannotOverclaimADataPath() {
         val host = host().copy(paths = PathCapabilities(CapabilityBits.PATH_LAN, CapabilityBits.PATH_LAN, 1, 0))
         val client = client().copy(

@@ -56,7 +56,8 @@ class PreparedSessionMigrationAdapterTest {
     @Test
     fun adoptedLiveChannelsRebindInPlaceWithoutPreparingReplacementTransports() {
         val video = channel(ChannelId.requireValid(1u), SessionChannelKind.Video, 41_000)
-        val input = channel(ChannelId.requireValid(2u), SessionChannelKind.Input, 41_001)
+        val systemAudio = channel(ChannelId.requireValid(2u), SessionChannelKind.SystemAudio, 41_001)
+        val input = channel(ChannelId.requireValid(3u), SessionChannelKind.Input, 41_002)
         val runtime = TestProtectionRuntime()
         val control = TestControl()
         val bootstrap = PreparedSessionBootstrap(
@@ -82,7 +83,7 @@ class PreparedSessionMigrationAdapterTest {
                 "192.168.1.2",
                 "192.168.1.1",
             ),
-            channels = listOf(video, input),
+            channels = listOf(video, systemAudio, input),
             secureSessionControl = control,
             protectionRuntime = runtime,
             admissionReservation = null,
@@ -91,12 +92,16 @@ class PreparedSessionMigrationAdapterTest {
             preparedConfigurationHash = ByteArray(32) { 7 },
         )
         val originalVideoLease = video.localLease
+        val originalSystemAudioLease = systemAudio.localLease
         val originalInputLease = input.localLease
         val originalVideoTransport = video.transport
+        val originalSystemAudioTransport = systemAudio.transport
         val originalInputTransport = input.transport
         val originalVideoContext = video.protection.contextIds
+        val originalSystemAudioContext = systemAudio.protection.contextIds
         val originalInputContext = input.protection.contextIds
         var videoStarts = 0
+        var systemAudioStarts = 0
         var inputStarts = 0
         var videoResyncs = 0
         val videoPipeline = component(
@@ -105,17 +110,26 @@ class PreparedSessionMigrationAdapterTest {
             onStart = { videoStarts += 1 },
             onMigration = { videoResyncs += 1 },
         )
+        val systemAudioPipeline = component(
+            "system-audio",
+            SessionChannelKind.SystemAudio,
+            onStart = { systemAudioStarts += 1 },
+        )
         val inputPipeline = component("input", SessionChannelKind.Input, onStart = { inputStarts += 1 })
-        val pipeline = SessionPipelineRuntime(bootstrap, listOf(videoPipeline, inputPipeline))
+        val pipeline = SessionPipelineRuntime(bootstrap, listOf(videoPipeline, systemAudioPipeline, inputPipeline))
         assertEquals(SecureSessionIntegrationError.None, pipeline.start())
         val rebound = mutableListOf<Pair<ChannelId, Int>>()
         video.adoptLiveTransport { lease, _, port ->
             rebound += video.descriptor.channelId to port
             lease.localPort == 45_000
         }
+        systemAudio.adoptLiveTransport { lease, _, port ->
+            rebound += systemAudio.descriptor.channelId to port
+            lease.localPort == 45_001
+        }
         input.adoptLiveTransport { lease, _, port ->
             rebound += input.descriptor.channelId to port
-            lease.localPort == 45_001
+            lease.localPort == 45_002
         }
 
         val allocator = TestAllocator()
@@ -136,40 +150,53 @@ class PreparedSessionMigrationAdapterTest {
         )
 
         val preparation = requireNotNull(
-            adapter.prepareChannels(target, listOf(SessionChannelKind.Video, SessionChannelKind.Input)),
+            adapter.prepareChannels(
+                target,
+                listOf(SessionChannelKind.Video, SessionChannelKind.SystemAudio, SessionChannelKind.Input),
+            ),
         )
         val result = adapter.commit(
             target,
             preparation,
             listOf(
                 PathMigrationEntry(video.descriptor.channelId, 46_000),
-                PathMigrationEntry(input.descriptor.channelId, 46_001),
+                PathMigrationEntry(systemAudio.descriptor.channelId, 46_001),
+                PathMigrationEntry(input.descriptor.channelId, 46_002),
             ),
         )
 
         assertEquals(SessionLifecycleError.None, result)
         assertEquals(0, preparer.calls)
         assertEquals(
-            listOf(video.descriptor.channelId to 46_000, input.descriptor.channelId to 46_001),
+            listOf(
+                video.descriptor.channelId to 46_000,
+                systemAudio.descriptor.channelId to 46_001,
+                input.descriptor.channelId to 46_002,
+            ),
             rebound,
         )
         assertSame(originalVideoTransport, video.transport)
+        assertSame(originalSystemAudioTransport, systemAudio.transport)
         assertSame(originalInputTransport, input.transport)
         assertEquals(originalVideoContext, video.protection.contextIds)
+        assertEquals(originalSystemAudioContext, systemAudio.protection.contextIds)
         assertEquals(originalInputContext, input.protection.contextIds)
         assertEquals(0, runtime.createdChannelContexts)
-        assertEquals(2, runtime.reboundChannels.size)
+        assertEquals(3, runtime.reboundChannels.size)
         assertEquals(0, control.rebindCalls)
         assertEquals(target, committedControlPath)
         assertEquals(PathId.requireValid(2u), video.descriptor.pathId)
         assertEquals(PathId.requireValid(2u), input.descriptor.pathId)
         assertTrue((originalVideoLease as TestLease).closed)
+        assertTrue((originalSystemAudioLease as TestLease).closed)
         assertTrue((originalInputLease as TestLease).closed)
         assertFalse((video.localLease as TestLease).closed)
+        assertFalse((systemAudio.localLease as TestLease).closed)
         assertFalse((input.localLease as TestLease).closed)
         pipeline.onPathMigrationCommitted()
         assertEquals(1, videoResyncs)
         assertEquals(1, videoStarts)
+        assertEquals(1, systemAudioStarts)
         assertEquals(1, inputStarts)
     }
 
@@ -195,7 +222,7 @@ class PreparedSessionMigrationAdapterTest {
         ChannelDescriptor(
             id,
             kind,
-            if (kind == SessionChannelKind.Video) {
+            if (kind in setOf(SessionChannelKind.Video, SessionChannelKind.SystemAudio)) {
                 SessionChannelDirection.HostToClient
             } else {
                 SessionChannelDirection.ClientToHost
@@ -215,7 +242,8 @@ class PreparedSessionMigrationAdapterTest {
     )
 
     private fun profile() = NegotiatedCapabilityProfile(
-        selectedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
+        selectedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_SYSTEM_AUDIO or
+            CapabilityBits.CHANNEL_INPUT,
         eligiblePathKinds = CapabilityBits.PATH_DIRECT or CapabilityBits.PATH_LAN,
         secureDatagramBytes = 1_200,
         maxSessionChannels = 32,
@@ -227,11 +255,11 @@ class PreparedSessionMigrationAdapterTest {
         videoMaxHeight = 1_080,
         videoMaxFps = 60,
         videoMaxBitrateBps = 20_000_000,
-        audioCodec = NegotiatedCapabilityProfile.AUDIO_CODEC_NONE,
-        audioFrameDurationMask = 0,
-        audioPayloadVersion = 0,
-        audioSampleRateMask = 0,
-        systemAudioMaxChannels = 0,
+        audioCodec = NegotiatedCapabilityProfile.AUDIO_CODEC_OPUS,
+        audioFrameDurationMask = CapabilityBits.AUDIO_FRAME_5_MS,
+        audioPayloadVersion = 1,
+        audioSampleRateMask = CapabilityBits.AUDIO_SAMPLE_RATE_48_KHZ,
+        systemAudioMaxChannels = 2,
         microphoneMaxChannels = 0,
         microphoneRoutingPolicy = MicrophoneRoutingSelection.NotApplicable,
         inputPayloadVersion = 1,

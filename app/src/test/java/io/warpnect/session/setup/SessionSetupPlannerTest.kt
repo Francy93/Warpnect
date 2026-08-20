@@ -8,6 +8,7 @@ import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.capability.MicrophoneRoutingSelection
 import io.warpnect.session.capability.NegotiatedCapabilityProfile
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -125,6 +126,30 @@ class SessionSetupPlannerTest {
             SessionSetupError.ExactAudioConfigurationUnavailable,
             SessionSetupPlanner.validateExactPreferences(audioProfile, preferences),
         )
+    }
+
+    @Test
+    fun optionalPreferencesArePrunedAfterCapabilityNegotiationButSelectedChannelsRemainExact() {
+        val systemAudio = AudioStreamPreference(
+            listOf(AudioStreamMode(channelCount = 2, bitrateBps = 128_000)),
+        )
+        val requested = preferences().copy(systemAudio = systemAudio)
+
+        val withoutSystemAudio = requested.retainOnlySelectedChannels(profile())
+        assertNull(withoutSystemAudio.systemAudio)
+        assertTrue(withoutSystemAudio.isValidFor(profile()))
+
+        val withSystemAudio = profile().copy(
+            selectedChannels = profile().selectedChannels or CapabilityBits.CHANNEL_SYSTEM_AUDIO,
+            audioCodec = NegotiatedCapabilityProfile.AUDIO_CODEC_OPUS,
+            audioFrameDurationMask = CapabilityBits.AUDIO_FRAME_5_MS,
+            audioPayloadVersion = 1,
+            audioSampleRateMask = CapabilityBits.AUDIO_SAMPLE_RATE_48_KHZ,
+            systemAudioMaxChannels = 2,
+        )
+        val retained = requested.retainOnlySelectedChannels(withSystemAudio)
+        assertEquals(systemAudio, retained.systemAudio)
+        assertTrue(retained.isValidFor(withSystemAudio))
     }
 
     private fun profile() = NegotiatedCapabilityProfile(
