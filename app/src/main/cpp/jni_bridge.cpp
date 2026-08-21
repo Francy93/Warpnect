@@ -25,6 +25,7 @@
 #include "native_bridge.h"
 #include "packet_codec.h"
 #include "retransmission_cache.h"
+#include "runtime_telemetry.h"
 #include "session_protection.h"
 #include "udp_endpoint.h"
 #include "udp_socket.h"
@@ -1505,6 +1506,37 @@ extern "C" JNIEXPORT jint JNICALL
 Java_io_warpnect_NativeBridge_nativeProtocolAbiVersion(JNIEnv* /* env */, jclass /* clazz */) {
     const auto info = warpnect::scl::bridge::native_core_info();
     return static_cast<jint>(info.protocol_abi_version);
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeRuntimeTelemetrySnapshot(
+    JNIEnv* env, jclass /* clazz */, jobject output_buffer) {
+    constexpr jsize kResultValues = 5;
+    jlong values[kResultValues]{};
+    auto* const base = output_buffer == nullptr
+                           ? nullptr
+                           : static_cast<std::byte*>(env->GetDirectBufferAddress(output_buffer));
+    const jlong capacity = output_buffer == nullptr ? -1 : env->GetDirectBufferCapacity(output_buffer);
+    if (base == nullptr || capacity < 0) {
+        values[0] = 4;
+    } else {
+        try {
+            const auto result = warpnect::scl::runtime_telemetry::runtime_telemetry_registry().snapshot_into(
+                std::span<std::byte>(base, static_cast<std::size_t>(capacity)));
+            values[0] = static_cast<jlong>(result.status);
+            values[1] = static_cast<jlong>(result.required_bytes);
+            values[2] = static_cast<jlong>(result.bytes_written);
+            values[3] = static_cast<jlong>(result.sequence);
+            values[4] = static_cast<jlong>(result.source_monotonic_ns);
+        } catch (...) {
+            values[0] = 3;
+        }
+    }
+    jlongArray array = env->NewLongArray(kResultValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kResultValues, values);
+    }
+    return array;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

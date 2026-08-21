@@ -376,3 +376,10 @@ existing bounded controller timers and creates no per-session or per-channel med
 Oboe realtime callbacks, native UDP receive paths, Android input dispatch, and the privileged
 UserService retain their established execution contexts. No WNSL or allocation-heavy integration
 work runs in an audio, codec, or input hot callback.
+
+## RFC-006A Runtime Telemetry
+
+Telemetry introduces no permanent worker, executor, timer, queue, or per-channel thread. A producer
+updates its pre-bound metric primitive on its existing thread. Registration and unregistration run on
+the existing control path. An explicit snapshot runs on its caller's cold control/background context;
+future UI sampling must not invoke it from a real-time callback.

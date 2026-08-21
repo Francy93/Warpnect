@@ -542,3 +542,21 @@ Future native errors should cross the JNI boundary as explicit status values or 
 ## ABI Stability
 
 Native bridge ABI changes require an explicit bridge ABI version change and documentation. Protocol layout changes require an explicit protocol version change.
+
+## RFC-006A Native Runtime Telemetry
+
+```text
+native runtime producer thread
+        -> direct relaxed atomic metric update
+native RuntimeTelemetrySource
+        -> RuntimeTelemetryRegistry
+        -> one WNTM direct-buffer snapshot JNI call
+Kotlin NativeTelemetrySnapshotProvider
+        -> immutable TelemetrySnapshot
+```
+
+`WNTM` is a bounded, little-endian, in-process JNI representation only. It is never sent over UDP
+and does not use `PayloadType.Telemetry`. Counter, gauge, and histogram updates stay in native code;
+no packet, frame, audio, or input update performs JNI. The direct snapshot buffer is caller-owned
+and reused up to 256 KiB, while Kotlin may make bounded immutable copies only on the cold snapshot
+path.

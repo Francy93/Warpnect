@@ -34,6 +34,7 @@ import io.warpnect.platform.session.path.AndroidSessionControlPathRebinder
 import io.warpnect.platform.session.path.DirectPeerAddressResolver
 import io.warpnect.platform.session.security.NativeSessionProtectionRuntimeFactory
 import io.warpnect.platform.session.setup.AndroidExactStreamConfigurationValidator
+import io.warpnect.platform.telemetry.AndroidTelemetryClock
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.session.PathId
@@ -115,6 +116,9 @@ import io.warpnect.session.setup.VideoPreferencePolicy
 import io.warpnect.session.setup.VideoStreamMode
 import io.warpnect.session.setup.VideoStreamPreference
 import io.warpnect.session.trust.TrustedPeerStore
+import io.warpnect.telemetry.NativeTelemetrySnapshotProvider
+import io.warpnect.telemetry.NativeTelemetrySourceScopeResolver
+import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.video.decoder.VideoDecoderConfig
 import io.warpnect.video.encoder.VideoEncoderRequest
 import java.net.DatagramSocket
@@ -197,6 +201,16 @@ class AndroidSecureSessionComposition private constructor(
         )
 
         fun create(): AndroidSecureSessionComposition {
+            // Telemetry is observational: an unavailable native collector never blocks Sessions.
+            val telemetryHub = runCatching { TelemetryHub(AndroidTelemetryClock) }
+                .getOrElse { TelemetryHub.disabled() }
+            if (telemetryHub.enabled) {
+                runCatching {
+                    telemetryHub.registerProvider(
+                        NativeTelemetrySnapshotProvider(NativeTelemetrySourceScopeResolver { null }),
+                    )
+                }
+            }
             lateinit var client: SecureSessionCoordinator
             lateinit var host: SecureSessionCoordinator
 
@@ -330,6 +344,7 @@ class AndroidSecureSessionComposition private constructor(
                 sessionManager = sessionManager,
                 secureSessionCoordinator = client,
                 secureSessionApplicationController = application,
+                telemetryHub = telemetryHub,
             )
             return AndroidSecureSessionComposition(
                 orchestrator,

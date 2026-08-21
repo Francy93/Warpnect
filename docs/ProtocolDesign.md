@@ -1593,3 +1593,16 @@ records are ignored idempotently and cannot move a Session backwards.
 
 RFC-005I defines no version. PacketHeader V1, all existing payload formats, and all Phase 5 wire
 formats remain byte-for-byte unchanged.
+
+## RFC-006A Local Runtime Telemetry
+
+RFC-006A introduces Runtime Telemetry Model V1 as a local/non-wire schema. It does not define a
+Telemetry network payload, message type, PacketHeader field, or remote export. `PayloadType.Telemetry`
+remains frozen and unused by this RFC.
+
+The local Native Telemetry Snapshot Bridge V1 begins with the 32-byte little-endian `WNTM` header:
+magic, bridge version 1, header bytes 32, native snapshot sequence, provider-local monotonic
+timestamp, record count, and total bytes. Each record has the 16-byte `(source id, metric id, kind,
+flags, payload bytes, zero reserved fields)` header. Counter payloads are u64, gauges are explicit
+validity plus i64, and fixed histograms carry count/sum/min/max plus bucket counts. This format stays
+inside the process boundary and is collected as one bounded JNI batch per native provider snapshot.

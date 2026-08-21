@@ -245,6 +245,19 @@ RFC-005I is integration-only. It introduces no protocol version and does not bum
 SCL, Native ABI, Discovery, Pairing, Handshake, Packet Protection, Capability Negotiation, Session
 Setup, Session Lifecycle, Video, Audio, or Input versions.
 
+## Runtime Telemetry Model Version
+
+Current value:
+
+```text
+1 (LOCAL / NON-WIRE)
+```
+
+Runtime Telemetry Model Version defines RFC-006A's local in-process descriptor, scope, snapshot,
+and JNI batch representation. It is not an SCL, discovery, pairing, Session, media, input, or
+network protocol version. RFC-006A does not activate or define a payload for `PayloadType.Telemetry`
+and does not change Architecture Version 1.0, SCL Protocol Version 1, or Native Bridge ABI Version 1.
+
 ## Application Version
 
 Current value:

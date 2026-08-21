@@ -548,3 +548,23 @@ duplicate media transmission.
 > The application-scoped Android Direct backend owns the single ref-counted Host Group Owner resource.
 > Per-Session Direct coordinators receive only bounded path leases and candidate sockets; normal
 > operation never uses process-wide network binding.
+
+## Phase 6 Runtime Telemetry
+
+> Runtime telemetry is observational. Telemetry collection, failure, source-capacity exhaustion, or
+> disablement must not alter Session, media, transport, security, or input correctness.
+
+> Hot-path metric updates are bounded and allocation-free. They perform no JNI transition, string
+> lookup, global-registry lookup, blocking lock, or telemetry-thread dispatch.
+
+> Metric cardinality is structurally bounded through typed Process, Session, Path, Channel, and
+> Component scopes rather than arbitrary runtime labels.
+
+> Runtime telemetry records no cryptographic secret, packet payload, pairing value, persistent peer
+> identity, or semantic keyboard/touch content.
+
+> Telemetry snapshots are non-destructive and may be weakly consistent across independent atomic
+> metrics. Streaming is never paused to obtain a globally transactional image.
+
+> Native telemetry is collected through one batched cold-path bridge per provider snapshot, never
+> one JNI call per metric.

@@ -28,6 +28,7 @@ import io.warpnect.session.pairing.PairingController
 import io.warpnect.session.security.SessionProtectionController
 import io.warpnect.session.setup.SessionSetupController
 import io.warpnect.session.trust.TrustedPeerStore
+import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.encoder.VideoEncoderController
 import io.warpnect.video.render.VideoRenderController
@@ -82,6 +83,8 @@ class CoreOrchestrator(
     val secureSessionCoordinator: SecureSessionCoordinator? = null,
     /** Application-facing Host/Client composition; it never accepts a manually entered endpoint. */
     val secureSessionApplicationController: SecureSessionApplicationController? = null,
+    /** Local observational telemetry outlives all runtime sources and closes last. */
+    val telemetryHub: TelemetryHub? = null,
 ) {
     private val _role = MutableStateFlow<WarpnectRole>(WarpnectRole.Receiver)
     val role: StateFlow<WarpnectRole> = _role.asStateFlow()
@@ -138,6 +141,7 @@ class CoreOrchestrator(
         microphoneAudioDecoderController?.close()
         systemAudioPlaybackController?.close()
         microphoneAudioPlaybackController?.close()
+        telemetryHub?.close()
         enterIdle()
     }
 }

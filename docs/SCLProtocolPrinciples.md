@@ -296,3 +296,10 @@ Production Phase 5 sessions use negotiated endpoints and `ProtectedRequired` tra
 unprotected endpoints remain explicit legacy/developer paths and are never an integration fallback.
 Pipeline startup and lifecycle recovery add no queue of stale real-time data and alter none of SCL
 packet identity, packetization, FEC, NACK, ClockSync, or media/input payload semantics.
+
+## Runtime Telemetry
+
+Runtime Telemetry Model V1 is local instrumentation, not an SCL payload or control protocol.
+Pre-bound counters, gauges, and fixed histograms are observational and never influence reliability,
+path, codec, buffering, or security decisions. Telemetry snapshotting neither resets metrics nor
+pauses packet, frame, audio, or input processing.

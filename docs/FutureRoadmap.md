@@ -94,16 +94,16 @@ status.
 
 ## Phase 6 - Telemetry and Diagnostics
 
-Next: RFC-006A - Unified Runtime Telemetry Model.
+Status: in progress.
 
-Implement:
-
-- Real-time latency overlay.
-- Per-stage timing.
-- Network statistics.
-- Packet loss graphs.
-- Performance logging.
-- Benchmark tools.
+- RFC-006A - Unified Runtime Telemetry Model [complete]
+- RFC-006B - Media Pipeline Metrics Integration [next]
+- RFC-006C - Network & Recovery Diagnostics
+- RFC-006D - Latency Trace & Cross-Pipeline Correlation
+- RFC-006E - Diagnostic Logging & Bounded Event History
+- RFC-006F - Runtime Diagnostics UI
+- RFC-006G - Session Reports & Benchmark Export
+- RFC-006H - Diagnostics Integration & Validation
 
 ## Phase 7 - Optimization
 

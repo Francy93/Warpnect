@@ -246,6 +246,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-005G Endpoint, Channel & Stream Negotiation](docs/rfc/RFC-005G-Endpoint-Channel-Stream-Negotiation.md)
 - [RFC-005H Session Lifecycle, Disconnect & Reconnection](docs/rfc/RFC-005H-Session-Lifecycle-Disconnect-Reconnection.md)
 - [RFC-005I End-to-End Discovery & Secure Session Integration](docs/rfc/RFC-005I-End-to-End-Discovery-Secure-Session-Integration.md)
+- [RFC-006A Unified Runtime Telemetry Model](docs/rfc/RFC-006A-Unified-Runtime-Telemetry-Model.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -265,5 +266,13 @@ Phase 3 audio is implementation-complete. RFC-003A implements PCM capture founda
 Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defines Portable Input Payload Version 1, RFC-004B captures Android input, RFC-004C sends one immediate SCL UDP datagram per observation, RFC-004D injects Android-ready events through a Shizuku/Sui UserService, RFC-004E supplies endpoint-local viewport and target-display semantics, RFC-004F composes the end-to-end path, and RFC-004G adds no-wait bounded state convergence. Full-state input converges from newer accepted state, stale state cannot resurrect released controls, critical transitions use immediate duplicate submissions, and touch repair uses stable pointer IDs. Real-device privileged injection, observed InputManager device identity, UHID availability, and game compatibility remain device-specific and pending where not measured.
 
 Phase 5 is implementation-complete through RFC-005I. `SecureSessionCoordinator` composes trusted/pairing identity, WNSH, WNSD, WNCP, WNSN, and WNSL into a transactional startup model with no manual endpoint or plaintext fallback. The Android composition root and normal Host/Client UI adopt each RFC-005G prepared protected transport into the existing Video, Audio, and Input runtime controllers. SystemAudio is preferred only when the current Host privileged capture and Client playback probes support its existing 48 kHz, 5 ms, stereo Opus path; MicrophoneAudio and Telemetry remain unselected until their real Host/runtime adopters exist. The final current-worktree Gradle/native matrix is green; Android and two-device validation remain explicitly tracked separately.
+
+Phase 6 telemetry foundation begins with RFC-006A. Warpnect now has Runtime Telemetry Model V1, a
+bounded local model shared by Kotlin/platform control code and native SCL components. Metric names,
+IDs, kinds, units, and typed scopes are static; hot updates use pre-bound counters, gauges, or fixed
+histograms without JNI, string lookup, registry lookup, allocation, or a telemetry worker. Snapshots
+are explicit, non-destructive cold-path reads. Native telemetry is collected through one bounded WNTM
+batch rather than one JNI call per metric. Telemetry is observational only and is not transmitted to
+the peer; RFC-006A does not yet instrument every Video, Audio, Input, network, or latency event.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

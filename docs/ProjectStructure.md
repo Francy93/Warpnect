@@ -761,3 +761,27 @@ app/src/main/java/io/warpnect/session/integration/
 This package is a per-logical-session composition and ownership layer. It delegates discovery,
 pairing, handshake, capability, setup, and lifecycle work to their existing controllers; it does
 not define another protocol implementation or a global current Session.
+
+## RFC-006A Runtime Telemetry
+
+```text
+app/src/main/java/io/warpnect/telemetry/
+  TelemetryModel.kt
+  TelemetryPrimitives.kt
+  TelemetryHub.kt
+  TelemetrySnapshot.kt
+  NativeTelemetrySnapshotProvider.kt
+app/src/main/java/io/warpnect/platform/telemetry/
+  AndroidTelemetryClock.kt
+app/src/main/cpp/include/
+  runtime_telemetry.h
+app/src/main/cpp/src/
+  runtime_telemetry.cpp
+native/tests/
+  scl_runtime_telemetry_tests.cpp
+```
+
+`telemetry/` owns static descriptors, typed bounded scopes, direct update handles, and immutable
+on-demand snapshots. `platform/telemetry` supplies only the Android monotonic clock. The portable
+native registry owns C++20 atomics and WNTM serialization. None of these packages owns a sampler,
+history, exporter, remote protocol, media queue, or runtime decision loop.

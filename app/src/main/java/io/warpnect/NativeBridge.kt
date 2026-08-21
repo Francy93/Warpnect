@@ -17,6 +17,9 @@ internal object NativeBridge {
     private external fun nativeProtocolAbiVersion(): Int
 
     @JvmStatic
+    private external fun nativeRuntimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray
+
+    @JvmStatic
     private external fun nativeSessionProtectionCreate(
         rootSecret: ByteArray,
         sessionId: ByteArray,
@@ -631,6 +634,9 @@ internal object NativeBridge {
         protocolVersion = nativeProtocolVersion(),
         nativeBridgeAbiVersion = nativeProtocolAbiVersion(),
     )
+
+    /** Cold-path batch collection only; no metric update crosses JNI. */
+    fun runtimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray = nativeRuntimeTelemetrySnapshot(outputBuffer)
 
     fun sessionProtectionCreate(
         rootSecret: ByteArray,
