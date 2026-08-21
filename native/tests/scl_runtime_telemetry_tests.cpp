@@ -152,12 +152,30 @@ void test_registry_snapshot_and_buffer_bound() {
            "unregistered source is absent from future snapshots");
 }
 
+void test_registry_accepts_caller_owned_source_id() {
+    RuntimeTelemetryRegistry registry{};
+    const auto registration = registry.register_source_with_id(
+        91, {RuntimeTelemetryMetricDefinition{.metric_id = 0x0420,
+                                               .kind = RuntimeTelemetryMetricKind::CounterU64}});
+    expect(registration.source != nullptr && registration.source->source_id() == 91,
+           "native callback source preserves the Kotlin-assigned source id");
+    registration.source->counter(0x0420)->increment();
+    std::array<std::byte, 128> output{};
+    const auto result = registry.snapshot_into(output);
+    expect(result.status == RuntimeTelemetrySnapshotStatus::Success,
+           "caller-owned native source is included in the batched snapshot");
+    expect(read_u32(output, 32) == 91 && read_u16(output, 36) == 0x0420 &&
+               read_u64(output, 48) == 1,
+           "caller-owned source keeps its metric identity and counter value");
+}
+
 } // namespace
 
 int main() {
     test_primitives();
     test_histogram_concurrency();
     test_registry_snapshot_and_buffer_bound();
+    test_registry_accepts_caller_owned_source_id();
     if (failures != 0) {
         std::cerr << failures << " runtime telemetry test failure(s)\n";
         return 1;

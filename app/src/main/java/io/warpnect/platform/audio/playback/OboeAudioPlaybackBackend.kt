@@ -37,6 +37,8 @@ internal interface OboeAudioPlaybackBackend {
 
     fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot
 
+    fun attachTelemetry(handle: Long, sourceId: Long): AudioPlaybackError = AudioPlaybackError.None
+
     fun destroy(handle: Long): AudioPlaybackError
 }
 
@@ -111,6 +113,9 @@ internal object NativeOboeAudioPlaybackBackend : OboeAudioPlaybackBackend {
 
     override fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot =
         audioPlaybackSnapshotFrom(NativeBridge.audioPlaybackSnapshot(handle), state)
+
+    override fun attachTelemetry(handle: Long, sourceId: Long): AudioPlaybackError =
+        AudioPlaybackError.fromNativeCode(NativeBridge.audioPlaybackAttachTelemetry(handle, sourceId))
 
     override fun destroy(handle: Long): AudioPlaybackError =
         AudioPlaybackError.fromNativeCode(NativeBridge.audioPlaybackDestroy(handle))

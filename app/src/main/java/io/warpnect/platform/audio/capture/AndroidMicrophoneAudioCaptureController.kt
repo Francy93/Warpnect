@@ -24,12 +24,14 @@ import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampAnchor
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.telemetry.AudioSenderTelemetry
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class AndroidMicrophoneAudioCaptureController(
     private val context: Context,
     private val clockNs: () -> Long = AudioCaptureClock::monotonicNs,
+    private val telemetry: AudioSenderTelemetry? = null,
 ) : AudioCaptureController {
     private val lock = Any()
     private val core = AudioCaptureControllerCore()
@@ -243,6 +245,7 @@ class AndroidMicrophoneAudioCaptureController(
                         captureTimeNs = timing.captureTimeNs,
                         timestampQuality = timing.timestampQuality,
                     )
+                    telemetry?.capturedSamples?.add(frameCount.toULong())
                 } catch (_: RuntimeException) {
                     core.recordSinkFailure()
                     failFromCaptureThread(AudioCaptureError.SinkFailure)

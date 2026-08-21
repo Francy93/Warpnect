@@ -383,3 +383,10 @@ Telemetry introduces no permanent worker, executor, timer, queue, or per-channel
 updates its pre-bound metric primitive on its existing thread. Registration and unregistration run on
 the existing control path. An explicit snapshot runs on its caller's cold control/background context;
 future UI sampling must not invoke it from a real-time callback.
+
+## RFC-006B Media and Input Telemetry
+
+MediaCodec output/render callbacks, system-audio drain, microphone capture, native Opus work,
+Oboe's existing callback, Android input dispatch, and `WarpnectInputReceiver` retain their existing
+threads. RFC-006B adds no telemetry worker, media orchestration worker, per-channel executor, or
+callback-to-telemetry queue.

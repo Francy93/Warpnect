@@ -9,6 +9,7 @@ import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureResult
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.telemetry.AudioSenderTelemetry
 
 internal class AndroidSystemAudioCaptureController(
     context: Context,
@@ -17,6 +18,7 @@ internal class AndroidSystemAudioCaptureController(
     ) -> PrivilegedAudioCaptureGateway = { onServiceDied ->
         ShizukuAudioCaptureGateway(context, onServiceDied)
     },
+    private val telemetry: AudioSenderTelemetry? = null,
 ) : AudioCaptureController {
     private val lock = Any()
     private val core = AudioCaptureControllerCore()
@@ -27,6 +29,7 @@ internal class AndroidSystemAudioCaptureController(
 
     private var sink: PcmAudioSink? = null
     private var drain: SharedPcmAudioDrain? = null
+    private var observedRingOverruns = 0
 
     override fun queryCapabilities(request: AudioCaptureRequest): AudioCaptureCapabilities {
         if (request.source != AudioCaptureSource.SystemAudio) {
@@ -80,7 +83,13 @@ internal class AndroidSystemAudioCaptureController(
                     ackWriteFd = setup.ackWriteFd,
                     sink = sink,
                     onError = ::onDrainError,
-                    onRingState = core::recordRingState,
+                    onRingState = { occupancy, highWater, overruns ->
+                        core.recordRingState(occupancy, highWater)
+                        val delta = (overruns - observedRingOverruns).coerceAtLeast(0)
+                        if (delta > 0) telemetry?.captureOverruns?.add(delta.toULong())
+                        observedRingOverruns = overruns
+                    },
+                    onPcmAccepted = { frameCount -> telemetry?.capturedSamples?.add(frameCount.toULong()) },
                 )
                 core.completePrepare(
                     error = AudioCaptureError.None,
@@ -107,6 +116,7 @@ internal class AndroidSystemAudioCaptureController(
             core.completeStart(drainStart)
             return@synchronized AudioCaptureResult(drainStart, core.snapshot())
         }
+        observedRingOverruns = 0
         val startError = kotlinx.coroutines.runBlocking {
             gateway.startSystemAudioCapture()
         }

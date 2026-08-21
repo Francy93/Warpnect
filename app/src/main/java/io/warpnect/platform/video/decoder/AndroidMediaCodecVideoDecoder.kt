@@ -5,6 +5,7 @@ import android.media.MediaFormat
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
+import io.warpnect.telemetry.VideoDecoderTelemetry
 import io.warpnect.video.decoder.AvailableInputSlotTracker
 import io.warpnect.video.decoder.DecodedVideoFrame
 import io.warpnect.video.decoder.DecodedVideoOutputAction
@@ -33,6 +34,7 @@ class AndroidMediaCodecVideoDecoder(
     private val discovery: VideoDecoderDiscovery = AndroidVideoDecoderDiscovery(),
     private val clockUs: () -> Long = VideoDecoderClock::monotonicUs,
     private val drainTimeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS,
+    private val telemetry: VideoDecoderTelemetry? = null,
 ) : VideoDecoderController {
     private val codecThread = HandlerThread(THREAD_NAME).apply { start() }
     private val codecHandler = Handler(codecThread.looper)
@@ -326,6 +328,7 @@ class AndroidMediaCodecVideoDecoder(
         }
 
         override fun onError(codec: MediaCodec, exception: MediaCodec.CodecException) {
+            telemetry?.errors?.increment()
             core.fail(
                 error = VideoDecoderError.CodecRuntimeError,
                 diagnosticInfo = exception.diagnosticInfo,
@@ -341,6 +344,7 @@ class AndroidMediaCodecVideoDecoder(
     private val frameRenderedListener = MediaCodec.OnFrameRenderedListener { _, presentationTimeUs, nanoTime ->
         val event = VideoDecoderFrameRenderedEvent(presentationTimeUs, nanoTime)
         core.recordFrameRendered(event)
+        telemetry?.renderNotifications?.increment()
         publishSnapshot()
         runCatching { outputSink?.onFrameRendered(event) }
     }
@@ -411,6 +415,7 @@ class AndroidMediaCodecVideoDecoder(
         }
         try {
             codec.queueInputBuffer(index, 0, result.size, result.presentationTimeUs, 0)
+            telemetry?.accessUnits?.increment()
             core.recordInputQueued(result.size, result.presentationTimeUs)
             publishSnapshot()
         } catch (_: Exception) {
@@ -431,6 +436,7 @@ class AndroidMediaCodecVideoDecoder(
     }
 
     private fun handleOutputFormat(format: MediaFormat) {
+        telemetry?.outputFormatChanges?.increment()
         val outputFormat = try {
             VideoDecoderOutputFormatExtractor.extract(format)
         } catch (_: Exception) {
@@ -471,6 +477,7 @@ class AndroidMediaCodecVideoDecoder(
             failAndStop(VideoDecoderError.OutputSinkFailure)
             return
         }
+        telemetry?.outputFrames?.increment()
         releaseOutput(codec, index, action, info.presentationTimeUs)
     }
 
@@ -487,6 +494,12 @@ class AndroidMediaCodecVideoDecoder(
                     codec.releaseOutputBuffer(index, release.timestampNs)
             }
             core.recordOutput(action, presentationTimeUs)
+            when (action) {
+                DecodedVideoOutputAction.Drop -> telemetry?.droppedByPolicy?.increment()
+                DecodedVideoOutputAction.RenderNow,
+                is DecodedVideoOutputAction.RenderAt,
+                -> telemetry?.releasedToSurface?.increment()
+            }
             publishSnapshot()
         } catch (_: Exception) {
             failAndStop(VideoDecoderError.OutputReleaseFailed)
@@ -494,6 +507,7 @@ class AndroidMediaCodecVideoDecoder(
     }
 
     private fun failAndStop(error: VideoDecoderError) {
+        telemetry?.errors?.increment()
         core.fail(error)
         publishSnapshot()
         runCatching { outputSink?.onDecoderError(error) }

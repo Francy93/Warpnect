@@ -2,6 +2,7 @@ package io.warpnect.input.transport
 
 import io.warpnect.input.capture.InputEventSink
 import io.warpnect.input.capture.InputSinkResult
+import io.warpnect.input.model.InputResetState
 import io.warpnect.input.model.WarpnectInputEvent
 import io.warpnect.input.performance.BoundedInputTimingHistogram
 import io.warpnect.input.performance.InputTimingDistribution
@@ -10,6 +11,7 @@ import io.warpnect.input.reliability.InputReliabilityClass
 import io.warpnect.input.reliability.InputReliabilityClassifier
 import io.warpnect.input.reliability.InputReliabilityClassifierSnapshot
 import io.warpnect.input.reliability.InputReliabilityConfig
+import io.warpnect.telemetry.InputSenderTelemetry
 
 data class InputSenderReliabilitySnapshot(
     val profile: InputPerformanceProfile = InputPerformanceProfile.BestEffortBaseline,
@@ -30,6 +32,7 @@ data class InputSenderReliabilitySnapshot(
 class SclInputEventSink(
     private val transport: InputTransportController,
     private val reliabilityConfig: InputReliabilityConfig = InputReliabilityConfig.bestEffortBaseline(),
+    private val telemetry: InputSenderTelemetry? = null,
 ) : InputEventSink {
     private val classifier = InputReliabilityClassifier(reliabilityConfig)
     private val submissionTiming = BoundedInputTimingHistogram()
@@ -82,6 +85,8 @@ class SclInputEventSink(
                 lastTransportError = if (successes == 0) lastError else InputTransportError.None,
             )
             return if (successes > 0) {
+                telemetry?.acceptedEvents?.increment()
+                if (event is InputResetState) telemetry?.resetsEmitted?.increment()
                 InputSinkResult.Accepted
             } else {
                 InputSinkResult.Rejected("Input transport $lastError")

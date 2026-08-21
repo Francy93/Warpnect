@@ -568,3 +568,13 @@ duplicate media transmission.
 
 > Native telemetry is collected through one batched cold-path bridge per provider snapshot, never
 > one JNI call per metric.
+
+> Media and input telemetry is recorded at the layer that owns the semantic event. It does not
+> copy a payload, add buffering, or bounce an event across JNI solely for instrumentation.
+
+> Video render notifications are observational Android callbacks, not a portable proof that a
+> frame was physically displayed. Oboe callbacks perform only pre-bound native atomic telemetry
+> operations; they never snapshot, allocate, lock, or query timestamps.
+
+> Input telemetry is aggregate and content-free: it never stores key codes, characters, button or
+> axis values, or pointer/touch coordinates.

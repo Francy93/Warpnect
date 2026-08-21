@@ -38,10 +38,12 @@ import io.warpnect.input.model.InputTouchAction
 import io.warpnect.input.model.InputTouchContact
 import io.warpnect.input.model.InputTouchFrame
 import io.warpnect.input.model.WarpnectInputEvent
+import io.warpnect.telemetry.InputSenderTelemetry
 import kotlin.math.max
 
 class AndroidInputCaptureController(
     context: Context,
+    private val telemetry: InputSenderTelemetry? = null,
 ) : InputCaptureController,
     InputManager.InputDeviceListener {
     private val appContext = context.applicationContext
@@ -334,11 +336,14 @@ class AndroidInputCaptureController(
         }
     }
 
-    override fun onInputDeviceAdded(deviceId: Int) = Unit
+    override fun onInputDeviceAdded(deviceId: Int) {
+        telemetry?.deviceAdded?.increment()
+    }
 
     override fun onInputDeviceChanged(deviceId: Int) = Unit
 
     override fun onInputDeviceRemoved(deviceId: Int) {
+        telemetry?.deviceRemoved?.increment()
         if (snapshot.state == InputCaptureState.Closed) return
         val removed = registry.removeAndroidDevice(deviceId)
         val nowUs = AndroidInputEventClock.callbackUptimeUs()
@@ -694,6 +699,7 @@ class AndroidInputCaptureController(
         }
         val callbackDelayUs = max(0L, AndroidInputEventClock.callbackUptimeUs() - eventTimeUs)
         val result = sink?.onInputEvent(eventTimeUs, event) ?: InputSinkResult.Rejected("No input sink")
+        if (result !is InputSinkResult.Rejected) telemetry?.capturedEvents?.increment()
         updateSnapshot {
             val counted = counter(it)
             counted.copy(

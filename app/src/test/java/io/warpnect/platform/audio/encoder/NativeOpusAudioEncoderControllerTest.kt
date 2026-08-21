@@ -10,6 +10,16 @@ import io.warpnect.audio.encoder.AudioEncoderSnapshot
 import io.warpnect.audio.encoder.AudioEncoderState
 import io.warpnect.audio.encoder.EncodedAudioFormat
 import io.warpnect.audio.encoder.EncodedAudioSink
+import io.warpnect.session.ChannelId
+import io.warpnect.session.SessionChannelDirection
+import io.warpnect.session.SessionChannelKind
+import io.warpnect.session.SessionGeneration
+import io.warpnect.session.SessionId
+import io.warpnect.telemetry.AudioSenderTelemetry
+import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryMetricIds
+import io.warpnect.telemetry.TelemetryMetricValue
+import io.warpnect.telemetry.TelemetryScope
 import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -183,11 +193,89 @@ class NativeOpusAudioEncoderControllerTest {
         assertEquals(0L, sink.frames.last().encodedFrameIndex)
     }
 
+    @Test
+    fun telemetryCountsOnlyFramesHandedToTheEncodedSink() {
+        val hub = TelemetryHub()
+        val telemetry = AudioSenderTelemetry.register(hub, telemetryScope())
+        val controller = NativeOpusAudioEncoderController(FakeOpusBackend(), telemetry)
+        controller.prepare(request(), RecordingEncodedSink())
+        controller.start()
+
+        assertEquals(
+            AudioEncoderError.None,
+            controller.submitPcm(
+                ByteBuffer.allocateDirect(480),
+                0,
+                480,
+                240,
+                0,
+                0,
+                AudioTimestampQuality.Unavailable,
+            ),
+        )
+
+        val snapshot = hub.snapshot()
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.AudioEncoderFrameOutput, 1u)
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.AudioEncoderByteOutput, 8u)
+        assertEquals(
+            1uL,
+            (
+                snapshot.records.single { it.metricId == TelemetryMetricIds.AudioEncoderFrameSize }.value as
+                    TelemetryMetricValue.Histogram
+                ).count,
+        )
+        telemetry.close()
+    }
+
+    @Test
+    fun telemetryCountsOneErrorForOneFailedEncodedSinkHandoff() {
+        val hub = TelemetryHub()
+        val telemetry = AudioSenderTelemetry.register(hub, telemetryScope())
+        val controller = NativeOpusAudioEncoderController(FakeOpusBackend(), telemetry)
+        controller.prepare(request(), RecordingEncodedSink(throwOnFrame = true))
+        controller.start()
+
+        assertEquals(
+            AudioEncoderError.OutputSinkFailure,
+            controller.submitPcm(
+                ByteBuffer.allocateDirect(480),
+                0,
+                480,
+                240,
+                0,
+                0,
+                AudioTimestampQuality.Unavailable,
+            ),
+        )
+
+        assertTelemetryCounter(hub.snapshot(), TelemetryMetricIds.AudioEncoderError, 1u)
+        telemetry.close()
+    }
+
     private fun request(): AudioEncoderRequest = AudioEncoderRequest(
         source = AudioCaptureSource.MicrophoneAudio,
         channelCount = 1,
         bitrateMode = AudioBitrateMode.ConstantBitrate,
     )
+
+    private fun telemetryScope(): TelemetryScope.Channel = TelemetryScope.Channel(
+        sessionId = SessionId.requireValid(1u, 2u),
+        generation = SessionGeneration.requireValid(1u),
+        channelId = ChannelId.requireValid(1u),
+        channelKind = SessionChannelKind.SystemAudio,
+        direction = SessionChannelDirection.HostToClient,
+    )
+
+    private fun assertTelemetryCounter(
+        snapshot: io.warpnect.telemetry.TelemetrySnapshot,
+        id: io.warpnect.telemetry.TelemetryMetricId,
+        expected: ULong,
+    ) {
+        assertEquals(
+            expected,
+            (snapshot.records.single { it.metricId == id }.value as TelemetryMetricValue.Counter).value,
+        )
+    }
 }
 
 private class RecordingEncodedSink(

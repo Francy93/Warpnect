@@ -118,6 +118,7 @@ import io.warpnect.session.setup.VideoStreamPreference
 import io.warpnect.session.trust.TrustedPeerStore
 import io.warpnect.telemetry.NativeTelemetrySnapshotProvider
 import io.warpnect.telemetry.NativeTelemetrySourceScopeResolver
+import io.warpnect.telemetry.NativeTelemetrySourceScopes
 import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.video.decoder.VideoDecoderConfig
 import io.warpnect.video.encoder.VideoEncoderRequest
@@ -190,6 +191,8 @@ class AndroidSecureSessionComposition private constructor(
         private val directPathBackend = AndroidDirectPathBackend.create(context)
         private val clientIo = AtomicReference<SecureSessionControlDatagramIo?>()
         private val hostIo = AtomicReference<SecureSessionControlDatagramIo?>()
+        private val telemetryHub = runCatching { TelemetryHub(AndroidTelemetryClock) }
+            .getOrElse { TelemetryHub.disabled() }
         private val pipelineFactory = AndroidSessionPipelineFactory(
             DefaultAndroidSessionPipelineBindings(
                 context,
@@ -198,16 +201,19 @@ class AndroidSecureSessionComposition private constructor(
                     clientInputSurface = uiResources::inputCaptureSurface,
                 ),
             ),
+            telemetryHub,
         )
 
         fun create(): AndroidSecureSessionComposition {
             // Telemetry is observational: an unavailable native collector never blocks Sessions.
-            val telemetryHub = runCatching { TelemetryHub(AndroidTelemetryClock) }
-                .getOrElse { TelemetryHub.disabled() }
             if (telemetryHub.enabled) {
                 runCatching {
                     telemetryHub.registerProvider(
-                        NativeTelemetrySnapshotProvider(NativeTelemetrySourceScopeResolver { null }),
+                        NativeTelemetrySnapshotProvider(
+                            NativeTelemetrySourceScopeResolver { sourceId ->
+                                NativeTelemetrySourceScopes.scopeFor(sourceId.value)
+                            },
+                        ),
                     )
                 }
             }

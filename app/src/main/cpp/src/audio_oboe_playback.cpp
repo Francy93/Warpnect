@@ -117,8 +117,28 @@ inline constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ULL;
 
 class OboeAudioPlayback::DataCallback final : public oboe::AudioStreamDataCallback {
 public:
-    DataCallback(std::shared_ptr<PcmPlaybackRing> ring, std::uint8_t channel_count)
-        : ring_(std::move(ring)), channel_count_(channel_count) {}
+    DataCallback(std::shared_ptr<PcmPlaybackRing> ring, std::uint8_t channel_count,
+                 std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source)
+        : ring_(std::move(ring)), channel_count_(channel_count) {
+        set_telemetry_source(std::move(telemetry_source));
+    }
+
+    void set_telemetry_source(
+        std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source) noexcept {
+        telemetry_source_ = std::move(telemetry_source);
+        callbacks_ = nullptr;
+        requested_samples_ = nullptr;
+        delivered_samples_ = nullptr;
+        underruns_ = nullptr;
+        ring_fill_ = nullptr;
+        if (telemetry_source_) {
+            callbacks_ = telemetry_source_->counter(0x0420);
+            requested_samples_ = telemetry_source_->counter(0x0421);
+            delivered_samples_ = telemetry_source_->counter(0x0422);
+            underruns_ = telemetry_source_->counter(0x0423);
+            ring_fill_ = telemetry_source_->gauge(0x0424);
+        }
+    }
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* /* audioStream */,
                                           void* audio_data,
@@ -127,13 +147,18 @@ public:
             return oboe::DataCallbackResult::Continue;
         }
         const auto safe_frames = static_cast<std::uint32_t>(num_frames);
+        if (callbacks_ != nullptr) callbacks_->increment();
+        if (requested_samples_ != nullptr) requested_samples_->add(safe_frames);
         const auto byte_count =
             static_cast<std::size_t>(safe_frames) * channel_count_ * sizeof(std::int16_t);
         auto* const bytes = static_cast<std::byte*>(audio_data);
         const std::uint64_t output_start =
             output_frame_cursor_.fetch_add(safe_frames, std::memory_order_acq_rel);
-        static_cast<void>(ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, 0,
-                                         output_start));
+        const auto consumed = ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, 0,
+                                             output_start);
+        if (delivered_samples_ != nullptr) delivered_samples_->add(consumed.pcm_frames_copied);
+        if (consumed.underrun && underruns_ != nullptr) underruns_->increment();
+        if (ring_fill_ != nullptr) ring_fill_->set(static_cast<std::int64_t>(ring_->occupancy_frames()));
         return oboe::DataCallbackResult::Continue;
     }
 
@@ -143,6 +168,12 @@ public:
 
 private:
     std::shared_ptr<PcmPlaybackRing> ring_{};
+    std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source_{};
+    scl::runtime_telemetry::RuntimeTelemetryCounterU64* callbacks_ = nullptr;
+    scl::runtime_telemetry::RuntimeTelemetryCounterU64* requested_samples_ = nullptr;
+    scl::runtime_telemetry::RuntimeTelemetryCounterU64* delivered_samples_ = nullptr;
+    scl::runtime_telemetry::RuntimeTelemetryCounterU64* underruns_ = nullptr;
+    scl::runtime_telemetry::RuntimeTelemetryGaugeI64* ring_fill_ = nullptr;
     std::uint8_t channel_count_ = 0;
     std::atomic<std::uint64_t> output_frame_cursor_{0};
 };
@@ -228,7 +259,7 @@ AudioPlaybackError OboeAudioPlayback::prepare() {
         return ring_error;
     }
 
-    data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count);
+    data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count, telemetry_source_);
     error_callback_ = std::make_shared<ErrorCallback>();
     const AudioPlaybackError stream_error = open_stream();
     if (stream_error != AudioPlaybackError::None) {
@@ -512,6 +543,16 @@ OboeAudioPlaybackSnapshot OboeAudioPlayback::snapshot() {
     snapshot_.running = running_;
     snapshot_.closed = closed_;
     return snapshot_;
+}
+
+void OboeAudioPlayback::set_telemetry_source(
+    std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> source) noexcept {
+    if (!running_ && !closed_) {
+        telemetry_source_ = std::move(source);
+        if (data_callback_) {
+            data_callback_->set_telemetry_source(telemetry_source_);
+        }
+    }
 }
 
 void OboeAudioPlayback::close() noexcept {

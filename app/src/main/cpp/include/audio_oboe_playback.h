@@ -5,6 +5,7 @@
 #include <span>
 
 #include "audio_playback_ring.h"
+#include "runtime_telemetry.h"
 
 namespace oboe {
 class AudioStream;
@@ -154,6 +155,8 @@ public:
     [[nodiscard]] AudioPlaybackPresentationTimestamp query_presentation_timestamp();
     [[nodiscard]] AudioSourcePresentationAnchor query_source_presentation_anchor();
     [[nodiscard]] OboeAudioPlaybackSnapshot snapshot();
+    void set_telemetry_source(
+        std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> source) noexcept;
     void close() noexcept;
 
     [[nodiscard]] static AudioPlaybackError validate_config(
@@ -176,6 +179,7 @@ private:
     std::shared_ptr<DataCallback> data_callback_{};
     std::shared_ptr<ErrorCallback> error_callback_{};
     std::shared_ptr<oboe::AudioStream> stream_{};
+    std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source_{};
     OboeAudioPlaybackSnapshot snapshot_{};
     bool prepared_ = false;
     bool running_ = false;

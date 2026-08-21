@@ -12,6 +12,16 @@ import io.warpnect.audio.decoder.DecodedPcmAudioSink
 import io.warpnect.audio.decoder.EncodedAudioFrameMetadata
 import io.warpnect.audio.decoder.MissingAudioFrameMetadata
 import io.warpnect.audio.encoder.AudioCodec
+import io.warpnect.session.ChannelId
+import io.warpnect.session.SessionChannelDirection
+import io.warpnect.session.SessionChannelKind
+import io.warpnect.session.SessionGeneration
+import io.warpnect.session.SessionId
+import io.warpnect.telemetry.AudioReceiverTelemetry
+import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryMetricIds
+import io.warpnect.telemetry.TelemetryMetricValue
+import io.warpnect.telemetry.TelemetryScope
 import java.nio.ByteBuffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -189,6 +199,37 @@ class NativeOpusAudioDecoderControllerTest {
         assertEquals(1, backend.destroyCalls)
     }
 
+    @Test
+    fun telemetryCountsDecodedPcmAndExplicitPlcAtTheDecoderBoundary() {
+        val hub = TelemetryHub()
+        val telemetry = AudioReceiverTelemetry.register(hub, telemetryScope())
+        val controller = NativeOpusAudioDecoderController(FakeOpusDecoderBackend(), telemetry)
+        controller.prepare(config(), RecordingDecodedSink())
+        controller.start()
+
+        assertEquals(
+            AudioDecoderError.None,
+            controller.decode(ByteBuffer.allocateDirect(16), 0, 8, metadata()).error,
+        )
+        assertEquals(
+            AudioDecoderError.None,
+            controller.concealMissingFrame(
+                MissingAudioFrameMetadata(
+                    configGeneration = 1,
+                    firstFramePosition = 240,
+                    captureTimeUs = 5_000,
+                    timestampQuality = AudioTimestampQuality.Unavailable,
+                ),
+            ).error,
+        )
+
+        val snapshot = hub.snapshot()
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.AudioDecoderFrameInput, 1u)
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.AudioDecoderSampleOutput, 480u)
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.AudioDecoderPlcFrame, 1u)
+        telemetry.close()
+    }
+
     private fun config(configGeneration: Long = 1): AudioDecoderConfig = AudioDecoderConfig(
         source = AudioCaptureSource.MicrophoneAudio,
         configGeneration = configGeneration,
@@ -209,6 +250,25 @@ class NativeOpusAudioDecoderControllerTest {
         timestampQuality = AudioTimestampQuality.AudioRecordTimestamp,
         discontinuityBefore = false,
     )
+
+    private fun telemetryScope(): TelemetryScope.Channel = TelemetryScope.Channel(
+        sessionId = SessionId.requireValid(1u, 2u),
+        generation = SessionGeneration.requireValid(1u),
+        channelId = ChannelId.requireValid(1u),
+        channelKind = SessionChannelKind.SystemAudio,
+        direction = SessionChannelDirection.HostToClient,
+    )
+
+    private fun assertTelemetryCounter(
+        snapshot: io.warpnect.telemetry.TelemetrySnapshot,
+        id: io.warpnect.telemetry.TelemetryMetricId,
+        expected: ULong,
+    ) {
+        assertEquals(
+            expected,
+            (snapshot.records.single { it.metricId == id }.value as TelemetryMetricValue.Counter).value,
+        )
+    }
 }
 
 private class RecordingDecodedSink(

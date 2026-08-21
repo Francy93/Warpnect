@@ -560,3 +560,11 @@ and does not use `PayloadType.Telemetry`. Counter, gauge, and histogram updates 
 no packet, frame, audio, or input update performs JNI. The direct snapshot buffer is caller-owned
 and reused up to 256 KiB, while Kotlin may make bounded immutable copies only on the cold snapshot
 path.
+
+## RFC-006B Media and Input Instrumentation
+
+MediaCodec and Android input callbacks update pre-bound Kotlin telemetry primitives directly. Native
+Opus and Oboe playback update native primitives. Oboe's realtime callback records only callback,
+requested/delivered PCM-frame, underrun, and ring-fill atomics; the values cross to Kotlin solely in
+the existing WNTM batch during an explicit snapshot. No media/input telemetry update performs JNI,
+payload copying, or a registry lookup.

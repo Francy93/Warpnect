@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
+import io.warpnect.telemetry.VideoEncoderTelemetry
 import io.warpnect.video.encoder.EncodedVideoSink
 import io.warpnect.video.encoder.VideoEncoderCapabilities
 import io.warpnect.video.encoder.VideoEncoderControlResult
@@ -26,6 +27,7 @@ class AndroidMediaCodecVideoEncoder(
     private val discovery: VideoEncoderDiscovery = AndroidVideoEncoderDiscovery(),
     private val clockUs: () -> Long = VideoEncoderClock::monotonicUs,
     private val drainTimeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS,
+    private val telemetry: VideoEncoderTelemetry? = null,
 ) : VideoEncoderController {
     private val codecThread = HandlerThread(THREAD_NAME).apply { start() }
     private val codecHandler = Handler(codecThread.looper)
@@ -342,6 +344,7 @@ class AndroidMediaCodecVideoEncoder(
         }
 
         override fun onError(codec: MediaCodec, exception: MediaCodec.CodecException) {
+            telemetry?.errors?.increment()
             core.fail(
                 error = VideoEncoderError.CodecRuntimeError,
                 diagnosticInfo = exception.diagnosticInfo,
@@ -355,6 +358,7 @@ class AndroidMediaCodecVideoEncoder(
     }
 
     private fun handleOutputFormat(format: MediaFormat) {
+        telemetry?.outputFormatChanges?.increment()
         val outputFormat = try {
             VideoEncoderOutputFormatExtractor.extract(format)
         } catch (_: Exception) {
@@ -400,6 +404,10 @@ class AndroidMediaCodecVideoEncoder(
                         presentationTimeUs = info.presentationTimeUs,
                         flags = info.flags,
                     )
+                    telemetry?.accessUnits?.increment()
+                    telemetry?.bytes?.add(info.size.toULong())
+                    telemetry?.accessUnitSize?.record(info.size.toULong())
+                    if (keyFrame) telemetry?.keyframes?.increment()
                     core.recordAccessUnit(info.size, info.presentationTimeUs, keyFrame)
                 }
                 publishSnapshot()

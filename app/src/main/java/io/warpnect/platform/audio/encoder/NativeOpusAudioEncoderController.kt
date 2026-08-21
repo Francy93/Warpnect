@@ -14,12 +14,14 @@ import io.warpnect.audio.encoder.EncodedAudioFormat
 import io.warpnect.audio.encoder.EncodedAudioSink
 import io.warpnect.audio.encoder.PcmSubmittingAudioEncoderController
 import io.warpnect.audio.encoder.audioFrameOffsetTimeNs
+import io.warpnect.telemetry.AudioSenderTelemetry
 import java.nio.ByteBuffer
 
 class NativeOpusAudioEncoderController internal constructor(
     private val backend: OpusAudioEncoderBackend,
+    private val telemetry: AudioSenderTelemetry? = null,
 ) : PcmSubmittingAudioEncoderController {
-    constructor() : this(NativeOpusAudioEncoderBackend)
+    constructor(telemetry: AudioSenderTelemetry? = null) : this(NativeOpusAudioEncoderBackend, telemetry)
 
     private val lock = Any()
     private var state = AudioEncoderState.Stopped
@@ -259,6 +261,9 @@ class NativeOpusAudioEncoderController internal constructor(
                             timestampQuality = submitted.timestampQuality,
                             encodedFrameIndex = submitted.encodedFrameIndex,
                         )
+                        telemetry?.encodedFrames?.increment()
+                        telemetry?.encodedBytes?.add(submitted.packetSize.toULong())
+                        telemetry?.encodedFrameSize?.record(submitted.packetSize.toULong())
                     } catch (_: RuntimeException) {
                         failLocked(AudioEncoderError.OutputSinkFailure)
                         return@synchronized AudioEncoderError.OutputSinkFailure
@@ -327,6 +332,7 @@ class NativeOpusAudioEncoderController internal constructor(
         AudioEncoderResult(error = error, snapshot = localSnapshot.copy(state = state), format = format)
 
     private fun failLocked(error: AudioEncoderError, nativeError: Int = 0) {
+        telemetry?.encoderErrors?.increment()
         state = if (state == AudioEncoderState.Closed) AudioEncoderState.Closed else AudioEncoderState.Error
         localSnapshot = localSnapshot.copy(state = state, lastError = error, lastNativeError = nativeError)
     }

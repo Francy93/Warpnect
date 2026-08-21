@@ -64,12 +64,19 @@ Present:
 - Authenticated RFC-005G Session Setup V1 over protected SessionControl: strict bounded WNSN state machines, explicit LAN/Direct path policy, public-API Android Wi-Fi Direct Group Owner reuse, authenticated Direct candidate probing, path-bound endpoint leases, deterministic PathId/ChannelId allocation, exact stream validation, and independent protected native channel transports. The result is a bounded `PreparedSessionBootstrap`; no media pipeline is started.
 - RFC-005H lifecycle ownership and RFC-005I integration composition. The normal Host/Client application surface begins from discovered presence rather than manually entered endpoints, keeps pairing explicit, carries WNCP/WNSN/WNSL over protected SessionControl, and adopts RFC-005G prepared native transports into the existing Video/Audio/Input controllers. The application-scoped Direct backend owns one shared Host Group Owner resource and bounded per-Session Direct coordinators. The legacy Receiver/Transmitter shell is an explicit Developer Manual surface, never a secure-session fallback.
 - Architecture Version 1.0 documentation.
+- Runtime Telemetry Model V1 with bounded static metric descriptors, direct atomic primitives,
+  explicit snapshots, and a batched native WNTM bridge.
+- RFC-006B production Video, SystemAudio, and reverse-Input instrumentation. Video counts encoded
+  access units/bytes/keyframes and decoder/render-policy events; audio counts PCM/Opus/playback
+  health; input records aggregate capture/convergence/injection behavior without semantic input
+  contents. Same-generation migration retains these channel sources and a fresh generation creates
+  fresh sources.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Cloud rendezvous, Internet relay/NAT traversal, process-death Session resume, a background-session policy, telemetry UI, or an unbounded telemetry wire stream.
+- Cloud rendezvous, Internet relay/NAT traversal, process-death Session resume, a background-session policy, comprehensive network/recovery telemetry, latency tracing, telemetry UI, export, or an unbounded telemetry wire stream.
 
 ## Repository Layout
 
@@ -247,6 +254,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-005H Session Lifecycle, Disconnect & Reconnection](docs/rfc/RFC-005H-Session-Lifecycle-Disconnect-Reconnection.md)
 - [RFC-005I End-to-End Discovery & Secure Session Integration](docs/rfc/RFC-005I-End-to-End-Discovery-Secure-Session-Integration.md)
 - [RFC-006A Unified Runtime Telemetry Model](docs/rfc/RFC-006A-Unified-Runtime-Telemetry-Model.md)
+- [RFC-006B Media Pipeline Metrics Integration](docs/rfc/RFC-006B-Media-Pipeline-Metrics-Integration.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -267,12 +275,13 @@ Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defi
 
 Phase 5 is implementation-complete through RFC-005I. `SecureSessionCoordinator` composes trusted/pairing identity, WNSH, WNSD, WNCP, WNSN, and WNSL into a transactional startup model with no manual endpoint or plaintext fallback. The Android composition root and normal Host/Client UI adopt each RFC-005G prepared protected transport into the existing Video, Audio, and Input runtime controllers. SystemAudio is preferred only when the current Host privileged capture and Client playback probes support its existing 48 kHz, 5 ms, stereo Opus path; MicrophoneAudio and Telemetry remain unselected until their real Host/runtime adopters exist. The final current-worktree Gradle/native matrix is green; Android and two-device validation remain explicitly tracked separately.
 
-Phase 6 telemetry foundation begins with RFC-006A. Warpnect now has Runtime Telemetry Model V1, a
+Phase 6 telemetry now includes RFC-006B media/input instrumentation on Runtime Telemetry Model V1. Warpnect has a
 bounded local model shared by Kotlin/platform control code and native SCL components. Metric names,
 IDs, kinds, units, and typed scopes are static; hot updates use pre-bound counters, gauges, or fixed
 histograms without JNI, string lookup, registry lookup, allocation, or a telemetry worker. Snapshots
 are explicit, non-destructive cold-path reads. Native telemetry is collected through one bounded WNTM
 batch rather than one JNI call per metric. Telemetry is observational only and is not transmitted to
-the peer; RFC-006A does not yet instrument every Video, Audio, Input, network, or latency event.
+the peer. RFC-006B instruments the selected Video, SystemAudio, and reverse-Input pipelines; comprehensive
+network/recovery and latency diagnostics remain deferred.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

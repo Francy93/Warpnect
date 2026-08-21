@@ -1,5 +1,6 @@
 package io.warpnect.video.session
 
+import io.warpnect.telemetry.VideoDecoderTelemetry
 import io.warpnect.video.decoder.VideoDecoderController
 import io.warpnect.video.render.VideoRenderController
 import io.warpnect.video.render.VideoRenderTarget
@@ -34,6 +35,7 @@ class DefaultVideoReceiverSessionController(
     private val receiverRuntimeController: VideoReceiverRuntimeController,
     private val decoderController: VideoDecoderController,
     private val renderController: VideoRenderController,
+    private val telemetry: VideoDecoderTelemetry? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : VideoReceiverSessionController {
     private val lock = Any()
@@ -365,7 +367,9 @@ class DefaultVideoReceiverSessionController(
     private fun requestResyncLocked(reason: VideoResyncReason) {
         val generation = latestStreamConfig?.configGeneration ?: 0L
         val error = receiverRuntimeController.requestResync(reason, generation)
-        if (error != VideoTransportError.None) {
+        if (error == VideoTransportError.None) {
+            telemetry?.resyncRequested?.increment()
+        } else {
             lastError = VideoSessionFailure(
                 source = VideoSessionErrorSource.Receiver,
                 error = VideoSessionError.ReceiverFailed,

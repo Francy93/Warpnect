@@ -11,12 +11,14 @@ import io.warpnect.audio.decoder.DecodedAudioFormat
 import io.warpnect.audio.decoder.DecodedPcmAudioSink
 import io.warpnect.audio.decoder.EncodedAudioFrameMetadata
 import io.warpnect.audio.decoder.MissingAudioFrameMetadata
+import io.warpnect.telemetry.AudioReceiverTelemetry
 import java.nio.ByteBuffer
 
 class NativeOpusAudioDecoderController internal constructor(
     private val backend: OpusAudioDecoderBackend,
+    private val telemetry: AudioReceiverTelemetry? = null,
 ) : AudioDecoderController {
-    constructor() : this(NativeOpusAudioDecoderBackend)
+    constructor(telemetry: AudioReceiverTelemetry? = null) : this(NativeOpusAudioDecoderBackend, telemetry)
 
     private val lock = Any()
     private var state = AudioDecoderState.Stopped
@@ -163,6 +165,8 @@ class NativeOpusAudioDecoderController internal constructor(
                 discontinuityBefore = decoded.discontinuityBefore,
                 frameKind = decoded.frameKind,
             )
+            telemetry?.decodedFrames?.increment()
+            telemetry?.decodedSamples?.add(decoded.frameCount.toULong())
         } catch (_: RuntimeException) {
             localSinkFailures += 1
             failLocked(AudioDecoderError.OutputSinkFailure)
@@ -208,6 +212,8 @@ class NativeOpusAudioDecoderController internal constructor(
                 discontinuityBefore = decoded.discontinuityBefore,
                 frameKind = decoded.frameKind,
             )
+            telemetry?.decodedSamples?.add(decoded.frameCount.toULong())
+            telemetry?.plcFrames?.increment()
         } catch (_: RuntimeException) {
             localSinkFailures += 1
             failLocked(AudioDecoderError.OutputSinkFailure)
@@ -286,6 +292,7 @@ class NativeOpusAudioDecoderController internal constructor(
 
     private fun recordNonFatalOrFatal(error: AudioDecoderError, nativeError: Int = 0) {
         if (error == AudioDecoderError.ReconfigurationRequired) {
+            telemetry?.decoderErrors?.increment()
             localSnapshot = localSnapshot.copy(lastError = error, lastNativeError = nativeError)
         } else {
             failLocked(error, nativeError)
@@ -296,6 +303,7 @@ class NativeOpusAudioDecoderController internal constructor(
         AudioDecoderResult(error = error, snapshot = localSnapshot.copy(state = state), format = format)
 
     private fun failLocked(error: AudioDecoderError, nativeError: Int = 0) {
+        telemetry?.decoderErrors?.increment()
         state = if (state == AudioDecoderState.Closed) AudioDecoderState.Closed else AudioDecoderState.Error
         localSnapshot = localSnapshot.copy(
             state = state,

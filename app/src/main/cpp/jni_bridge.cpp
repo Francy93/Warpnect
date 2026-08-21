@@ -1539,6 +1539,53 @@ Java_io_warpnect_NativeBridge_nativeRuntimeTelemetrySnapshot(
     return array;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_warpnect_NativeBridge_nativeRuntimeTelemetryRegisterSource(
+    JNIEnv* env, jclass /* clazz */, jlong source_id, jshortArray metric_ids,
+    jbyteArray metric_kinds) {
+    if (source_id <= 0 || source_id > std::numeric_limits<std::uint32_t>::max() ||
+        metric_ids == nullptr || metric_kinds == nullptr) {
+        return JNI_FALSE;
+    }
+    const jsize count = env->GetArrayLength(metric_ids);
+    if (count <= 0 || count > 32 || env->GetArrayLength(metric_kinds) != count) {
+        return JNI_FALSE;
+    }
+    std::vector<jshort> ids(static_cast<std::size_t>(count));
+    std::vector<jbyte> kinds(static_cast<std::size_t>(count));
+    env->GetShortArrayRegion(metric_ids, 0, count, ids.data());
+    env->GetByteArrayRegion(metric_kinds, 0, count, kinds.data());
+    std::vector<warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricDefinition> definitions;
+    definitions.reserve(static_cast<std::size_t>(count));
+    for (jsize index = 0; index < count; ++index) {
+        const auto metric_id = static_cast<std::uint16_t>(ids[static_cast<std::size_t>(index)]);
+        const auto kind = static_cast<warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind>(
+            static_cast<std::uint8_t>(kinds[static_cast<std::size_t>(index)]));
+        if (metric_id == 0 || (kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::CounterU64 &&
+                               kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::GaugeI64)) {
+            return JNI_FALSE;
+        }
+        definitions.push_back({.metric_id = metric_id, .kind = kind});
+    }
+    try {
+        const auto registration = warpnect::scl::runtime_telemetry::runtime_telemetry_registry()
+                                      .register_source_with_id(static_cast<std::uint32_t>(source_id),
+                                                               std::move(definitions));
+        return registration.source ? JNI_TRUE : JNI_FALSE;
+    } catch (...) {
+        return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_warpnect_NativeBridge_nativeRuntimeTelemetryUnregisterSource(
+    JNIEnv* /* env */, jclass /* clazz */, jlong source_id) {
+    if (source_id > 0 && source_id <= std::numeric_limits<std::uint32_t>::max()) {
+        warpnect::scl::runtime_telemetry::runtime_telemetry_registry().unregister_source(
+            static_cast<std::uint32_t>(source_id));
+    }
+}
+
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
     JNIEnv* env,
@@ -2057,6 +2104,24 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackDestroy(JNIEnv* /* env */,
         native_handle->playback->close();
     }
     delete native_handle;
+    return audio_playback_error_code(AudioPlaybackError::None);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackAttachTelemetry(
+    JNIEnv* /* env */, jclass /* clazz */, jlong handle, jlong source_id) {
+    NativeAudioPlaybackHandle* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr || native_handle->playback == nullptr || source_id <= 0 ||
+        source_id > std::numeric_limits<std::uint32_t>::max()) {
+        return audio_playback_error_code(AudioPlaybackError::NotPrepared);
+    }
+    const auto source = warpnect::scl::runtime_telemetry::runtime_telemetry_registry().find_source(
+        static_cast<std::uint32_t>(source_id));
+    if (!source) {
+        return audio_playback_error_code(AudioPlaybackError::InvalidConfiguration);
+    }
+    std::lock_guard guard(native_handle->lock);
+    native_handle->playback->set_telemetry_source(source);
     return audio_playback_error_code(AudioPlaybackError::None);
 }
 

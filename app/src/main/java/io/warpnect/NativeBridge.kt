@@ -20,6 +20,16 @@ internal object NativeBridge {
     private external fun nativeRuntimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray
 
     @JvmStatic
+    private external fun nativeRuntimeTelemetryRegisterSource(
+        sourceId: Long,
+        metricIds: ShortArray,
+        metricKinds: ByteArray,
+    ): Boolean
+
+    @JvmStatic
+    private external fun nativeRuntimeTelemetryUnregisterSource(sourceId: Long)
+
+    @JvmStatic
     private external fun nativeSessionProtectionCreate(
         rootSecret: ByteArray,
         sessionId: ByteArray,
@@ -224,6 +234,9 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeAudioPlaybackSnapshot(handle: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioPlaybackAttachTelemetry(handle: Long, sourceId: Long): Int
 
     @JvmStatic
     private external fun nativeAudioEncoderDestroy(handle: Long): Int
@@ -638,6 +651,11 @@ internal object NativeBridge {
     /** Cold-path batch collection only; no metric update crosses JNI. */
     fun runtimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray = nativeRuntimeTelemetrySnapshot(outputBuffer)
 
+    fun runtimeTelemetryRegisterSource(sourceId: Long, metricIds: ShortArray, metricKinds: ByteArray): Boolean =
+        nativeRuntimeTelemetryRegisterSource(sourceId, metricIds, metricKinds)
+
+    fun runtimeTelemetryUnregisterSource(sourceId: Long) = nativeRuntimeTelemetryUnregisterSource(sourceId)
+
     fun sessionProtectionCreate(
         rootSecret: ByteArray,
         sessionId: ByteArray,
@@ -903,6 +921,9 @@ internal object NativeBridge {
         nativeAudioPlaybackSourcePresentationAnchor(handle)
 
     fun audioPlaybackSnapshot(handle: Long): LongArray = nativeAudioPlaybackSnapshot(handle)
+
+    fun audioPlaybackAttachTelemetry(handle: Long, sourceId: Long): Int =
+        nativeAudioPlaybackAttachTelemetry(handle, sourceId)
 
     fun audioEncoderDestroy(handle: Long): Int = nativeAudioEncoderDestroy(handle)
 

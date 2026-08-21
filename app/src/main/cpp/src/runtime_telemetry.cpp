@@ -290,6 +290,32 @@ RuntimeTelemetrySourceRegistration RuntimeTelemetryRegistry::register_source(
     return RuntimeTelemetrySourceRegistration{.source = std::move(source)};
 }
 
+RuntimeTelemetrySourceRegistration RuntimeTelemetryRegistry::register_source_with_id(
+    const std::uint32_t source_id, std::vector<RuntimeTelemetryMetricDefinition> definitions) {
+    if (source_id == 0 || !valid_definitions(definitions)) {
+        return RuntimeTelemetrySourceRegistration{.status = RuntimeTelemetrySnapshotStatus::RecordLimitExceeded};
+    }
+    std::lock_guard lock(mutex_);
+    if (sources_.size() >= kMaxTelemetrySources ||
+        std::any_of(sources_.begin(), sources_.end(), [source_id](const auto& source) {
+            return source->source_id() == source_id;
+        })) {
+        return RuntimeTelemetrySourceRegistration{.status = RuntimeTelemetrySnapshotStatus::RecordLimitExceeded};
+    }
+    auto source = std::make_shared<RuntimeTelemetrySource>(source_id, std::move(definitions));
+    sources_.push_back(source);
+    return RuntimeTelemetrySourceRegistration{.source = std::move(source)};
+}
+
+std::shared_ptr<RuntimeTelemetrySource> RuntimeTelemetryRegistry::find_source(
+    const std::uint32_t source_id) noexcept {
+    std::lock_guard lock(mutex_);
+    const auto found = std::find_if(sources_.begin(), sources_.end(), [source_id](const auto& source) {
+        return source->source_id() == source_id;
+    });
+    return found == sources_.end() ? nullptr : *found;
+}
+
 void RuntimeTelemetryRegistry::unregister_source(const std::uint32_t source_id) noexcept {
     std::lock_guard lock(mutex_);
     sources_.erase(std::remove_if(sources_.begin(), sources_.end(),

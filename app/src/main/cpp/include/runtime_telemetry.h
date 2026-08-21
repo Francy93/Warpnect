@@ -142,6 +142,11 @@ class RuntimeTelemetryRegistry final {
   public:
     [[nodiscard]] RuntimeTelemetrySourceRegistration register_source(
         std::vector<RuntimeTelemetryMetricDefinition> definitions);
+    [[nodiscard]] RuntimeTelemetrySourceRegistration register_source_with_id(
+        std::uint32_t source_id,
+        std::vector<RuntimeTelemetryMetricDefinition> definitions);
+    [[nodiscard]] std::shared_ptr<RuntimeTelemetrySource> find_source(
+        std::uint32_t source_id) noexcept;
     void unregister_source(std::uint32_t source_id) noexcept;
     [[nodiscard]] RuntimeTelemetrySnapshotResult snapshot_into(std::span<std::byte> output);
 

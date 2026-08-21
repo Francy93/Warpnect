@@ -53,6 +53,13 @@ import io.warpnect.session.setup.PreparedChannel
 import io.warpnect.session.setup.RecoveryConfiguration
 import io.warpnect.session.setup.SetupConfiguration
 import io.warpnect.session.setup.VideoStreamMode
+import io.warpnect.telemetry.AudioReceiverTelemetry
+import io.warpnect.telemetry.AudioSenderTelemetry
+import io.warpnect.telemetry.InputReceiverTelemetry
+import io.warpnect.telemetry.InputSenderTelemetry
+import io.warpnect.telemetry.NativeAudioPlaybackTelemetry
+import io.warpnect.telemetry.VideoDecoderTelemetry
+import io.warpnect.telemetry.VideoEncoderTelemetry
 import io.warpnect.video.encoder.VideoEncoderRequest
 import io.warpnect.video.render.VideoRenderTarget
 import io.warpnect.video.render.VideoRenderTargetListener
@@ -98,10 +105,11 @@ class DefaultAndroidSessionPipelineBindings(
         mode: VideoStreamMode,
         recovery: RecoveryConfiguration?,
         transport: NativeSclVideoTransportController,
+        telemetry: VideoEncoderTelemetry,
     ): AndroidVideoSenderPipeline {
         val controller = DefaultVideoTransmitterSessionController(
             captureController = AndroidVideoCaptureController(appContext),
-            encoderController = AndroidMediaCodecVideoEncoder(),
+            encoderController = AndroidMediaCodecVideoEncoder(telemetry = telemetry),
             transportController = transport,
         )
         return AndroidVideoSenderPipeline(
@@ -117,6 +125,7 @@ class DefaultAndroidSessionPipelineBindings(
                 ),
                 transportConfig = channel.videoTransportConfig(recovery),
             ),
+            telemetrySources = listOf(telemetry),
         )
     }
 
@@ -125,6 +134,7 @@ class DefaultAndroidSessionPipelineBindings(
         mode: VideoStreamMode,
         recovery: RecoveryConfiguration?,
         receiver: NativeSclVideoReceiverController,
+        telemetry: VideoDecoderTelemetry,
     ): AndroidVideoReceiverPipeline? {
         val surface = resources.clientRenderSurface() ?: return null
         if (!surface.holder.surface.isValid) return null
@@ -147,8 +157,9 @@ class DefaultAndroidSessionPipelineBindings(
         )
         controller = DefaultVideoReceiverSessionController(
             receiverRuntimeController = receiver,
-            decoderController = AndroidMediaCodecVideoDecoder(),
+            decoderController = AndroidMediaCodecVideoDecoder(telemetry = telemetry),
             renderController = renderer,
+            telemetry = telemetry,
         )
         renderer.attach(surface)
         return AndroidVideoReceiverPipeline(
@@ -157,6 +168,7 @@ class DefaultAndroidSessionPipelineBindings(
                 receiverRuntimeConfig = channel.videoReceiverConfig(recovery),
             ),
             onPathMigrationCommitted = controller::requestContinuityResync,
+            telemetrySources = listOf(telemetry),
         )
     }
 
@@ -164,18 +176,23 @@ class DefaultAndroidSessionPipelineBindings(
         channel: PreparedChannel,
         mode: AudioStreamMode,
         transport: NativeSclAudioTransportController,
+        telemetry: AudioSenderTelemetry,
     ): AndroidAudioSenderPipeline {
         val source = channel.audioSource()
         val capture = when (source) {
-            AudioCaptureSource.SystemAudio -> AndroidSystemAudioCaptureController(appContext)
-            AudioCaptureSource.MicrophoneAudio -> AndroidMicrophoneAudioCaptureController(appContext)
+            AudioCaptureSource.SystemAudio -> AndroidSystemAudioCaptureController(appContext, telemetry = telemetry)
+            AudioCaptureSource.MicrophoneAudio -> AndroidMicrophoneAudioCaptureController(
+                appContext,
+                telemetry = telemetry,
+            )
         }
         return AndroidAudioSenderPipeline(
             controller = DefaultAudioTransmitterSessionController(
                 captureController = capture,
-                encoderController = NativeOpusAudioEncoderController(),
+                encoderController = NativeOpusAudioEncoderController(telemetry),
                 transportController = transport,
             ),
+            telemetrySources = listOf(telemetry),
             config = AudioTransmitterSessionConfig(
                 captureRequest = AudioCaptureRequest(
                     source = source,
@@ -200,14 +217,17 @@ class DefaultAndroidSessionPipelineBindings(
         channel: PreparedChannel,
         mode: AudioStreamMode,
         receiver: NativeSclAudioReceiverController,
+        telemetry: AudioReceiverTelemetry,
+        playbackTelemetry: NativeAudioPlaybackTelemetry,
     ): AndroidAudioReceiverPipeline {
         val source = channel.audioSource()
         return AndroidAudioReceiverPipeline(
             controller = DefaultAudioReceiverSessionController(
                 receiverRuntimeController = receiver,
-                decoderControllerFactory = ::NativeOpusAudioDecoderController,
-                playbackControllerFactory = ::NativeOboeAudioPlaybackController,
+                decoderControllerFactory = { NativeOpusAudioDecoderController(telemetry) },
+                playbackControllerFactory = { NativeOboeAudioPlaybackController(playbackTelemetry) },
             ),
+            telemetrySources = listOf(telemetry, playbackTelemetry),
             config = AudioReceiverSessionConfig(
                 receiverRuntimeConfig = channel.audioReceiverConfig(source),
             ),
@@ -218,15 +238,18 @@ class DefaultAndroidSessionPipelineBindings(
         channel: PreparedChannel,
         config: SetupConfiguration.Input,
         transport: NativeSclInputTransportController,
+        telemetry: InputSenderTelemetry,
     ): AndroidInputSenderPipeline? {
         val surface = resources.clientInputSurface() ?: return null
         val reliability = config.config.toReliabilityConfig()
         return AndroidInputSenderPipeline(
             controller = ReverseInputSenderSessionController(
-                captureController = AndroidInputCaptureController(appContext),
+                captureController = AndroidInputCaptureController(appContext, telemetry),
                 geometryProvider = resources.clientViewportGeometry,
                 transportController = transport,
+                telemetry = telemetry,
             ),
+            telemetrySources = listOf(telemetry),
             surface = surface,
             config = ReverseInputSenderSessionConfig(
                 captureConfig = InputCaptureConfig(enabledKinds = config.config.inputKinds.toInputKinds()),
@@ -240,6 +263,7 @@ class DefaultAndroidSessionPipelineBindings(
         channel: PreparedChannel,
         config: SetupConfiguration.Input,
         receiver: NativeSclInputReceiverController,
+        telemetry: InputReceiverTelemetry,
     ): AndroidInputReceiverPipeline {
         val injection = AndroidInputInjectionController(appContext)
         val mapper = AndroidTargetInputMapper(
@@ -249,8 +273,9 @@ class DefaultAndroidSessionPipelineBindings(
             config = AndroidTargetInputMappingConfig(
                 targetDisplayId = resources.inputTargetDisplayId,
             ),
+            telemetry = telemetry,
         )
-        val controller = ReverseInputReceiverSessionController(receiver, mapper, injection)
+        val controller = ReverseInputReceiverSessionController(receiver, mapper, injection, telemetry)
         return AndroidInputReceiverPipeline(
             controller = controller,
             config = ReverseInputReceiverSessionConfig(
@@ -259,6 +284,7 @@ class DefaultAndroidSessionPipelineBindings(
                 reliabilityConfig = config.config.toReliabilityConfig(),
             ),
             onInputSafetyReset = controller::requestEmergencyReset,
+            telemetrySources = listOf(telemetry),
         )
     }
 

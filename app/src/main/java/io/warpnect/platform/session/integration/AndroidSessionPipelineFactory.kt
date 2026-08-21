@@ -36,6 +36,15 @@ import io.warpnect.session.setup.PreparedSessionBootstrap
 import io.warpnect.session.setup.RecoveryConfiguration
 import io.warpnect.session.setup.SetupConfiguration
 import io.warpnect.session.setup.VideoStreamMode
+import io.warpnect.telemetry.AudioReceiverTelemetry
+import io.warpnect.telemetry.AudioSenderTelemetry
+import io.warpnect.telemetry.InputReceiverTelemetry
+import io.warpnect.telemetry.InputSenderTelemetry
+import io.warpnect.telemetry.NativeAudioPlaybackTelemetry
+import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryScope
+import io.warpnect.telemetry.VideoDecoderTelemetry
+import io.warpnect.telemetry.VideoEncoderTelemetry
 import io.warpnect.video.session.VideoReceiverSessionConfig
 import io.warpnect.video.session.VideoReceiverSessionController
 import io.warpnect.video.session.VideoTransmitterSessionConfig
@@ -56,6 +65,7 @@ interface AndroidSessionPipelineBindings {
         mode: VideoStreamMode,
         recovery: RecoveryConfiguration?,
         transport: NativeSclVideoTransportController,
+        telemetry: VideoEncoderTelemetry,
     ): AndroidVideoSenderPipeline?
 
     fun createVideoReceiver(
@@ -63,30 +73,36 @@ interface AndroidSessionPipelineBindings {
         mode: VideoStreamMode,
         recovery: RecoveryConfiguration?,
         receiver: NativeSclVideoReceiverController,
+        telemetry: VideoDecoderTelemetry,
     ): AndroidVideoReceiverPipeline?
 
     fun createAudioSender(
         channel: PreparedChannel,
         mode: AudioStreamMode,
         transport: NativeSclAudioTransportController,
+        telemetry: AudioSenderTelemetry,
     ): AndroidAudioSenderPipeline?
 
     fun createAudioReceiver(
         channel: PreparedChannel,
         mode: AudioStreamMode,
         receiver: NativeSclAudioReceiverController,
+        telemetry: AudioReceiverTelemetry,
+        playbackTelemetry: NativeAudioPlaybackTelemetry,
     ): AndroidAudioReceiverPipeline?
 
     fun createInputSender(
         channel: PreparedChannel,
         config: SetupConfiguration.Input,
         transport: NativeSclInputTransportController,
+        telemetry: InputSenderTelemetry,
     ): AndroidInputSenderPipeline?
 
     fun createInputReceiver(
         channel: PreparedChannel,
         config: SetupConfiguration.Input,
         receiver: NativeSclInputReceiverController,
+        telemetry: InputReceiverTelemetry,
     ): AndroidInputReceiverPipeline?
 
     /** Phase 6 owns telemetry redesign; selected V1 telemetry still needs an existing bounded runtime. */
@@ -97,22 +113,26 @@ data class AndroidVideoSenderPipeline(
     val controller: VideoTransmitterSessionController,
     val config: VideoTransmitterSessionConfig,
     val onPathMigrationCommitted: () -> Unit = {},
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 data class AndroidVideoReceiverPipeline(
     val controller: VideoReceiverSessionController,
     val config: VideoReceiverSessionConfig,
     val onPathMigrationCommitted: () -> Unit = {},
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 data class AndroidAudioSenderPipeline(
     val controller: AudioTransmitterSessionController,
     val config: AudioTransmitterSessionConfig,
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 data class AndroidAudioReceiverPipeline(
     val controller: AudioReceiverSessionController,
     val config: AudioReceiverSessionConfig,
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 data class AndroidInputSenderPipeline(
@@ -120,12 +140,14 @@ data class AndroidInputSenderPipeline(
     val surface: View,
     val config: ReverseInputSenderSessionConfig,
     val onInputSafetyReset: () -> Unit = {},
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 data class AndroidInputReceiverPipeline(
     val controller: ReverseInputReceiverSessionController,
     val config: ReverseInputReceiverSessionConfig,
     val onInputSafetyReset: () -> Unit = {},
+    val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
 /**
@@ -135,12 +157,13 @@ data class AndroidInputReceiverPipeline(
  */
 class AndroidSessionPipelineFactory(
     private val bindings: AndroidSessionPipelineBindings,
+    private val telemetryHub: TelemetryHub = TelemetryHub.disabled(),
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
         val components = ArrayList<SessionPipelineComponent>(bootstrap.channels.size)
         bootstrap.channels.forEach { channel ->
-            val component = createChannelComponent(bootstrap.localRole, channel)
+            val component = createChannelComponent(bootstrap, channel)
             if (component == null) {
                 components.asReversed().forEach(SessionPipelineComponent::close)
                 return SessionPipelineFactoryResult(errorFor(channel.descriptor.kind))
@@ -150,14 +173,18 @@ class AndroidSessionPipelineFactory(
         return SessionPipelineFactoryResult(SecureSessionIntegrationError.None, components)
     }
 
-    private fun createChannelComponent(role: SessionRole, channel: PreparedChannel): SessionPipelineComponent? {
+    private fun createChannelComponent(
+        bootstrap: PreparedSessionBootstrap,
+        channel: PreparedChannel,
+    ): SessionPipelineComponent? {
+        val role = bootstrap.localRole
         if (!channel.transport.protectedRequired || channel.transport.started) return null
         return when (channel.descriptor.kind) {
-            SessionChannelKind.Video -> createVideo(role, channel)
+            SessionChannelKind.Video -> createVideo(bootstrap, role, channel)
             SessionChannelKind.SystemAudio,
             SessionChannelKind.MicrophoneAudio,
-            -> createAudio(role, channel)
-            SessionChannelKind.Input -> createInput(role, channel)
+            -> createAudio(bootstrap, role, channel)
+            SessionChannelKind.Input -> createInput(bootstrap, role, channel)
             // RFC-005I has no concrete native Telemetry adopter. The production capability
             // policy disables it, and an accidental selection must fail rather than leave the
             // RFC-005G native handle unowned.
@@ -166,7 +193,11 @@ class AndroidSessionPipelineFactory(
         }
     }
 
-    private fun createVideo(role: SessionRole, channel: PreparedChannel): SessionPipelineComponent? {
+    private fun createVideo(
+        bootstrap: PreparedSessionBootstrap,
+        role: SessionRole,
+        channel: PreparedChannel,
+    ): SessionPipelineComponent? {
         val mode = channel.configuration.filterIsInstance<SetupConfiguration.Video>()
             .singleOrNull()?.mode ?: return null
         val recovery = channel.configuration.filterIsInstance<SetupConfiguration.Recovery>().singleOrNull()?.config
@@ -179,12 +210,15 @@ class AndroidSessionPipelineFactory(
                 transport.close()
                 null
             } else {
-                val pipeline = bindings.createVideoSender(channel, mode, recovery, transport)
+                val telemetry = VideoEncoderTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val pipeline = bindings.createVideoSender(channel, mode, recovery, transport, telemetry)
                 if (pipeline == null) {
+                    telemetry.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel, mode)) {
                     pipeline.controller.close()
+                    telemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -202,12 +236,15 @@ class AndroidSessionPipelineFactory(
                 receiver.close()
                 null
             } else {
-                val pipeline = bindings.createVideoReceiver(channel, mode, recovery, receiver)
+                val telemetry = VideoDecoderTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val pipeline = bindings.createVideoReceiver(channel, mode, recovery, receiver, telemetry)
                 if (pipeline == null) {
+                    telemetry.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
+                    telemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -219,7 +256,11 @@ class AndroidSessionPipelineFactory(
         }
     }
 
-    private fun createAudio(role: SessionRole, channel: PreparedChannel): SessionPipelineComponent? {
+    private fun createAudio(
+        bootstrap: PreparedSessionBootstrap,
+        role: SessionRole,
+        channel: PreparedChannel,
+    ): SessionPipelineComponent? {
         val configuration = when (channel.descriptor.kind) {
             SessionChannelKind.SystemAudio -> channel.configuration.filterIsInstance<SetupConfiguration.SystemAudio>()
                 .singleOrNull()?.mode
@@ -238,12 +279,15 @@ class AndroidSessionPipelineFactory(
                 transport.close()
                 null
             } else {
-                val pipeline = bindings.createAudioSender(channel, configuration, transport)
+                val telemetry = AudioSenderTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val pipeline = bindings.createAudioSender(channel, configuration, transport, telemetry)
                 if (pipeline == null) {
+                    telemetry.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel, configuration)) {
                     pipeline.controller.close()
+                    telemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -261,12 +305,27 @@ class AndroidSessionPipelineFactory(
                 receiver.close()
                 null
             } else {
-                val pipeline = bindings.createAudioReceiver(channel, configuration, receiver)
+                val telemetry = AudioReceiverTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val playbackTelemetry = NativeAudioPlaybackTelemetry.register(
+                    telemetryHub,
+                    bootstrap.channelScope(channel),
+                )
+                val pipeline = bindings.createAudioReceiver(
+                    channel,
+                    configuration,
+                    receiver,
+                    telemetry,
+                    playbackTelemetry,
+                )
                 if (pipeline == null) {
+                    telemetry.close()
+                    playbackTelemetry.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel, configuration)) {
                     pipeline.controller.close()
+                    telemetry.close()
+                    playbackTelemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -278,7 +337,11 @@ class AndroidSessionPipelineFactory(
         }
     }
 
-    private fun createInput(role: SessionRole, channel: PreparedChannel): SessionPipelineComponent? {
+    private fun createInput(
+        bootstrap: PreparedSessionBootstrap,
+        role: SessionRole,
+        channel: PreparedChannel,
+    ): SessionPipelineComponent? {
         val configuration = channel.configuration.filterIsInstance<SetupConfiguration.Input>()
             .singleOrNull() ?: return null
         return if (channel.isSender(role)) {
@@ -290,12 +353,15 @@ class AndroidSessionPipelineFactory(
                 transport.close()
                 null
             } else {
-                val pipeline = bindings.createInputSender(channel, configuration, transport)
+                val telemetry = InputSenderTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val pipeline = bindings.createInputSender(channel, configuration, transport, telemetry)
                 if (pipeline == null) {
+                    telemetry.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
+                    telemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -313,12 +379,15 @@ class AndroidSessionPipelineFactory(
                 receiver.close()
                 null
             } else {
-                val pipeline = bindings.createInputReceiver(channel, configuration, receiver)
+                val telemetry = InputReceiverTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val pipeline = bindings.createInputReceiver(channel, configuration, receiver, telemetry)
                 if (pipeline == null) {
+                    telemetry.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
+                    telemetry.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
@@ -340,6 +409,15 @@ class AndroidSessionPipelineFactory(
     }
 }
 
+private fun PreparedSessionBootstrap.channelScope(channel: PreparedChannel): TelemetryScope.Channel =
+    TelemetryScope.Channel(
+        sessionId = sessionId,
+        generation = generation,
+        channelId = channel.descriptor.channelId,
+        channelKind = channel.descriptor.kind,
+        direction = channel.descriptor.direction,
+    )
+
 private class VideoSenderComponent(
     private val pipeline: AndroidVideoSenderPipeline,
 ) : SessionPipelineComponent {
@@ -357,7 +435,10 @@ private class VideoSenderComponent(
         runBlocking { pipeline.controller.stop() }
     }
     override fun onPathMigrationCommitted() = pipeline.onPathMigrationCommitted()
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private class VideoReceiverComponent(
@@ -377,7 +458,10 @@ private class VideoReceiverComponent(
         runBlocking { pipeline.controller.stop() }
     }
     override fun onPathMigrationCommitted() = pipeline.onPathMigrationCommitted()
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private class AudioSenderComponent(
@@ -397,7 +481,10 @@ private class AudioSenderComponent(
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private class AudioReceiverComponent(
@@ -417,7 +504,10 @@ private class AudioReceiverComponent(
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private class InputSenderComponent(
@@ -437,7 +527,10 @@ private class InputSenderComponent(
         pipeline.controller.stop()
     }
     override fun onInputSafetyReset() = pipeline.onInputSafetyReset()
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private class InputReceiverComponent(
@@ -457,7 +550,10 @@ private class InputReceiverComponent(
         pipeline.controller.stop()
     }
     override fun onInputSafetyReset() = pipeline.onInputSafetyReset()
-    override fun close() = pipeline.controller.close()
+    override fun close() {
+        pipeline.controller.close()
+        pipeline.telemetrySources.forEach(AutoCloseable::close)
+    }
 }
 
 private fun PreparedChannel.isSender(role: SessionRole): Boolean = when (descriptor.direction) {

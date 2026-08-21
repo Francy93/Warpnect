@@ -2,8 +2,10 @@ package io.warpnect.input.session
 
 import io.warpnect.input.injection.InputInjectionController
 import io.warpnect.input.injection.InputInjectionError
+import io.warpnect.input.model.InputResetState
 import io.warpnect.input.performance.BoundedInputTimingHistogram
 import io.warpnect.input.reliability.InputConvergenceDispatchResult
+import io.warpnect.input.reliability.InputConvergenceOutcome
 import io.warpnect.input.reliability.InputConvergenceSink
 import io.warpnect.input.reliability.InputEventEnvelope
 import io.warpnect.input.reliability.InputStateConvergenceController
@@ -13,6 +15,7 @@ import io.warpnect.input.transport.InputReceiverWaitResult
 import io.warpnect.platform.input.mapping.AndroidTargetInputMappingOutcome
 import io.warpnect.platform.input.mapping.AndroidTargetInputMappingResult
 import io.warpnect.platform.input.mapping.TargetInputMapper
+import io.warpnect.telemetry.InputReceiverTelemetry
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** One persistent receive context owns native waiting, mapping, and privileged injection. */
@@ -20,6 +23,7 @@ class ReverseInputReceiverSessionController(
     private val receiverRuntime: InputReceiverRuntime,
     private val targetMapper: TargetInputMapper,
     private val injectionController: InputInjectionController,
+    private val telemetry: InputReceiverTelemetry? = null,
 ) : AutoCloseable {
     private val acceptingEvents = AtomicBoolean(false)
     private val emergencyResetRequested = AtomicBoolean(false)
@@ -209,6 +213,19 @@ class ReverseInputReceiverSessionController(
                             snapshot = snapshot.copy(state = ReverseInputSessionState.Error)
                         }
                     } else {
+                        when (convergenceResult.outcome) {
+                            InputConvergenceOutcome.SemanticDuplicateDropped ->
+                                telemetry?.semanticDuplicates?.increment()
+                            InputConvergenceOutcome.Forwarded,
+                            InputConvergenceOutcome.ForwardedWithTouchRepair,
+                            -> {
+                                telemetry?.acceptedEvents?.increment()
+                                if (received.event.event is InputResetState) {
+                                    telemetry?.resetsApplied?.increment()
+                                }
+                            }
+                            else -> Unit
+                        }
                         snapshot = snapshot.copy(
                             receivedEvents = snapshot.receivedEvents + 1L,
                             lastError = ReverseInputSessionError.None,

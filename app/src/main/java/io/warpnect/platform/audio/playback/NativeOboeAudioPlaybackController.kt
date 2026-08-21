@@ -10,12 +10,14 @@ import io.warpnect.audio.playback.AudioPlaybackValidation
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
 import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
+import io.warpnect.telemetry.NativeAudioPlaybackTelemetry
 import java.nio.ByteBuffer
 
 class NativeOboeAudioPlaybackController internal constructor(
     private val backend: OboeAudioPlaybackBackend,
+    private val playbackTelemetry: NativeAudioPlaybackTelemetry? = null,
 ) : AudioPlaybackController {
-    constructor() : this(NativeOboeAudioPlaybackBackend)
+    constructor(telemetry: NativeAudioPlaybackTelemetry? = null) : this(NativeOboeAudioPlaybackBackend, telemetry)
 
     private val lock = Any()
     private var state = AudioPlaybackState.Stopped
@@ -59,6 +61,10 @@ class NativeOboeAudioPlaybackController internal constructor(
             return@synchronized resultLocked(created.error)
         }
         handle = created.handle
+        val telemetryError = playbackTelemetry?.sourceId?.let { backend.attachTelemetry(handle, it.value.toLong()) }
+        if (telemetryError != null && telemetryError != AudioPlaybackError.None) {
+            // Telemetry is observational: native source attachment failure never affects playback.
+        }
         this.config = config
         state = AudioPlaybackState.Prepared
         localSnapshot = created.snapshot.copy(state = state, lastError = AudioPlaybackError.None)

@@ -785,3 +785,19 @@ native/tests/
 on-demand snapshots. `platform/telemetry` supplies only the Android monotonic clock. The portable
 native registry owns C++20 atomics and WNTM serialization. None of these packages owns a sampler,
 history, exporter, remote protocol, media queue, or runtime decision loop.
+
+## RFC-006B Media Pipeline Metrics
+
+```text
+app/src/main/java/io/warpnect/telemetry/
+  MediaPipelineTelemetry.kt
+app/src/main/java/io/warpnect/platform/{video,audio,input}/
+  existing production controllers instrumented at semantic boundaries
+app/src/main/cpp/src/
+  audio_oboe_playback.cpp
+```
+
+`MediaPipelineTelemetry.kt` groups direct handles by logical pipeline component. The existing
+production factory creates them with a negotiated Channel scope while building a runtime, then
+closes them with that runtime. Oboe callback metrics use an additive native source registration and
+the existing WNTM snapshot provider rather than a second JNI bridge.

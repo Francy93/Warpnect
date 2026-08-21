@@ -21,9 +21,42 @@ class TelemetryHubTest {
     fun descriptorCatalogIsStableAndValid() {
         TelemetryDescriptorCatalog.validate(TelemetryDescriptorCatalog.descriptors)
 
-        assertEquals(7, TelemetryDescriptorCatalog.descriptors.size)
-        assertTrue(TelemetryDescriptorCatalog.descriptors.all { it.id.value in 0x0001..0x00ff })
+        assertEquals(47, TelemetryDescriptorCatalog.descriptors.size)
+        assertTrue(
+            TelemetryDescriptorCatalog.descriptors.all {
+                it.id.value in 0x0001..0x00ff ||
+                    it.id.value in 0x0300..0x03ff ||
+                    it.id.value in 0x0400..0x04ff ||
+                    it.id.value in 0x0500..0x05ff
+            },
+        )
         assertTrue(TelemetryDescriptorCatalog.descriptors.all { it.canonicalName.startsWith("warpnect.") })
+    }
+
+    @Test
+    fun mediaAndInputDescriptorsUseFrozenIdsAndHistogramBoundaries() {
+        val descriptors = TelemetryDescriptorCatalog.descriptors.associateBy { it.id }
+        assertEquals(
+            TelemetryMetricKind.HistogramU64,
+            descriptors.getValue(TelemetryMetricIds.VideoEncoderAccessUnitSize).kind,
+        )
+        assertTrue(
+            descriptors.getValue(TelemetryMetricIds.VideoEncoderAccessUnitSize)
+                .histogramBoundaries.contentEquals(
+                    ulongArrayOf(
+                        512u, 1_024u, 2_048u, 4_096u, 8_192u, 16_384u,
+                        32_768u, 65_536u, 131_072u, 262_144u, 524_288u, 1_048_576u,
+                    ),
+                ),
+        )
+        assertTrue(
+            descriptors.getValue(TelemetryMetricIds.AudioEncoderFrameSize)
+                .histogramBoundaries.contentEquals(
+                    ulongArrayOf(32u, 64u, 96u, 128u, 192u, 256u, 384u, 512u, 768u, 1_024u, 1_536u, 2_048u),
+                ),
+        )
+        assertEquals(TelemetryUnit.Samples, descriptors.getValue(TelemetryMetricIds.AudioCaptureSample).unit)
+        assertEquals(TelemetryUnit.Events, descriptors.getValue(TelemetryMetricIds.InputCaptureEvent).unit)
     }
 
     @Test

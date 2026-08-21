@@ -19,6 +19,16 @@ import io.warpnect.input.model.InputTouchToolType
 import io.warpnect.input.model.WarpnectInputEvent
 import io.warpnect.input.reliability.InputReliabilityConfig
 import io.warpnect.platform.input.transport.InputTouchScratch
+import io.warpnect.session.ChannelId
+import io.warpnect.session.SessionChannelDirection
+import io.warpnect.session.SessionChannelKind
+import io.warpnect.session.SessionGeneration
+import io.warpnect.session.SessionId
+import io.warpnect.telemetry.InputSenderTelemetry
+import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryMetricIds
+import io.warpnect.telemetry.TelemetryMetricValue
+import io.warpnect.telemetry.TelemetryScope
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -103,6 +113,39 @@ class SclInputEventSinkTest {
         assertEquals(1, snapshot.incrementalDeltaEvents)
         assertEquals(1, snapshot.resetEvents)
         assertEquals(3L, snapshot.submissionTiming.count)
+    }
+
+    @Test
+    fun telemetryCountsSemanticInputEventsRatherThanRedundancyCopies() {
+        val hub = TelemetryHub()
+        val telemetry = InputSenderTelemetry.register(hub, telemetryScope())
+        val sink = SclInputEventSink(
+            transport = FakeTransport(),
+            reliabilityConfig = InputReliabilityConfig.ultraLowLatencyConvergent(),
+            telemetry = telemetry,
+        )
+
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(100, InputKeyEvent(1, 7, 4, InputKeyAction.Down, 0, 0)),
+        )
+        assertEquals(
+            InputSinkResult.Accepted,
+            sink.onInputEvent(
+                101,
+                InputResetState(
+                    InputDeviceKind.Unknown,
+                    65_535,
+                    InputResetScope.AllDevices,
+                    InputResetReason.SessionStop,
+                ),
+            ),
+        )
+
+        val snapshot = hub.snapshot()
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.InputSenderEventAccepted, 2u)
+        assertTelemetryCounter(snapshot, TelemetryMetricIds.InputSenderResetEmitted, 1u)
+        telemetry.close()
     }
 
     @Test
@@ -232,5 +275,24 @@ class SclInputEventSinkTest {
         override fun snapshot(): InputTransportSnapshot = InputTransportSnapshot()
 
         override fun close() = Unit
+    }
+
+    private fun telemetryScope(): TelemetryScope.Channel = TelemetryScope.Channel(
+        sessionId = SessionId.requireValid(1u, 2u),
+        generation = SessionGeneration.requireValid(1u),
+        channelId = ChannelId.requireValid(1u),
+        channelKind = SessionChannelKind.Input,
+        direction = SessionChannelDirection.ClientToHost,
+    )
+
+    private fun assertTelemetryCounter(
+        snapshot: io.warpnect.telemetry.TelemetrySnapshot,
+        id: io.warpnect.telemetry.TelemetryMetricId,
+        expected: ULong,
+    ) {
+        assertEquals(
+            expected,
+            (snapshot.records.single { it.metricId == id }.value as TelemetryMetricValue.Counter).value,
+        )
     }
 }

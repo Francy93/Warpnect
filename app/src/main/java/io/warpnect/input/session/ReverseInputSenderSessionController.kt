@@ -5,6 +5,7 @@ import io.warpnect.input.capture.InputCaptureController
 import io.warpnect.input.mapping.RemoteVideoViewportInputMapper
 import io.warpnect.input.transport.InputTransportController
 import io.warpnect.input.transport.SclInputEventSink
+import io.warpnect.telemetry.InputSenderTelemetry
 import io.warpnect.video.render.VideoViewportGeometryProvider
 
 /** Caller-driven source composition: capture -> viewport mapping -> SCL input transport. */
@@ -12,6 +13,7 @@ class ReverseInputSenderSessionController(
     private val captureController: InputCaptureController,
     private val geometryProvider: VideoViewportGeometryProvider,
     private val transportController: InputTransportController,
+    private val telemetry: InputSenderTelemetry? = null,
 ) : AutoCloseable {
     private var mapper: RemoteVideoViewportInputMapper? = null
     private var reliabilitySink: SclInputEventSink? = null
@@ -39,7 +41,7 @@ class ReverseInputSenderSessionController(
             return fail(ReverseInputSessionError.TransportStartFailed)
         }
 
-        val activeReliabilitySink = SclInputEventSink(transportController, config.reliabilityConfig)
+        val activeReliabilitySink = SclInputEventSink(transportController, config.reliabilityConfig, telemetry)
         val activeMapper = try {
             RemoteVideoViewportInputMapper(
                 geometryProvider = geometryProvider,

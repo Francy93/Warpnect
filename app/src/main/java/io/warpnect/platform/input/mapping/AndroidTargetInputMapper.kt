@@ -62,6 +62,7 @@ import io.warpnect.input.model.InputTouchContact
 import io.warpnect.input.model.InputTouchFrame
 import io.warpnect.input.model.InputTouchToolType
 import io.warpnect.input.model.WarpnectInputEvent
+import io.warpnect.telemetry.InputReceiverTelemetry
 
 enum class DpadInjectionMode {
     HatAxes,
@@ -182,6 +183,7 @@ class AndroidTargetInputMapper(
     private val displayGeometryProvider: TargetDisplayGeometryProvider,
     private val deviceResolver: TargetInputDeviceResolver,
     private val config: AndroidTargetInputMappingConfig = AndroidTargetInputMappingConfig(),
+    private val telemetry: InputReceiverTelemetry? = null,
 ) : TargetInputMapper {
     private val slots: Array<TargetSlot?>
     private var lastGeometry: TargetDisplayGeometry? = null
@@ -991,7 +993,9 @@ class AndroidTargetInputMapper(
             generation != other.generation
 
     private fun recordInjection(result: io.warpnect.input.injection.InputInjectionResult): Boolean {
+        telemetry?.injectionAttempted?.increment()
         if (!result.isSuccess) {
+            telemetry?.injectionFailed?.increment()
             snapshot = snapshot.copy(
                 state = AndroidTargetInputMappingState.Degraded,
                 lastError = AndroidTargetInputMappingOutcome.InjectionFailure,
@@ -1034,6 +1038,7 @@ class AndroidTargetInputMapper(
     }
 
     private fun fail(outcome: AndroidTargetInputMappingOutcome): AndroidTargetInputMappingResult {
+        telemetry?.mappingDropped?.increment()
         snapshot = snapshot.copy(lastError = outcome)
         return AndroidTargetInputMappingResult(outcome)
     }
