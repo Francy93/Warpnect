@@ -255,6 +255,8 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-005I End-to-End Discovery & Secure Session Integration](docs/rfc/RFC-005I-End-to-End-Discovery-Secure-Session-Integration.md)
 - [RFC-006A Unified Runtime Telemetry Model](docs/rfc/RFC-006A-Unified-Runtime-Telemetry-Model.md)
 - [RFC-006B Media Pipeline Metrics Integration](docs/rfc/RFC-006B-Media-Pipeline-Metrics-Integration.md)
+- [RFC-006C Network & Recovery Diagnostics](docs/rfc/RFC-006C-Network-Recovery-Diagnostics.md)
+- [RFC-006D Latency Trace & Cross-Pipeline Correlation](docs/rfc/RFC-006D-Latency-Trace-Cross-Pipeline-Correlation.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -275,13 +277,20 @@ Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defi
 
 Phase 5 is implementation-complete through RFC-005I. `SecureSessionCoordinator` composes trusted/pairing identity, WNSH, WNSD, WNCP, WNSN, and WNSL into a transactional startup model with no manual endpoint or plaintext fallback. The Android composition root and normal Host/Client UI adopt each RFC-005G prepared protected transport into the existing Video, Audio, and Input runtime controllers. SystemAudio is preferred only when the current Host privileged capture and Client playback probes support its existing 48 kHz, 5 ms, stereo Opus path; MicrophoneAudio and Telemetry remain unselected until their real Host/runtime adopters exist. The final current-worktree Gradle/native matrix is green; Android and two-device validation remain explicitly tracked separately.
 
-Phase 6 telemetry now includes RFC-006B media/input instrumentation on Runtime Telemetry Model V1. Warpnect has a
-bounded local model shared by Kotlin/platform control code and native SCL components. Metric names,
-IDs, kinds, units, and typed scopes are static; hot updates use pre-bound counters, gauges, or fixed
-histograms without JNI, string lookup, registry lookup, allocation, or a telemetry worker. Snapshots
-are explicit, non-destructive cold-path reads. Native telemetry is collected through one bounded WNTM
-batch rather than one JNI call per metric. Telemetry is observational only and is not transmitted to
-the peer. RFC-006B instruments the selected Video, SystemAudio, and reverse-Input pipelines; comprehensive
-network/recovery and latency diagnostics remain deferred.
+Phase 6 telemetry now includes RFC-006D bounded latency and cross-pipeline correlation diagnostics
+on Runtime Telemetry Model V1. Warpnect has a bounded local model shared by Kotlin/platform control
+code and native SCL components. Metric names, IDs, kinds, units, and typed scopes are static; hot
+updates use pre-bound counters, gauges, or fixed histograms without JNI, string lookup, registry
+lookup, allocation, or a telemetry worker. Snapshots are explicit, non-destructive cold-path reads.
+Native telemetry is collected through one bounded WNTM batch rather than one JNI call per metric.
+Telemetry is observational only and is not transmitted to the peer.
+
+RFC-006B instruments the selected Video, SystemAudio, and reverse-Input pipelines. RFC-006C adds
+aggregate UDP, WNSD, FEC/NACK/reassembly, path, migration, and reconnect diagnostics without packet
+copies or control feedback. RFC-006D adds local Video decoder/render, Opus decode, Input
+capture-to-sender, ClockSync quality, and cold Oboe output-estimate diagnostics. It records no
+cross-device one-way estimate when frozen timestamp provenance and ClockSync mapping are insufficient;
+no trace wire protocol is invented. Completed correlation state is immediately reduced to bounded
+histograms, with no trace history, queue, or telemetry-driven runtime decision.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

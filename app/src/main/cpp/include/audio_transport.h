@@ -11,6 +11,8 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 struct AudioTransportSenderConfig final {
     UdpEndpoint remote_endpoint{};
     std::uint16_t local_port = 0;
@@ -18,6 +20,7 @@ struct AudioTransportSenderConfig final {
     std::uint32_t initial_audio_sequence = 0;
     PayloadType payload_type = PayloadType::Unknown;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct AudioTransportSenderWorkspace final {
@@ -62,6 +65,7 @@ class AudioTransportSender final : private AudioDatagramSink {
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] AudioTransportStatus rebind_prebound_socket(UdpSocket socket,
                                                                UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
     [[nodiscard]] AudioTransportStatus submit_stream_config(std::uint32_t sample_rate_hz,
                                                             std::uint8_t channel_count,
                                                             std::uint32_t frame_duration_us,

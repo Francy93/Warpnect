@@ -25,7 +25,9 @@
 #include "native_bridge.h"
 #include "packet_codec.h"
 #include "retransmission_cache.h"
+#include "runtime_clock_sync_telemetry.h"
 #include "runtime_telemetry.h"
+#include "runtime_network_telemetry.h"
 #include "session_protection.h"
 #include "udp_endpoint.h"
 #include "udp_socket.h"
@@ -205,6 +207,7 @@ struct NativeVideoTransportHandle final {
     std::vector<std::byte> control_receive_scratch{};
     std::vector<std::byte> protected_datagram_scratch{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::mutex lock{};
     std::unique_ptr<VideoTransportSender> sender{};
 
@@ -226,6 +229,8 @@ struct NativeVideoTransportHandle final {
 struct NativeVideoReceiverHandle final {
     std::mutex lock{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
+    std::shared_ptr<warpnect::scl::RuntimeClockSyncTelemetry> clock_sync_telemetry{};
     std::unique_ptr<VideoReceiverRuntime> runtime{};
 };
 
@@ -249,6 +254,7 @@ struct NativeAudioTransportHandle final {
     std::vector<std::byte> datagram_scratch{};
     std::vector<std::byte> protected_datagram_scratch{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::mutex lock{};
     std::unique_ptr<AudioTransportSender> sender{};
 
@@ -265,6 +271,7 @@ struct NativeInputTransportHandle final {
     std::array<std::byte, warpnect::scl::kInputMaxDatagramWireSize> datagram_scratch{};
     std::vector<std::byte> protected_datagram_scratch{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::mutex lock{};
     std::unique_ptr<InputTransportSender> sender{};
 
@@ -279,12 +286,14 @@ struct NativeInputTransportHandle final {
 struct NativeInputReceiverHandle final {
     std::mutex lock{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::unique_ptr<InputReceiverRuntime> runtime{};
 };
 
 struct NativeAudioReceiverHandle final {
     std::mutex lock{};
     std::unique_ptr<warpnect::scl::DatagramProtector> protector{};
+    std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::unique_ptr<AudioReceiverRuntime> runtime{};
     std::vector<jobject> ready_slot_views{};
 };
@@ -383,6 +392,10 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
                                    const ProtectionScope scope) noexcept
         : state_(std::move(state)), scope_(scope) {}
 
+    void set_runtime_network_telemetry(warpnect::scl::RuntimeNetworkTelemetry* telemetry) noexcept {
+        telemetry_ = telemetry;
+    }
+
     [[nodiscard]] std::size_t secure_datagram_budget() const noexcept override {
         std::lock_guard guard(state_->lock);
         return state_->runtime == nullptr ? 0 : state_->runtime->secure_datagram_budget();
@@ -401,6 +414,11 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
             return {.error = warpnect::scl::DatagramProtectionError::Failed};
         }
         const auto result = state_->runtime->protect(scope_, inner, output);
+        if (result.ok()) {
+            if (telemetry_ != nullptr) telemetry_->protection_record_produced();
+        } else if (telemetry_ != nullptr) {
+            telemetry_->protection_protect_error();
+        }
         return {.error = map(result.error), .bytes_written = result.bytes_written};
     }
 
@@ -414,6 +432,7 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
             return {.error = warpnect::scl::DatagramProtectionError::Failed};
         }
         const auto result = state_->runtime->unprotect(source, secure, output, now_us);
+        record_unprotect_result(result.error);
         return {.error = map(result.error), .bytes_written = result.bytes_written};
     }
 
@@ -436,8 +455,28 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
         return warpnect::scl::DatagramProtectionError::Failed;
     }
 
+    void record_unprotect_result(const SessionProtectionError error) const noexcept {
+        if (telemetry_ == nullptr) return;
+        switch (error) {
+            case SessionProtectionError::None: telemetry_->protection_record_accepted(); break;
+            case SessionProtectionError::AuthFailure: telemetry_->protection_authentication_failed(); break;
+            case SessionProtectionError::ReplayDuplicate:
+            case SessionProtectionError::ReplayTooOld: telemetry_->protection_replay_dropped(); break;
+            case SessionProtectionError::UnknownContext: telemetry_->protection_unknown_context(); break;
+            case SessionProtectionError::EndpointMismatch: telemetry_->protection_endpoint_mismatch(); break;
+            case SessionProtectionError::InvalidEpoch:
+            case SessionProtectionError::FutureEpoch: telemetry_->protection_epoch_rejected(); break;
+            case SessionProtectionError::InvalidEnvelope:
+            case SessionProtectionError::UnsupportedProtectionVersion:
+            case SessionProtectionError::DatagramTooSmall:
+            case SessionProtectionError::DatagramTooLarge: telemetry_->protection_malformed(); break;
+            default: break;
+        }
+    }
+
     std::shared_ptr<NativeSessionProtectionState> state_{};
     ProtectionScope scope_{};
+    warpnect::scl::RuntimeNetworkTelemetry* telemetry_ = nullptr;
 };
 
 [[nodiscard]] std::unique_ptr<warpnect::scl::DatagramProtector> make_channel_protector(
@@ -455,6 +494,22 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
     }
     return std::make_unique<NativeSessionDatagramProtector>(
         handle->state, ProtectionScope::channel(static_cast<std::uint32_t>(channel_id)));
+}
+
+[[nodiscard]] std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry>
+network_telemetry_source(const jlong source_id) noexcept {
+    if (source_id <= 0 || source_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
+        return nullptr;
+    }
+    auto source = warpnect::scl::runtime_telemetry::runtime_telemetry_registry().find_source(
+        static_cast<std::uint32_t>(source_id));
+    return source == nullptr ? nullptr : std::make_shared<warpnect::scl::RuntimeNetworkTelemetry>(std::move(source));
+}
+
+void attach_protector_telemetry(warpnect::scl::DatagramProtector* protector,
+                                warpnect::scl::RuntimeNetworkTelemetry* telemetry) noexcept {
+    auto* const session = dynamic_cast<NativeSessionDatagramProtector*>(protector);
+    if (session != nullptr) session->set_runtime_network_telemetry(telemetry);
 }
 
 [[nodiscard]] NativeVideoTransportHandle* handle_from(jlong handle) noexcept {
@@ -1561,11 +1616,20 @@ Java_io_warpnect_NativeBridge_nativeRuntimeTelemetryRegisterSource(
         const auto metric_id = static_cast<std::uint16_t>(ids[static_cast<std::size_t>(index)]);
         const auto kind = static_cast<warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind>(
             static_cast<std::uint8_t>(kinds[static_cast<std::size_t>(index)]));
-        if (metric_id == 0 || (kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::CounterU64 &&
-                               kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::GaugeI64)) {
+        if (metric_id == 0 ||
+            (kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::CounterU64 &&
+             kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::GaugeI64 &&
+             kind != warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::HistogramU64)) {
             return JNI_FALSE;
         }
-        definitions.push_back({.metric_id = metric_id, .kind = kind});
+        std::vector<std::uint64_t> boundaries{};
+        if (kind == warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind::HistogramU64) {
+            if (metric_id != 0x0606) return JNI_FALSE;
+            boundaries = {100, 250, 500, 1'000, 2'000, 5'000, 10'000, 20'000,
+                          50'000, 100'000, 250'000, 500'000};
+        }
+        definitions.push_back(
+            {.metric_id = metric_id, .kind = kind, .histogram_boundaries = std::move(boundaries)});
     }
     try {
         const auto registration = warpnect::scl::runtime_telemetry::runtime_telemetry_registry()
@@ -1584,6 +1648,83 @@ Java_io_warpnect_NativeBridge_nativeRuntimeTelemetryUnregisterSource(
         warpnect::scl::runtime_telemetry::runtime_telemetry_registry().unregister_source(
             static_cast<std::uint32_t>(source_id));
     }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_warpnect_NativeBridge_nativeChannelNetworkTelemetryAttach(
+    JNIEnv* /* env */, jclass /* clazz */, const jlong handle, const jint transport_kind,
+    const jlong source_id) {
+    auto telemetry = network_telemetry_source(source_id);
+    if (telemetry == nullptr || handle == 0) return JNI_FALSE;
+    switch (transport_kind) {
+        case 1: {
+            auto* native = handle_from(handle);
+            if (native == nullptr || native->sender == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->sender->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        case 2: {
+            auto* native = receiver_handle_from(handle);
+            if (native == nullptr || native->runtime == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->runtime->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        case 3: {
+            auto* native = audio_transport_handle_from(handle);
+            if (native == nullptr || native->sender == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->sender->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        case 4: {
+            auto* native = audio_receiver_handle_from(handle);
+            if (native == nullptr || native->runtime == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->runtime->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        case 5: {
+            auto* native = input_transport_handle_from(handle);
+            if (native == nullptr || native->sender == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->sender->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        case 6: {
+            auto* native = input_receiver_handle_from(handle);
+            if (native == nullptr || native->runtime == nullptr || native->network_telemetry != nullptr) return JNI_FALSE;
+            native->network_telemetry = std::move(telemetry);
+            native->runtime->set_runtime_network_telemetry(native->network_telemetry.get());
+            attach_protector_telemetry(native->protector.get(), native->network_telemetry.get());
+            return JNI_TRUE;
+        }
+        default: return JNI_FALSE;
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_warpnect_NativeBridge_nativeVideoReceiverClockSyncTelemetryAttach(
+    JNIEnv* /* env */, jclass /* clazz */, const jlong handle, const jlong source_id) {
+    if (handle == 0 || source_id <= 0 || source_id > std::numeric_limits<std::uint32_t>::max()) {
+        return JNI_FALSE;
+    }
+    const auto source = warpnect::scl::runtime_telemetry::runtime_telemetry_registry().find_source(
+        static_cast<std::uint32_t>(source_id));
+    if (source == nullptr) return JNI_FALSE;
+    auto* native = receiver_handle_from(handle);
+    if (native == nullptr || native->runtime == nullptr || native->clock_sync_telemetry != nullptr) {
+        return JNI_FALSE;
+    }
+    native->clock_sync_telemetry = std::make_shared<warpnect::scl::RuntimeClockSyncTelemetry>(source);
+    native->runtime->set_runtime_clock_sync_telemetry(native->clock_sync_telemetry.get());
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL

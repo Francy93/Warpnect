@@ -6,6 +6,7 @@
 #include "fec_control.h"
 #include "monotonic_time.h"
 #include "packet_codec.h"
+#include "runtime_network_telemetry.h"
 
 namespace warpnect::scl {
 namespace {
@@ -63,7 +64,8 @@ VideoTransportSender::VideoTransportSender(VideoTransportSenderConfig config,
               .datagram_storage = workspace.retransmission_datagram_storage,
               .entries = workspace.retransmission_entries,
           }),
-      telemetry_(NetworkTelemetryStorage{}), packetizer_(workspace.datagram_scratch) {
+      telemetry_(NetworkTelemetryStorage{.runtime_network_telemetry = config.runtime_network_telemetry}),
+      packetizer_(workspace.datagram_scratch) {
     snapshot_.next_frame_id = config_.initial_frame_id;
     snapshot_.next_video_sequence = config_.initial_video_sequence;
     snapshot_.next_control_sequence = config_.initial_control_sequence;
@@ -91,7 +93,13 @@ VideoStatus VideoTransportSender::rebind_prebound_socket(UdpSocket socket,
     config_.remote_endpoint = remote_endpoint;
     config_.local_port = local.endpoint.port;
     socket_ = std::move(socket);
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(VideoError::None);
+}
+
+void VideoTransportSender::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
+    telemetry_ = NetworkTelemetry(NetworkTelemetryStorage{.runtime_network_telemetry = telemetry});
 }
 
 VideoStatus VideoTransportSender::open() noexcept {
@@ -250,6 +258,7 @@ VideoStatus VideoTransportSender::handle_control_datagram(std::span<const std::b
             remember(VideoError::NackDecodeFailed);
             return status(snapshot_.last_error);
         }
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->nack_received();
         return handle_nack(nack.request);
     }
     if (control_type == SessionControlType::VideoResyncRequest) {
@@ -329,6 +338,7 @@ VideoStatus VideoTransportSender::handle_nack(const NackRequest& request) noexce
         const RetransmissionLookupResult cached =
             cache_.find(PayloadType::Video, sequence.sequence_number);
         if (!cached.ok()) {
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->retransmission_cache_miss();
             remember(VideoError::RetransmissionFailed);
             return status(snapshot_.last_error);
         }
@@ -462,6 +472,7 @@ VideoStatus VideoTransportSender::send_inner_datagram(
     if (!sent.ok()) {
         const VideoError mapped = map_udp_send_error(sent.status.error);
         if (mapped == VideoError::WouldBlock) telemetry_.record_send_would_block();
+        else if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
         return status(mapped);
     }
     snapshot_.video_bytes_sent += wire.size();
@@ -475,6 +486,8 @@ VideoStatus VideoTransportSender::send_retransmission(std::span<const std::byte>
         const VideoError mapped = map_udp_send_error(sent.status.error);
         remember(mapped == VideoError::WouldBlock ? VideoError::WouldBlock
                                                   : VideoError::RetransmissionFailed);
+        if (mapped == VideoError::WouldBlock) telemetry_.record_send_would_block();
+        else if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
         return status(snapshot_.last_error);
     }
 
@@ -501,6 +514,7 @@ VideoStatus VideoTransportSender::maybe_accept_fec_data(std::span<const std::byt
     if (!accepted.ok()) {
         return status(VideoError::FecEncodingFailed);
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->fec_data_shard_emitted();
     return flush_fec_if_ready();
 }
 

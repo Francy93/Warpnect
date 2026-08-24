@@ -9,6 +9,8 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 struct StageTimingUs final {
     std::uint64_t started_us;
     std::uint64_t completed_us;
@@ -90,6 +92,7 @@ struct NetworkTelemetryCounters final {
 struct NetworkTelemetryStorage final {
     std::span<std::uint64_t> rtt_samples{};
     std::span<std::uint64_t> one_way_delay_samples{};
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct NetworkTelemetrySnapshot final {
@@ -132,6 +135,7 @@ class NetworkTelemetry final {
     void add_counter(std::uint64_t& counter, std::uint64_t delta) noexcept;
 
     NetworkTelemetryCounters counters_{};
+    RuntimeNetworkTelemetry* runtime_network_telemetry_ = nullptr;
     RollingSampleWindow rtt_window_;
     RollingSampleWindow one_way_window_;
 };

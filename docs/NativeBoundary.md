@@ -568,3 +568,34 @@ Opus and Oboe playback update native primitives. Oboe's realtime callback record
 requested/delivered PCM-frame, underrun, and ring-fill atomics; the values cross to Kotlin solely in
 the existing WNTM batch during an explicit snapshot. No media/input telemetry update performs JNI,
 payload copying, or a registry lookup.
+
+## RFC-006C Network and Recovery Diagnostics
+
+```text
+UDP / FEC / NACK / reassembly / WNSD protection
+        -> direct pre-bound native atomic metrics
+        -> RuntimeTelemetrySource
+        -> existing WNTM batch on an explicit snapshot
+        -> one cold JNI transition
+        -> Kotlin TelemetryHub
+```
+
+The hot packet path never invokes JNI for telemetry. SessionControl and lifecycle events retain
+their existing Kotlin control ownership; they use pre-bound local handles and are not converted into
+native packet-path work.
+
+## RFC-006D Latency and ClockSync
+
+```text
+native ClockSync response processing
+        -> direct pre-bound ClockSync telemetry atomics
+        -> existing WNTM batch on an explicit snapshot
+        -> one cold JNI transition
+        -> Kotlin TelemetryHub
+```
+
+Video decoder timings remain on Android `System.nanoTime()` and MediaCodec render `nanoTime` in the
+platform layer. Native Opus decode timing is measured around the existing synchronous call, and
+Oboe only updates its best-effort output-latency gauge from its existing cold presentation query.
+No latency update, trace lookup, or ClockSync event introduces a JNI transition on a packet, frame,
+or audio callback.

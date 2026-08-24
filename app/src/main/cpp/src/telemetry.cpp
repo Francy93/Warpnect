@@ -1,5 +1,7 @@
 #include "telemetry.h"
 
+#include "runtime_network_telemetry.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -89,7 +91,8 @@ RollingStatsSnapshot RollingSampleWindow::snapshot() const noexcept {
 }
 
 NetworkTelemetry::NetworkTelemetry(NetworkTelemetryStorage storage) noexcept
-    : rtt_window_(storage.rtt_samples), one_way_window_(storage.one_way_delay_samples) {}
+    : runtime_network_telemetry_(storage.runtime_network_telemetry),
+      rtt_window_(storage.rtt_samples), one_way_window_(storage.one_way_delay_samples) {}
 
 void NetworkTelemetry::add_counter(std::uint64_t& counter, std::uint64_t delta) noexcept {
     counter = saturated_add(counter, delta, counters_.counter_saturated);
@@ -98,15 +101,18 @@ void NetworkTelemetry::add_counter(std::uint64_t& counter, std::uint64_t delta) 
 void NetworkTelemetry::record_datagram_sent(std::uint64_t bytes) noexcept {
     add_counter(counters_.datagrams_sent, 1);
     add_counter(counters_.bytes_sent, bytes);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->udp_sent(bytes);
 }
 
 void NetworkTelemetry::record_datagram_received(std::uint64_t bytes) noexcept {
     add_counter(counters_.datagrams_received, 1);
     add_counter(counters_.bytes_received, bytes);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->udp_received(bytes);
 }
 
 void NetworkTelemetry::record_send_would_block() noexcept {
     add_counter(counters_.send_would_block, 1);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->udp_would_block();
 }
 
 void NetworkTelemetry::record_receive_would_block() noexcept {
@@ -132,14 +138,17 @@ void NetworkTelemetry::record_duplicate_packet() noexcept {
 void NetworkTelemetry::record_nack_generated(std::uint64_t sequence_count) noexcept {
     add_counter(counters_.nack_messages_generated, 1);
     add_counter(counters_.nack_sequences_requested, sequence_count);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->nack_generated();
 }
 
 void NetworkTelemetry::record_nack_received() noexcept {
     add_counter(counters_.nack_messages_received, 1);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->nack_received();
 }
 
 void NetworkTelemetry::record_retransmission_sent() noexcept {
     add_counter(counters_.retransmissions_sent, 1);
+    if (runtime_network_telemetry_ != nullptr) runtime_network_telemetry_->retransmission_sent();
 }
 
 void NetworkTelemetry::record_retransmission_received_or_observed() noexcept {
@@ -149,11 +158,19 @@ void NetworkTelemetry::record_retransmission_received_or_observed() noexcept {
 void NetworkTelemetry::record_fec_block_encoded(std::uint64_t parity_shards_generated) noexcept {
     add_counter(counters_.fec_blocks_encoded, 1);
     add_counter(counters_.fec_parity_shards_generated, parity_shards_generated);
+    if (runtime_network_telemetry_ != nullptr) {
+        for (std::uint64_t index = 0; index < parity_shards_generated; ++index) {
+            runtime_network_telemetry_->fec_parity_shard_emitted();
+        }
+    }
 }
 
 void NetworkTelemetry::record_fec_recovery_attempt(bool success,
                                                    std::uint64_t data_shards_recovered) noexcept {
     add_counter(counters_.fec_recovery_attempts, 1);
+    if (runtime_network_telemetry_ != nullptr) {
+        runtime_network_telemetry_->fec_recovery(success, data_shards_recovered);
+    }
     if (success) {
         add_counter(counters_.fec_recovery_successes, 1);
         add_counter(counters_.fec_data_shards_recovered, data_shards_recovered);

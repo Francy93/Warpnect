@@ -55,6 +55,10 @@ class AndroidDirectPathBackend private constructor(
         )
     }
 
+    /** Bounded bridge from the shared P2P group to per-Session Direct path lifecycle hints. */
+    fun observeGroupState(observer: (Boolean) -> Unit): AutoCloseable? =
+        if (closed.get()) null else controller.observeGroupState(observer)
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         controller.close()

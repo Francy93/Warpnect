@@ -30,6 +30,14 @@ import io.warpnect.session.setup.PreparedChannelProtection
 import io.warpnect.session.setup.PreparedChannelTransport
 import io.warpnect.session.setup.PreparedSessionBootstrap
 import io.warpnect.session.setup.SessionPathPlan
+import io.warpnect.telemetry.SessionLifecycleTelemetry
+import io.warpnect.telemetry.SessionPathTelemetry
+import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryMetricId
+import io.warpnect.telemetry.TelemetryMetricIds
+import io.warpnect.telemetry.TelemetryMetricValue
+import io.warpnect.telemetry.TelemetryScope
+import io.warpnect.telemetry.TelemetrySnapshot
 import java.net.InetAddress
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -43,6 +51,7 @@ class SessionLifecycleControllerTest {
     @Test
     fun hardDirectLossCompletesSameGenerationMigrationWithoutRecreatingSecurityState() {
         val clock = TestClock(100)
+        val telemetryHub = TelemetryHub()
         val clientControl = TestControl()
         val hostControl = TestControl()
         val clientFixture = fixture(SessionRole.Client, clientControl, contextBase = 10)
@@ -69,7 +78,36 @@ class SessionLifecycleControllerTest {
             continuity = listOf(hostEvents),
             capacityOwner = TestCapacityOwner(),
         )
-        client = controller(clientFixture, clientAdapter, clock, listOf(clientEvents))
+        client = controller(
+            clientFixture,
+            clientAdapter,
+            clock,
+            listOf(clientEvents),
+            telemetry = SessionLifecycleTelemetry.register(
+                telemetryHub,
+                TelemetryScope.Session(clientFixture.bootstrap.sessionId, clientFixture.bootstrap.generation),
+            ),
+            pathTelemetry = mapOf(
+                directPath to SessionPathTelemetry.register(
+                    telemetryHub,
+                    TelemetryScope.Path(
+                        clientFixture.bootstrap.sessionId,
+                        clientFixture.bootstrap.generation,
+                        directPath,
+                        NetworkPathKind.Direct,
+                    ),
+                ),
+                lanPath to SessionPathTelemetry.register(
+                    telemetryHub,
+                    TelemetryScope.Path(
+                        clientFixture.bootstrap.sessionId,
+                        clientFixture.bootstrap.generation,
+                        lanPath,
+                        NetworkPathKind.Lan,
+                    ),
+                ),
+            ),
+        )
 
         assertEquals(SessionLifecycleError.None, host.start())
         assertEquals(SessionLifecycleError.None, client.start())
@@ -110,6 +148,11 @@ class SessionLifecycleControllerTest {
         assertEquals(listOf("migration-start", "migration-commit"), hostEvents.events)
         assertEquals(0, clientAdapter.ordinaryMediaDatagrams)
         assertEquals(0, hostAdapter.ordinaryMediaDatagrams)
+        val snapshot = telemetryHub.snapshot()
+        assertCounter(snapshot, TelemetryMetricIds.SessionPathMigrationStarted)
+        assertCounter(snapshot, TelemetryMetricIds.SessionPathMigrationSucceeded)
+        assertCounter(snapshot, TelemetryMetricIds.PathPlatformLost)
+        assertCounter(snapshot, TelemetryMetricIds.PathValidationSucceeded)
     }
 
     @Test
@@ -229,6 +272,60 @@ class SessionLifecycleControllerTest {
     }
 
     @Test
+    fun localDisconnectDuringReconnectCountsCancellationOnlyOnce() {
+        val clock = TestClock(100)
+        val hub = TelemetryHub()
+        val control = TestControl()
+        val fixture = fixture(SessionRole.Client, control, contextBase = 45, standby = false)
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            clock,
+            reconnect = TestReconnectOrchestrator(),
+            telemetry = SessionLifecycleTelemetry.register(
+                hub,
+                TelemetryScope.Session(fixture.bootstrap.sessionId, fixture.bootstrap.generation),
+            ),
+        )
+        assertEquals(SessionLifecycleError.None, controller.start())
+
+        controller.onPlatformPathLoss(directPath, hard = true)
+        assertEquals(SessionLifecycleState.Reconnecting, controller.snapshot().state)
+
+        assertEquals(SessionLifecycleError.None, controller.gracefulDisconnect(DisconnectReason.UserRequested))
+        assertEquals(SessionLifecycleError.None, controller.gracefulDisconnect(DisconnectReason.UserRequested))
+
+        val snapshot = hub.snapshot()
+        assertCounter(snapshot, TelemetryMetricIds.SessionReconnectCancelled)
+        assertCounter(snapshot, TelemetryMetricIds.SessionDisconnectLocal)
+    }
+
+    @Test
+    fun freshGenerationLifecycleSourceRecordsReconnectSuccess() {
+        val clock = TestClock(100)
+        val hub = TelemetryHub()
+        val fixture = fixture(
+            SessionRole.Client,
+            TestControl(),
+            contextBase = 46,
+            standby = false,
+            generation = SessionGeneration.requireValid(2u),
+        )
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            clock,
+            telemetry = SessionLifecycleTelemetry.register(
+                hub,
+                TelemetryScope.Session(fixture.bootstrap.sessionId, fixture.bootstrap.generation),
+            ),
+        )
+
+        assertEquals(SessionLifecycleError.None, controller.start())
+        assertCounter(hub.snapshot(), TelemetryMetricIds.SessionReconnectSucceeded)
+    }
+
+    @Test
     fun allPathLossRequestsFreshGenerationChainAndResetsInputSafetyOnce() {
         val clock = TestClock(100)
         val control = TestControl()
@@ -319,6 +416,8 @@ class SessionLifecycleControllerTest {
         continuity: List<TestContinuityParticipant> = emptyList(),
         reconnect: TestReconnectOrchestrator? = null,
         capacityOwner: TestCapacityOwner? = null,
+        telemetry: SessionLifecycleTelemetry? = null,
+        pathTelemetry: Map<PathId, SessionPathTelemetry> = emptyMap(),
     ): SessionLifecycleController = SessionLifecycleController(
         bootstrap = fixture.bootstrap,
         pathProvider = FixturePathProvider(fixture),
@@ -327,7 +426,17 @@ class SessionLifecycleControllerTest {
         continuityParticipants = continuity,
         clock = clock,
         capacityOwner = capacityOwner,
+        telemetry = telemetry,
+        pathTelemetry = pathTelemetry,
     )
+
+    private fun assertCounter(snapshot: TelemetrySnapshot, id: TelemetryMetricId) {
+        assertTrue(
+            snapshot.records.any {
+                it.metricId == id && (it.value as? TelemetryMetricValue.Counter)?.value == 1uL
+            },
+        )
+    }
 
     private fun fixture(
         role: SessionRole,

@@ -32,8 +32,10 @@ class AndroidDirectPathController(
     // WifiP2pManager has no synchronous public enabled-state query. This matches the RFC-005B
     // backend's optimistic pre-broadcast state and is corrected by every P2P state broadcast.
     private val p2pEnabled = AtomicBoolean(true)
+    private val groupFormed = AtomicBoolean(false)
     private val pendingHost = mutableListOf<(AndroidDirectResult) -> Unit>()
     private val pendingClient = mutableListOf<(AndroidDirectResult) -> Unit>()
+    private val groupObservers = LinkedHashSet<(Boolean) -> Unit>()
     private var clientGroupLeases = 0
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -45,6 +47,7 @@ class AndroidDirectPathController(
                     ) == WifiP2pManager.WIFI_P2P_STATE_ENABLED
                     p2pEnabled.set(enabled)
                     if (!enabled) {
+                        publishGroupState(false)
                         completeHost(AndroidDirectResult.Failure(PathFailureReason.DirectUnavailable))
                         completeClient(AndroidDirectResult.Failure(PathFailureReason.DirectUnavailable))
                     }
@@ -134,9 +137,14 @@ class AndroidDirectPathController(
 
     /** Verifies the frozen Host-as-GO topology after Android has reported group formation. */
     fun onConnectionChanged(info: WifiP2pInfo?, group: WifiP2pGroup?) {
-        if (closed.get() || info == null || group == null || !info.groupFormed) {
+        if (closed.get()) {
             return
         }
+        if (info == null || group == null || !info.groupFormed) {
+            publishGroupState(false)
+            return
+        }
+        publishGroupState(true)
         if (info.isGroupOwner) {
             hostGroupManager.markReady(group)
             completeHost(AndroidDirectResult.HostGroupReady(group.`interface`))
@@ -155,6 +163,16 @@ class AndroidDirectPathController(
 
     fun acquireHostGroupLease(): DirectPathLease? = hostGroupManager.acquireLease()
 
+    /**
+     * Registers one bounded Session-path observer for direct-group state changes. The signal is a
+     * local platform hint only; callers must keep RFC-005H authenticated validation authoritative.
+     */
+    fun observeGroupState(observer: (Boolean) -> Unit): AutoCloseable? = synchronized(lock) {
+        if (closed.get() || groupObservers.size >= MAX_GROUP_OBSERVERS) return@synchronized null
+        groupObservers += observer
+        GroupObserverLease(this, observer)
+    }
+
     /** Capability negotiation may expose Direct only while Android reports the P2P subsystem enabled. */
     fun isP2pEnabled(): Boolean = !closed.get() && p2pEnabled.get()
 
@@ -169,6 +187,7 @@ class AndroidDirectPathController(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         p2pEnabled.set(false)
+        publishGroupState(false)
         try {
             appContext.unregisterReceiver(receiver)
         } catch (_: IllegalArgumentException) {
@@ -178,6 +197,7 @@ class AndroidDirectPathController(
             (pendingHost + pendingClient).also {
                 pendingHost.clear()
                 pendingClient.clear()
+                groupObservers.clear()
             } to (clientGroupLeases > 0).also {
                 clientGroupLeases = 0
             }
@@ -200,6 +220,18 @@ class AndroidDirectPathController(
         } catch (_: SecurityException) {
             failPendingForPermission()
         }
+    }
+
+    private fun publishGroupState(formed: Boolean) {
+        val observers = synchronized(lock) {
+            if (groupFormed.getAndSet(formed) == formed) return@synchronized emptyList()
+            groupObservers.toList()
+        }
+        observers.forEach { observer -> observer(formed) }
+    }
+
+    private fun removeGroupObserver(observer: (Boolean) -> Unit) = synchronized(lock) {
+        groupObservers.remove(observer)
     }
 
     private fun completeHost(result: AndroidDirectResult) {
@@ -244,6 +276,17 @@ class AndroidDirectPathController(
         }
     }
 
+    private class GroupObserverLease(
+        private val owner: AndroidDirectPathController,
+        private val observer: (Boolean) -> Unit,
+    ) : AutoCloseable {
+        private val released = AtomicBoolean(false)
+
+        override fun close() {
+            if (released.compareAndSet(false, true)) owner.removeGroupObserver(observer)
+        }
+    }
+
     private class ClientGroupLease(private val owner: AndroidDirectPathController) : DirectPathLease {
         private val released = AtomicBoolean(false)
         override fun close() {
@@ -253,6 +296,7 @@ class AndroidDirectPathController(
 
     private companion object {
         const val MAX_PENDING = 8
+        const val MAX_GROUP_OBSERVERS = 8
     }
 }
 

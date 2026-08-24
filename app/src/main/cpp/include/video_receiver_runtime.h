@@ -21,6 +21,9 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+class RuntimeClockSyncTelemetry;
+
 enum class VideoReceiverEventType : std::uint8_t {
     None = 0,
     StreamConfigReady = 1,
@@ -51,6 +54,8 @@ struct VideoReceiverConfig final {
     ClockSyncConfig clock_sync{};
     std::size_t clock_sync_sample_capacity = 16;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
+    RuntimeClockSyncTelemetry* runtime_clock_sync_telemetry = nullptr;
 };
 
 struct VideoReceiverEvent final {
@@ -127,6 +132,8 @@ class VideoReceiverRuntime final {
     [[nodiscard]] VideoStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] VideoStatus rebind_prebound_socket(UdpSocket socket, UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
+    void set_runtime_clock_sync_telemetry(RuntimeClockSyncTelemetry* telemetry) noexcept;
     [[nodiscard]] VideoReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] VideoStatus accept_datagram(std::span<const std::byte> datagram,
                                               const UdpEndpoint& source,

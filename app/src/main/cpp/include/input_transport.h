@@ -12,12 +12,15 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 struct InputTransportSenderConfig final {
     UdpEndpoint remote_endpoint{};
     std::uint16_t local_port = 0;
     std::size_t max_wire_datagram_size = kInputMaxDatagramWireSize;
     std::uint32_t initial_input_sequence = 0;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct InputTransportSenderWorkspace final {
@@ -79,6 +82,7 @@ class InputTransportSender final : private InputDatagramSink {
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] InputTransportStatus rebind_prebound_socket(UdpSocket socket,
                                                                UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
     [[nodiscard]] InputTransportStatus submit_key(std::uint64_t event_time_us,
                                                   const InputKeyEvent& event) noexcept;
     [[nodiscard]] InputTransportStatus submit_touch_frame(std::uint64_t event_time_us,

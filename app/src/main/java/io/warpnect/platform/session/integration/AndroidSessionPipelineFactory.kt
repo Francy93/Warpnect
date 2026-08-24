@@ -1,6 +1,7 @@
 package io.warpnect.platform.session.integration
 
 import android.view.View
+import io.warpnect.NativeBridge
 import io.warpnect.audio.session.AudioReceiverSessionConfig
 import io.warpnect.audio.session.AudioReceiverSessionController
 import io.warpnect.audio.session.AudioTransmitterSessionConfig
@@ -41,6 +42,8 @@ import io.warpnect.telemetry.AudioSenderTelemetry
 import io.warpnect.telemetry.InputReceiverTelemetry
 import io.warpnect.telemetry.InputSenderTelemetry
 import io.warpnect.telemetry.NativeAudioPlaybackTelemetry
+import io.warpnect.telemetry.NativeChannelNetworkTelemetry
+import io.warpnect.telemetry.NativeClockSyncTelemetry
 import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.telemetry.TelemetryScope
 import io.warpnect.telemetry.VideoDecoderTelemetry
@@ -203,10 +206,12 @@ class AndroidSessionPipelineFactory(
         val recovery = channel.configuration.filterIsInstance<SetupConfiguration.Recovery>().singleOrNull()?.config
         return if (channel.isSender(role)) {
             val transport = NativeSclVideoTransportController()
-            if (transport.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoSender),
-                ) != io.warpnect.video.transport.VideoTransportError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoSender)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.VideoSender)
+            if (transport.adoptPreparedTransport(handle) != io.warpnect.video.transport.VideoTransportError.None
             ) {
+                networkTelemetry?.close()
                 transport.close()
                 null
             } else {
@@ -214,43 +219,54 @@ class AndroidSessionPipelineFactory(
                 val pipeline = bindings.createVideoSender(channel, mode, recovery, transport, telemetry)
                 if (pipeline == null) {
                     telemetry.close()
+                    networkTelemetry?.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel, mode)) {
                     pipeline.controller.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    VideoSenderComponent(pipeline)
+                    VideoSenderComponent(pipeline, networkTelemetry)
                 }
             }
         } else {
             val receiver = NativeSclVideoReceiverController()
-            if (receiver.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoReceiver),
-                ) != io.warpnect.video.transport.VideoTransportError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoReceiver)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.VideoReceiver)
+            if (receiver.adoptPreparedTransport(handle) != io.warpnect.video.transport.VideoTransportError.None
             ) {
+                networkTelemetry?.close()
                 receiver.close()
                 null
             } else {
                 val telemetry = VideoDecoderTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+                val clockSyncTelemetry = attachClockSyncTelemetry(bootstrap, channel, receiver)
                 val pipeline = bindings.createVideoReceiver(channel, mode, recovery, receiver, telemetry)
                 if (pipeline == null) {
+                    clockSyncTelemetry?.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
+                    clockSyncTelemetry?.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    VideoReceiverComponent(pipeline)
+                    val telemetrySources = clockSyncTelemetry?.let { pipeline.telemetrySources + it }
+                        ?: pipeline.telemetrySources
+                    VideoReceiverComponent(pipeline.copy(telemetrySources = telemetrySources), networkTelemetry)
                 }
             }
         }
@@ -272,10 +288,12 @@ class AndroidSessionPipelineFactory(
         } ?: return null
         return if (channel.isSender(role)) {
             val transport = NativeSclAudioTransportController()
-            if (transport.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.AudioSender),
-                ) != io.warpnect.audio.transport.AudioTransportError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.AudioSender)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.AudioSender)
+            if (transport.adoptPreparedTransport(handle) != io.warpnect.audio.transport.AudioTransportError.None
             ) {
+                networkTelemetry?.close()
                 transport.close()
                 null
             } else {
@@ -283,25 +301,29 @@ class AndroidSessionPipelineFactory(
                 val pipeline = bindings.createAudioSender(channel, configuration, transport, telemetry)
                 if (pipeline == null) {
                     telemetry.close()
+                    networkTelemetry?.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel, configuration)) {
                     pipeline.controller.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    AudioSenderComponent(channel.descriptor.kind, pipeline)
+                    AudioSenderComponent(channel.descriptor.kind, pipeline, networkTelemetry)
                 }
             }
         } else {
             val receiver = NativeSclAudioReceiverController()
-            if (receiver.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.AudioReceiver),
-                ) != io.warpnect.audio.transport.AudioTransportError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.AudioReceiver)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.AudioReceiver)
+            if (receiver.adoptPreparedTransport(handle) != io.warpnect.audio.transport.AudioTransportError.None
             ) {
+                networkTelemetry?.close()
                 receiver.close()
                 null
             } else {
@@ -320,18 +342,20 @@ class AndroidSessionPipelineFactory(
                 if (pipeline == null) {
                     telemetry.close()
                     playbackTelemetry.close()
+                    networkTelemetry?.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel, configuration)) {
                     pipeline.controller.close()
                     telemetry.close()
                     playbackTelemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    AudioReceiverComponent(channel.descriptor.kind, pipeline)
+                    AudioReceiverComponent(channel.descriptor.kind, pipeline, networkTelemetry)
                 }
             }
         }
@@ -346,10 +370,12 @@ class AndroidSessionPipelineFactory(
             .singleOrNull() ?: return null
         return if (channel.isSender(role)) {
             val transport = NativeSclInputTransportController()
-            if (transport.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.InputSender),
-                ) != io.warpnect.input.transport.InputTransportError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.InputSender)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.InputSender)
+            if (transport.adoptPreparedTransport(handle) != io.warpnect.input.transport.InputTransportError.None
             ) {
+                networkTelemetry?.close()
                 transport.close()
                 null
             } else {
@@ -357,25 +383,29 @@ class AndroidSessionPipelineFactory(
                 val pipeline = bindings.createInputSender(channel, configuration, transport, telemetry)
                 if (pipeline == null) {
                     telemetry.close()
+                    networkTelemetry?.close()
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    InputSenderComponent(pipeline)
+                    InputSenderComponent(pipeline, networkTelemetry)
                 }
             }
         } else {
             val receiver = NativeSclInputReceiverController()
-            if (receiver.adoptPreparedTransport(
-                    channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.InputReceiver),
-                ) != io.warpnect.input.transport.InputReceiverError.None
+            val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.InputReceiver)
+            val networkTelemetry =
+                attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.InputReceiver)
+            if (receiver.adoptPreparedTransport(handle) != io.warpnect.input.transport.InputReceiverError.None
             ) {
+                networkTelemetry?.close()
                 receiver.close()
                 null
             } else {
@@ -383,17 +413,19 @@ class AndroidSessionPipelineFactory(
                 val pipeline = bindings.createInputReceiver(channel, configuration, receiver, telemetry)
                 if (pipeline == null) {
                     telemetry.close()
+                    networkTelemetry?.close()
                     receiver.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
                     telemetry.close()
+                    networkTelemetry?.close()
                     null
                 } else {
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    InputReceiverComponent(pipeline)
+                    InputReceiverComponent(pipeline, networkTelemetry)
                 }
             }
         }
@@ -406,6 +438,44 @@ class AndroidSessionPipelineFactory(
         SessionChannelKind.Input -> SecureSessionIntegrationError.InputPipelineStartFailed
         SessionChannelKind.Telemetry -> SecureSessionIntegrationError.TelemetryStartFailed
         SessionChannelKind.Control -> SecureSessionIntegrationError.PipelinePlanInvalid
+    }
+
+    private fun attachNetworkTelemetry(
+        bootstrap: PreparedSessionBootstrap,
+        channel: PreparedChannel,
+        handle: Long,
+        kind: NativePreparedTransportKind,
+    ): NativeChannelNetworkTelemetry? {
+        if (handle == 0L) return null
+        val telemetry = NativeChannelNetworkTelemetry.register(
+            telemetryHub,
+            bootstrap.channelScope(channel),
+        )
+        val sourceId = telemetry.sourceId
+        if (
+            sourceId != null &&
+            NativeBridge.channelNetworkTelemetryAttach(
+                handle,
+                kind.networkTelemetryKind,
+                sourceId.value.toLong(),
+            )
+        ) {
+            return telemetry
+        }
+        telemetry.close()
+        return null
+    }
+
+    private fun attachClockSyncTelemetry(
+        bootstrap: PreparedSessionBootstrap,
+        channel: PreparedChannel,
+        receiver: NativeSclVideoReceiverController,
+    ): NativeClockSyncTelemetry? {
+        val telemetry = NativeClockSyncTelemetry.register(telemetryHub, bootstrap.channelScope(channel))
+        val sourceId = telemetry.sourceId
+        if (sourceId != null && receiver.attachClockSyncTelemetry(sourceId)) return telemetry
+        telemetry.close()
+        return null
     }
 }
 
@@ -420,6 +490,7 @@ private fun PreparedSessionBootstrap.channelScope(channel: PreparedChannel): Tel
 
 private class VideoSenderComponent(
     private val pipeline: AndroidVideoSenderPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "video-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
@@ -438,11 +509,13 @@ private class VideoSenderComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 
 private class VideoReceiverComponent(
     private val pipeline: AndroidVideoReceiverPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "video-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
@@ -461,12 +534,14 @@ private class VideoReceiverComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 
 private class AudioSenderComponent(
     private val kind: SessionChannelKind,
     private val pipeline: AndroidAudioSenderPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "${kind.name.lowercase()}-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
@@ -484,12 +559,14 @@ private class AudioSenderComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 
 private class AudioReceiverComponent(
     private val kind: SessionChannelKind,
     private val pipeline: AndroidAudioReceiverPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "${kind.name.lowercase()}-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
@@ -507,11 +584,13 @@ private class AudioReceiverComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 
 private class InputSenderComponent(
     private val pipeline: AndroidInputSenderPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "input-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
@@ -530,11 +609,13 @@ private class InputSenderComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 
 private class InputReceiverComponent(
     private val pipeline: AndroidInputReceiverPipeline,
+    private val networkTelemetry: AutoCloseable?,
 ) : SessionPipelineComponent {
     override val name = "input-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
@@ -553,6 +634,7 @@ private class InputReceiverComponent(
     override fun close() {
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
+        networkTelemetry?.close()
     }
 }
 

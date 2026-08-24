@@ -98,9 +98,9 @@ Status: in progress.
 
 - RFC-006A - Unified Runtime Telemetry Model [complete]
 - RFC-006B - Media Pipeline Metrics Integration [complete]
-- RFC-006C - Network & Recovery Diagnostics [next]
-- RFC-006D - Latency Trace & Cross-Pipeline Correlation
-- RFC-006E - Diagnostic Logging & Bounded Event History
+- RFC-006C - Network & Recovery Diagnostics [complete]
+- RFC-006D - Latency Trace & Cross-Pipeline Correlation [complete]
+- RFC-006E - Diagnostic Logging & Bounded Event History [next]
 - RFC-006F - Runtime Diagnostics UI
 - RFC-006G - Session Reports & Benchmark Export
 - RFC-006H - Diagnostics Integration & Validation

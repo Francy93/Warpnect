@@ -4,6 +4,7 @@
 
 #include "datagram_limits.h"
 #include "packet_codec.h"
+#include "runtime_network_telemetry.h"
 
 namespace warpnect::scl {
 namespace {
@@ -64,7 +65,12 @@ AudioTransportStatus AudioTransportSender::rebind_prebound_socket(
     config_.remote_endpoint = remote_endpoint;
     config_.local_port = local.endpoint.port;
     socket_ = std::move(socket);
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(AudioTransportError::None);
+}
+
+void AudioTransportSender::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
 }
 
 AudioTransportStatus AudioTransportSender::open() noexcept {
@@ -251,8 +257,10 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
         const AudioTransportError mapped = map_udp_send_error(sent.status.error);
         if (mapped == AudioTransportError::WouldBlock) {
             ++snapshot_.would_block_count;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_would_block();
         } else {
             ++snapshot_.send_failures;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
         }
         remember(mapped);
         return status(mapped);
@@ -260,6 +268,7 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
 
     ++snapshot_.datagrams_sent;
     snapshot_.bytes_sent += wire.size();
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_sent(wire.size());
     return status(AudioTransportError::None);
 }
 

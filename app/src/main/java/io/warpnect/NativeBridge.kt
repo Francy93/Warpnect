@@ -30,6 +30,12 @@ internal object NativeBridge {
     private external fun nativeRuntimeTelemetryUnregisterSource(sourceId: Long)
 
     @JvmStatic
+    private external fun nativeChannelNetworkTelemetryAttach(handle: Long, transportKind: Int, sourceId: Long): Boolean
+
+    @JvmStatic
+    private external fun nativeVideoReceiverClockSyncTelemetryAttach(handle: Long, sourceId: Long): Boolean
+
+    @JvmStatic
     private external fun nativeSessionProtectionCreate(
         rootSecret: ByteArray,
         sessionId: ByteArray,
@@ -655,6 +661,12 @@ internal object NativeBridge {
         nativeRuntimeTelemetryRegisterSource(sourceId, metricIds, metricKinds)
 
     fun runtimeTelemetryUnregisterSource(sourceId: Long) = nativeRuntimeTelemetryUnregisterSource(sourceId)
+
+    fun channelNetworkTelemetryAttach(handle: Long, transportKind: Int, sourceId: Long): Boolean =
+        nativeChannelNetworkTelemetryAttach(handle, transportKind, sourceId)
+
+    fun videoReceiverClockSyncTelemetryAttach(handle: Long, sourceId: Long): Boolean =
+        nativeVideoReceiverClockSyncTelemetryAttach(handle, sourceId)
 
     fun sessionProtectionCreate(
         rootSecret: ByteArray,

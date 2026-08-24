@@ -133,6 +133,8 @@ class NativeOpusAudioDecoderController internal constructor(
             currentSink.onDecoderError(rangeError)
             return@synchronized resultLocked(rangeError)
         }
+        val sampledLatency = (metadata.firstFramePosition and 7L) == 0L
+        val decodeStartedNs = if (sampledLatency) System.nanoTime() else 0L
         val decoded = backend.decode(
             handle = handle,
             buffer = buffer,
@@ -144,6 +146,13 @@ class NativeOpusAudioDecoderController internal constructor(
             timestampQuality = metadata.timestampQuality,
             discontinuityBefore = metadata.discontinuityBefore,
         )
+        if (sampledLatency && decoded.error == AudioDecoderError.None) {
+            telemetry?.recordDecoderInputToOutput(
+                metadata.firstFramePosition,
+                decodeStartedNs,
+                System.nanoTime(),
+            )
+        }
         localSnapshot = snapshotWithLocalSinkFailures(backend.snapshot(handle, state)).copy(
             lastError = decoded.error,
             lastNativeError = decoded.nativeError,

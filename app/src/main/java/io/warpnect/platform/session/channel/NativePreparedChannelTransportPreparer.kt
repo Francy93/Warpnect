@@ -300,6 +300,18 @@ internal enum class NativePreparedTransportKind {
     InputSender,
     InputReceiver,
     Generic,
+    ;
+
+    internal val networkTelemetryKind: Int
+        get() = when (this) {
+            VideoSender -> 1
+            VideoReceiver -> 2
+            AudioSender -> 3
+            AudioReceiver -> 4
+            InputSender -> 5
+            InputReceiver -> 6
+            Generic -> 0
+        }
 }
 
 /**

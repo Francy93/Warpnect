@@ -1,4 +1,6 @@
 #include "runtime_telemetry.h"
+#include "runtime_clock_sync_telemetry.h"
+#include "runtime_network_telemetry.h"
 
 #include <array>
 #include <cstddef>
@@ -18,6 +20,10 @@ using warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricDefinition;
 using warpnect::scl::runtime_telemetry::RuntimeTelemetryMetricKind;
 using warpnect::scl::runtime_telemetry::RuntimeTelemetryRegistry;
 using warpnect::scl::runtime_telemetry::RuntimeTelemetrySnapshotStatus;
+using warpnect::scl::RuntimeNetworkTelemetry;
+using warpnect::scl::RuntimeClockSyncTelemetry;
+using warpnect::scl::ClockModelSnapshot;
+using warpnect::scl::ClockSyncState;
 
 int failures = 0;
 
@@ -169,6 +175,100 @@ void test_registry_accepts_caller_owned_source_id() {
            "caller-owned source keeps its metric identity and counter value");
 }
 
+void test_network_telemetry_bundle_uses_one_prebound_source() {
+    RuntimeTelemetryRegistry registry{};
+    const auto registration = registry.register_source_with_id(
+        92,
+        {
+            {0x0201, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0202, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0203, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0204, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0205, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0206, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0207, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0208, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0209, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0221, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0222, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0223, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0224, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0225, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0226, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0231, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0232, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0233, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0234, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0241, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0242, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0243, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0244, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0701, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0702, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0703, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0704, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0705, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0706, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0707, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0708, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0709, RuntimeTelemetryMetricKind::CounterU64},
+        });
+    expect(registration.source != nullptr, "network telemetry source registers once");
+    RuntimeNetworkTelemetry telemetry(registration.source);
+    telemetry.protection_record_produced();
+    telemetry.udp_would_block();
+    telemetry.socket_rebind();
+    telemetry.retransmission_sent();
+    telemetry.protection_record_accepted();
+    telemetry.protection_replay_dropped();
+
+    expect(registration.source->counter(0x0701)->value() == 1,
+           "fresh protection is distinct from the send result");
+    expect(registration.source->counter(0x0205)->value() == 1,
+           "WouldBlock is recorded without a successful UDP send");
+    expect(registration.source->counter(0x0209)->value() == 1,
+           "live rebind preserves the existing telemetry source");
+    expect(registration.source->counter(0x0233)->value() == 1,
+           "exact retransmission has its own counter");
+    expect(registration.source->counter(0x0702)->value() == 1 &&
+               registration.source->counter(0x0705)->value() == 1,
+           "accepted and replay-rejected records retain independent outcomes");
+}
+
+void test_clock_sync_telemetry_uses_one_prebound_source() {
+    RuntimeTelemetryRegistry registry{};
+    const auto registration = registry.register_source_with_id(
+        93,
+        {
+            {0x0601, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0602, RuntimeTelemetryMetricKind::CounterU64},
+            {0x0603, RuntimeTelemetryMetricKind::GaugeI64},
+            {0x0604, RuntimeTelemetryMetricKind::GaugeI64},
+            {0x0606, RuntimeTelemetryMetricKind::HistogramU64, {100, 250, 500}},
+        });
+    expect(registration.source != nullptr, "ClockSync telemetry source registers once");
+    RuntimeClockSyncTelemetry telemetry(registration.source);
+    telemetry.accepted(ClockModelSnapshot{
+        .state = ClockSyncState::Synchronized,
+        .reference_local_us = 3'000.0,
+        .reference_remote_us = 2'750.0,
+        .latest_rtt_us = 125,
+    });
+    telemetry.rejected();
+
+    expect(registration.source->counter(0x0601)->value() == 1 &&
+               registration.source->counter(0x0602)->value() == 1,
+           "ClockSync accepted and rejected samples remain distinct");
+    expect(registration.source->gauge(0x0603)->valid() &&
+               registration.source->gauge(0x0603)->value() == 1,
+           "qualified ClockSync state is a valid Boolean gauge");
+    expect(registration.source->gauge(0x0604)->valid() &&
+               registration.source->gauge(0x0604)->value() == 250,
+           "ClockSync offset comes from the current model reference points");
+    expect(registration.source->histogram(0x0606)->snapshot().count == 1,
+           "ClockSync round trip records one bounded sample");
+}
+
 } // namespace
 
 int main() {
@@ -176,6 +276,8 @@ int main() {
     test_histogram_concurrency();
     test_registry_snapshot_and_buffer_bound();
     test_registry_accepts_caller_owned_source_id();
+    test_network_telemetry_bundle_uses_one_prebound_source();
+    test_clock_sync_telemetry_uses_one_prebound_source();
     if (failures != 0) {
         std::cerr << failures << " runtime telemetry test failure(s)\n";
         return 1;

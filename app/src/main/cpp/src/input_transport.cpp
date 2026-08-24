@@ -1,5 +1,7 @@
 #include "input_transport.h"
 
+#include "runtime_network_telemetry.h"
+
 namespace warpnect::scl {
 namespace {
 
@@ -102,7 +104,12 @@ InputTransportStatus InputTransportSender::rebind_prebound_socket(
     snapshot_.local_endpoint_port = local.endpoint.port;
     snapshot_.local_endpoint_ip_version = local.endpoint.address.version;
     snapshot_.has_local_endpoint = true;
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(InputTransportError::None);
+}
+
+void InputTransportSender::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
 }
 
 InputTransportStatus InputTransportSender::open() noexcept {
@@ -273,8 +280,10 @@ InputTransportSender::send_input_datagram(std::span<const std::byte> datagram) n
         if (!sent.ok()) {
             if (sent.error == InputTransportError::WouldBlock) {
                 ++snapshot_.would_block_count;
+                if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_would_block();
             } else {
                 ++snapshot_.send_failure_count;
+                if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
             }
         }
         return sent;
@@ -294,15 +303,19 @@ InputTransportSender::send_input_datagram(std::span<const std::byte> datagram) n
         const InputTransportError error = map_udp_send_error(sent.status.error);
         if (error == InputTransportError::WouldBlock) {
             ++snapshot_.would_block_count;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_would_block();
         } else {
             ++snapshot_.send_failure_count;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
         }
         return status(error);
     }
     if (sent.bytes_sent != wire.size()) {
         ++snapshot_.send_failure_count;
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_send_error();
         return status(InputTransportError::PartialDatagramSend);
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_sent(wire.size());
     return status(InputTransportError::None);
 }
 

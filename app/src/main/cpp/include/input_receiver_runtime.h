@@ -13,6 +13,8 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 inline constexpr std::size_t kInputReceiverMaxDatagramWireSize = 417;
 inline constexpr std::size_t kInputReceiverMaxProtectedDatagramWireSize =
     kInputReceiverMaxDatagramWireSize + 44;
@@ -64,6 +66,7 @@ struct InputReceiverConfig final {
     UdpEndpoint expected_remote_endpoint{};
     std::size_t max_wire_datagram_size = kInputReceiverMaxDatagramWireSize;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct InputReceiverEvent final {
@@ -117,6 +120,7 @@ class InputReceiverRuntime final {
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] InputReceiverError rebind_prebound_socket(UdpSocket socket,
                                                              UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
     [[nodiscard]] InputReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] InputReceiverEvent accept_datagram(std::span<const std::byte> datagram,
                                                      const UdpEndpoint& source) noexcept;

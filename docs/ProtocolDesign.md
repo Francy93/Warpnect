@@ -1606,3 +1606,20 @@ timestamp, record count, and total bytes. Each record has the 16-byte `(source i
 flags, payload bytes, zero reserved fields)` header. Counter payloads are u64, gauges are explicit
 validity plus i64, and fixed histograms carry count/sum/min/max plus bucket counts. This format stays
 inside the process boundary and is collected as one bounded JNI batch per native provider snapshot.
+
+## RFC-006C Local Network Diagnostics
+
+RFC-006C extends only the local Runtime Telemetry Model V1 descriptor catalog. It does not define a
+Telemetry payload, change `PacketHeader` V1, alter WNSD, FEC, NACK, WNCP, WNSN, or WNSL, or transmit
+diagnostics to a peer. `PayloadType.Telemetry` remains inactive.
+
+## RFC-006D Local Latency Correlation
+
+RFC-006D adds local descriptor IDs and bounded in-process correlation only. It defines no trace ID,
+timestamp field, ClockSync message, or Telemetry payload. `PayloadType.Telemetry`, PacketHeader V1,
+Video Payload V1, Audio Payload V1, Input Payload V1, ClockSync, WNSD, WNCP, WNSN, and WNSL remain
+unchanged.
+
+The current `PacketHeader.timestamp_us` is not a generic transport-send timestamp: Video carries a
+media presentation timestamp, Audio carries capture timing, and Input carries source-event timing.
+Consequently RFC-006D does not fabricate generic cross-device transport latency from this field.

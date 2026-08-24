@@ -9,6 +9,8 @@
 #include "packet_codec.h"
 #include "recovery_control.h"
 #include "reed_solomon.h"
+#include "runtime_clock_sync_telemetry.h"
+#include "runtime_network_telemetry.h"
 #include "sequence_number.h"
 #include "video_resync_control.h"
 
@@ -197,7 +199,16 @@ VideoStatus VideoReceiverRuntime::rebind_prebound_socket(UdpSocket socket,
     config_.local_endpoint = local.endpoint;
     config_.remote_endpoint = remote_endpoint;
     socket_ = std::move(socket);
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(VideoError::None);
+}
+
+void VideoReceiverRuntime::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
+}
+
+void VideoReceiverRuntime::set_runtime_clock_sync_telemetry(RuntimeClockSyncTelemetry* telemetry) noexcept {
+    config_.runtime_clock_sync_telemetry = telemetry;
 }
 
 VideoStatus VideoReceiverRuntime::open() noexcept {
@@ -589,8 +600,12 @@ VideoStatus VideoReceiverRuntime::receive_one(std::uint64_t timeout_us) noexcept
     const UdpReceiveResult received = socket_.receive_from(
         std::span<std::byte>(datagram_buffer_.data(), datagram_buffer_.size()));
     if (!received.ok()) {
+        if (received.status.error != UdpError::WouldBlock && config_.runtime_network_telemetry != nullptr) {
+            config_.runtime_network_telemetry->udp_receive_error();
+        }
         return status(map_udp_error(received.status.error));
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_received(received.bytes_received);
     return accept_datagram(
         std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received),
         received.source, monotonic_time_now_us().value);
@@ -648,12 +663,14 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
         remember(mapped);
         return status(snapshot_.last_error);
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_fragment_accepted();
     if (accepted.complete) {
         const VideoStatus completed = accept_complete_slot(*slot, now_us);
         if (!completed.ok()) {
             remember(completed.error);
             return completed;
         }
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_completed();
         publish_ordered_ready_access_units();
     }
     remember(VideoError::None);
@@ -683,21 +700,27 @@ VideoStatus VideoReceiverRuntime::process_clock_sync_response(std::span<const st
     }
     const auto decoded = decode_clock_sync_response(payload);
     if (!decoded.ok()) {
+        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
         remember(VideoError::ClockSyncUnavailable);
         return status(snapshot_.last_error);
     }
     const ClockExchangeResult exchanged =
         clock_exchange_tracker_->complete_response(decoded.response, now_us);
     if (!exchanged.ok()) {
+        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
         remember(VideoError::ClockSyncUnavailable);
         return status(snapshot_.last_error);
     }
     const ClockModelUpdateResult updated = clock_synchronizer_->add_sample(exchanged.sample);
     if (!updated.ok()) {
+        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
         remember(VideoError::ClockSyncUnavailable);
         return status(snapshot_.last_error);
     }
     ++snapshot_.clock_sync_responses_received;
+    if (config_.runtime_clock_sync_telemetry != nullptr) {
+        config_.runtime_clock_sync_telemetry->accepted(updated.snapshot);
+    }
     snapshot_.latest_rtt_us = updated.snapshot.latest_rtt_us;
     snapshot_.best_rtt_us = updated.snapshot.best_rtt_us;
     snapshot_.clock_sync_state = updated.snapshot.state;
@@ -750,9 +773,11 @@ VideoStatus VideoReceiverRuntime::accept_fec_parity(std::span<const std::byte> p
         return status(VideoError::None);
     }
     if (!recovered.ok()) {
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->fec_recovery(false, 0);
         remember(VideoError::FecEncodingFailed);
         return status(snapshot_.last_error);
     }
+    std::uint64_t recovered_shards = 0;
     for (std::uint8_t i = 0; i < config_.fec.data_shards; ++i) {
         const RecoveredDatagramResult datagram = fec_recovery_->datagram(i);
         if (!datagram.ok()) {
@@ -762,10 +787,12 @@ VideoStatus VideoReceiverRuntime::accept_fec_parity(std::span<const std::byte> p
         if (!packet.ok()) {
             continue;
         }
+        ++recovered_shards;
         (void)process_packet(packet.packet, datagram.datagram.datagram,
                              learned_remote_.value_or(config_.remote_endpoint), now_us, true);
     }
     ++snapshot_.fec_recoveries;
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->fec_recovery(true, recovered_shards);
     fec_recovery_->reset();
     return status(VideoError::None);
 }
@@ -965,6 +992,7 @@ void VideoReceiverRuntime::send_nack(const NackRequest& request) noexcept {
             std::span<const std::byte>(nack_payload, kNackPayloadWireSize),
             *learned_remote_).ok()) {
         ++snapshot_.nacks_sent;
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->nack_generated();
     }
 }
 
@@ -1052,6 +1080,7 @@ void VideoReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcep
             reset_slot(slot);
             expired = true;
             ++snapshot_.reassembly_timeouts;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_timeout();
             ++snapshot_.stale_frames_released;
         }
     }

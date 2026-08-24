@@ -21,13 +21,17 @@ class TelemetryHubTest {
     fun descriptorCatalogIsStableAndValid() {
         TelemetryDescriptorCatalog.validate(TelemetryDescriptorCatalog.descriptors)
 
-        assertEquals(47, TelemetryDescriptorCatalog.descriptors.size)
+        assertEquals(138, TelemetryDescriptorCatalog.descriptors.size)
         assertTrue(
             TelemetryDescriptorCatalog.descriptors.all {
                 it.id.value in 0x0001..0x00ff ||
+                    it.id.value in 0x0100..0x01ff ||
+                    it.id.value in 0x0200..0x02ff ||
                     it.id.value in 0x0300..0x03ff ||
                     it.id.value in 0x0400..0x04ff ||
-                    it.id.value in 0x0500..0x05ff
+                    it.id.value in 0x0500..0x05ff ||
+                    it.id.value in 0x0600..0x06ff ||
+                    it.id.value in 0x0700..0x07ff
             },
         )
         assertTrue(TelemetryDescriptorCatalog.descriptors.all { it.canonicalName.startsWith("warpnect.") })

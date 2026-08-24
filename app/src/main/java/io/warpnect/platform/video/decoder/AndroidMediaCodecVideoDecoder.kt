@@ -345,6 +345,7 @@ class AndroidMediaCodecVideoDecoder(
         val event = VideoDecoderFrameRenderedEvent(presentationTimeUs, nanoTime)
         core.recordFrameRendered(event)
         telemetry?.renderNotifications?.increment()
+        telemetry?.frameRendered(presentationTimeUs, nanoTime)
         publishSnapshot()
         runCatching { outputSink?.onFrameRendered(event) }
     }
@@ -416,6 +417,7 @@ class AndroidMediaCodecVideoDecoder(
         try {
             codec.queueInputBuffer(index, 0, result.size, result.presentationTimeUs, 0)
             telemetry?.accessUnits?.increment()
+            telemetry?.decoderInput(result.presentationTimeUs, System.nanoTime())
             core.recordInputQueued(result.size, result.presentationTimeUs)
             publishSnapshot()
         } catch (_: Exception) {
@@ -478,6 +480,7 @@ class AndroidMediaCodecVideoDecoder(
             return
         }
         telemetry?.outputFrames?.increment()
+        telemetry?.decoderOutput(info.presentationTimeUs, System.nanoTime())
         releaseOutput(codec, index, action, info.presentationTimeUs)
     }
 
@@ -498,7 +501,10 @@ class AndroidMediaCodecVideoDecoder(
                 DecodedVideoOutputAction.Drop -> telemetry?.droppedByPolicy?.increment()
                 DecodedVideoOutputAction.RenderNow,
                 is DecodedVideoOutputAction.RenderAt,
-                -> telemetry?.releasedToSurface?.increment()
+                -> {
+                    telemetry?.releasedToSurface?.increment()
+                    telemetry?.surfaceReleased(presentationTimeUs, System.nanoTime())
+                }
             }
             publishSnapshot()
         } catch (_: Exception) {

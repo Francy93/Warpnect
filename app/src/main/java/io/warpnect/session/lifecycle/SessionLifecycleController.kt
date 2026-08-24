@@ -4,11 +4,14 @@ package io.warpnect.session.lifecycle
 
 import io.warpnect.session.PathId
 import io.warpnect.session.SessionChannelKind
+import io.warpnect.session.SessionGeneration
 import io.warpnect.session.SessionRole
 import io.warpnect.session.control.SecureSessionControlTransport
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.setup.PreparedSessionBootstrap
 import io.warpnect.session.setup.SessionPathPlan
+import io.warpnect.telemetry.SessionLifecycleTelemetry
+import io.warpnect.telemetry.SessionPathTelemetry
 import java.security.SecureRandom
 
 fun interface SessionLifecycleMonotonicClock {
@@ -110,6 +113,8 @@ class SessionLifecycleController(
     private val lifecycleIdGenerator: LifecycleMessageIdGenerator = SecureLifecycleMessageIdGenerator,
     private val heartbeatIdGenerator: HeartbeatIdGenerator = SecureHeartbeatIdGenerator,
     private val migrationIdGenerator: PathMigrationIdGenerator = SecurePathMigrationIdGenerator,
+    private val telemetry: SessionLifecycleTelemetry? = null,
+    private val pathTelemetry: Map<PathId, SessionPathTelemetry> = emptyMap(),
 ) : AutoCloseable {
     private val lock = Any()
     private val engine = SessionLifecycleEngine(bootstrap.sessionId, bootstrap.generation, healthConfig, recoveryPolicy)
@@ -156,6 +161,8 @@ class SessionLifecycleController(
             bootstrap.standbyPath?.kind,
             now,
         )
+        if (bootstrap.generation != SessionGeneration.Initial) telemetry?.reconnectSucceeded?.increment()
+        updatePathTelemetry()
         handleDecision(result)
         armNextWake()
         SessionLifecycleError.None
@@ -168,8 +175,15 @@ class SessionLifecycleController(
 
     fun onPlatformPathLoss(pathId: PathId, hard: Boolean) = synchronized(lock) {
         if (closed) return@synchronized
+        pathTelemetry[pathId]?.let { if (hard) it.platformLost.increment() else it.platformLosing.increment() }
         handleDecision(engine.onPlatformPathLost(pathId, hard, now()))
+        updatePathTelemetry()
         armNextWake()
+    }
+
+    /** Local platform availability is diagnostic only; RFC-005H validation remains authoritative. */
+    fun onPlatformPathAvailable(pathId: PathId) = synchronized(lock) {
+        if (!closed) pathTelemetry[pathId]?.platformAvailable?.increment()
     }
 
     /** Externally driven timer tick; no busy polling is introduced. */
@@ -248,6 +262,10 @@ class SessionLifecycleController(
 
     fun gracefulDisconnect(reason: DisconnectReason): SessionLifecycleError = synchronized(lock) {
         if (closed) return@synchronized SessionLifecycleError.Closed
+        val state = engine.snapshot(now()).state
+        if (state == SessionLifecycleState.Disconnecting) return@synchronized SessionLifecycleError.None
+        if (state == SessionLifecycleState.Reconnecting) telemetry?.reconnectCancelled?.increment()
+        telemetry?.disconnectLocal?.increment()
         handleDecision(engine.beginDisconnect())
         notifySessionClosing()
         invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
@@ -286,9 +304,11 @@ class SessionLifecycleController(
         if (closed) return@synchronized SessionLifecycleError.Closed
         val decision = engine.onReconnectAttemptFailed(now())
         if (decision is LifecycleDecision.Error) {
+            if (decision.error == SessionLifecycleError.RecoveryExpired) telemetry?.reconnectExpired?.increment()
             record(decision.error)
             if (engine.snapshot(now()).state == SessionLifecycleState.Failed) finishClose(markClosed = false)
         } else {
+            if (decision is LifecycleDecision.ReconnectRetry) telemetry?.reconnectAttemptFailed?.increment()
             handleDecision(decision)
             armNextWake()
         }
@@ -322,7 +342,9 @@ class SessionLifecycleController(
                 }
             }
             is SessionLifecycleMessage.HeartbeatAck -> if (!candidatePath) {
-                handleDecision(engine.onHeartbeatAck(message.heartbeatId, message.activePathId, now()))
+                val decision = engine.onHeartbeatAck(message.heartbeatId, message.activePathId, now())
+                if (decision is LifecycleDecision.Active) telemetry?.heartbeatAckReceived?.increment()
+                handleDecision(decision)
             }
             is SessionLifecycleMessage.PathChallenge -> if (candidatePath) handlePathChallenge(message)
             is SessionLifecycleMessage.PathResponse -> if (candidatePath) handlePathResponse(message)
@@ -526,6 +548,7 @@ class SessionLifecycleController(
 
     private fun handleDisconnectNotice(message: SessionLifecycleMessage.DisconnectNotice) {
         if (message.sessionGeneration != engine.currentGeneration() || message.activePathId != engine.activePath()?.pathId) return
+        telemetry?.disconnectRemote?.increment()
         handleDecision(engine.beginDisconnect())
         notifySessionClosing()
         invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
@@ -543,25 +566,40 @@ class SessionLifecycleController(
 
     private fun handleDecision(decision: LifecycleDecision) {
         when (decision) {
-            is LifecycleDecision.SendHeartbeat -> sendMessage(
-                SessionLifecycleMessage.Heartbeat(
-                    header(SessionLifecycleMessageType.Heartbeat),
-                    decision.heartbeatId,
-                    decision.activePathId,
-                ),
-                candidatePath = false,
-            )
+            is LifecycleDecision.SendHeartbeat -> {
+                if (sendMessage(
+                        SessionLifecycleMessage.Heartbeat(
+                            header(SessionLifecycleMessageType.Heartbeat),
+                            decision.heartbeatId,
+                            decision.activePathId,
+                        ),
+                        candidatePath = false,
+                    )
+                ) {
+                    telemetry?.heartbeatSent?.increment()
+                }
+            }
+            is LifecycleDecision.HeartbeatMissed -> telemetry?.heartbeatMiss?.increment()
             LifecycleDecision.BeginMigration -> startMigration()
-            is LifecycleDecision.ValidateStandby -> startCandidateValidation(decision)
-            is LifecycleDecision.MigrationCommitted -> continuityParticipants.forEach(
-                SessionContinuityParticipant::onPathMigrationCommitted,
-            )
+            is LifecycleDecision.ValidateStandby -> {
+                telemetry?.migrationStarted?.increment()
+                pathTelemetry[decision.pathId]?.validationStarted?.increment()
+                startCandidateValidation(decision)
+            }
+            is LifecycleDecision.MigrationCommitted -> {
+                telemetry?.migrationSucceeded?.increment()
+                pathTelemetry[decision.active.pathId]?.validationSucceeded?.increment()
+                updatePathTelemetry()
+                continuityParticipants.forEach(SessionContinuityParticipant::onPathMigrationCommitted)
+            }
             is LifecycleDecision.Suspended -> {
+                telemetry?.suspended?.increment()
                 invokeInputSafetyReset(LifecycleInputSafetyResetReason.PathUnavailable)
                 continuityParticipants.forEach(SessionContinuityParticipant::onSessionSuspended)
                 beginReconnect(decision.recoveryDeadlineMs)
             }
             is LifecycleDecision.BeginReconnect -> {
+                telemetry?.reconnectAttempt?.increment()
                 recoveryDelegate?.onReconnectRequired(recoveryRecord(), decision.nextGeneration)
             }
             is LifecycleDecision.ReconnectRetry -> Unit
@@ -671,11 +709,15 @@ class SessionLifecycleController(
     }
 
     private fun abortMigration(error: SessionLifecycleError, oldPathStillUsable: Boolean) {
+        val candidatePathId = activeMigration?.candidate?.binding?.plan?.pathId ?: candidate?.binding?.plan?.pathId
         activeMigration?.preparation?.close()
         activeMigration = null
         candidate?.let { migrationAdapter.disarmCandidateWindow(it.id) }
         candidate = null
+        telemetry?.migrationFailed?.increment()
+        pathTelemetry[candidatePathId]?.validationFailed?.increment()
         handleDecision(engine.onMigrationValidationFailed(oldPathStillUsable))
+        updatePathTelemetry()
         record(error)
     }
 
@@ -698,6 +740,8 @@ class SessionLifecycleController(
         if (markClosed) engine.finishDisconnect()
         bootstrap.close()
         capacityOwner?.close()
+        telemetry?.close()
+        pathTelemetry.values.forEach(SessionPathTelemetry::close)
         return SessionLifecycleError.None
     }
 
@@ -718,6 +762,16 @@ class SessionLifecycleController(
         if (receivedUs <= observedRuntimeAuthenticatedReceiveUs) return
         observedRuntimeAuthenticatedReceiveUs = receivedUs
         handleDecision(engine.onAuthenticatedReceive(receivedUs / 1_000L))
+    }
+
+    private fun updatePathTelemetry() {
+        val snapshot = engine.snapshot(now())
+        pathTelemetry.forEach { (pathId, telemetry) ->
+            telemetry.active.set(if (snapshot.activePathId == pathId) 1 else 0)
+            telemetry.validated.set(
+                if (snapshot.activePathId == pathId || snapshot.standbyPathId == pathId) 1 else 0,
+            )
+        }
     }
 
     /**

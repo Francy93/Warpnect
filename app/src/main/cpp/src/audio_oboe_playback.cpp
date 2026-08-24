@@ -416,15 +416,23 @@ AudioPlaybackError OboeAudioPlayback::submit_pcm(
 }
 
 AudioPlaybackPresentationTimestamp OboeAudioPlayback::query_presentation_timestamp() {
+    auto* const output_latency =
+        telemetry_source_ == nullptr ? nullptr : telemetry_source_->gauge(0x0643);
+    auto* const output_latency_failed =
+        telemetry_source_ == nullptr ? nullptr : telemetry_source_->counter(0x0644);
     if (closed_) {
+        if (output_latency != nullptr) output_latency->clear();
         return AudioPlaybackPresentationTimestamp{.error = AudioPlaybackError::Closed};
     }
     if (!prepared_ || !stream_) {
+        if (output_latency != nullptr) output_latency->clear();
         return AudioPlaybackPresentationTimestamp{.error = AudioPlaybackError::NotPrepared};
     }
 
     const auto timestamp = stream_->getTimestamp(CLOCK_MONOTONIC);
     if (!timestamp) {
+        if (output_latency != nullptr) output_latency->clear();
+        if (output_latency_failed != nullptr) output_latency_failed->increment();
         record_error(AudioPlaybackError::PresentationTimestampUnavailable);
         return AudioPlaybackPresentationTimestamp{
             .error = AudioPlaybackError::PresentationTimestampUnavailable,
@@ -439,6 +447,12 @@ AudioPlaybackPresentationTimestamp OboeAudioPlayback::query_presentation_timesta
     const auto latency = stream_->calculateLatencyMillis();
     if (latency) {
         result.latency_us = static_cast<std::uint64_t>(latency.value() * 1000.0);
+        if (output_latency != nullptr) {
+            output_latency->set(static_cast<std::int64_t>(result.latency_us));
+        }
+    } else {
+        if (output_latency != nullptr) output_latency->clear();
+        if (output_latency_failed != nullptr) output_latency_failed->increment();
     }
     snapshot_.last_presentation_frame_position = result.frame_position;
     snapshot_.last_presentation_time_ns = result.presentation_time_ns;

@@ -3,6 +3,10 @@
 package io.warpnect.platform.session.integration
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.SurfaceView
 import io.warpnect.CoreOrchestrator
@@ -25,6 +29,7 @@ import io.warpnect.platform.session.control.SecureSessionControlDatagramIo
 import io.warpnect.platform.session.handshake.AndroidDatagramSessionHandshakeTransport
 import io.warpnect.platform.session.identity.AndroidSessionIdentityFactory
 import io.warpnect.platform.session.lifecycle.AndroidLifecycleCandidateDatagramIo
+import io.warpnect.platform.session.lifecycle.AndroidNetworkPathMonitor
 import io.warpnect.platform.session.lifecycle.PreparedSessionMigrationAdapter
 import io.warpnect.platform.session.pairing.AndroidDatagramPairingTransport
 import io.warpnect.platform.session.pairing.AndroidPairingController
@@ -119,7 +124,11 @@ import io.warpnect.session.trust.TrustedPeerStore
 import io.warpnect.telemetry.NativeTelemetrySnapshotProvider
 import io.warpnect.telemetry.NativeTelemetrySourceScopeResolver
 import io.warpnect.telemetry.NativeTelemetrySourceScopes
+import io.warpnect.telemetry.SessionControlNetworkTelemetry
+import io.warpnect.telemetry.SessionLifecycleTelemetry
+import io.warpnect.telemetry.SessionPathTelemetry
 import io.warpnect.telemetry.TelemetryHub
+import io.warpnect.telemetry.TelemetryScope
 import io.warpnect.video.decoder.VideoDecoderConfig
 import io.warpnect.video.encoder.VideoEncoderRequest
 import java.net.DatagramSocket
@@ -189,6 +198,8 @@ class AndroidSecureSessionComposition private constructor(
         )
         private val directRouteState = DirectClientRouteState(clientDiscovery)
         private val directPathBackend = AndroidDirectPathBackend.create(context)
+        private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        private val networkCallbackHandler = Handler(Looper.getMainLooper())
         private val clientIo = AtomicReference<SecureSessionControlDatagramIo?>()
         private val hostIo = AtomicReference<SecureSessionControlDatagramIo?>()
         private val telemetryHub = runCatching { TelemetryHub(AndroidTelemetryClock) }
@@ -370,6 +381,10 @@ class AndroidSecureSessionComposition private constructor(
                         bootstrap.protection,
                         bootstrap.protection.sessionControlContext.receiveContextId,
                         bootstrap.endpoint,
+                        SessionControlNetworkTelemetry.register(
+                            telemetryHub,
+                            TelemetryScope.Session(bootstrap.sessionId, bootstrap.generation),
+                        ),
                     )
                 }
             }
@@ -382,6 +397,10 @@ class AndroidSecureSessionComposition private constructor(
                         bootstrap.protection,
                         bootstrap.protection.sessionControlContext.receiveContextId,
                         bootstrap.endpoint,
+                        SessionControlNetworkTelemetry.register(
+                            telemetryHub,
+                            TelemetryScope.Session(bootstrap.sessionId, bootstrap.generation),
+                        ),
                     )
                 }
             }
@@ -560,6 +579,8 @@ class AndroidSecureSessionComposition private constructor(
                 )
             } ?: UnavailableMigrationAdapter()
             val controllerReference = AtomicReference<SessionLifecycleController?>()
+            var directGroupObserver: AutoCloseable? = null
+            var networkPathMonitor: AndroidNetworkPathMonitor? = null
             candidateIo?.setReceiver { source, datagram, nowUs ->
                 controllerReference.get()?.receiveCandidate(source, datagram, nowUs)
             }
@@ -588,16 +609,80 @@ class AndroidSecureSessionComposition private constructor(
                     object : SessionContinuityParticipant {
                         override fun onSessionClosing() {
                             candidateIo?.close()
+                            directGroupObserver?.close()
+                            networkPathMonitor?.close()
+                        }
+
+                        override fun onSessionReconnected() {
+                            directGroupObserver?.close()
+                            networkPathMonitor?.close()
                         }
                     },
                     object : SessionContinuityParticipant {
                         override fun onSessionSuspended() = listener.onRecovering()
                     },
                 ),
+                telemetry = SessionLifecycleTelemetry.register(
+                    telemetryHub,
+                    TelemetryScope.Session(bootstrap.sessionId, bootstrap.generation),
+                ),
+                pathTelemetry = buildMap {
+                    (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath)).forEach { path ->
+                        put(
+                            path.pathId,
+                            SessionPathTelemetry.register(
+                                telemetryHub,
+                                TelemetryScope.Path(
+                                    bootstrap.sessionId,
+                                    bootstrap.generation,
+                                    path.pathId,
+                                    path.kind,
+                                ),
+                            ),
+                        )
+                    }
+                },
             )
             controllerReference.set(controller)
+            val directPathIds = (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath))
+                .filter { it.kind == io.warpnect.session.NetworkPathKind.Direct }
+                .map { it.pathId }
+            if (directPathIds.isNotEmpty()) {
+                directGroupObserver = directPathBackend?.observeGroupState { formed ->
+                    directPathIds.forEach { pathId ->
+                        if (formed) {
+                            controller.onPlatformPathAvailable(pathId)
+                        } else {
+                            controller.onPlatformPathLoss(pathId, hard = true)
+                        }
+                    }
+                }
+            }
+            val lanPathIds = (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath))
+                .filter { it.kind == io.warpnect.session.NetworkPathKind.Lan }
+                .mapNotNull { path -> networkForLocalAddress(path.localAddress)?.let { path.pathId to it } }
+            if (lanPathIds.isNotEmpty()) {
+                networkPathMonitor = connectivityManager?.let { manager ->
+                    AndroidNetworkPathMonitor(
+                        connectivityManager = manager,
+                        callbackHandler = networkCallbackHandler,
+                        dispatch = controller::onPlatformPathLoss,
+                        onAvailable = controller::onPlatformPathAvailable,
+                    ).also { monitor -> lanPathIds.forEach { (pathId, network) -> monitor.register(pathId, network) } }
+                }
+            }
             return controller
         }
+
+        /** Resolves a selected native socket address on the control path, never in a callback. */
+        private fun networkForLocalAddress(localAddress: String): Network? = runCatching {
+            val manager = connectivityManager ?: return@runCatching null
+            manager.allNetworks.firstOrNull { network ->
+                manager.getLinkProperties(network)?.linkAddresses?.any { linkAddress ->
+                    linkAddress.address.hostAddress?.substringBefore('%') == localAddress
+                } == true
+            }
+        }.getOrNull()
 
         private fun localAddressFor(endpoint: HandshakeTransportEndpoint): String? = runCatching {
             DatagramSocket().use { socket ->

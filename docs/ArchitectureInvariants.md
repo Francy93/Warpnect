@@ -578,3 +578,34 @@ duplicate media transmission.
 
 > Input telemetry is aggregate and content-free: it never stores key codes, characters, button or
 > axis values, or pointer/touch coordinates.
+
+## RFC-006C Network and Recovery Diagnostics
+
+> Network diagnostics are observational and never alter packet acceptance, reliability, path
+> selection, migration, recovery, or security decisions.
+
+> UDP socket outcomes, FEC/NACK/reassembly, and packet-protection outcomes are recorded at the
+> native layer that owns them. Packet diagnostics are never bounced through JNI.
+
+> Android network availability and loss callbacks are local platform hints only. Authenticated
+> WNSD traffic and RFC-005H path validation remain authoritative for peer liveness.
+
+> Same-generation endpoint rebind keeps a Channel telemetry source and its cumulative diagnostics
+> with the unchanged live Channel and RFC-005E protection state.
+
+> Network telemetry records only aggregate outcomes. It never records remote addresses, ports,
+> packet numbers, cryptographic material, or payload bytes.
+
+## RFC-006D Latency and Correlation
+
+> A latency sample is recorded only when its event identity, timestamp provenance, and clock domain
+> are known. Warpnect never subtracts unrelated timestamps merely because their units match.
+
+> Android MONOTONIC, BOOTTIME, and uptime domains remain distinct. Cross-device one-way estimates
+> require an existing qualified RFC-001F ClockSync mapping for the actual source clock domain.
+
+> Latency correlation uses fixed, preallocated in-flight state. Completed samples update a bounded
+> histogram immediately; Warpnect retains no completed per-frame, per-packet, or input-event history.
+
+> Latency instrumentation is observational. It never changes codec, audio, input, ClockSync, path,
+> migration, recovery, or security behavior. Oboe callbacks never query timestamps or latency.

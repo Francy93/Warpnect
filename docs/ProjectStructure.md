@@ -801,3 +801,47 @@ app/src/main/cpp/src/
 production factory creates them with a negotiated Channel scope while building a runtime, then
 closes them with that runtime. Oboe callback metrics use an additive native source registration and
 the existing WNTM snapshot provider rather than a second JNI bridge.
+
+## RFC-006C Network and Recovery Diagnostics
+
+```text
+app/src/main/java/io/warpnect/telemetry/
+  NetworkRecoveryTelemetry.kt
+app/src/main/java/io/warpnect/session/lifecycle/
+  SessionLifecycleController.kt
+app/src/main/java/io/warpnect/platform/session/control/
+  AndroidSecureSessionControlTransport.kt
+app/src/main/cpp/include/
+  runtime_network_telemetry.h
+app/src/main/cpp/src/
+  video_transport.cpp
+  video_receiver_runtime.cpp
+  audio_transport.cpp
+  audio_receiver_runtime.cpp
+  input_transport.cpp
+  input_receiver_runtime.cpp
+```
+
+`RuntimeNetworkTelemetry` resolves its 32 bounded metric handles once when a stopped RFC-005G
+transport is adopted. The Video, Audio, and Input paths retain their existing packet ownership;
+the helper only updates their pre-bound native counters. `SessionLifecycleController` and secure
+SessionControl use separate Kotlin source groups for cold lifecycle and control semantics.
+
+## RFC-006D Latency Trace and Correlation
+
+```text
+app/src/main/java/io/warpnect/telemetry/
+  ClockDomain.kt
+  LatencyCorrelation.kt
+  MediaPipelineTelemetry.kt
+app/src/main/cpp/include/
+  runtime_clock_sync_telemetry.h
+app/src/main/cpp/src/
+  video_receiver_runtime.cpp
+  audio_oboe_playback.cpp
+```
+
+`ClockDomain.kt` makes local timestamp-domain intent explicit. `LatencyCorrelation.kt` owns the
+fixed 256-entry, bounded-probe Video in-flight table. Existing media and input telemetry groups
+retain local duration handles, while the native ClockSync helper is attached once to the adopted
+Video receiver and reaches Kotlin through the existing WNTM provider.

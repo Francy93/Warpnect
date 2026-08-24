@@ -159,6 +159,63 @@ object TelemetryMetricIds {
     val UpdateOverflow = TelemetryMetricId(0x0006)
     val SnapshotDuration = TelemetryMetricId(0x0007)
 
+    val SessionHeartbeatSent = TelemetryMetricId(0x0101)
+    val SessionHeartbeatAckReceived = TelemetryMetricId(0x0102)
+    val SessionHeartbeatMiss = TelemetryMetricId(0x0103)
+    val SessionSuspended = TelemetryMetricId(0x0104)
+    val SessionPathMigrationStarted = TelemetryMetricId(0x0105)
+    val SessionPathMigrationSucceeded = TelemetryMetricId(0x0106)
+    val SessionPathMigrationFailed = TelemetryMetricId(0x0107)
+    val SessionReconnectAttempt = TelemetryMetricId(0x0108)
+    val SessionReconnectSucceeded = TelemetryMetricId(0x0109)
+    val SessionReconnectAttemptFailed = TelemetryMetricId(0x010A)
+    val SessionReconnectExpired = TelemetryMetricId(0x010B)
+    val SessionReconnectCancelled = TelemetryMetricId(0x010C)
+    val SessionDisconnectLocal = TelemetryMetricId(0x010D)
+    val SessionDisconnectRemote = TelemetryMetricId(0x010E)
+
+    val UdpDatagramSent = TelemetryMetricId(0x0201)
+    val UdpByteSent = TelemetryMetricId(0x0202)
+    val UdpDatagramReceived = TelemetryMetricId(0x0203)
+    val UdpByteReceived = TelemetryMetricId(0x0204)
+    val UdpSendWouldBlock = TelemetryMetricId(0x0205)
+    val UdpSendError = TelemetryMetricId(0x0206)
+    val UdpReceiveError = TelemetryMetricId(0x0207)
+    val PathUnavailableDrop = TelemetryMetricId(0x0208)
+    val SocketRebind = TelemetryMetricId(0x0209)
+    val FecDataShardEmitted = TelemetryMetricId(0x0221)
+    val FecParityShardEmitted = TelemetryMetricId(0x0222)
+    val FecRecoveryAttempt = TelemetryMetricId(0x0223)
+    val FecShardRecovered = TelemetryMetricId(0x0224)
+    val FecRecoveryCompleted = TelemetryMetricId(0x0225)
+    val FecRecoveryFailed = TelemetryMetricId(0x0226)
+    val NackGenerated = TelemetryMetricId(0x0231)
+    val NackReceived = TelemetryMetricId(0x0232)
+    val RetransmissionSent = TelemetryMetricId(0x0233)
+    val RetransmissionCacheMiss = TelemetryMetricId(0x0234)
+    val ReassemblyFragmentAccepted = TelemetryMetricId(0x0241)
+    val ReassemblyCompleted = TelemetryMetricId(0x0242)
+    val ReassemblyTimeout = TelemetryMetricId(0x0243)
+    val ReassemblyEvicted = TelemetryMetricId(0x0244)
+    val PathActive = TelemetryMetricId(0x0251)
+    val PathValidated = TelemetryMetricId(0x0252)
+    val PathPlatformAvailable = TelemetryMetricId(0x0253)
+    val PathPlatformLosing = TelemetryMetricId(0x0254)
+    val PathPlatformLost = TelemetryMetricId(0x0255)
+    val PathValidationStarted = TelemetryMetricId(0x0256)
+    val PathValidationSucceeded = TelemetryMetricId(0x0257)
+    val PathValidationFailed = TelemetryMetricId(0x0258)
+
+    val ProtectionRecordProduced = TelemetryMetricId(0x0701)
+    val ProtectionRecordAccepted = TelemetryMetricId(0x0702)
+    val ProtectionProtectError = TelemetryMetricId(0x0703)
+    val ProtectionAuthenticationFailed = TelemetryMetricId(0x0704)
+    val ProtectionReplayDropped = TelemetryMetricId(0x0705)
+    val ProtectionUnknownContext = TelemetryMetricId(0x0706)
+    val ProtectionEndpointMismatch = TelemetryMetricId(0x0707)
+    val ProtectionEpochRejected = TelemetryMetricId(0x0708)
+    val ProtectionMalformed = TelemetryMetricId(0x0709)
+
     val VideoEncoderAccessUnitOutput = TelemetryMetricId(0x0301)
     val VideoEncoderByteOutput = TelemetryMetricId(0x0302)
     val VideoEncoderKeyframeOutput = TelemetryMetricId(0x0303)
@@ -201,6 +258,44 @@ object TelemetryMetricIds {
     val InputReceiverResetApplied = TelemetryMetricId(0x0522)
     val InputInjectionEventAttempted = TelemetryMetricId(0x0530)
     val InputInjectionEventFailed = TelemetryMetricId(0x0531)
+
+    val ClockSyncSampleAccepted = TelemetryMetricId(0x0601)
+    val ClockSyncSampleRejected = TelemetryMetricId(0x0602)
+    val ClockSyncQualified = TelemetryMetricId(0x0603)
+    val ClockSyncOffset = TelemetryMetricId(0x0604)
+    val ClockSyncUncertainty = TelemetryMetricId(0x0605)
+    val ClockSyncRoundTrip = TelemetryMetricId(0x0606)
+    val ClockSyncMappingRejected = TelemetryMetricId(0x0607)
+    val TransportOneWay = TelemetryMetricId(0x0620)
+    val TransportSampled = TelemetryMetricId(0x0621)
+    val TransportClockUnqualified = TelemetryMetricId(0x0622)
+    val TransportInvalid = TelemetryMetricId(0x0623)
+    val VideoDecoderInputToOutput = TelemetryMetricId(0x0630)
+    val VideoDecoderOutputToRelease = TelemetryMetricId(0x0631)
+    val VideoReleaseToRender = TelemetryMetricId(0x0632)
+    val VideoSourceToDecoderInput = TelemetryMetricId(0x0633)
+    val VideoSourceToRender = TelemetryMetricId(0x0634)
+    val VideoCorrelationUnmatched = TelemetryMetricId(0x0635)
+    val VideoCorrelationExpired = TelemetryMetricId(0x0636)
+    val AudioSourceToDecoderInput = TelemetryMetricId(0x0640)
+    val AudioDecoderInputToOutput = TelemetryMetricId(0x0641)
+    val AudioOutputToPlaybackCallback = TelemetryMetricId(0x0642)
+    val AudioPlaybackOutputEstimate = TelemetryMetricId(0x0643)
+    val AudioPlaybackOutputEstimateFailed = TelemetryMetricId(0x0644)
+    val AudioCorrelationUnmatched = TelemetryMetricId(0x0645)
+    val AudioCorrelationExpired = TelemetryMetricId(0x0646)
+    val InputCaptureToSender = TelemetryMetricId(0x0650)
+    val InputSourceToReceiver = TelemetryMetricId(0x0651)
+    val InputReceiverToInjection = TelemetryMetricId(0x0652)
+    val InputSourceToInjection = TelemetryMetricId(0x0653)
+    val InputCorrelationRejected = TelemetryMetricId(0x0654)
+    val LatencyTraceStarted = TelemetryMetricId(0x0660)
+    val LatencyTraceCompleted = TelemetryMetricId(0x0661)
+    val LatencyTraceExpired = TelemetryMetricId(0x0662)
+    val LatencyTraceCapacityRejected = TelemetryMetricId(0x0663)
+    val LatencyTraceUnmatched = TelemetryMetricId(0x0664)
+    val LatencyTraceClockUnqualified = TelemetryMetricId(0x0665)
+    val LatencyTraceInvalidDuration = TelemetryMetricId(0x0666)
 }
 
 /** The only concrete descriptors introduced by RFC-006A are telemetry self diagnostics. */
@@ -265,7 +360,7 @@ object TelemetryDescriptorCatalog {
             "Cold-path snapshot collection duration in the hub clock domain.",
             ulongArrayOf(100u, 500u, 1_000u, 5_000u, 10_000u, 50_000u),
         ),
-    ) + mediaAndInputDescriptors()
+    ) + mediaAndInputDescriptors() + networkAndRecoveryDescriptors() + latencyDescriptors()
 
     private fun mediaAndInputDescriptors(): List<TelemetryMetricDescriptor> = listOf(
         descriptor(
@@ -555,6 +650,608 @@ object TelemetryDescriptorCatalog {
         ),
     )
 
+    private fun networkAndRecoveryDescriptors(): List<TelemetryMetricDescriptor> = listOf(
+        sessionDescriptor(
+            TelemetryMetricIds.SessionHeartbeatSent,
+            "warpnect.session.heartbeat.sent",
+            "Semantic RFC-005H Heartbeat messages emitted.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionHeartbeatAckReceived,
+            "warpnect.session.heartbeat.ack_received",
+            "Accepted authenticated RFC-005H Heartbeat acknowledgements.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionHeartbeatMiss,
+            "warpnect.session.heartbeat.miss",
+            "Expired RFC-005H heartbeat response intervals.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionSuspended,
+            "warpnect.session.suspended",
+            "Transitions into the RFC-005H Suspended state.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionPathMigrationStarted,
+            "warpnect.session.path_migration.started",
+            "Started RFC-005H path migration transactions.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionPathMigrationSucceeded,
+            "warpnect.session.path_migration.succeeded",
+            "Committed RFC-005H path migration transactions.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionPathMigrationFailed,
+            "warpnect.session.path_migration.failed",
+            "Terminal failed RFC-005H path migration transactions.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionReconnectAttempt,
+            "warpnect.session.reconnect.attempt",
+            "Fresh-generation reconnect attempts started under a recovery lease.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionReconnectSucceeded,
+            "warpnect.session.reconnect.succeeded",
+            "Fresh generations that entered lifecycle reconnected handoff.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionReconnectAttemptFailed,
+            "warpnect.session.reconnect.attempt_failed",
+            "Reconnect attempts that failed before recovery expiry.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionReconnectExpired,
+            "warpnect.session.reconnect.expired",
+            "Recovery windows that expired without a reconnect.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionReconnectCancelled,
+            "warpnect.session.reconnect.cancelled",
+            "Explicitly cancelled recovery leases.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionDisconnectLocal,
+            "warpnect.session.disconnect.local",
+            "Deliberate local lifecycle disconnects.",
+        ),
+        sessionDescriptor(
+            TelemetryMetricIds.SessionDisconnectRemote,
+            "warpnect.session.disconnect.remote",
+            "Accepted authenticated remote DisconnectNotice messages.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpDatagramSent,
+            "warpnect.network.udp.datagram.sent",
+            TelemetryUnit.Packets,
+            "Complete outer UDP datagrams successfully sent.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpByteSent,
+            "warpnect.network.udp.byte.sent",
+            TelemetryUnit.Bytes,
+            "Outer UDP datagram bytes successfully sent.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpDatagramReceived,
+            "warpnect.network.udp.datagram.received",
+            TelemetryUnit.Packets,
+            "Outer UDP datagrams received before filtering and protection.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpByteReceived,
+            "warpnect.network.udp.byte.received",
+            TelemetryUnit.Bytes,
+            "Outer UDP datagram bytes received before filtering and protection.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpSendWouldBlock,
+            "warpnect.network.udp.send.would_block",
+            TelemetryUnit.Count,
+            "Nonblocking UDP sends that returned WouldBlock.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpSendError,
+            "warpnect.network.udp.send.error",
+            TelemetryUnit.Count,
+            "Non-WouldBlock UDP send failures.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.UdpReceiveError,
+            "warpnect.network.udp.receive.error",
+            TelemetryUnit.Count,
+            "UDP receive syscall/runtime failures.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.PathUnavailableDrop,
+            "warpnect.network.path_unavailable.drop",
+            TelemetryUnit.Packets,
+            "Real-time datagrams intentionally dropped with no active path.",
+        ),
+        networkDescriptor(
+            TelemetryMetricIds.SocketRebind,
+            "warpnect.network.socket.rebind",
+            TelemetryUnit.Count,
+            "Successful live socket endpoint rebinds during same-generation migration.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecDataShardEmitted,
+            "warpnect.network.fec.data_shard.emitted",
+            TelemetryUnit.Packets,
+            "FEC data shards emitted by an FEC-enabled Channel.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecParityShardEmitted,
+            "warpnect.network.fec.parity_shard.emitted",
+            TelemetryUnit.Packets,
+            "FEC parity shards emitted by an FEC-enabled Channel.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecRecoveryAttempt,
+            "warpnect.network.fec.recovery.attempt",
+            TelemetryUnit.Count,
+            "Actual Reed-Solomon recovery attempts.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecShardRecovered,
+            "warpnect.network.fec.shard.recovered",
+            TelemetryUnit.Packets,
+            "Useful data shards reconstructed by FEC.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecRecoveryCompleted,
+            "warpnect.network.fec.recovery.completed",
+            TelemetryUnit.Count,
+            "Completed FEC recovery operations.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.FecRecoveryFailed,
+            "warpnect.network.fec.recovery.failed",
+            TelemetryUnit.Count,
+            "Failed Reed-Solomon recovery operations.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.NackGenerated,
+            "warpnect.network.nack.generated",
+            TelemetryUnit.Count,
+            "Semantic NACK messages generated by recovery logic.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.NackReceived,
+            "warpnect.network.nack.received",
+            TelemetryUnit.Count,
+            "Authenticated NACK messages accepted by recovery logic.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.RetransmissionSent,
+            "warpnect.network.retransmission.sent",
+            TelemetryUnit.Packets,
+            "Exact cached protected datagrams successfully retransmitted.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.RetransmissionCacheMiss,
+            "warpnect.network.retransmission.cache_miss",
+            TelemetryUnit.Count,
+            "Valid retransmission requests missing from the bounded cache.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.ReassemblyFragmentAccepted,
+            "warpnect.network.reassembly.fragment.accepted",
+            TelemetryUnit.Packets,
+            "Fragments accepted into bounded reassembly.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.ReassemblyCompleted,
+            "warpnect.network.reassembly.completed",
+            TelemetryUnit.Count,
+            "Fragmented units emitted after reassembly completion.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.ReassemblyTimeout,
+            "warpnect.network.reassembly.timeout",
+            TelemetryUnit.Count,
+            "Incomplete reassembly state expired by existing deadlines.",
+        ),
+        channelDescriptor(
+            TelemetryMetricIds.ReassemblyEvicted,
+            "warpnect.network.reassembly.evicted",
+            TelemetryUnit.Count,
+            "Incomplete reassembly state evicted by existing capacity policy.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathActive,
+            "warpnect.network.path.active",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Boolean,
+            "Whether this represented path is the active Session path.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathValidated,
+            "warpnect.network.path.validated",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Boolean,
+            "Authenticated Warpnect validation state for this path.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathPlatformAvailable,
+            "warpnect.network.path.platform_available",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Local platform/backend path availability hints.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathPlatformLosing,
+            "warpnect.network.path.platform_losing",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Advisory local platform path-losing hints.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathPlatformLost,
+            "warpnect.network.path.platform_lost",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Local platform/backend hard path-loss hints.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathValidationStarted,
+            "warpnect.network.path.validation.started",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Candidate path validation transactions started.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathValidationSucceeded,
+            "warpnect.network.path.validation.succeeded",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Authenticated candidate path validations completed.",
+        ),
+        pathDescriptor(
+            TelemetryMetricIds.PathValidationFailed,
+            "warpnect.network.path.validation.failed",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Terminal candidate path validation failures.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionRecordProduced,
+            "warpnect.security.protection.record.produced",
+            "Fresh WNSD records produced with a new security packet number.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionRecordAccepted,
+            "warpnect.security.protection.record.accepted",
+            "WNSD records accepted after endpoint, epoch, AEAD and replay checks.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionProtectError,
+            "warpnect.security.protection.protect_error",
+            "Local WNSD protection operation failures.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionAuthenticationFailed,
+            "warpnect.security.protection.authentication_failed",
+            "WNSD AEAD authentication failures.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionReplayDropped,
+            "warpnect.security.protection.replay_dropped",
+            "WNSD anti-replay rejections.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionUnknownContext,
+            "warpnect.security.protection.unknown_context",
+            "WNSD records referencing no local protection context.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionEndpointMismatch,
+            "warpnect.security.protection.endpoint_mismatch",
+            "WNSD records rejected by expected-endpoint filtering.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionEpochRejected,
+            "warpnect.security.protection.epoch_rejected",
+            "WNSD records rejected for invalid or unsupported epochs.",
+        ),
+        securityDescriptor(
+            TelemetryMetricIds.ProtectionMalformed,
+            "warpnect.security.protection.malformed",
+            "Structurally malformed WNSD records.",
+        ),
+    )
+
+    private fun latencyDescriptors(): List<TelemetryMetricDescriptor> = listOf(
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncSampleAccepted,
+            "warpnect.clock.sync.sample.accepted",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "ClockSync samples accepted by the existing RFC-001F model.",
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncSampleRejected,
+            "warpnect.clock.sync.sample.rejected",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "ClockSync samples rejected by the existing RFC-001F model.",
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncQualified,
+            "warpnect.clock.sync.qualified",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Boolean,
+            "Whether the RFC-001F mapping is qualified for conversion.",
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncOffset,
+            "warpnect.clock.sync.offset",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Microseconds,
+            "ClockSync local-minus-remote offset estimate at the model reference point.",
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncUncertainty,
+            "warpnect.clock.sync.uncertainty",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Microseconds,
+            "ClockSync uncertainty when a concrete estimator supplies one.",
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncRoundTrip,
+            "warpnect.clock.sync.round_trip",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "ClockSync round-trip observations.",
+            clockSyncHistogramBoundaries(),
+        ),
+        clockDescriptor(
+            TelemetryMetricIds.ClockSyncMappingRejected,
+            "warpnect.clock.sync.mapping_rejected",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Cross-device samples rejected because the RFC-001F mapping was unusable.",
+        ),
+        descriptor(
+            TelemetryMetricIds.TransportOneWay,
+            "warpnect.latency.transport.one_way",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified authenticated transport one-way estimates.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.TransportSampled,
+            "warpnect.latency.transport.sampled",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Deterministically sampled authenticated transport observations.",
+        ),
+        descriptor(
+            TelemetryMetricIds.TransportClockUnqualified,
+            "warpnect.latency.transport.clock_unqualified",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Transport samples rejected because ClockSync was unqualified.",
+        ),
+        descriptor(
+            TelemetryMetricIds.TransportInvalid,
+            "warpnect.latency.transport.invalid",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Transport samples rejected for an invalid calculated duration.",
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoDecoderInputToOutput,
+            "warpnect.latency.video.decoder_input_to_output",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local Video decoder input-to-output duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoDecoderOutputToRelease,
+            "warpnect.latency.video.decoder_output_to_release",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local Video decoder output-to-Surface-release duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoReleaseToRender,
+            "warpnect.latency.video.release_to_render",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local Surface-release-to-Android-render-notification duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoSourceToDecoderInput,
+            "warpnect.latency.video.source_to_decoder_input",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified cross-device Video source-to-decoder-input estimate.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoSourceToRender,
+            "warpnect.latency.video.source_to_render",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified cross-device Video source-to-render estimate.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoCorrelationUnmatched,
+            "warpnect.latency.video.correlation_unmatched",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Video stage observations without an eligible in-flight correlation.",
+        ),
+        descriptor(
+            TelemetryMetricIds.VideoCorrelationExpired,
+            "warpnect.latency.video.correlation_expired",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Video in-flight correlations expired before completion.",
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioSourceToDecoderInput,
+            "warpnect.latency.audio.source_to_decoder_input",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified cross-device Audio source-to-decoder-input estimate.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioDecoderInputToOutput,
+            "warpnect.latency.audio.decoder_input_to_output",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local sampled Opus decoder input-to-output duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioOutputToPlaybackCallback,
+            "warpnect.latency.audio.output_to_playback_callback",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Audio output-to-playback callback duration when exact ring correlation exists.",
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioPlaybackOutputEstimate,
+            "warpnect.latency.audio.playback_output_estimate",
+            TelemetryMetricKind.GaugeI64,
+            TelemetryUnit.Microseconds,
+            "Best-effort cold-path Oboe output latency estimate.",
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioPlaybackOutputEstimateFailed,
+            "warpnect.latency.audio.playback_output_estimate_failed",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Cold-path Oboe output latency estimate query failures.",
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioCorrelationUnmatched,
+            "warpnect.latency.audio.correlation_unmatched",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Audio stage observations without an eligible in-flight correlation.",
+        ),
+        descriptor(
+            TelemetryMetricIds.AudioCorrelationExpired,
+            "warpnect.latency.audio.correlation_expired",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Audio in-flight correlations expired before completion.",
+        ),
+        descriptor(
+            TelemetryMetricIds.InputCaptureToSender,
+            "warpnect.latency.input.capture_to_sender",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local Input capture-to-sender acceptance duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.InputSourceToReceiver,
+            "warpnect.latency.input.source_to_receiver",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified cross-device Input source-to-receiver estimate.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.InputReceiverToInjection,
+            "warpnect.latency.input.receiver_to_injection",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Local Input receiver-to-injection-attempt duration.",
+            localLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.InputSourceToInjection,
+            "warpnect.latency.input.source_to_injection",
+            TelemetryMetricKind.HistogramU64,
+            TelemetryUnit.Microseconds,
+            "Qualified cross-device Input source-to-injection estimate.",
+            crossDeviceLatencyHistogramBoundaries(),
+        ),
+        descriptor(
+            TelemetryMetricIds.InputCorrelationRejected,
+            "warpnect.latency.input.correlation_rejected",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Input latency samples rejected because identity or time provenance was insufficient.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceStarted,
+            "warpnect.latency.trace.started",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Bounded latency traces started.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceCompleted,
+            "warpnect.latency.trace.completed",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Bounded latency traces completed.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceExpired,
+            "warpnect.latency.trace.expired",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Bounded latency traces expired opportunistically.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceCapacityRejected,
+            "warpnect.latency.trace.capacity_rejected",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Latency traces rejected by fixed table capacity.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceUnmatched,
+            "warpnect.latency.trace.unmatched",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Latency trace stage completions without a matching entry.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceClockUnqualified,
+            "warpnect.latency.trace.clock_unqualified",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Latency traces rejected because their clock mapping was unqualified.",
+        ),
+        latencyTraceDescriptor(
+            TelemetryMetricIds.LatencyTraceInvalidDuration,
+            "warpnect.latency.trace.invalid_duration",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            "Latency traces rejected for a negative or invalid duration.",
+        ),
+    )
+
+    private fun clockSyncHistogramBoundaries() = ulongArrayOf(
+        100u, 250u, 500u, 1_000u, 2_000u, 5_000u, 10_000u, 20_000u, 50_000u, 100_000u,
+        250_000u, 500_000u,
+    )
+
+    private fun localLatencyHistogramBoundaries() = ulongArrayOf(
+        50u, 100u, 250u, 500u, 1_000u, 2_000u, 4_000u, 8_000u, 16_000u, 33_000u, 66_000u,
+        125_000u, 250_000u, 500_000u, 1_000_000u,
+    )
+
+    private fun crossDeviceLatencyHistogramBoundaries() = ulongArrayOf(
+        250u, 500u, 1_000u, 2_000u, 4_000u, 8_000u, 16_000u, 33_000u, 66_000u, 125_000u,
+        250_000u, 500_000u, 1_000_000u,
+    )
+
     private fun descriptor(
         id: TelemetryMetricId,
         name: String,
@@ -571,6 +1268,85 @@ object TelemetryDescriptorCatalog {
         description = description,
         histogramBoundaries = boundaries,
     )
+
+    private fun sessionDescriptor(id: TelemetryMetricId, name: String, description: String) = TelemetryMetricDescriptor(
+        id,
+        name,
+        TelemetryMetricKind.CounterU64,
+        TelemetryUnit.Count,
+        setOf(TelemetryScopeKind.Session),
+        description,
+    )
+
+    private fun networkDescriptor(id: TelemetryMetricId, name: String, unit: TelemetryUnit, description: String) =
+        TelemetryMetricDescriptor(
+            id,
+            name,
+            TelemetryMetricKind.CounterU64,
+            unit,
+            setOf(TelemetryScopeKind.Session, TelemetryScopeKind.Channel),
+            description,
+        )
+
+    private fun channelDescriptor(id: TelemetryMetricId, name: String, unit: TelemetryUnit, description: String) =
+        TelemetryMetricDescriptor(
+            id,
+            name,
+            TelemetryMetricKind.CounterU64,
+            unit,
+            setOf(TelemetryScopeKind.Channel),
+            description,
+        )
+
+    private fun pathDescriptor(
+        id: TelemetryMetricId,
+        name: String,
+        kind: TelemetryMetricKind,
+        unit: TelemetryUnit,
+        description: String,
+    ) = TelemetryMetricDescriptor(id, name, kind, unit, setOf(TelemetryScopeKind.Path), description)
+
+    private fun clockDescriptor(
+        id: TelemetryMetricId,
+        name: String,
+        kind: TelemetryMetricKind,
+        unit: TelemetryUnit,
+        description: String,
+        boundaries: ULongArray = ulongArrayOf(),
+    ) = TelemetryMetricDescriptor(
+        id,
+        name,
+        kind,
+        unit,
+        setOf(TelemetryScopeKind.Session, TelemetryScopeKind.Channel),
+        description,
+        boundaries,
+    )
+
+    private fun latencyTraceDescriptor(
+        id: TelemetryMetricId,
+        name: String,
+        kind: TelemetryMetricKind,
+        unit: TelemetryUnit,
+        description: String,
+    ) = TelemetryMetricDescriptor(
+        id,
+        name,
+        kind,
+        unit,
+        setOf(TelemetryScopeKind.Channel, TelemetryScopeKind.Component),
+        description,
+    )
+
+    private fun securityDescriptor(id: TelemetryMetricId, name: String, description: String) =
+        TelemetryMetricDescriptor(
+            id,
+            name,
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Packets,
+            setOf(TelemetryScopeKind.Session, TelemetryScopeKind.Channel),
+            description,
+        )
 
     private val descriptorsById: Map<TelemetryMetricId, TelemetryMetricDescriptor> = descriptors.associateBy { it.id }
 

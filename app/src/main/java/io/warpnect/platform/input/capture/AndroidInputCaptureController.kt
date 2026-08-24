@@ -699,7 +699,10 @@ class AndroidInputCaptureController(
         }
         val callbackDelayUs = max(0L, AndroidInputEventClock.callbackUptimeUs() - eventTimeUs)
         val result = sink?.onInputEvent(eventTimeUs, event) ?: InputSinkResult.Rejected("No input sink")
-        if (result !is InputSinkResult.Rejected) telemetry?.capturedEvents?.increment()
+        if (result !is InputSinkResult.Rejected) {
+            telemetry?.capturedEvents?.increment()
+            telemetry?.recordCaptureToSender(eventTimeUs, AndroidInputEventClock.callbackUptimeUs())
+        }
         updateSnapshot {
             val counted = counter(it)
             counted.copy(

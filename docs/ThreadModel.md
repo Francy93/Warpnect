@@ -390,3 +390,22 @@ MediaCodec output/render callbacks, system-audio drain, microphone capture, nati
 Oboe's existing callback, Android input dispatch, and `WarpnectInputReceiver` retain their existing
 threads. RFC-006B adds no telemetry worker, media orchestration worker, per-channel executor, or
 callback-to-telemetry queue.
+
+## RFC-006C Network and Recovery Diagnostics
+
+UDP send/receive, WNSD protection, FEC, NACK, and reassembly update native telemetry atomics on
+their existing native execution context. Android `NetworkCallback` updates one pre-bound path handle
+on its existing callback context, and RFC-005H lifecycle counters run on the existing serialized
+SessionLifecycle control context. RFC-006C adds no telemetry thread, executor, Handler, queue, or
+per-Channel callback registration.
+
+## RFC-006D Latency Correlation
+
+ClockSync quality is published by the existing native Video receiver control processing. MediaCodec
+input/output and render callbacks perform only bounded local trace-table operations on their
+existing callback context. Native Opus uses its existing decode caller, Android input uses its
+existing capture dispatch, and Oboe continues to perform only pre-bound callback atomics.
+
+An Oboe presentation/latency estimate is queried only through the existing non-real-time control
+method. RFC-006D adds no latency worker, timer, Handler, executor, completed-trace queue, or
+per-frame JNI operation.

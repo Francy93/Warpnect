@@ -15,6 +15,8 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 enum class AudioReceiverEventType : std::uint8_t {
     None = 0,
     StreamConfigReady = 1,
@@ -35,6 +37,7 @@ struct AudioReceiverConfig final {
     std::size_t ready_slot_count = 0;
     std::uint64_t reassembly_timeout_us = 0;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct AudioReceiverEvent final {
@@ -95,6 +98,7 @@ class AudioReceiverRuntime final {
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] AudioTransportStatus rebind_prebound_socket(UdpSocket socket,
                                                                UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
     [[nodiscard]] AudioReceiverEvent pump(std::uint64_t timeout_us) noexcept;
     [[nodiscard]] AudioTransportStatus accept_datagram(std::span<const std::byte> datagram,
                                                        const UdpEndpoint& source,

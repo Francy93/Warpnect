@@ -14,6 +14,7 @@ class AndroidNetworkPathMonitor(
     private val connectivityManager: ConnectivityManager,
     private val callbackHandler: Handler,
     private val dispatch: (PathId, hardLoss: Boolean) -> Unit,
+    private val onAvailable: (PathId) -> Unit = {},
 ) : AutoCloseable {
     private val lock = Any()
     private val registrations = LinkedHashMap<PathId, Registration>()
@@ -22,6 +23,10 @@ class AndroidNetworkPathMonitor(
     fun register(pathId: PathId, network: Network): Boolean = synchronized(lock) {
         if (closed || registrations.containsKey(pathId) || registrations.size >= 4) return@synchronized false
         val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(available: Network) {
+                if (available == network) onAvailable(pathId)
+            }
+
             override fun onLost(lost: Network) {
                 if (lost == network) dispatch(pathId, true)
             }

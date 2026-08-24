@@ -19,6 +19,8 @@
 
 namespace warpnect::scl {
 
+class RuntimeNetworkTelemetry;
+
 struct VideoTransportFecConfig final {
     bool enabled = false;
     std::uint8_t data_shards = 0;
@@ -36,6 +38,7 @@ struct VideoTransportSenderConfig final {
     VideoTransportFecConfig fec{};
     std::uint64_t resync_request_cooldown_us = 250'000;
     DatagramProtector* protector = nullptr;
+    RuntimeNetworkTelemetry* runtime_network_telemetry = nullptr;
 };
 
 struct VideoTransportSenderWorkspace final {
@@ -90,6 +93,7 @@ class VideoTransportSender final : private DatagramSink {
     [[nodiscard]] VideoStatus open() noexcept;
     void adopt_prebound_socket(UdpSocket socket) noexcept;
     [[nodiscard]] VideoStatus rebind_prebound_socket(UdpSocket socket, UdpEndpoint remote_endpoint) noexcept;
+    void set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept;
     [[nodiscard]] VideoStatus submit_stream_config(std::uint16_t width, std::uint16_t height,
                                                    std::span<const CsdEntryView> csd_entries) noexcept;
     [[nodiscard]] VideoStatus submit_access_unit(std::span<const std::byte> access_unit,

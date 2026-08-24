@@ -6,6 +6,7 @@
 #include "fragmentation.h"
 #include "monotonic_time.h"
 #include "packet_codec.h"
+#include "runtime_network_telemetry.h"
 
 namespace warpnect::scl {
 namespace {
@@ -104,7 +105,12 @@ AudioTransportStatus AudioReceiverRuntime::rebind_prebound_socket(
     config_.local_endpoint = local.endpoint;
     config_.remote_endpoint = remote_endpoint;
     socket_ = std::move(socket);
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(AudioTransportError::None);
+}
+
+void AudioReceiverRuntime::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
 }
 
 AudioTransportStatus AudioReceiverRuntime::open() noexcept {
@@ -342,8 +348,12 @@ AudioTransportStatus AudioReceiverRuntime::receive_one(std::uint64_t timeout_us)
     const UdpReceiveResult received = socket_.receive_from(
         std::span<std::byte>(datagram_buffer_.data(), datagram_buffer_.size()));
     if (!received.ok()) {
+        if (received.status.error != UdpError::WouldBlock && config_.runtime_network_telemetry != nullptr) {
+            config_.runtime_network_telemetry->udp_receive_error();
+        }
         return status(map_udp_error(received.status.error));
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_received(received.bytes_received);
     const auto datagram =
         std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received);
     return accept_datagram(datagram, received.source, monotonic_time_now_us().value);
@@ -389,6 +399,7 @@ AudioTransportStatus AudioReceiverRuntime::process_audio_packet(const PacketView
         remember(mapped);
         return status(snapshot_.last_error);
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_fragment_accepted();
     if (accepted.complete) {
         const ReassembledPayloadResult payload = slot->reassembly->result();
         if (!payload.ok()) {
@@ -404,6 +415,7 @@ AudioTransportStatus AudioReceiverRuntime::process_audio_packet(const PacketView
             snapshot_.max_reassembly_latency_us =
                 std::max(snapshot_.max_reassembly_latency_us, snapshot_.last_reassembly_latency_us);
         }
+        if (stored.ok() && config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_completed();
         reset_reassembly_slot(*slot);
         return stored;
     }
@@ -534,6 +546,7 @@ void AudioReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcep
             now_us - slot.started_at_us >= config_.reassembly_timeout_us) {
             reset_reassembly_slot(slot);
             ++snapshot_.reassembly_timeouts;
+            if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_timeout();
             ++snapshot_.stale_frames_released;
         }
     }

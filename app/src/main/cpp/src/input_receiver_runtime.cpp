@@ -1,5 +1,7 @@
 #include "input_receiver_runtime.h"
 
+#include "runtime_network_telemetry.h"
+
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -73,7 +75,12 @@ InputReceiverError InputReceiverRuntime::rebind_prebound_socket(
     config_.local_endpoint = local.endpoint;
     config_.expected_remote_endpoint = remote_endpoint;
     socket_ = std::move(socket);
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return InputReceiverError::None;
+}
+
+void InputReceiverRuntime::set_runtime_network_telemetry(RuntimeNetworkTelemetry* telemetry) noexcept {
+    config_.runtime_network_telemetry = telemetry;
 }
 
 InputReceiverError InputReceiverRuntime::open() noexcept {
@@ -298,6 +305,7 @@ InputReceiverEvent InputReceiverRuntime::receive_one(std::uint64_t timeout_us) n
             return event(InputReceiverEventType::Interrupted);
         }
         ++snapshot_.socket_failures;
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_receive_error();
         return event(InputReceiverEventType::SocketFailure, InputReceiverError::DatagramReceiveFailed);
     }
     if (!readiness.readable) {
@@ -324,8 +332,10 @@ InputReceiverEvent InputReceiverRuntime::receive_one(std::uint64_t timeout_us) n
             return event(InputReceiverEventType::Timeout);
         }
         ++snapshot_.socket_failures;
+        if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_receive_error();
         return event(InputReceiverEventType::SocketFailure, InputReceiverError::DatagramReceiveFailed);
     }
+    if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_received(received.bytes_received);
     return accept_datagram(std::span<const std::byte>(receive_scratch_.data(), received.bytes_received),
                            received.source);
 }

@@ -6,6 +6,7 @@ import io.warpnect.session.control.SecureSessionControlTransport
 import io.warpnect.session.control.SessionControlProtectionRuntime
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.security.SessionProtectionError
+import io.warpnect.telemetry.SessionControlNetworkTelemetry
 
 /** Datagram I/O ownership is shared with the bootstrap router; this class never reads a socket itself. */
 interface SecureSessionControlDatagramIo {
@@ -20,6 +21,7 @@ class AndroidSecureSessionControlTransport(
     private val runtime: SessionControlProtectionRuntime,
     private val receiveContextId: Long,
     remoteEndpoint: HandshakeTransportEndpoint,
+    private val telemetry: SessionControlNetworkTelemetry? = null,
 ) : SecureSessionControlTransport {
     private val lock = Any()
     private var datagramIo = datagramIo
@@ -56,11 +58,18 @@ class AndroidSecureSessionControlTransport(
             SystemClock.elapsedRealtimeNanos() / 1_000L,
             payload,
         )
-        if (!protected.isSuccess) return@synchronized protected
+        if (!protected.isSuccess) {
+            telemetry?.protectError()
+            return@synchronized protected
+        }
+        telemetry?.recordProduced()
         sequenceNumber += 1
-        if (!datagramIo.send(remoteEndpoint, requireNotNull(protected.protectedDatagram))) {
+        val datagram = requireNotNull(protected.protectedDatagram)
+        if (!datagramIo.send(remoteEndpoint, datagram)) {
+            telemetry?.udpSendError()
             return@synchronized SecureSessionControlSendResult(SessionProtectionError.CryptoFailure)
         }
+        telemetry?.udpSent(datagram.size)
         protected
     }
 
@@ -74,7 +83,12 @@ class AndroidSecureSessionControlTransport(
             SystemClock.elapsedRealtimeNanos() / 1_000L,
             payload,
         )
-        if (protected.isSuccess) sequenceNumber += 1
+        if (protected.isSuccess) {
+            telemetry?.recordProduced()
+            sequenceNumber += 1
+        } else {
+            telemetry?.protectError()
+        }
         protected
     }
 
@@ -118,17 +132,26 @@ class AndroidSecureSessionControlTransport(
     }
 
     private fun onProtectedDatagram(endpoint: HandshakeTransportEndpoint, datagram: ByteArray) {
+        telemetry?.udpReceived(datagram.size)
         val delivered = synchronized(lock) {
             if (closed) return
             runtime.unprotectSessionControl(endpoint, datagram, SystemClock.elapsedRealtimeNanos() / 1_000L)
         }
+        telemetry?.recordUnprotectError(delivered.error)
         if (delivered.isSuccess) synchronized(lock) { listener }?.invoke(requireNotNull(delivered.payload))
     }
 
-    override fun close() = synchronized(lock) {
-        if (closed) return
-        closed = true
-        listener = null
-        datagramIo.setSecureControlListener(receiveContextId, null)
+    override fun close() {
+        val shouldCloseTelemetry = synchronized(lock) {
+            if (closed) {
+                false
+            } else {
+                closed = true
+                listener = null
+                datagramIo.setSecureControlListener(receiveContextId, null)
+                true
+            }
+        }
+        if (shouldCloseTelemetry) telemetry?.close()
     }
 }

@@ -4,6 +4,7 @@ import io.warpnect.NativeBridge
 import io.warpnect.platform.session.channel.markNativeEndpointAdopted
 import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
 import io.warpnect.session.setup.ChannelEndpointLease
+import io.warpnect.telemetry.TelemetrySourceId
 import io.warpnect.video.decoder.VideoDecoderError
 import io.warpnect.video.decoder.VideoDecoderInputResult
 import io.warpnect.video.decoder.VideoDecoderInputSource
@@ -67,6 +68,12 @@ class NativeSclVideoReceiverController(
     }
 
     internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
+
+    /** Cold-path only; ClockSync atomics remain in the native receiver control flow. */
+    internal fun attachClockSyncTelemetry(sourceId: TelemetrySourceId): Boolean {
+        val handle = nativeHandle
+        return handle != 0L && NativeBridge.videoReceiverClockSyncTelemetryAttach(handle, sourceId.value.toLong())
+    }
 
     override val inputSource: VideoDecoderInputSource = object : VideoDecoderInputSource {
         override fun fillInput(target: ByteBuffer, capacity: Int): VideoDecoderInputResult =
