@@ -1,0 +1,587 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{1B5C8195-934C-3FC7-8DE9-48D9DFFEFFA7}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+    <Platform>x64</Platform>
+    <ProjectName>opus</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">opus.dir\Debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">opus</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">opus.dir\Release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">opus</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\MinSizeRel\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">opus.dir\MinSizeRel\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">opus</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\RelWithDebInfo\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">opus.dir\RelWithDebInfo\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">opus</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.lib</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /w44244 /w44305 /w44267 /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /w44244 /w44305 /w44267 /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /w44244 /w44305 /w44267 /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <Optimization>MinSpace</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /w44244 /w44305 /w44267 /FS</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;OPUS_BUILD;ENABLE_HARDENING;DISABLE_DEBUG_FLOAT;USE_ALLOCA;OPUS_HAVE_RTCD;OPUS_X86_MAY_HAVE_SSE;OPUS_X86_PRESUME_SSE;OPUS_X86_MAY_HAVE_SSE2;OPUS_X86_PRESUME_SSE2;OPUS_X86_MAY_HAVE_SSE4_1;OPUS_X86_MAY_HAVE_AVX2;HAVE_LRINT;HAVE_LRINTF;HAVE_CONFIG_H;_CRT_SECURE_NO_WARNINGS;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\dnn;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/opus-1.6.1/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/opus-1.6.1/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\BasicConfigVersion-SameMajorVersion.cmake.in;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeDependentOption.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePackageConfigHelpers.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePushCheckState.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPack.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPackComponent.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckCCompilerFlag.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckIncludeFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckLibraryExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckSymbolExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FeatureSummary.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindGit.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageHandleStandardArgs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageMessage.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\GNUInstallDirs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\WriteBasicConfigVersionFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Templates\CPackConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\CFeatureCheck.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusBuildtype.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusFunctions.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusPackageVersion.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusSources.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\config.h.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\opus.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/opus-1.6.1/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/opus-1.6.1/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\BasicConfigVersion-SameMajorVersion.cmake.in;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeDependentOption.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePackageConfigHelpers.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePushCheckState.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPack.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPackComponent.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckCCompilerFlag.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckIncludeFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckLibraryExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckSymbolExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FeatureSummary.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindGit.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageHandleStandardArgs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageMessage.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\GNUInstallDirs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\WriteBasicConfigVersionFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Templates\CPackConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\CFeatureCheck.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusBuildtype.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusFunctions.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusPackageVersion.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusSources.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\config.h.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\opus.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/opus-1.6.1/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/opus-1.6.1/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\BasicConfigVersion-SameMajorVersion.cmake.in;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeDependentOption.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePackageConfigHelpers.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePushCheckState.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPack.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPackComponent.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckCCompilerFlag.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckIncludeFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckLibraryExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckSymbolExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FeatureSummary.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindGit.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageHandleStandardArgs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageMessage.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\GNUInstallDirs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\WriteBasicConfigVersionFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Templates\CPackConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\CFeatureCheck.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusBuildtype.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusFunctions.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusPackageVersion.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusSources.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\config.h.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\opus.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/opus-1.6.1/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/opus-1.6.1/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\BasicConfigVersion-SameMajorVersion.cmake.in;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeDependentOption.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePackageConfigHelpers.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakePushCheckState.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPack.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CPackComponent.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckCCompilerFlag.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckIncludeFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckLibraryExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CheckSymbolExists.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FeatureSummary.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindGit.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageHandleStandardArgs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\FindPackageMessage.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\GNUInstallDirs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\WriteBasicConfigVersionFile.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Templates\CPackConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\CFeatureCheck.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusBuildtype.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusConfig.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusFunctions.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusPackageVersion.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\OpusSources.cmake;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\cmake\config.h.cmake.in;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\opus.pc.in;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus_multistream.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus_projection.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_private.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\analysis.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\mapping_matrix.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\mlp.h" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_decoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_encoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\extensions.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_multistream.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_multistream_encoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_multistream_decoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\repacketizer.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_projection_encoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\opus_projection_decoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\mapping_matrix.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\analysis.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\mlp.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\src\mlp_data.c" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus_defines.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus_types.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\debug.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\control.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\errors.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\API.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\typedef.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\define.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\main.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\main_sse.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\PLC.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\structs.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tuning_parameters.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\Inlines.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\MacroCount.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\MacroDebug.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\macros.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NSQ.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\pitch_est_defines.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_private.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_rom.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_structs.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\SigProc_FIX.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\SigProc_FIX_sse.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\biquad_alt_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\LPC_inv_pred_gain_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\macros_armv4.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\macros_armv5e.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\macros_arm64.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\SigProc_FIX_armv4.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\SigProc_FIX_armv5e.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\NSQ_del_dec_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\arm\NSQ_neon.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\fixed\main_FIX.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\fixed\structs_FIX.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\fixed\arm\warped_autocorrelation_FIX_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\fixed\mips\warped_autocorrelation_FIX_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\main_FLP.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\structs_FLP.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\SigProc_FLP.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\mips\macros_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\mips\NSQ_mips.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\mips\sigproc_fix_mipsr1.h" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\CNG.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\code_signs.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\init_decoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_core.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_frame.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_parameters.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_indices.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_pulses.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decoder_set_fs.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\dec_API.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\enc_API.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\encode_indices.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\encode_pulses.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\gain_quant.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\interpolate.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\LP_variable_cutoff.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_decode.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NSQ.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NSQ_del_dec.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\PLC.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\shell_coder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_gain.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_LTP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_NLSF_CB_NB_MB.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_NLSF_CB_WB.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_other.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_pitch_lag.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\tables_pulses_per_block.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\VAD.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\control_audio_bandwidth.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\quant_LTP_gains.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\VQ_WMat_EC.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\HP_variable_cutoff.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_encode.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_VQ.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_unpack.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_del_dec_quant.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\process_NLSFs.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_LR_to_MS.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_MS_to_LR.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\check_control_input.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\control_SNR.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\init_encoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\control_codec.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\A2NLSF.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\ana_filt_bank_1.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\biquad_alt.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\bwexpander_32.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\bwexpander.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\debug.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\decode_pitch.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\inner_prod_aligned.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\lin2log.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\log2lin.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\LPC_analysis_filter.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\LPC_inv_pred_gain.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\table_LSF_cos.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF2A.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_stabilize.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\NLSF_VQ_weights_laroia.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\pitch_est_tables.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_down2_3.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_down2.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_private_AR2.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_private_down_FIR.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_private_IIR_FIR.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_private_up2_HQ.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\resampler_rom.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\sigm_Q15.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\sort.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\sum_sqr_shift.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_decode_pred.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_encode_pred.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_find_predictor.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\stereo_quant_pred.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\LPC_fit.c" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arch.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\bands.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\cpu_support.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include\opus_custom.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\cwrs.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\ecintrin.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entcode.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entdec.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entenc.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\fixed_debug.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\fixed_generic.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\float_cast.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\_kiss_fft_guts.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\kiss_fft.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\laplace.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mathops.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mdct.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mfrngcod.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\modes.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\os_support.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\pitch.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt_lpc.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\celt_lpc_sse.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\quant_bands.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\rate.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\stack_alloc.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\vq.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\static_modes_float.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\static_modes_fixed.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\static_modes_float_arm_ne10.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\static_modes_fixed_arm_ne10.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\armcpu.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\fixed_armv4.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\fixed_armv5e.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\fixed_arm64.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\kiss_fft_armv4.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\kiss_fft_armv5e.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\mathops_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\pitch_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\fft_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\arm\mdct_arm.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mips\celt_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mips\fixed_generic_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mips\kiss_fft_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mips\mdct_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mips\pitch_mipsr1.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\pitch_sse.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\vq_sse.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\x86_arch_macros.h" />
+    <ClInclude Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\x86cpu.h" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\bands.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt_encoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt_decoder.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\cwrs.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entcode.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entdec.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\entenc.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\kiss_fft.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\laplace.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mathops.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\mdct.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\modes.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\pitch.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\celt_lpc.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\quant_bands.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\rate.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\vq.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\apply_sine_window_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\corrMatrix_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\encode_frame_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\find_LPC_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\find_LTP_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\find_pitch_lags_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\find_pred_coefs_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\LPC_analysis_filter_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\LTP_analysis_filter_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\LTP_scale_ctrl_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\noise_shape_analysis_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\process_gains_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\regularize_correlations_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\residual_energy_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\warped_autocorrelation_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\wrappers_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\autocorrelation_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\burg_modified_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\bwexpander_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\energy_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\inner_product_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\k2a_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\LPC_inv_pred_gain_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\pitch_analysis_core_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\scale_copy_vector_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\scale_vector_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\schur_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\sort_FLP.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\x86cpu.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\x86_celt_map.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\x86_silk_map.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\pitch_sse.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\pitch_sse2.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\vq_sse2.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\celt_lpc_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\pitch_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\NSQ_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\NSQ_del_dec_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\VAD_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\VQ_WMat_EC_sse4_1.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\celt\x86\pitch_avx.c">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\x86\NSQ_del_dec_avx2.c">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\silk\float\x86\inner_product_FLP_avx2.c">
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='Release|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\ZERO_CHECK.vcxproj">
+      <Project>{D42C158A-A2D8-3656-8D5F-9671B3BE2BA3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

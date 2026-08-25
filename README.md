@@ -69,14 +69,17 @@ Present:
 - RFC-006B production Video, SystemAudio, and reverse-Input instrumentation. Video counts encoded
   access units/bytes/keyframes and decoder/render-policy events; audio counts PCM/Opus/playback
   health; input records aggregate capture/convergence/injection behavior without semantic input
-  contents. Same-generation migration retains these channel sources and a fresh generation creates
-  fresh sources.
+   contents. Same-generation migration retains these channel sources and a fresh generation creates
+   fresh sources.
+- Diagnostic Event Model V1: a bounded local structured history for meaningful Session, pairing,
+  handshake, path, pipeline, input-service, and ClockSync transitions. It uses static event IDs,
+  immutable typed scope snapshots, fixed scalar payloads, cursor reads, and one native WNDE batch.
 
 Not implemented:
 
 - Adaptive FEC, packet pacing, full congestion control, automatic MTU selection, or production Internet fairness.
 - Device-specific real-audio latency figures, Oboe route measurements, Bluetooth/acoustic measurements, and physical A/V sync figures beyond the recorded benchmark/device runs.
-- Cloud rendezvous, Internet relay/NAT traversal, process-death Session resume, a background-session policy, comprehensive network/recovery telemetry, latency tracing, telemetry UI, export, or an unbounded telemetry wire stream.
+- Cloud rendezvous, Internet relay/NAT traversal, process-death Session resume, a background-session policy, diagnostics UI, persistent/exported diagnostics, or an unbounded telemetry wire stream.
 
 ## Repository Layout
 
@@ -257,6 +260,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-006B Media Pipeline Metrics Integration](docs/rfc/RFC-006B-Media-Pipeline-Metrics-Integration.md)
 - [RFC-006C Network & Recovery Diagnostics](docs/rfc/RFC-006C-Network-Recovery-Diagnostics.md)
 - [RFC-006D Latency Trace & Cross-Pipeline Correlation](docs/rfc/RFC-006D-Latency-Trace-Cross-Pipeline-Correlation.md)
+- [RFC-006E Diagnostic Logging & Bounded Event History](docs/rfc/RFC-006E-Diagnostic-Logging-Bounded-Event-History.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -277,7 +281,8 @@ Phase 4 reverse input is implementation-complete through RFC-004G. RFC-004A defi
 
 Phase 5 is implementation-complete through RFC-005I. `SecureSessionCoordinator` composes trusted/pairing identity, WNSH, WNSD, WNCP, WNSN, and WNSL into a transactional startup model with no manual endpoint or plaintext fallback. The Android composition root and normal Host/Client UI adopt each RFC-005G prepared protected transport into the existing Video, Audio, and Input runtime controllers. SystemAudio is preferred only when the current Host privileged capture and Client playback probes support its existing 48 kHz, 5 ms, stereo Opus path; MicrophoneAudio and Telemetry remain unselected until their real Host/runtime adopters exist. The final current-worktree Gradle/native matrix is green; Android and two-device validation remain explicitly tracked separately.
 
-Phase 6 telemetry now includes RFC-006D bounded latency and cross-pipeline correlation diagnostics
+Phase 6 telemetry now includes RFC-006E bounded diagnostic event history alongside RFC-006D latency
+and cross-pipeline correlation diagnostics
 on Runtime Telemetry Model V1. Warpnect has a bounded local model shared by Kotlin/platform control
 code and native SCL components. Metric names, IDs, kinds, units, and typed scopes are static; hot
 updates use pre-bound counters, gauges, or fixed histograms without JNI, string lookup, registry
@@ -292,5 +297,12 @@ capture-to-sender, ClockSync quality, and cold Oboe output-estimate diagnostics.
 cross-device one-way estimate when frozen timestamp provenance and ClockSync mapping are insufficient;
 no trace wire protocol is invented. Completed correlation state is immediately reduced to bounded
 histograms, with no trace history, queue, or telemetry-driven runtime decision.
+
+RFC-006E retains significant lifecycle and failure events in independent fixed-capacity Kotlin and
+native rings. Oldest records overwrite without producer backpressure, and cursor gap metadata
+reveals the loss. Event records contain no payloads, semantic input contents, SAS, remote address,
+key material, or arbitrary exception text; normal packets, frames, callbacks, security rejects,
+and latency samples remain aggregate metrics. Native history crosses the boundary through one
+local WNDE batch, never one JNI call per event and never a remote logging protocol.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

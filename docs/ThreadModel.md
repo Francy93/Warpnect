@@ -409,3 +409,13 @@ existing capture dispatch, and Oboe continues to perform only pre-bound callback
 An Oboe presentation/latency estimate is queried only through the existing non-real-time control
 method. RFC-006D adds no latency worker, timer, Handler, executor, completed-trace queue, or
 per-frame JNI operation.
+
+## RFC-006E Diagnostic Event History
+
+Session lifecycle control emits lifecycle events, Android platform callbacks emit path/service
+transitions, and MediaCodec component startup/fatal paths may emit one meaningful event. Native
+rare-transition writers use the native ring directly. Oboe callbacks, packet processing, frame
+callbacks, ordinary input dispatch, and latency sampling emit no diagnostic event.
+
+Snapshots materialize a bounded cursor range on their caller's cold path. RFC-006E adds no
+diagnostic worker, Handler, executor, timer, delivery queue, or per-event JNI call.

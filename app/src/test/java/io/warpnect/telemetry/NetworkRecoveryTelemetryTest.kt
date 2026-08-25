@@ -14,7 +14,7 @@ class NetworkRecoveryTelemetryTest {
     fun networkRecoveryCatalogReservesExactlyTheFrozenDescriptors() {
         val descriptors = TelemetryDescriptorCatalog.descriptors.associateBy { it.id }
 
-        assertEquals(138, descriptors.size)
+        assertEquals(143, descriptors.size)
         assertEquals(
             "warpnect.session.heartbeat.sent",
             descriptors.getValue(TelemetryMetricIds.SessionHeartbeatSent).canonicalName,

@@ -8,6 +8,10 @@ import io.warpnect.audio.session.AudioTransmitterSessionConfig
 import io.warpnect.audio.session.AudioTransmitterSessionController
 import io.warpnect.audio.transport.AudioReceiverRuntimeConfig
 import io.warpnect.audio.transport.AudioTransportConfig
+import io.warpnect.diagnostics.DiagnosticEventHub
+import io.warpnect.diagnostics.DiagnosticEventIds
+import io.warpnect.diagnostics.DiagnosticEventWriter
+import io.warpnect.diagnostics.DiagnosticReason
 import io.warpnect.input.session.ReverseInputReceiverSessionConfig
 import io.warpnect.input.session.ReverseInputReceiverSessionController
 import io.warpnect.input.session.ReverseInputSenderSessionConfig
@@ -161,6 +165,7 @@ data class AndroidInputReceiverPipeline(
 class AndroidSessionPipelineFactory(
     private val bindings: AndroidSessionPipelineBindings,
     private val telemetryHub: TelemetryHub = TelemetryHub.disabled(),
+    private val diagnosticEventHub: DiagnosticEventHub? = null,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -231,7 +236,7 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    VideoSenderComponent(pipeline, networkTelemetry)
+                    VideoSenderComponent(pipeline, networkTelemetry, diagnosticWriter(bootstrap, channel))
                 }
             }
         } else {
@@ -266,7 +271,11 @@ class AndroidSessionPipelineFactory(
                     }
                     val telemetrySources = clockSyncTelemetry?.let { pipeline.telemetrySources + it }
                         ?: pipeline.telemetrySources
-                    VideoReceiverComponent(pipeline.copy(telemetrySources = telemetrySources), networkTelemetry)
+                    VideoReceiverComponent(
+                        pipeline.copy(telemetrySources = telemetrySources),
+                        networkTelemetry,
+                        diagnosticWriter(bootstrap, channel),
+                    )
                 }
             }
         }
@@ -313,7 +322,12 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    AudioSenderComponent(channel.descriptor.kind, pipeline, networkTelemetry)
+                    AudioSenderComponent(
+                        channel.descriptor.kind,
+                        pipeline,
+                        networkTelemetry,
+                        diagnosticWriter(bootstrap, channel),
+                    )
                 }
             }
         } else {
@@ -355,7 +369,12 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    AudioReceiverComponent(channel.descriptor.kind, pipeline, networkTelemetry)
+                    AudioReceiverComponent(
+                        channel.descriptor.kind,
+                        pipeline,
+                        networkTelemetry,
+                        diagnosticWriter(bootstrap, channel),
+                    )
                 }
             }
         }
@@ -425,7 +444,7 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    InputReceiverComponent(pipeline, networkTelemetry)
+                    InputReceiverComponent(pipeline, networkTelemetry, diagnosticWriter(bootstrap, channel))
                 }
             }
         }
@@ -477,6 +496,11 @@ class AndroidSessionPipelineFactory(
         telemetry.close()
         return null
     }
+
+    private fun diagnosticWriter(
+        bootstrap: PreparedSessionBootstrap,
+        channel: PreparedChannel,
+    ): DiagnosticEventWriter? = diagnosticEventHub?.writer(bootstrap.channelScope(channel))
 }
 
 private fun PreparedSessionBootstrap.channelScope(channel: PreparedChannel): TelemetryScope.Channel =
@@ -491,17 +515,21 @@ private fun PreparedSessionBootstrap.channelScope(channel: PreparedChannel): Tel
 private class VideoSenderComponent(
     private val pipeline: AndroidVideoSenderPipeline,
     private val networkTelemetry: AutoCloseable?,
+    private val diagnostics: DiagnosticEventWriter?,
 ) : SessionPipelineComponent {
     override val name = "video-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(SessionChannelKind.Video)
-    override fun start() = SessionPipelineComponentResult(
-        if (runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            SecureSessionIntegrationError.VideoPipelineStartFailed
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        diagnostics?.emit(
+            if (started) DiagnosticEventIds.VideoEncoderStarted else DiagnosticEventIds.VideoEncoderFailed,
+            DiagnosticReason.CodecFailure.code,
+        )
+        return SessionPipelineComponentResult(
+            if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.VideoPipelineStartFailed,
+        )
+    }
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
@@ -516,17 +544,21 @@ private class VideoSenderComponent(
 private class VideoReceiverComponent(
     private val pipeline: AndroidVideoReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
+    private val diagnostics: DiagnosticEventWriter?,
 ) : SessionPipelineComponent {
     override val name = "video-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(SessionChannelKind.Video)
-    override fun start() = SessionPipelineComponentResult(
-        if (runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            SecureSessionIntegrationError.VideoPipelineStartFailed
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        diagnostics?.emit(
+            if (started) DiagnosticEventIds.VideoDecoderStarted else DiagnosticEventIds.VideoDecoderFailed,
+            DiagnosticReason.CodecFailure.code,
+        )
+        return SessionPipelineComponentResult(
+            if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.VideoPipelineStartFailed,
+        )
+    }
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
@@ -542,17 +574,19 @@ private class AudioSenderComponent(
     private val kind: SessionChannelKind,
     private val pipeline: AndroidAudioSenderPipeline,
     private val networkTelemetry: AutoCloseable?,
+    private val diagnostics: DiagnosticEventWriter?,
 ) : SessionPipelineComponent {
     override val name = "${kind.name.lowercase()}-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(kind)
-    override fun start() = SessionPipelineComponentResult(
-        if (runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            kind.startError()
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        diagnostics?.emit(
+            if (started) DiagnosticEventIds.AudioCaptureStarted else DiagnosticEventIds.AudioCaptureFailed,
+            DiagnosticReason.AudioFailure.code,
+        )
+        return SessionPipelineComponentResult(if (started) SecureSessionIntegrationError.None else kind.startError())
+    }
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
@@ -567,17 +601,19 @@ private class AudioReceiverComponent(
     private val kind: SessionChannelKind,
     private val pipeline: AndroidAudioReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
+    private val diagnostics: DiagnosticEventWriter?,
 ) : SessionPipelineComponent {
     override val name = "${kind.name.lowercase()}-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(kind)
-    override fun start() = SessionPipelineComponentResult(
-        if (runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            kind.startError()
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        diagnostics?.emit(
+            if (started) DiagnosticEventIds.AudioPlaybackStarted else DiagnosticEventIds.AudioPlaybackFailed,
+            DiagnosticReason.AudioFailure.code,
+        )
+        return SessionPipelineComponentResult(if (started) SecureSessionIntegrationError.None else kind.startError())
+    }
     override fun stop() {
         runBlocking { pipeline.controller.stop() }
     }
@@ -595,13 +631,12 @@ private class InputSenderComponent(
     override val name = "input-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(SessionChannelKind.Input)
-    override fun start() = SessionPipelineComponentResult(
-        if (pipeline.controller.start(pipeline.surface, pipeline.config).isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            SecureSessionIntegrationError.InputPipelineStartFailed
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = pipeline.controller.start(pipeline.surface, pipeline.config).isSuccess
+        return SessionPipelineComponentResult(
+            if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.InputPipelineStartFailed,
+        )
+    }
     override fun stop() {
         pipeline.controller.stop()
     }
@@ -616,17 +651,24 @@ private class InputSenderComponent(
 private class InputReceiverComponent(
     private val pipeline: AndroidInputReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
+    private val diagnostics: DiagnosticEventWriter?,
 ) : SessionPipelineComponent {
     override val name = "input-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(SessionChannelKind.Input)
-    override fun start() = SessionPipelineComponentResult(
-        if (runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess) {
-            SecureSessionIntegrationError.None
-        } else {
-            SecureSessionIntegrationError.InputPipelineStartFailed
-        },
-    )
+    override fun start(): SessionPipelineComponentResult {
+        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        diagnostics?.emit(
+            if (started) {
+                DiagnosticEventIds.InputInjectionServiceAvailable
+            } else {
+                DiagnosticEventIds.InputInjectionServiceLost
+            },
+        )
+        return SessionPipelineComponentResult(
+            if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.InputPipelineStartFailed,
+        )
+    }
     override fun stop() {
         pipeline.controller.stop()
     }

@@ -158,6 +158,11 @@ object TelemetryMetricIds {
     val SnapshotProviderFailure = TelemetryMetricId(0x0005)
     val UpdateOverflow = TelemetryMetricId(0x0006)
     val SnapshotDuration = TelemetryMetricId(0x0007)
+    val DiagnosticEventRecorded = TelemetryMetricId(0x0008)
+    val DiagnosticEventOverwritten = TelemetryMetricId(0x0009)
+    val DiagnosticSnapshotCount = TelemetryMetricId(0x000A)
+    val DiagnosticNativeParseFailure = TelemetryMetricId(0x000B)
+    val DiagnosticLogSinkFailure = TelemetryMetricId(0x000C)
 
     val SessionHeartbeatSent = TelemetryMetricId(0x0101)
     val SessionHeartbeatAckReceived = TelemetryMetricId(0x0102)
@@ -359,6 +364,46 @@ object TelemetryDescriptorCatalog {
             processScope,
             "Cold-path snapshot collection duration in the hub clock domain.",
             ulongArrayOf(100u, 500u, 1_000u, 5_000u, 10_000u, 50_000u),
+        ),
+        TelemetryMetricDescriptor(
+            TelemetryMetricIds.DiagnosticEventRecorded,
+            "warpnect.diagnostic.event.recorded",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            processScope,
+            "Structured diagnostic events retained by the local process ring.",
+        ),
+        TelemetryMetricDescriptor(
+            TelemetryMetricIds.DiagnosticEventOverwritten,
+            "warpnect.diagnostic.event.overwritten",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            processScope,
+            "Oldest diagnostic records overwritten by the bounded local ring.",
+        ),
+        TelemetryMetricDescriptor(
+            TelemetryMetricIds.DiagnosticSnapshotCount,
+            "warpnect.diagnostic.snapshot.count",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            processScope,
+            "Cold-path diagnostic history snapshot attempts.",
+        ),
+        TelemetryMetricDescriptor(
+            TelemetryMetricIds.DiagnosticNativeParseFailure,
+            "warpnect.diagnostic.native_parse_failure",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            processScope,
+            "Malformed local WNDE batches rejected without affecting runtime behavior.",
+        ),
+        TelemetryMetricDescriptor(
+            TelemetryMetricIds.DiagnosticLogSinkFailure,
+            "warpnect.diagnostic.log_sink_failure",
+            TelemetryMetricKind.CounterU64,
+            TelemetryUnit.Count,
+            processScope,
+            "Optional sanitized diagnostic log sink failures.",
         ),
     ) + mediaAndInputDescriptors() + networkAndRecoveryDescriptors() + latencyDescriptors()
 

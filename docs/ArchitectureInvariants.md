@@ -609,3 +609,20 @@ duplicate media transmission.
 
 > Latency instrumentation is observational. It never changes codec, audio, input, ClockSync, path,
 > migration, recovery, or security behavior. Oboe callbacks never query timestamps or latency.
+
+## RFC-006E Diagnostic Event History
+
+> Diagnostic events record significant lifecycle transitions and failures, never packet, frame,
+> audio callback, input event, or latency-sample activity. High-rate runtime outcomes remain
+> aggregate telemetry.
+
+> Diagnostic history is fixed-capacity process-local storage. Oldest records overwrite when full;
+> producers never wait for a reader and cursor reads make history gaps explicit.
+
+> Retained events carry an immutable bounded scope snapshot and at most four typed scalar fields.
+> They contain no packet/media/input payload, SAS, cryptographic material, remote address, or
+> arbitrary diagnostic string.
+
+> Native diagnostic events use one bounded local WNDE batch on the cold snapshot path. There is
+> never a JNI transition for one emitted event, and Kotlin/native clock domains are not falsely
+> combined into a globally ordered timeline.

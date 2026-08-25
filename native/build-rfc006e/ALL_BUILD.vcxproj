@@ -1,0 +1,309 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{18174015-F1CF-362E-BDE9-5BF756F52DBB}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+    <Platform>x64</Platform>
+    <ProjectName>ALL_BUILD</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Utility</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <Midl>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\native\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\ZERO_CHECK.vcxproj">
+      <Project>{D42C158A-A2D8-3656-8D5F-9671B3BE2BA3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\audio_playback_ring_tests.vcxproj">
+      <Project>{5C236B9E-5CF0-3E63-A278-8E0638DE582D}</Project>
+      <Name>audio_playback_ring_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus_audio_decoder_benchmarks.vcxproj">
+      <Project>{C048799E-56B5-389B-B314-9AAC282EC56B}</Project>
+      <Name>opus_audio_decoder_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus_audio_decoder_tests.vcxproj">
+      <Project>{B4CBADB6-1610-3C78-8723-D71FF5FB1C46}</Project>
+      <Name>opus_audio_decoder_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus_audio_encoder_benchmarks.vcxproj">
+      <Project>{9D10E52B-36ED-338F-9AE1-CE12DB65D89F}</Project>
+      <Name>opus_audio_encoder_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus_audio_encoder_tests.vcxproj">
+      <Project>{177E405E-BD3A-3BF4-B11D-F4611434B737}</Project>
+      <Name>opus_audio_encoder_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_audio_receiver_runtime_tests.vcxproj">
+      <Project>{E25050C1-C4AA-34A8-9698-F5C50C49E60D}</Project>
+      <Name>scl_audio_receiver_runtime_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_audio_transport_tests.vcxproj">
+      <Project>{2BCB32BD-BBB2-3F90-8B65-3F0E93258B20}</Project>
+      <Name>scl_audio_transport_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_diagnostic_event_benchmarks.vcxproj">
+      <Project>{96211E43-5EE1-3D16-9376-EAF06C943297}</Project>
+      <Name>scl_diagnostic_event_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_diagnostic_event_tests.vcxproj">
+      <Project>{05AF2A71-F37A-3EA8-8C7D-1CA8A4956F37}</Project>
+      <Name>scl_diagnostic_event_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_fec_tests.vcxproj">
+      <Project>{E904FCDD-A2A3-324F-8DC9-194135266994}</Project>
+      <Name>scl_fec_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_fragmentation_tests.vcxproj">
+      <Project>{3381C8C6-62C1-3AD4-A763-6F5BF6C37F45}</Project>
+      <Name>scl_fragmentation_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_header_compile_test.vcxproj">
+      <Project>{C7084155-600B-30B1-AFCC-1E280C1A679A}</Project>
+      <Name>scl_header_compile_test</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_input_protocol_tests.vcxproj">
+      <Project>{745FA95E-A796-3FC5-98F7-6498B03A6B35}</Project>
+      <Name>scl_input_protocol_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_input_receiver_runtime_tests.vcxproj">
+      <Project>{2D1B23D5-EDCC-309D-A591-186A8431D890}</Project>
+      <Name>scl_input_receiver_runtime_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_input_transport_tests.vcxproj">
+      <Project>{1D65E8F2-123F-3981-A753-EA0CD71C8937}</Project>
+      <Name>scl_input_transport_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_native_core.vcxproj">
+      <Project>{5E591073-9F07-3C61-B8C5-CF44C05F8A24}</Project>
+      <Name>scl_native_core</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_native_test_support.vcxproj">
+      <Project>{924104BE-B2B8-318D-A676-0EC43B6AF378}</Project>
+      <Name>scl_native_test_support</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_packet_tests.vcxproj">
+      <Project>{71554C76-85D1-34C7-80BF-8FCABC5D9805}</Project>
+      <Name>scl_packet_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_phase1_benchmarks.vcxproj">
+      <Project>{E4A47D2F-788C-31A7-8DF7-3DAB99920CE7}</Project>
+      <Name>scl_phase1_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_phase1_integration_tests.vcxproj">
+      <Project>{638AC29B-6FE2-344B-9894-0F4990D74136}</Project>
+      <Name>scl_phase1_integration_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_phase2_video_benchmarks.vcxproj">
+      <Project>{59577465-446F-3833-8E68-7D1C6ABE9295}</Project>
+      <Name>scl_phase2_video_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_phase3_audio_benchmarks.vcxproj">
+      <Project>{603B5DFB-1EC1-3141-A2D7-BEC708EC3B4E}</Project>
+      <Name>scl_phase3_audio_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_phase4_input_benchmarks.vcxproj">
+      <Project>{19E088D8-4FA2-3870-920F-4EFA6CDF494A}</Project>
+      <Name>scl_phase4_input_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_recovery_tests.vcxproj">
+      <Project>{CE847605-1862-32E0-9EBE-7A1F732FC05D}</Project>
+      <Name>scl_recovery_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_runtime_telemetry_benchmarks.vcxproj">
+      <Project>{F3E2ACFE-8016-322D-8F63-6DA56ABB19EA}</Project>
+      <Name>scl_runtime_telemetry_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_runtime_telemetry_tests.vcxproj">
+      <Project>{5BBDF331-B9C9-3C71-B099-F3B64BA79073}</Project>
+      <Name>scl_runtime_telemetry_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_session_protection_benchmarks.vcxproj">
+      <Project>{958143E5-1BA2-3DD4-B093-431EA8F5251F}</Project>
+      <Name>scl_session_protection_benchmarks</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_session_protection_tests.vcxproj">
+      <Project>{ACBBB47D-3B40-3E5C-A3F7-422DDC503EA9}</Project>
+      <Name>scl_session_protection_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_timing_telemetry_tests.vcxproj">
+      <Project>{CA1BAAB0-9A90-3EA5-B42F-535FCC12BA6E}</Project>
+      <Name>scl_timing_telemetry_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_udp_tests.vcxproj">
+      <Project>{A2EB5854-BA71-31A9-B597-D565771D9358}</Project>
+      <Name>scl_udp_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_video_resync_tests.vcxproj">
+      <Project>{EB43162C-58D7-3484-8E4E-F5C2670BDBD9}</Project>
+      <Name>scl_video_resync_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_video_runtime_tests.vcxproj">
+      <Project>{0ABC0E25-7DB3-386D-B929-6A9A2A11EACD}</Project>
+      <Name>scl_video_runtime_tests</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_video_transport_tests.vcxproj">
+      <Project>{AB909A7F-CD55-35F5-AD23-ADCF417D95C7}</Project>
+      <Name>scl_video_transport_tests</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

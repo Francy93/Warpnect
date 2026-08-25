@@ -1,5 +1,8 @@
 package io.warpnect.session.pairing
 
+import io.warpnect.diagnostics.DiagnosticEventIds
+import io.warpnect.diagnostics.DiagnosticEventWriter
+import io.warpnect.diagnostics.DiagnosticReason
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
 import io.warpnect.session.trust.TrustStoreError
 import io.warpnect.session.trust.TrustedPeerRecord
@@ -116,6 +119,7 @@ class PairingController(
     private val wallClock: PairingWallClock = SystemPairingWallClock,
     private val eventListener: PairingEventListener? = null,
     private val completedListener: PairingCompletedListener? = null,
+    private val diagnosticEvents: DiagnosticEventWriter? = null,
 ) : AutoCloseable {
     private val attempts = LinkedHashMap<PairingAttemptId, ManagedAttempt>()
     private val prompts = HashMap<PairingAttemptId, PairingVerificationPrompt>()
@@ -159,6 +163,7 @@ class PairingController(
         val managed = ManagedAttempt(engine, endpoint, remoteUntrustedAlias, nowMs)
         attempts[attemptId] = managed
         counters.initiatedAttempts += 1
+        diagnosticEvents?.emit(DiagnosticEventIds.PairingStarted)
         processEngineResult(managed, started.result, nowMs)
     }
 
@@ -295,6 +300,7 @@ class PairingController(
         val managed = ManagedAttempt(engine, endpoint, null, nowMs)
         attempts[packet.attemptId] = managed
         counters.acceptedIncomingAttempts += 1
+        diagnosticEvents?.emit(DiagnosticEventIds.PairingStarted)
         processEngineResult(managed, engine.receive(packet), nowMs)
     }
 
@@ -322,12 +328,17 @@ class PairingController(
                         expiresAtMonotonicMs = nowMs + config.userConfirmationTimeoutMs,
                     )
                     prompts[managed.engine.attemptId] = prompt
+                    diagnosticEvents?.emit(DiagnosticEventIds.PairingSasReady)
                     eventListener?.onVerificationPrompt(prompt)
                 }
                 is PairingEngineAction.Completed -> persistTrust(managed, action)
             }
         }
         if (managed.engine.state.isTerminal()) {
+            if (managed.engine.state != PairingEngineState.Paired && !managed.terminalDiagnosticRecorded) {
+                managed.terminalDiagnosticRecorded = true
+                diagnosticEvents?.emit(DiagnosticEventIds.PairingFailed, engineResult.error.toDiagnosticReason().code)
+            }
             prompts.remove(managed.engine.attemptId)
             if (managed.engine.state != PairingEngineState.Paired ||
                 !managed.pendingOutbound.containsKey(PairingMessageType.Confirm)
@@ -354,19 +365,28 @@ class PairingController(
         when (stored.error) {
             TrustStoreError.None -> {
                 counters.successfulPairings += 1
+                diagnosticEvents?.emit(DiagnosticEventIds.PairingSucceeded)
                 completedListener?.onPairingCompleted(requireNotNull(stored.record))
             }
             TrustStoreError.AlreadyTrusted -> {
                 counters.alreadyTrusted += 1
+                diagnosticEvents?.emit(DiagnosticEventIds.PairingSucceeded)
                 completedListener?.onPairingCompleted(requireNotNull(stored.record))
             }
             TrustStoreError.PeerIdentityKeyChanged,
             TrustStoreError.IdentityBindingConflict,
-            -> counters.identityKeyMismatches += 1
+            -> {
+                counters.identityKeyMismatches += 1
+                diagnosticEvents?.emit(DiagnosticEventIds.TrustKeyMismatch)
+            }
             else -> Unit
         }
         if (stored.error != TrustStoreError.None && stored.error != TrustStoreError.AlreadyTrusted) {
             lastError = PairingEngine.trustError(stored.error)
+            if (!managed.terminalDiagnosticRecorded) {
+                managed.terminalDiagnosticRecorded = true
+                diagnosticEvents?.emit(DiagnosticEventIds.PairingFailed, lastError.toDiagnosticReason().code)
+            }
         }
     }
 
@@ -527,6 +547,7 @@ class PairingController(
         val remoteUntrustedAlias: String?,
         val createdAtMs: Long,
         val pendingOutbound: MutableMap<PairingMessageType, PendingOutbound> = LinkedHashMap(),
+        var terminalDiagnosticRecorded: Boolean = false,
     )
 
     private data class PendingOutbound(
@@ -550,6 +571,32 @@ class PairingController(
         var alreadyTrusted: Long = 0L,
         var identityKeyMismatches: Long = 0L,
     )
+}
+
+private fun PairingError.toDiagnosticReason(): DiagnosticReason = when (this) {
+    PairingError.PairingTransportTimeout,
+    PairingError.UserConfirmationTimeout,
+    PairingError.PairingWindowExpired,
+    -> DiagnosticReason.Timeout
+    PairingError.AttemptCapacityExceeded,
+    PairingError.TrustStoreCapacityExceeded,
+    -> DiagnosticReason.Capacity
+    PairingError.PeerIdentityKeyChanged,
+    PairingError.IdentityBindingConflict,
+    -> DiagnosticReason.TrustMismatch
+    PairingError.SignatureInvalid,
+    PairingError.ConfirmationMacInvalid,
+    PairingError.InvalidPeerIdentity,
+    -> DiagnosticReason.AuthenticationFailure
+    PairingError.PairingTransportUnavailable,
+    PairingError.DiscoveryRouteUnavailable,
+    -> DiagnosticReason.PlatformUnavailable
+    PairingError.UserRejected,
+    PairingError.VerificationMismatch,
+    PairingError.RejectedByPeer,
+    PairingError.AbortedByPeer,
+    -> DiagnosticReason.PolicyChange
+    else -> DiagnosticReason.FatalInternalError
 }
 
 private fun PairingMessageType.isRetryable(): Boolean = this in setOf(

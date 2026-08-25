@@ -1,0 +1,354 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{9D10E52B-36ED-338F-9AE1-CE12DB65D89F}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+    <Platform>x64</Platform>
+    <ProjectName>opus_audio_encoder_benchmarks</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">opus_audio_encoder_benchmarks.dir\Debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">opus_audio_encoder_benchmarks</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">opus_audio_encoder_benchmarks.dir\Release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">opus_audio_encoder_benchmarks</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\MinSizeRel\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">opus_audio_encoder_benchmarks.dir\MinSizeRel\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">opus_audio_encoder_benchmarks</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">true</GenerateManifest>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\RelWithDebInfo\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">opus_audio_encoder_benchmarks.dir\RelWithDebInfo\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">opus_audio_encoder_benchmarks</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.exe</TargetExt>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</LinkIncremental>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">true</GenerateManifest>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:__cplusplus</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>Debug\scl_native_core.lib;opus-1.6.1\Debug\opus.lib;mbedtls-3.6.7\library\Debug\mbedcrypto.lib;ws2_32.lib;bcrypt.lib;mbedtls-3.6.7\3rdparty\everest\Debug\warpnect_everest.lib;mbedtls-3.6.7\3rdparty\p256-m\Debug\warpnect_p256m.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImportLibrary>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Debug/opus_audio_encoder_benchmarks.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Debug/opus_audio_encoder_benchmarks.pdb</ProgramDataBaseFile>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:__cplusplus</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>Release\scl_native_core.lib;opus-1.6.1\Release\opus.lib;mbedtls-3.6.7\library\Release\mbedcrypto.lib;ws2_32.lib;bcrypt.lib;mbedtls-3.6.7\3rdparty\everest\Release\warpnect_everest.lib;mbedtls-3.6.7\3rdparty\p256-m\Release\warpnect_p256m.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImportLibrary>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/opus_audio_encoder_benchmarks.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/opus_audio_encoder_benchmarks.pdb</ProgramDataBaseFile>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:__cplusplus</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>MinSpace</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>MinSizeRel\scl_native_core.lib;opus-1.6.1\MinSizeRel\opus.lib;mbedtls-3.6.7\library\MinSizeRel\mbedcrypto.lib;ws2_32.lib;bcrypt.lib;mbedtls-3.6.7\3rdparty\everest\MinSizeRel\warpnect_everest.lib;mbedtls-3.6.7\3rdparty\p256-m\MinSizeRel\warpnect_p256m.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImportLibrary>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/MinSizeRel/opus_audio_encoder_benchmarks.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/MinSizeRel/opus_audio_encoder_benchmarks.pdb</ProgramDataBaseFile>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /Zc:__cplusplus</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\native\benchmarks;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\include;C:\Users\Francy\Desktop\Warpnect\native\..\app\src\main\cpp\src;C:\Users\Francy\Desktop\Warpnect\third_party\opus-1.6.1\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Link>
+      <AdditionalDependencies>RelWithDebInfo\scl_native_core.lib;opus-1.6.1\RelWithDebInfo\opus.lib;mbedtls-3.6.7\library\RelWithDebInfo\mbedcrypto.lib;ws2_32.lib;bcrypt.lib;mbedtls-3.6.7\3rdparty\everest\RelWithDebInfo\warpnect_everest.lib;mbedtls-3.6.7\3rdparty\p256-m\RelWithDebInfo\warpnect_p256m.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <ImportLibrary>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/RelWithDebInfo/opus_audio_encoder_benchmarks.lib</ImportLibrary>
+      <ProgramDataBaseFile>C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/RelWithDebInfo/opus_audio_encoder_benchmarks.pdb</ProgramDataBaseFile>
+      <SubSystem>Console</SubSystem>
+    </Link>
+    <ProjectReference>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\native\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/native/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCXXInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeCommonLanguageInclude.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeGenericSystem.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeInitializeConfigs.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeLanguageInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeRCInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInformation.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\CMakeSystemSpecificInitialize.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\CMakeCommonCompilerMacros.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Compiler\MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-C.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC-CXX.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows-MSVC.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\Windows.cmake;C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\share\cmake-3.22\Modules\Platform\WindowsPaths.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeCXXCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeRCCompiler.cmake;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\3.22.1-g37088a8-dirty\CMakeSystem.cmake;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\native\benchmarks\benchmark_runner.cpp" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\native\benchmarks\opus_audio_encoder_benchmarks.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\ZERO_CHECK.vcxproj">
+      <Project>{D42C158A-A2D8-3656-8D5F-9671B3BE2BA3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\opus-1.6.1\opus.vcxproj">
+      <Project>{1B5C8195-934C-3FC7-8DE9-48D9DFFEFFA7}</Project>
+      <Name>opus</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\scl_native_core.vcxproj">
+      <Project>{5E591073-9F07-3C61-B8C5-CF44C05F8A24}</Project>
+      <Name>scl_native_core</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\3rdparty\everest\warpnect_everest.vcxproj">
+      <Project>{C93982F9-EBD9-3B2F-AACE-E67465D97607}</Project>
+      <Name>warpnect_everest</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\warpnect_mbedcrypto.vcxproj">
+      <Project>{72D43CD0-692A-30A9-8A22-4F3E8CD9F734}</Project>
+      <Name>warpnect_mbedcrypto</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\3rdparty\p256-m\warpnect_p256m.vcxproj">
+      <Project>{8E50BAA3-CD0B-3B22-8F82-87F25DBBF21B}</Project>
+      <Name>warpnect_p256m</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

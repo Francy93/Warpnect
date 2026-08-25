@@ -1,0 +1,10 @@
+^C:\USERS\FRANCY\DESKTOP\WARPNECT\NATIVE\BUILD-RFC006E\CMAKEFILES\1E1F3916CA5486E2BCD3DBC76D216A66\GENERATE.STAMP.RULE
+setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/warpnect_native_tests.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

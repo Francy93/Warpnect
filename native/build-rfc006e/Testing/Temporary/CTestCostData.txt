@@ -1,0 +1,23 @@
+scl_diagnostic_event_tests 3 0.0608761
+scl_header_compile_test 2 0.129719
+scl_packet_tests 2 0.101104
+scl_udp_tests 2 0.0982909
+scl_fragmentation_tests 2 0.176439
+scl_recovery_tests 2 0.110504
+scl_fec_tests 2 0.11277
+scl_timing_telemetry_tests 2 0.105308
+scl_phase1_integration_tests 2 0.116475
+scl_video_transport_tests 2 0.0964018
+scl_video_runtime_tests 2 0.0869185
+scl_video_resync_tests 2 0.0841793
+opus_audio_encoder_tests 2 0.168371
+opus_audio_decoder_tests 2 0.228472
+audio_playback_ring_tests 2 0.168229
+scl_audio_transport_tests 2 0.0843069
+scl_audio_receiver_runtime_tests 2 0.076777
+scl_input_protocol_tests 2 0.0692491
+scl_input_transport_tests 2 0.0772792
+scl_input_receiver_runtime_tests 2 0.084644
+scl_session_protection_tests 2 0.798272
+scl_runtime_telemetry_tests 2 0.093453
+---

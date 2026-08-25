@@ -79,6 +79,7 @@ set(SCL_CORE_SOURCES
     src/recovery_control.cpp
     src/reed_solomon.cpp
     src/retransmission_cache.cpp
+    src/runtime_diagnostic_event.cpp
     src/runtime_telemetry.cpp
     src/session_protection.cpp
     src/telemetry.cpp

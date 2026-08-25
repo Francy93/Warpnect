@@ -1,0 +1,305 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="MinSizeRel|x64">
+      <Configuration>MinSizeRel</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64">
+      <Configuration>RelWithDebInfo</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{0FE78383-9D44-33D0-B299-829A855585DC}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
+    <Keyword>Win32Proj</Keyword>
+    <Platform>x64</Platform>
+    <ProjectName>warpnect_mbedx509</ProjectName>
+    <VCProjectUpgraderObjectName>NoUpgrade</VCProjectUpgraderObjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.20506.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\Debug\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">warpnect_mbedx509.dir\Debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">mbedx509</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\Release\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">warpnect_mbedx509.dir\Release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">mbedx509</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\MinSizeRel\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">warpnect_mbedx509.dir\MinSizeRel\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">mbedx509</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">.lib</TargetExt>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\RelWithDebInfo\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">warpnect_mbedx509.dir\RelWithDebInfo\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">mbedx509</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">.lib</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;CMAKE_INTDIR="Debug"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_DEBUG;_WINDOWS;CMAKE_INTDIR=\"Debug\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="Release"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"Release\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <Optimization>MinSpace</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="MinSizeRel"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <DebugInformationFormat>
+      </DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"MinSizeRel\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
+      <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>
+      </ExceptionHandling>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <Optimization>MaxSpeed</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR="RelWithDebInfo"</PreprocessorDefinitions>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WIN32;_WINDOWS;NDEBUG;CMAKE_INTDIR=\"RelWithDebInfo\"</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Midl>
+      <AdditionalIncludeDirectories>C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\everest\include;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m;C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\3rdparty\p256-m\p256-m;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <OutputDirectory>$(ProjectDir)/$(IntDir)</OutputDirectory>
+      <HeaderFileName>%(Filename).h</HeaderFileName>
+      <TypeLibraryName>%(Filename).tlb</TypeLibraryName>
+      <InterfaceIdentifierFileName>%(Filename)_i.c</InterfaceIdentifierFileName>
+      <ProxyFileName>%(Filename)_p.c</ProxyFileName>
+    </Midl>
+    <Lib>
+      <AdditionalOptions>%(AdditionalOptions) /machine:x64</AdditionalOptions>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\CMakeLists.txt">
+      <UseUtf8Encoding>Always</UseUtf8Encoding>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/mbedtls-3.6.7/library/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/mbedtls-3.6.7/library/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/mbedtls-3.6.7/library/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/mbedtls-3.6.7/library/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/mbedtls-3.6.7/library/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/mbedtls-3.6.7/library/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">false</LinkObjects>
+      <Message Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">Building Custom Rule C:/Users/Francy/Desktop/Warpnect/third_party/mbedtls-3.6.7/library/CMakeLists.txt</Message>
+      <Command Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/mbedtls-3.6.7/library/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd</Command>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalInputs)</AdditionalInputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\CMakeFiles\generate.stamp</Outputs>
+      <LinkObjects Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">false</LinkObjects>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\pkcs7.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509_create.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509_crl.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509_crt.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509_csr.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509write.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509write_crt.c" />
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\third_party\mbedtls-3.6.7\library\x509write_csr.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\ZERO_CHECK.vcxproj">
+      <Project>{D42C158A-A2D8-3656-8D5F-9671B3BE2BA3}</Project>
+      <Name>ZERO_CHECK</Name>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\3rdparty\everest\warpnect_everest.vcxproj">
+      <Project>{C93982F9-EBD9-3B2F-AACE-E67465D97607}</Project>
+      <Name>warpnect_everest</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\library\warpnect_mbedcrypto.vcxproj">
+      <Project>{72D43CD0-692A-30A9-8A22-4F3E8CD9F734}</Project>
+      <Name>warpnect_mbedcrypto</Name>
+    </ProjectReference>
+    <ProjectReference Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\mbedtls-3.6.7\3rdparty\p256-m\warpnect_p256m.vcxproj">
+      <Project>{8E50BAA3-CD0B-3B22-8F82-87F25DBBF21B}</Project>
+      <Name>warpnect_p256m</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

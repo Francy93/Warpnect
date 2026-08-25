@@ -845,3 +845,28 @@ app/src/main/cpp/src/
 fixed 256-entry, bounded-probe Video in-flight table. Existing media and input telemetry groups
 retain local duration handles, while the native ClockSync helper is attached once to the adopted
 Video receiver and reaches Kotlin through the existing WNTM provider.
+
+## RFC-006E Diagnostic Event History
+
+```text
+app/src/main/java/io/warpnect/diagnostics/
+  DiagnosticEventModel.kt
+  DiagnosticEventRing.kt
+  DiagnosticEventHub.kt
+  NativeDiagnosticEventProvider.kt
+  SessionLifecycleDiagnosticEvents.kt
+app/src/main/java/io/warpnect/platform/diagnostics/
+  AndroidDiagnosticEventClock.kt
+  AndroidLogcatDiagnosticSink.kt
+app/src/main/cpp/include/
+  runtime_diagnostic_event.h
+app/src/main/cpp/src/
+  runtime_diagnostic_event.cpp
+native/tests/
+  scl_diagnostic_event_tests.cpp
+```
+
+`diagnostics/` owns the local event schema, bounded Kotlin history, provider-qualified cursor reads,
+and strict WNDE parsing. The portable native ring owns fixed records and WNDE serialization. The
+optional Android Logcat adapter is a secondary, sanitized developer sink; production composition
+keeps it disabled while retaining structured history.

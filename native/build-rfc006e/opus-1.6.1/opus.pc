@@ -1,0 +1,16 @@
+# Opus codec reference implementation pkg-config file
+
+prefix=C:/Program Files/warpnect_native_tests
+exec_prefix=C:/Program Files/warpnect_native_tests
+libdir=C:/Program Files/warpnect_native_tests/lib
+includedir=C:/Program Files/warpnect_native_tests/include
+
+Name: Opus
+Description: Opus IETF audio codec ( build)
+URL: https://opus-codec.org/
+Version: 1.6.1
+Requires:
+Conflicts:
+Libs: -LC:/Program Files/warpnect_native_tests/lib -lopus
+Libs.private: 
+Cflags: -IC:/Program Files/warpnect_native_tests/include/opus

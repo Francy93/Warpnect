@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\native\benchmarks\benchmark_runner.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\native\benchmarks\opus_audio_decoder_benchmarks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\native\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{BD0DEF9C-7EBE-3C72-829B-1796D6603B04}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

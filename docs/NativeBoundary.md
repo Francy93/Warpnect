@@ -599,3 +599,20 @@ platform layer. Native Opus decode timing is measured around the existing synchr
 Oboe only updates its best-effort output-latency gauge from its existing cold presentation query.
 No latency update, trace lookup, or ClockSync event introduces a JNI transition on a packet, frame,
 or audio callback.
+
+## RFC-006E Diagnostic Events
+
+```text
+native meaningful transition or terminal failure
+        -> preallocated RuntimeDiagnosticEventBuffer
+        -> one WNDE direct-buffer snapshot JNI call
+        -> Kotlin DiagnosticEventHub
+
+Kotlin lifecycle/platform/component transition
+        -> preallocated DiagnosticEventRing
+        -> DiagnosticEventHub cursor snapshot
+```
+
+`WNDE` is a little-endian local/JNI representation only: it is never sent through SCL, UDP, or
+`PayloadType.Telemetry`. Native packet hot paths and Oboe callbacks do not emit diagnostic events;
+their high-rate outcomes remain bounded telemetry counters.

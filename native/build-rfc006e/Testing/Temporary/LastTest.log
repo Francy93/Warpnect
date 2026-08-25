@@ -1,0 +1,349 @@
+Start testing: Aug 24 22:46 ora legale Europa occidentale
+----------------------------------------------------------
+1/22 Testing: scl_header_compile_test
+1/22 Test: scl_header_compile_test
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_header_compile_test.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_header_compile_test" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.26 sec
+----------------------------------------------------------
+Test Passed.
+"scl_header_compile_test" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_header_compile_test" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/22 Testing: scl_packet_tests
+2/22 Test: scl_packet_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_packet_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_packet_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL packet tests passed
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"scl_packet_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_packet_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/22 Testing: scl_udp_tests
+3/22 Test: scl_udp_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_udp_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_udp_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL UDP tests passed
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"scl_udp_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_udp_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/22 Testing: scl_fragmentation_tests
+4/22 Test: scl_fragmentation_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_fragmentation_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_fragmentation_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL fragmentation tests passed
+<end of output>
+Test time =   0.35 sec
+----------------------------------------------------------
+Test Passed.
+"scl_fragmentation_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_fragmentation_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/22 Testing: scl_recovery_tests
+5/22 Test: scl_recovery_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_recovery_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_recovery_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.22 sec
+----------------------------------------------------------
+Test Passed.
+"scl_recovery_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_recovery_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/22 Testing: scl_fec_tests
+6/22 Test: scl_fec_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_fec_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_fec_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL FEC tests passed
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"scl_fec_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_fec_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/22 Testing: scl_timing_telemetry_tests
+7/22 Test: scl_timing_telemetry_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_timing_telemetry_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_timing_telemetry_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL timing and telemetry tests passed
+<end of output>
+Test time =   0.21 sec
+----------------------------------------------------------
+Test Passed.
+"scl_timing_telemetry_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_timing_telemetry_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/22 Testing: scl_phase1_integration_tests
+8/22 Test: scl_phase1_integration_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_phase1_integration_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_phase1_integration_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL Phase 1 integration tests passed
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"scl_phase1_integration_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_phase1_integration_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/22 Testing: scl_video_transport_tests
+9/22 Test: scl_video_transport_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_video_transport_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_video_transport_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"scl_video_transport_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_video_transport_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/22 Testing: scl_video_runtime_tests
+10/22 Test: scl_video_runtime_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_video_runtime_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_video_runtime_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"scl_video_runtime_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_video_runtime_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/22 Testing: scl_video_resync_tests
+11/22 Test: scl_video_resync_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_video_resync_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_video_resync_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"scl_video_resync_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_video_resync_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/22 Testing: opus_audio_encoder_tests
+12/22 Test: opus_audio_encoder_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/opus_audio_encoder_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"opus_audio_encoder_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Opus audio encoder tests passed
+<end of output>
+Test time =   0.34 sec
+----------------------------------------------------------
+Test Passed.
+"opus_audio_encoder_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"opus_audio_encoder_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/22 Testing: opus_audio_decoder_tests
+13/22 Test: opus_audio_decoder_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/opus_audio_decoder_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"opus_audio_decoder_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Opus audio decoder tests passed
+<end of output>
+Test time =   0.46 sec
+----------------------------------------------------------
+Test Passed.
+"opus_audio_decoder_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"opus_audio_decoder_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/22 Testing: audio_playback_ring_tests
+14/22 Test: audio_playback_ring_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/audio_playback_ring_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"audio_playback_ring_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Audio playback ring tests passed
+<end of output>
+Test time =   0.34 sec
+----------------------------------------------------------
+Test Passed.
+"audio_playback_ring_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"audio_playback_ring_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/22 Testing: scl_audio_transport_tests
+15/22 Test: scl_audio_transport_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_audio_transport_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_audio_transport_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"scl_audio_transport_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_audio_transport_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+16/22 Testing: scl_audio_receiver_runtime_tests
+16/22 Test: scl_audio_receiver_runtime_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_audio_receiver_runtime_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_audio_receiver_runtime_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+SCL audio receiver runtime tests passed
+<end of output>
+Test time =   0.15 sec
+----------------------------------------------------------
+Test Passed.
+"scl_audio_receiver_runtime_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_audio_receiver_runtime_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+17/22 Testing: scl_input_protocol_tests
+17/22 Test: scl_input_protocol_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_input_protocol_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_input_protocol_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Input protocol tests passed
+<end of output>
+Test time =   0.14 sec
+----------------------------------------------------------
+Test Passed.
+"scl_input_protocol_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_input_protocol_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/22 Testing: scl_input_transport_tests
+18/22 Test: scl_input_transport_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_input_transport_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_input_transport_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Input transport tests passed
+<end of output>
+Test time =   0.15 sec
+----------------------------------------------------------
+Test Passed.
+"scl_input_transport_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_input_transport_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+19/22 Testing: scl_input_receiver_runtime_tests
+19/22 Test: scl_input_receiver_runtime_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_input_receiver_runtime_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_input_receiver_runtime_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Input receiver runtime tests passed
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"scl_input_receiver_runtime_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_input_receiver_runtime_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/22 Testing: scl_session_protection_tests
+20/22 Test: scl_session_protection_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_session_protection_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_session_protection_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+All session packet protection tests passed.
+<end of output>
+Test time =   1.60 sec
+----------------------------------------------------------
+Test Passed.
+"scl_session_protection_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_session_protection_tests" time elapsed: 00:00:01
+----------------------------------------------------------
+
+21/22 Testing: scl_runtime_telemetry_tests
+21/22 Test: scl_runtime_telemetry_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_runtime_telemetry_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_runtime_telemetry_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Runtime telemetry tests passed
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"scl_runtime_telemetry_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_runtime_telemetry_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+22/22 Testing: scl_diagnostic_event_tests
+22/22 Test: scl_diagnostic_event_tests
+Command: "C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/Release/scl_diagnostic_event_tests.exe"
+Directory: C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e
+"scl_diagnostic_event_tests" start time: Aug 24 22:46 ora legale Europa occidentale
+Output:
+----------------------------------------------------------
+Diagnostic event tests passed
+<end of output>
+Test time =   0.18 sec
+----------------------------------------------------------
+Test Passed.
+"scl_diagnostic_event_tests" end time: Aug 24 22:46 ora legale Europa occidentale
+"scl_diagnostic_event_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Aug 24 22:46 ora legale Europa occidentale

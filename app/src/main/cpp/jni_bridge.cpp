@@ -26,6 +26,7 @@
 #include "packet_codec.h"
 #include "retransmission_cache.h"
 #include "runtime_clock_sync_telemetry.h"
+#include "runtime_diagnostic_event.h"
 #include "runtime_telemetry.h"
 #include "runtime_network_telemetry.h"
 #include "session_protection.h"
@@ -1585,6 +1586,44 @@ Java_io_warpnect_NativeBridge_nativeRuntimeTelemetrySnapshot(
             values[4] = static_cast<jlong>(result.source_monotonic_ns);
         } catch (...) {
             values[0] = 3;
+        }
+    }
+    jlongArray array = env->NewLongArray(kResultValues);
+    if (array != nullptr) {
+        env->SetLongArrayRegion(array, 0, kResultValues, values);
+    }
+    return array;
+}
+
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_io_warpnect_NativeBridge_nativeDiagnosticEventSnapshot(
+    JNIEnv* env, jclass /* clazz */, jobject output_buffer, const jlong cursor, const jint limit) {
+    constexpr jsize kResultValues = 11;
+    jlong values[kResultValues]{};
+    auto* const base = output_buffer == nullptr
+                           ? nullptr
+                           : static_cast<std::byte*>(env->GetDirectBufferAddress(output_buffer));
+    const jlong capacity = output_buffer == nullptr ? -1 : env->GetDirectBufferCapacity(output_buffer);
+    if (base == nullptr || capacity < 0 || cursor < 0 || limit <= 0) {
+        values[0] = static_cast<jlong>(warpnect::scl::diagnostics::NativeDiagnosticSnapshotStatus::Closed);
+    } else {
+        try {
+            const auto result = warpnect::scl::diagnostics::runtime_diagnostic_event_buffer().snapshot_into(
+                std::span<std::byte>(base, static_cast<std::size_t>(capacity)),
+                static_cast<std::uint64_t>(cursor), static_cast<std::size_t>(limit));
+            values[0] = static_cast<jlong>(result.status);
+            values[1] = static_cast<jlong>(result.required_bytes);
+            values[2] = static_cast<jlong>(result.bytes_written);
+            values[3] = static_cast<jlong>(result.batch_sequence);
+            values[4] = static_cast<jlong>(result.source_monotonic_ns);
+            values[5] = static_cast<jlong>(result.oldest_available_sequence);
+            values[6] = static_cast<jlong>(result.newest_available_sequence);
+            values[7] = static_cast<jlong>(result.next_cursor);
+            values[8] = static_cast<jlong>(result.overwritten);
+            values[9] = result.gap ? 1 : 0;
+            values[10] = result.truncated ? 1 : 0;
+        } catch (...) {
+            values[0] = static_cast<jlong>(warpnect::scl::diagnostics::NativeDiagnosticSnapshotStatus::Closed);
         }
     }
     jlongArray array = env->NewLongArray(kResultValues);

@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_opus_decoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_opus_encoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_packetizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_playback_ring.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_receiver_runtime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\audio_transport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\clock_sync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\clock_sync_control.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\fec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\fec_control.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\input_packetizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\fragmentation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\input_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\input_receiver_runtime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\input_transport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\loss_detector.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\monotonic_time.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\packet_codec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\reassembly.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\recovery_control.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\reed_solomon.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\retransmission_cache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\runtime_diagnostic_event.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\runtime_telemetry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\session_protection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\telemetry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\udp_endpoint.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\udp_socket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\video_packetizer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\video_protocol.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\video_receiver_runtime.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\video_resync_control.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\video_transport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Francy\Desktop\Warpnect\app\src\main\cpp\src\internal\socket_platform_windows.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\native\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{BD0DEF9C-7EBE-3C72-829B-1796D6603B04}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\Francy\Desktop\Warpnect\native\build-rfc006e\CMakeFiles\ca2882f284432954b8883ef2ba315e52\PACKAGE_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{C41FF83D-5DBF-3916-964B-48A7B4A69DCD}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

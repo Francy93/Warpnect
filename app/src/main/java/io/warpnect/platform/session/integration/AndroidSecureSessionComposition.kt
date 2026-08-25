@@ -13,9 +13,13 @@ import io.warpnect.CoreOrchestrator
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.encoder.AudioEncoderRequest
+import io.warpnect.diagnostics.DiagnosticEventHub
+import io.warpnect.diagnostics.NativeDiagnosticEventSnapshotProvider
+import io.warpnect.diagnostics.SessionLifecycleDiagnosticEvents
 import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureController
 import io.warpnect.platform.audio.capture.AndroidSystemAudioCaptureController
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
+import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.AndroidInputInjectionController
@@ -121,12 +125,14 @@ import io.warpnect.session.setup.VideoPreferencePolicy
 import io.warpnect.session.setup.VideoStreamMode
 import io.warpnect.session.setup.VideoStreamPreference
 import io.warpnect.session.trust.TrustedPeerStore
+import io.warpnect.telemetry.ClockDomainId
 import io.warpnect.telemetry.NativeTelemetrySnapshotProvider
 import io.warpnect.telemetry.NativeTelemetrySourceScopeResolver
 import io.warpnect.telemetry.NativeTelemetrySourceScopes
 import io.warpnect.telemetry.SessionControlNetworkTelemetry
 import io.warpnect.telemetry.SessionLifecycleTelemetry
 import io.warpnect.telemetry.SessionPathTelemetry
+import io.warpnect.telemetry.TelemetryComponent
 import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.telemetry.TelemetryScope
 import io.warpnect.video.decoder.VideoDecoderConfig
@@ -144,6 +150,7 @@ class AndroidSecureSessionComposition private constructor(
     val coreOrchestrator: CoreOrchestrator,
     val applicationController: SecureSessionApplicationController,
     val uiResources: AndroidSessionUiResources,
+    val diagnosticEventHub: DiagnosticEventHub,
     private val hostRegistry: HostSessionRuntimeRegistry,
     private val controlScheduler: AndroidSessionControlScheduler,
     private val directPathBackend: AndroidDirectPathBackend?,
@@ -154,6 +161,7 @@ class AndroidSecureSessionComposition private constructor(
         hostRegistry.close()
         directPathBackend?.close()
         coreOrchestrator.shutdown()
+        diagnosticEventHub.close()
     }
 
     companion object {
@@ -204,6 +212,17 @@ class AndroidSecureSessionComposition private constructor(
         private val hostIo = AtomicReference<SecureSessionControlDatagramIo?>()
         private val telemetryHub = runCatching { TelemetryHub(AndroidTelemetryClock) }
             .getOrElse { TelemetryHub.disabled() }
+        private val diagnosticEventHub = runCatching {
+            DiagnosticEventHub(
+                clock = AndroidDiagnosticEventClock,
+                clockDomain = ClockDomainId.AndroidBootTime,
+                telemetryHub = telemetryHub,
+                nativeProvider = NativeDiagnosticEventSnapshotProvider(),
+            )
+        }.getOrElse {
+            // Diagnostics are observational; retain a local-only fallback if native collection is unavailable.
+            DiagnosticEventHub(clock = AndroidDiagnosticEventClock, clockDomain = ClockDomainId.AndroidBootTime)
+        }
         private val pipelineFactory = AndroidSessionPipelineFactory(
             DefaultAndroidSessionPipelineBindings(
                 context,
@@ -213,6 +232,7 @@ class AndroidSecureSessionComposition private constructor(
                 ),
             ),
             telemetryHub,
+            diagnosticEventHub,
         )
 
         fun create(): AndroidSecureSessionComposition {
@@ -247,6 +267,9 @@ class AndroidSecureSessionComposition private constructor(
                         crypto = crypto,
                         presenceProvider = CurrentDiscoveryPresenceProvider { null },
                         eventListener = listener,
+                        diagnosticEvents = diagnosticEventHub.writer(
+                            TelemetryScope.Component(TelemetryComponent.Handshake),
+                        ),
                     )
                 },
                 pairingTransportFactory = ClientPairingTransportFactory {
@@ -259,6 +282,9 @@ class AndroidSecureSessionComposition private constructor(
                         transport = transport,
                         eventListener = prompt,
                         completedListener = completed,
+                        diagnosticEvents = diagnosticEventHub.writer(
+                            TelemetryScope.Component(TelemetryComponent.Pairing),
+                        ),
                     )
                 },
                 protection = SessionProtectionController(NativeSessionProtectionRuntimeFactory),
@@ -315,6 +341,7 @@ class AndroidSecureSessionComposition private constructor(
                             hostDiscovery.currentAdvertisingPresenceId()
                         },
                         eventListener = listener,
+                        diagnosticEvents = diagnosticEventHub.writer(TelemetryScope.Component(TelemetryComponent.Handshake)),
                     )
                 },
                 protection = SessionProtectionController(NativeSessionProtectionRuntimeFactory),
@@ -332,7 +359,12 @@ class AndroidSecureSessionComposition private constructor(
                 setupPolicy = HostSessionSetupPolicy(productionSetupPreferences()),
                 onPrepared = { bootstrap -> host.acceptPreparedHostSession(bootstrap) },
                 pairingResponderFactory = HostPairingResponderFactory {
-                    AndroidHostPairingResponder.create(hostDiscovery, signer, trustedPeers)
+                    AndroidHostPairingResponder.create(
+                        hostDiscovery,
+                        signer,
+                        trustedPeers,
+                        diagnosticEventHub.writer(TelemetryScope.Component(TelemetryComponent.Pairing)),
+                    )
                 },
             )
             host = SecureSessionCoordinator(
@@ -367,6 +399,7 @@ class AndroidSecureSessionComposition private constructor(
                 orchestrator,
                 application,
                 uiResources,
+                diagnosticEventHub,
                 hostRegistry,
                 AndroidSessionControlScheduler(application),
                 directPathBackend,
@@ -626,6 +659,10 @@ class AndroidSecureSessionComposition private constructor(
                     telemetryHub,
                     TelemetryScope.Session(bootstrap.sessionId, bootstrap.generation),
                 ),
+                diagnosticEvents = SessionLifecycleDiagnosticEvents.register(
+                    diagnosticEventHub,
+                    TelemetryScope.Session(bootstrap.sessionId, bootstrap.generation),
+                ),
                 pathTelemetry = buildMap {
                     (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath)).forEach { path ->
                         put(
@@ -638,6 +675,19 @@ class AndroidSecureSessionComposition private constructor(
                                     path.pathId,
                                     path.kind,
                                 ),
+                            ),
+                        )
+                    }
+                },
+                pathDiagnosticScopes = buildMap {
+                    (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath)).forEach { path ->
+                        put(
+                            path.pathId,
+                            TelemetryScope.Path(
+                                bootstrap.sessionId,
+                                bootstrap.generation,
+                                path.pathId,
+                                path.kind,
                             ),
                         )
                     }
@@ -854,6 +904,7 @@ private class AndroidHostPairingResponder private constructor(
             discovery: AndroidLocalDiscoveryController,
             signer: io.warpnect.session.identity.LocalDeviceIdentitySigner,
             trustedPeers: TrustedPeerStore,
+            diagnosticEvents: io.warpnect.diagnostics.DiagnosticEventWriter,
         ): AndroidHostPairingResponder? {
             val prompt = AtomicReference<PairingVerificationPrompt?>()
             val controller = AndroidPairingControllerFactory.createResponderForAdvertisedDiscovery(
@@ -862,6 +913,7 @@ private class AndroidHostPairingResponder private constructor(
                 trustedPeers,
                 eventListener = PairingEventListener { prompt.set(it) },
                 completedListener = PairingCompletedListener { prompt.set(null) },
+                diagnosticEvents = diagnosticEvents,
             ) ?: return null
             return AndroidHostPairingResponder(controller, prompt)
         }

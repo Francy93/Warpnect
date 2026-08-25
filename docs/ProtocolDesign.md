@@ -1623,3 +1623,10 @@ unchanged.
 The current `PacketHeader.timestamp_us` is not a generic transport-send timestamp: Video carries a
 media presentation timestamp, Audio carries capture timing, and Input carries source-event timing.
 Consequently RFC-006D does not fabricate generic cross-device transport latency from this field.
+
+## RFC-006E Local Diagnostic Events
+
+RFC-006E defines no network diagnostic or logging protocol. `PayloadType.Telemetry` remains frozen
+and inactive. Native history reaches Kotlin only through the local WNDE V1 batch: a 32-byte
+little-endian header followed by fixed 96-byte event records. WNDE never appears on an SCL, WNSD,
+WNPB, WNSH, WNCP, WNSN, or WNSL path.

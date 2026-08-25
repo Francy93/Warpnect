@@ -2,6 +2,9 @@
 
 package io.warpnect.session.handshake
 
+import io.warpnect.diagnostics.DiagnosticEventIds
+import io.warpnect.diagnostics.DiagnosticEventWriter
+import io.warpnect.diagnostics.DiagnosticReason
 import io.warpnect.session.SessionError
 import io.warpnect.session.SessionManager
 import io.warpnect.session.discovery.DiscoveryPresenceId
@@ -77,6 +80,7 @@ class SessionHandshakeController(
     private val presenceProvider: CurrentDiscoveryPresenceProvider = CurrentDiscoveryPresenceProvider { null },
     private val recoveryAdmissionResolver: SessionHandshakeRecoveryAdmissionResolver? = null,
     private val eventListener: SessionHandshakeEventListener? = null,
+    private val diagnosticEvents: DiagnosticEventWriter? = null,
 ) : AutoCloseable {
     private val lock = Any()
     private val cookieManager = SessionHandshakeCookieManager(crypto, clock)
@@ -143,9 +147,10 @@ class SessionHandshakeController(
             crypto = crypto,
             expectedPeer = expectedPeer,
         )
-        val engine = started.engine ?: return@synchronized record(started.result)
+        val engine = started.engine ?: return@synchronized record(started.result).also { emitHandshakeFailure(it.error) }
         val managed = ManagedAttempt(engine, endpoint, incoming = false, startedAtMs = now())
         active[attemptId] = managed
+        diagnosticEvents?.emit(DiagnosticEventIds.HandshakeStarted)
         processLocked(managed, started.result)
     }
 
@@ -197,6 +202,7 @@ class SessionHandshakeController(
                 counters.timeouts += 1
                 lastError = SessionHandshakeError.Timeout
                 eventListener?.onFailed(SessionHandshakeError.Timeout)
+                emitHandshakeFailure(SessionHandshakeError.Timeout)
             } else if (now >= managed.nextRetryAtMs) {
                 if (managed.retryIndex >= SessionHandshakeProtocol.RETRY_DELAYS_MS.size) {
                     managed.engine.close()
@@ -204,6 +210,7 @@ class SessionHandshakeController(
                     counters.timeouts += 1
                     lastError = SessionHandshakeError.Timeout
                     eventListener?.onFailed(SessionHandshakeError.Timeout)
+                    emitHandshakeFailure(SessionHandshakeError.Timeout)
                 } else {
                     managed.outbound.forEach { transport.send(managed.endpoint, it) }
                     counters.transportRetries += 1
@@ -311,10 +318,12 @@ class SessionHandshakeController(
         )
         val engine = started.engine ?: run {
             record(started.result)
+            emitHandshakeFailure(started.result.error)
             return
         }
         val managed = ManagedAttempt(engine, endpoint, incoming = true, startedAtMs = now())
         active[engine.attemptId] = managed
+        diagnosticEvents?.emit(DiagnosticEventIds.HandshakeStarted)
         processLocked(managed, started.result)
     }
 
@@ -354,11 +363,15 @@ class SessionHandshakeController(
                 )
             }
             active.remove(managed.engine.attemptId)
+            diagnosticEvents?.emit(DiagnosticEventIds.HandshakeSucceeded)
             eventListener?.onAuthenticated(bootstrap)
         }
         if (result.error != SessionHandshakeError.None || managed.engine.state in setOf(SessionHandshakeState.Failed, SessionHandshakeState.Rejected, SessionHandshakeState.Closed)) {
             active.remove(managed.engine.attemptId)
-            if (result.error != SessionHandshakeError.None) eventListener?.onFailed(result.error)
+            if (result.error != SessionHandshakeError.None) {
+                eventListener?.onFailed(result.error)
+                emitHandshakeFailure(result.error)
+            }
         }
         return result
     }
@@ -376,6 +389,14 @@ class SessionHandshakeController(
             else -> Unit
         }
         return result
+    }
+
+    private fun emitHandshakeFailure(error: SessionHandshakeError) {
+        if (error == SessionHandshakeError.None) return
+        if (error == SessionHandshakeError.TrustedIdentityMismatch) {
+            diagnosticEvents?.emit(DiagnosticEventIds.TrustKeyMismatch)
+        }
+        diagnosticEvents?.emit(DiagnosticEventIds.HandshakeFailed, error.toDiagnosticReason().code)
     }
 
     private fun validHello(hello: SessionHandshakeMessage.ClientHello): Boolean =
@@ -463,6 +484,27 @@ class SessionHandshakeController(
         var identityMismatchFailures: Long = 0,
         var capacityRejects: Long = 0,
     )
+}
+
+private fun SessionHandshakeError.toDiagnosticReason(): DiagnosticReason = when (this) {
+    SessionHandshakeError.Timeout -> DiagnosticReason.Timeout
+    SessionHandshakeError.AtCapacity,
+    SessionHandshakeError.DuplicatePeerSessionNotAllowed,
+    -> DiagnosticReason.Capacity
+    SessionHandshakeError.PeerNotTrusted,
+    SessionHandshakeError.UnexpectedTrustedPeer,
+    SessionHandshakeError.TrustedIdentityMismatch,
+    SessionHandshakeError.SignatureFailure,
+    SessionHandshakeError.FinishedFailure,
+    SessionHandshakeError.DecryptFailure,
+    -> DiagnosticReason.AuthenticationFailure
+    SessionHandshakeError.TransportUnavailable,
+    SessionHandshakeError.TransportFailure,
+    -> DiagnosticReason.PlatformUnavailable
+    SessionHandshakeError.StaleDiscoveryPresence,
+    SessionHandshakeError.EndpointMismatch,
+    -> DiagnosticReason.ValidationFailure
+    else -> DiagnosticReason.FatalInternalError
 }
 
 private class SessionManagerHandshakeAdmission(

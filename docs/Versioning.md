@@ -258,6 +258,29 @@ and JNI batch representation. It is not an SCL, discovery, pairing, Session, med
 network protocol version. RFC-006A does not activate or define a payload for `PayloadType.Telemetry`
 and does not change Architecture Version 1.0, SCL Protocol Version 1, or Native Bridge ABI Version 1.
 
+## Diagnostic Event Model Version
+
+Current value:
+
+```text
+1 (LOCAL / NON-WIRE)
+```
+
+Diagnostic Event Model Version defines RFC-006E's static event descriptors, fixed scalar payloads,
+scope snapshots, and bounded process-local history. It does not change any SCL or Session wire
+format.
+
+## Native Diagnostic Event Bridge Version
+
+Current value:
+
+```text
+1 (LOCAL / JNI ONLY)
+```
+
+Native Diagnostic Event Bridge V1 is the little-endian `WNDE` batch format. It is an in-process JNI
+representation only, never a `PayloadType.Telemetry` packet or a Warpnect network protocol.
+
 ## Application Version
 
 Current value:

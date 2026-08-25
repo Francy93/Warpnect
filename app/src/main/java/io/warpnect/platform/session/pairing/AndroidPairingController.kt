@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
+import io.warpnect.diagnostics.DiagnosticEventWriter
 import io.warpnect.session.discovery.DiscoveryPresenceId
 import io.warpnect.session.discovery.DiscoveryRouteDescriptor
 import io.warpnect.session.discovery.DiscoveryRouteKind
@@ -35,6 +36,7 @@ class AndroidPairingController(
     private val config: PairingConfig = PairingConfig(),
     eventListener: PairingEventListener? = null,
     completedListener: PairingCompletedListener? = null,
+    diagnosticEvents: DiagnosticEventWriter? = null,
 ) : AutoCloseable {
     private val controlThread = HandlerThread(THREAD_NAME).apply { start() }
     private val controlHandler = Handler(controlThread.looper)
@@ -52,6 +54,7 @@ class AndroidPairingController(
         wallClock = PairingWallClock { System.currentTimeMillis() },
         eventListener = eventListener,
         completedListener = completedListener,
+        diagnosticEvents = diagnosticEvents,
     )
 
     @Volatile

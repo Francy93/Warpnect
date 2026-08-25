@@ -20,6 +20,9 @@ internal object NativeBridge {
     private external fun nativeRuntimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray
 
     @JvmStatic
+    private external fun nativeDiagnosticEventSnapshot(outputBuffer: ByteBuffer, cursor: Long, limit: Int): LongArray
+
+    @JvmStatic
     private external fun nativeRuntimeTelemetryRegisterSource(
         sourceId: Long,
         metricIds: ShortArray,
@@ -656,6 +659,10 @@ internal object NativeBridge {
 
     /** Cold-path batch collection only; no metric update crosses JNI. */
     fun runtimeTelemetrySnapshot(outputBuffer: ByteBuffer): LongArray = nativeRuntimeTelemetrySnapshot(outputBuffer)
+
+    /** Cold-path WNDE history collection only; native event emission never crosses JNI. */
+    fun diagnosticEventSnapshot(outputBuffer: ByteBuffer, cursor: Long, limit: Int): LongArray =
+        nativeDiagnosticEventSnapshot(outputBuffer, cursor, limit)
 
     fun runtimeTelemetryRegisterSource(sourceId: Long, metricIds: ShortArray, metricKinds: ByteArray): Boolean =
         nativeRuntimeTelemetryRegisterSource(sourceId, metricIds, metricKinds)

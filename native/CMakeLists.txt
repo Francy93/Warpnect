@@ -58,6 +58,7 @@ set(SCL_NATIVE_SOURCES
     "${SCL_CPP_ROOT}/src/recovery_control.cpp"
     "${SCL_CPP_ROOT}/src/reed_solomon.cpp"
     "${SCL_CPP_ROOT}/src/retransmission_cache.cpp"
+    "${SCL_CPP_ROOT}/src/runtime_diagnostic_event.cpp"
     "${SCL_CPP_ROOT}/src/runtime_telemetry.cpp"
     "${SCL_CPP_ROOT}/src/session_protection.cpp"
     "${SCL_CPP_ROOT}/src/telemetry.cpp"
@@ -213,6 +214,10 @@ add_executable(scl_runtime_telemetry_tests tests/scl_runtime_telemetry_tests.cpp
 configure_native_target(scl_runtime_telemetry_tests)
 target_link_libraries(scl_runtime_telemetry_tests PRIVATE scl_native_core)
 
+add_executable(scl_diagnostic_event_tests tests/scl_diagnostic_event_tests.cpp)
+configure_native_target(scl_diagnostic_event_tests)
+target_link_libraries(scl_diagnostic_event_tests PRIVATE scl_native_core)
+
 add_executable(
     scl_phase1_benchmarks
     benchmarks/benchmark_runner.cpp
@@ -317,6 +322,19 @@ target_include_directories(
 )
 target_link_libraries(scl_runtime_telemetry_benchmarks PRIVATE scl_native_core)
 
+add_executable(
+    scl_diagnostic_event_benchmarks
+    benchmarks/benchmark_runner.cpp
+    benchmarks/scl_diagnostic_event_benchmarks.cpp
+)
+configure_native_target(scl_diagnostic_event_benchmarks)
+target_include_directories(
+    scl_diagnostic_event_benchmarks
+    PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/benchmarks"
+)
+target_link_libraries(scl_diagnostic_event_benchmarks PRIVATE scl_native_core)
+
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)
@@ -338,3 +356,4 @@ add_test(NAME scl_input_transport_tests COMMAND scl_input_transport_tests)
 add_test(NAME scl_input_receiver_runtime_tests COMMAND scl_input_receiver_runtime_tests)
 add_test(NAME scl_session_protection_tests COMMAND scl_session_protection_tests)
 add_test(NAME scl_runtime_telemetry_tests COMMAND scl_runtime_telemetry_tests)
+add_test(NAME scl_diagnostic_event_tests COMMAND scl_diagnostic_event_tests)

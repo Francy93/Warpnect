@@ -2,6 +2,9 @@
 
 package io.warpnect.session.lifecycle
 
+import io.warpnect.diagnostics.DiagnosticReason
+import io.warpnect.diagnostics.DiagnosticSessionState
+import io.warpnect.diagnostics.SessionLifecycleDiagnosticEvents
 import io.warpnect.session.PathId
 import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.SessionGeneration
@@ -12,6 +15,7 @@ import io.warpnect.session.setup.PreparedSessionBootstrap
 import io.warpnect.session.setup.SessionPathPlan
 import io.warpnect.telemetry.SessionLifecycleTelemetry
 import io.warpnect.telemetry.SessionPathTelemetry
+import io.warpnect.telemetry.TelemetryScope
 import java.security.SecureRandom
 
 fun interface SessionLifecycleMonotonicClock {
@@ -115,6 +119,8 @@ class SessionLifecycleController(
     private val migrationIdGenerator: PathMigrationIdGenerator = SecurePathMigrationIdGenerator,
     private val telemetry: SessionLifecycleTelemetry? = null,
     private val pathTelemetry: Map<PathId, SessionPathTelemetry> = emptyMap(),
+    private val diagnosticEvents: SessionLifecycleDiagnosticEvents? = null,
+    private val pathDiagnosticScopes: Map<PathId, TelemetryScope.Path> = emptyMap(),
 ) : AutoCloseable {
     private val lock = Any()
     private val engine = SessionLifecycleEngine(bootstrap.sessionId, bootstrap.generation, healthConfig, recoveryPolicy)
@@ -164,6 +170,8 @@ class SessionLifecycleController(
         if (bootstrap.generation != SessionGeneration.Initial) telemetry?.reconnectSucceeded?.increment()
         updatePathTelemetry()
         handleDecision(result)
+        diagnosticEvents?.stateChanged(DiagnosticSessionState.Prepared, DiagnosticSessionState.Active)
+        diagnosticEvents?.running()
         armNextWake()
         SessionLifecycleError.None
     }
@@ -176,6 +184,16 @@ class SessionLifecycleController(
     fun onPlatformPathLoss(pathId: PathId, hard: Boolean) = synchronized(lock) {
         if (closed) return@synchronized
         pathTelemetry[pathId]?.let { if (hard) it.platformLost.increment() else it.platformLosing.increment() }
+        pathDiagnosticScopes[pathId]?.let { scope ->
+            if (hard) {
+                diagnosticEvents?.platformPathLost(
+                    pathId,
+                    scope,
+                )
+            } else {
+                diagnosticEvents?.platformPathLosing(pathId, scope)
+            }
+        }
         handleDecision(engine.onPlatformPathLost(pathId, hard, now()))
         updatePathTelemetry()
         armNextWake()
@@ -264,8 +282,12 @@ class SessionLifecycleController(
         if (closed) return@synchronized SessionLifecycleError.Closed
         val state = engine.snapshot(now()).state
         if (state == SessionLifecycleState.Disconnecting) return@synchronized SessionLifecycleError.None
-        if (state == SessionLifecycleState.Reconnecting) telemetry?.reconnectCancelled?.increment()
+        if (state == SessionLifecycleState.Reconnecting) {
+            telemetry?.reconnectCancelled?.increment()
+            diagnosticEvents?.reconnectCancelled(DiagnosticReason.UserRequested)
+        }
         telemetry?.disconnectLocal?.increment()
+        diagnosticEvents?.disconnectLocal(reason.toDiagnosticReason())
         handleDecision(engine.beginDisconnect())
         notifySessionClosing()
         invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
@@ -292,6 +314,7 @@ class SessionLifecycleController(
         }
         val decision = engine.onReconnectPrepared(fresh.generation, now())
         if (decision is LifecycleDecision.Error) return@synchronized record(decision.error)
+        diagnosticEvents?.reconnectSucceeded(fresh.generation)
         // The old generation is terminal. The caller owns the new bootstrap and creates a new controller.
         continuityParticipants.forEach(SessionContinuityParticipant::onSessionReconnected)
         capacityOwner?.handoffToFreshGeneration()
@@ -305,10 +328,17 @@ class SessionLifecycleController(
         val decision = engine.onReconnectAttemptFailed(now())
         if (decision is LifecycleDecision.Error) {
             if (decision.error == SessionLifecycleError.RecoveryExpired) telemetry?.reconnectExpired?.increment()
+            if (decision.error == SessionLifecycleError.RecoveryExpired) diagnosticEvents?.reconnectExpired()
             record(decision.error)
             if (engine.snapshot(now()).state == SessionLifecycleState.Failed) finishClose(markClosed = false)
         } else {
-            if (decision is LifecycleDecision.ReconnectRetry) telemetry?.reconnectAttemptFailed?.increment()
+            if (decision is LifecycleDecision.ReconnectRetry) {
+                telemetry?.reconnectAttemptFailed?.increment()
+                diagnosticEvents?.reconnectAttemptFailed(
+                    engine.snapshot(now()).reconnectAttemptCount,
+                    DiagnosticReason.Timeout,
+                )
+            }
             handleDecision(decision)
             armNextWake()
         }
@@ -549,6 +579,7 @@ class SessionLifecycleController(
     private fun handleDisconnectNotice(message: SessionLifecycleMessage.DisconnectNotice) {
         if (message.sessionGeneration != engine.currentGeneration() || message.activePathId != engine.activePath()?.pathId) return
         telemetry?.disconnectRemote?.increment()
+        diagnosticEvents?.disconnectRemote(message.reason.toDiagnosticReason())
         handleDecision(engine.beginDisconnect())
         notifySessionClosing()
         invokeInputSafetyReset(LifecycleInputSafetyResetReason.SessionClosing)
@@ -584,22 +615,27 @@ class SessionLifecycleController(
             is LifecycleDecision.ValidateStandby -> {
                 telemetry?.migrationStarted?.increment()
                 pathTelemetry[decision.pathId]?.validationStarted?.increment()
+                diagnosticEvents?.migrationStarted(engine.activePath()?.pathId, decision.pathId)
                 startCandidateValidation(decision)
             }
             is LifecycleDecision.MigrationCommitted -> {
                 telemetry?.migrationSucceeded?.increment()
                 pathTelemetry[decision.active.pathId]?.validationSucceeded?.increment()
+                diagnosticEvents?.migrationSucceeded(null, decision.active.pathId)
                 updatePathTelemetry()
                 continuityParticipants.forEach(SessionContinuityParticipant::onPathMigrationCommitted)
             }
             is LifecycleDecision.Suspended -> {
                 telemetry?.suspended?.increment()
+                diagnosticEvents?.stateChanged(DiagnosticSessionState.Active, DiagnosticSessionState.Suspended)
+                diagnosticEvents?.suspended(DiagnosticReason.NetworkLost)
                 invokeInputSafetyReset(LifecycleInputSafetyResetReason.PathUnavailable)
                 continuityParticipants.forEach(SessionContinuityParticipant::onSessionSuspended)
                 beginReconnect(decision.recoveryDeadlineMs)
             }
             is LifecycleDecision.BeginReconnect -> {
                 telemetry?.reconnectAttempt?.increment()
+                diagnosticEvents?.reconnectStarted(decision.nextGeneration)
                 recoveryDelegate?.onReconnectRequired(recoveryRecord(), decision.nextGeneration)
             }
             is LifecycleDecision.ReconnectRetry -> Unit
@@ -663,6 +699,7 @@ class SessionLifecycleController(
         val decision = engine.beginReconnect(now())
         if (decision is LifecycleDecision.BeginReconnect) {
             // A reconnect is a new security generation; old contexts and all old path resources die first.
+            diagnosticEvents?.stateChanged(DiagnosticSessionState.Suspended, DiagnosticSessionState.Reconnecting)
             bootstrap.close()
             recoveryDelegate?.onReconnectRequired(recoveryRecord(deadline), decision.nextGeneration)
         } else {
@@ -716,6 +753,12 @@ class SessionLifecycleController(
         candidate = null
         telemetry?.migrationFailed?.increment()
         pathTelemetry[candidatePathId]?.validationFailed?.increment()
+        diagnosticEvents?.migrationFailed(null, candidatePathId, error.toDiagnosticReason())
+        diagnosticEvents?.pathValidationFailed(
+            candidatePathId,
+            pathDiagnosticScopes[candidatePathId],
+            error.toDiagnosticReason(),
+        )
         handleDecision(engine.onMigrationValidationFailed(oldPathStillUsable))
         updatePathTelemetry()
         record(error)
@@ -788,6 +831,9 @@ class SessionLifecycleController(
     private fun invokeInputSafetyReset(reason: LifecycleInputSafetyResetReason) {
         if (inputSafetyResetInvoked) return
         inputSafetyResetInvoked = true
+        diagnosticEvents?.inputSafetyReset(
+            if (reason == LifecycleInputSafetyResetReason.PathUnavailable) DiagnosticReason.NetworkLost else DiagnosticReason.UserRequested,
+        )
         continuityParticipants.forEach { it.onInputSafetyReset(reason) }
     }
 
@@ -828,4 +874,37 @@ class SessionLifecycleController(
         val prepare: SessionLifecycleMessage.PathMigrationPrepare? = null,
         val ready: SessionLifecycleMessage.PathMigrationReady? = null,
     )
+}
+
+private fun DisconnectReason.toDiagnosticReason(): DiagnosticReason = when (this) {
+    DisconnectReason.UserRequested -> DiagnosticReason.UserRequested
+    DisconnectReason.ApplicationStopping,
+    DisconnectReason.HostClosing,
+    -> DiagnosticReason.ApplicationStopping
+    DisconnectReason.PolicyChange -> DiagnosticReason.PolicyChange
+    DisconnectReason.FatalError -> DiagnosticReason.FatalInternalError
+    DisconnectReason.SupersededGeneration -> DiagnosticReason.SupersededGeneration
+}
+
+private fun SessionLifecycleError.toDiagnosticReason(): DiagnosticReason = when (this) {
+    SessionLifecycleError.PathLost,
+    SessionLifecycleError.NoStandbyPath,
+    -> DiagnosticReason.NetworkLost
+    SessionLifecycleError.PathValidationFailed,
+    SessionLifecycleError.PathMigrationTimeout,
+    SessionLifecycleError.PathMigrationConflict,
+    SessionLifecycleError.MigrationEndpointAllocationFailed,
+    SessionLifecycleError.MigrationCommitFailed,
+    SessionLifecycleError.TransportRebindFailed,
+    -> DiagnosticReason.ValidationFailure
+    SessionLifecycleError.RecoveryExpired -> DiagnosticReason.RecoveryExpired
+    SessionLifecycleError.RecoveryLeaseConflict -> DiagnosticReason.Capacity
+    SessionLifecycleError.ReconnectHandshakeFailed,
+    SessionLifecycleError.ReconnectPeerMismatch,
+    SessionLifecycleError.ReconnectGenerationMismatch,
+    -> DiagnosticReason.AuthenticationFailure
+    SessionLifecycleError.CapabilityRenegotiationFailed,
+    SessionLifecycleError.SessionSetupFailed,
+    -> DiagnosticReason.PolicyChange
+    else -> DiagnosticReason.FatalInternalError
 }

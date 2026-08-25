@@ -1,0 +1,10 @@
+^C:\USERS\FRANCY\DESKTOP\WARPNECT\THIRD_PARTY\MBEDTLS-3.6.7\3RDPARTY\EVEREST\CMAKELISTS.TXT
+setlocal
+C:\Users\Francy\AppData\Local\Android\Sdk\cmake\3.22.1\bin\cmake.exe -SC:/Users/Francy/Desktop/Warpnect/native -BC:/Users/Francy/Desktop/Warpnect/native/build-rfc006e --check-stamp-file C:/Users/Francy/Desktop/Warpnect/native/build-rfc006e/mbedtls-3.6.7/3rdparty/everest/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

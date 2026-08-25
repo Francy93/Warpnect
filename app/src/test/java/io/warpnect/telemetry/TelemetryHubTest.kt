@@ -21,7 +21,7 @@ class TelemetryHubTest {
     fun descriptorCatalogIsStableAndValid() {
         TelemetryDescriptorCatalog.validate(TelemetryDescriptorCatalog.descriptors)
 
-        assertEquals(138, TelemetryDescriptorCatalog.descriptors.size)
+        assertEquals(143, TelemetryDescriptorCatalog.descriptors.size)
         assertTrue(
             TelemetryDescriptorCatalog.descriptors.all {
                 it.id.value in 0x0001..0x00ff ||
