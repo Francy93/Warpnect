@@ -281,6 +281,17 @@ Current value:
 Native Diagnostic Event Bridge V1 is the little-endian `WNDE` batch format. It is an in-process JNI
 representation only, never a `PayloadType.Telemetry` packet or a Warpnect network protocol.
 
+## Diagnostic Report Schema Version
+
+Current value:
+
+```text
+1 (LOCAL / FILE EXPORT ONLY)
+```
+
+Diagnostic Report Schema V1 is the UTF-8 JSON file format used by RFC-006G. It is not a Runtime
+Telemetry, Diagnostic Event, SCL, or native bridge version and introduces no network protocol.
+
 ## Application Version
 
 Current value:

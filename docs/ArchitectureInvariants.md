@@ -643,3 +643,18 @@ duplicate media transmission.
 
 > Application and native event providers retain their clock-domain identity. The UI never fabricates
 > one exact timeline by sorting incompatible raw monotonic timestamps.
+
+## RFC-006G Diagnostic Reports and Benchmarks
+
+> Diagnostic report generation is explicit and bounded. Warpnect does not continuously record
+> telemetry or diagnostic history for export.
+
+> A benchmark retains one baseline telemetry snapshot and RFC-006E cursors, then takes one final
+> snapshot when stopped. It has no periodic sampler, worker, timer, or time-series buffer.
+
+> Counter and histogram deltas require the same TelemetrySourceId and compatible scope. Source or
+> generation replacement breaks the derived series. Histogram bucket/count/sum deltas are valid,
+> but true benchmark-window minimum and maximum are unavailable from two cumulative snapshots.
+
+> Reports exclude Session and peer identities, network endpoints, cryptographic material, packet
+> identifiers, and semantic Input content. Exact 64-bit values are encoded as decimal strings.

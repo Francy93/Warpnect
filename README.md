@@ -262,6 +262,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-006D Latency Trace & Cross-Pipeline Correlation](docs/rfc/RFC-006D-Latency-Trace-Cross-Pipeline-Correlation.md)
 - [RFC-006E Diagnostic Logging & Bounded Event History](docs/rfc/RFC-006E-Diagnostic-Logging-Bounded-Event-History.md)
 - [RFC-006F Runtime Diagnostics UI](docs/rfc/RFC-006F-Runtime-Diagnostics-UI.md)
+- [RFC-006G Session Reports & Benchmark Export](docs/rfc/RFC-006G-Session-Reports-Benchmark-Export.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -314,5 +315,14 @@ TelemetrySourceId, bucket percentiles remain approximate upper bounds, and unsup
 shown as unavailable. Application and native event providers remain visibly separate rather than
 being falsely merged into one cross-domain timeline. The UI has no export, persistence, remote
 telemetry, runtime tuning controls, or time-series history.
+
+RFC-006G adds explicit sanitized JSON report export and a manual observational benchmark window.
+A snapshot report performs a fresh telemetry capture and bounded event read; a benchmark retains
+exactly one start snapshot and event cursors, then takes exactly one end snapshot on Stop. No
+benchmark sampler, timer, workload generator, upload, share flow, or report archive is introduced.
+Source or generation replacement breaks derived counter/histogram deltas, and benchmark histogram
+minimum/maximum values remain unavailable rather than being fabricated from cumulative state.
+Reports encode exact 64-bit diagnostic values as decimal strings and exclude Session/Device IDs,
+peer identity, endpoints, cryptographic material, packet identifiers, SAS, and Input contents.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

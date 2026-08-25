@@ -1,5 +1,7 @@
 package io.warpnect.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,6 +29,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.warpnect.diagnostics.DiagnosticSeverity
+import io.warpnect.diagnostics.report.BenchmarkCaptureStatus
+import io.warpnect.diagnostics.report.ReportExportController
+import io.warpnect.diagnostics.report.ReportExportPhase
+import io.warpnect.diagnostics.report.ReportSessionSelection
 import io.warpnect.diagnostics.ui.DiagnosticsEventCategory
 import io.warpnect.diagnostics.ui.DiagnosticsEventFilterUi
 import io.warpnect.diagnostics.ui.DiagnosticsEventProvider
@@ -37,11 +44,27 @@ import io.warpnect.diagnostics.ui.DiagnosticsUiController
 import io.warpnect.diagnostics.ui.DiagnosticsUiPhase
 import io.warpnect.diagnostics.ui.DiagnosticsUiState
 import io.warpnect.diagnostics.ui.DiagnosticsValueFormatter
+import io.warpnect.platform.diagnostics.AndroidReportDestination
 
 /** Read-only RFC-006F diagnostics surface. Hubs are never accessed from composable rendering. */
 @Composable
-fun DiagnosticsScreen(controller: DiagnosticsUiController, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun DiagnosticsScreen(
+    controller: DiagnosticsUiController,
+    reportController: ReportExportController,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val state by controller.state.collectAsStateWithLifecycle()
+    val reportState by reportController.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val documentLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            if (uri == null) {
+                reportController.destinationCancelled()
+            } else {
+                reportController.writePrepared(AndroidReportDestination(context.contentResolver, uri))
+            }
+        }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(controller, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -63,7 +86,13 @@ fun DiagnosticsScreen(controller: DiagnosticsUiController, onClose: () -> Unit, 
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        DiagnosticsToolbar(state, controller, onClose)
+        DiagnosticsToolbar(
+            state,
+            controller,
+            reportController,
+            reportState,
+            onClose,
+        ) { filename -> documentLauncher.launch(filename) }
         DiagnosticsSections(state, controller)
         when (state.section) {
             DiagnosticsSection.Overview -> OverviewContent(state, controller)
@@ -77,7 +106,14 @@ fun DiagnosticsScreen(controller: DiagnosticsUiController, onClose: () -> Unit, 
 }
 
 @Composable
-private fun DiagnosticsToolbar(state: DiagnosticsUiState, controller: DiagnosticsUiController, onClose: () -> Unit) {
+private fun DiagnosticsToolbar(
+    state: DiagnosticsUiState,
+    controller: DiagnosticsUiController,
+    reportController: ReportExportController,
+    reportState: io.warpnect.diagnostics.report.ReportExportUiState,
+    onClose: () -> Unit,
+    onChooseDestination: (String) -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -97,6 +133,59 @@ private fun DiagnosticsToolbar(state: DiagnosticsUiState, controller: Diagnostic
                 onClick = { controller.setRefreshInterval(interval) },
                 label = { Text(interval.label) },
             )
+        }
+    }
+    ExportControls(state, reportController, reportState, onChooseDestination)
+}
+
+@Composable
+private fun ExportControls(
+    state: DiagnosticsUiState,
+    controller: ReportExportController,
+    export: io.warpnect.diagnostics.report.ReportExportUiState,
+    onChooseDestination: (String) -> Unit,
+) {
+    val selection = state.selectedSession?.let {
+        ReportSessionSelection(it.sessionIdHigh, it.sessionIdLow, it.generation, state.overview.role)
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            OutlinedButton(
+                enabled = export.phase == ReportExportPhase.Idle ||
+                    export.phase == ReportExportPhase.Succeeded ||
+                    export.phase == ReportExportPhase.Failed,
+                onClick = { controller.prepareDiagnosticsSnapshot(selection) },
+            ) { Text("Export diagnostics") }
+        }
+        when (export.phase) {
+            ReportExportPhase.Prepared -> item {
+                Button(onClick = {
+                    controller.beginDestinationChoice()?.let(onChooseDestination)
+                }) { Text("Choose destination") }
+            }
+            ReportExportPhase.Capturing -> item { Text("Preparing report...") }
+            ReportExportPhase.Writing -> item { Text("Writing report...") }
+            ReportExportPhase.Succeeded -> item { Text("Exported") }
+            ReportExportPhase.Failed -> item { Text(export.message ?: "Export failed") }
+            else -> Unit
+        }
+        when (export.benchmark) {
+            BenchmarkCaptureStatus.Idle, BenchmarkCaptureStatus.Failed -> item {
+                OutlinedButton(
+                    enabled = selection != null &&
+                        export.phase != ReportExportPhase.Capturing &&
+                        export.phase != ReportExportPhase.Writing,
+                    onClick = {
+                        selection?.let(controller::startBenchmark)
+                    },
+                ) { Text("Start benchmark") }
+            }
+            BenchmarkCaptureStatus.Capturing -> {
+                item { Button(onClick = controller::stopBenchmark) { Text("Stop benchmark") } }
+                item { OutlinedButton(onClick = controller::cancelBenchmark) { Text("Cancel benchmark") } }
+            }
+            BenchmarkCaptureStatus.Preparing -> item { Text("Preparing benchmark...") }
+            BenchmarkCaptureStatus.ReadyToExport -> Unit
         }
     }
 }

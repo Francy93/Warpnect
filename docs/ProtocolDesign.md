@@ -1630,3 +1630,9 @@ RFC-006E defines no network diagnostic or logging protocol. `PayloadType.Telemet
 and inactive. Native history reaches Kotlin only through the local WNDE V1 batch: a 32-byte
 little-endian header followed by fixed 96-byte event records. WNDE never appears on an SCL, WNSD,
 WNPB, WNSH, WNCP, WNSN, or WNSL path.
+
+## RFC-006G Local Diagnostic Report Export
+
+RFC-006G defines no network report or benchmark protocol. Diagnostic Report Schema V1 is a local,
+explicitly user-exported JSON file only. `PayloadType.Telemetry` remains inactive; PacketHeader V1,
+Video/Audio/Input Payload V1, ClockSync, WNPB, WNSH, WNSD, WNCP, WNSN, and WNSL are unchanged.

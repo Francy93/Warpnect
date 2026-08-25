@@ -102,8 +102,8 @@ Status: in progress.
 - RFC-006D - Latency Trace & Cross-Pipeline Correlation [complete]
 - RFC-006E - Diagnostic Logging & Bounded Event History [complete]
 - RFC-006F - Runtime Diagnostics UI [complete]
-- RFC-006G - Session Reports & Benchmark Export [next]
-- RFC-006H - Diagnostics Integration & Validation
+- RFC-006G - Session Reports & Benchmark Export [complete]
+- RFC-006H - Diagnostics Integration & Validation [next]
 
 ## Phase 7 - Optimization
 

@@ -429,3 +429,11 @@ Compose consumes only the resulting StateFlow on Main.
 
 At most one refresh is in flight. Leaving the diagnostics surface cancels its scheduler; no
 permanent diagnostics thread, Handler, Executor, queue, or process-wide timer is introduced.
+
+## RFC-006G Report Export
+
+User action on Main only launches the Storage Access Framework document picker and returns its URI.
+The existing IO dispatcher performs fresh WNTM snapshots, bounded WNDE reads, report projection,
+streaming temporary-file generation, and bounded destination copying. An active benchmark retains
+only its start snapshot and cursors: it creates no worker, timer, sampler, queue, or background
+event read until Stop performs the final cold capture.

@@ -16,10 +16,14 @@ import io.warpnect.audio.encoder.AudioEncoderRequest
 import io.warpnect.diagnostics.DiagnosticEventHub
 import io.warpnect.diagnostics.NativeDiagnosticEventSnapshotProvider
 import io.warpnect.diagnostics.SessionLifecycleDiagnosticEvents
+import io.warpnect.diagnostics.report.DiagnosticReportBuilder
+import io.warpnect.diagnostics.report.HubDiagnosticReportReader
+import io.warpnect.diagnostics.report.ReportExportController
 import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureController
 import io.warpnect.platform.audio.capture.AndroidSystemAudioCaptureController
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
+import io.warpnect.platform.diagnostics.AndroidReportSupport
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.AndroidInputInjectionController
@@ -152,11 +156,13 @@ class AndroidSecureSessionComposition private constructor(
     val uiResources: AndroidSessionUiResources,
     val telemetryHub: TelemetryHub,
     val diagnosticEventHub: DiagnosticEventHub,
+    val reportExportController: ReportExportController,
     private val hostRegistry: HostSessionRuntimeRegistry,
     private val controlScheduler: AndroidSessionControlScheduler,
     private val directPathBackend: AndroidDirectPathBackend?,
 ) : AutoCloseable {
     override fun close() {
+        reportExportController.close()
         controlScheduler.close()
         applicationController.close()
         hostRegistry.close()
@@ -224,6 +230,13 @@ class AndroidSecureSessionComposition private constructor(
             // Diagnostics are observational; retain a local-only fallback if native collection is unavailable.
             DiagnosticEventHub(clock = AndroidDiagnosticEventClock, clockDomain = ClockDomainId.AndroidBootTime)
         }
+        private val reportExportController = ReportExportController(
+            DiagnosticReportBuilder(
+                HubDiagnosticReportReader(telemetryHub, diagnosticEventHub),
+                AndroidReportSupport.environment(context),
+            ),
+            context.cacheDir,
+        )
         private val pipelineFactory = AndroidSessionPipelineFactory(
             DefaultAndroidSessionPipelineBindings(
                 context,
@@ -402,6 +415,7 @@ class AndroidSecureSessionComposition private constructor(
                 uiResources,
                 telemetryHub,
                 diagnosticEventHub,
+                reportExportController,
                 hostRegistry,
                 AndroidSessionControlScheduler(application),
                 directPathBackend,

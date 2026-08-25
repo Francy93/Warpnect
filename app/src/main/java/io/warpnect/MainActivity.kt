@@ -69,6 +69,7 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                 }
                 DiagnosticsScreen(
                     controller = controller,
+                    reportController = composition.reportExportController,
                     onClose = { surface = AppSurface.SecureSession },
                     modifier = Modifier,
                 )

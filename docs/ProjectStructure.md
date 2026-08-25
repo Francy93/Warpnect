@@ -887,3 +887,20 @@ app/src/main/java/io/warpnect/ui/
 `diagnostics/ui/` contains immutable presentation models, pure rate/value/histogram formatting, and
 the screen-owned cold snapshot controller. `ui/DiagnosticsScreen.kt` renders those models through
 the existing Compose stack; it does not own or invoke runtime telemetry/event objects.
+
+## RFC-006G Session Reports and Benchmark Export
+
+```text
+app/src/main/java/io/warpnect/diagnostics/report/
+  DiagnosticReportModel.kt
+  DiagnosticReportBuilder.kt
+  DiagnosticReportJsonWriter.kt
+  ReportExportController.kt
+app/src/main/java/io/warpnect/platform/diagnostics/
+  AndroidReportSupport.kt
+```
+
+The report package owns the local V1 JSON schema, sanitized cold-path projection, deterministic
+streaming writer, benchmark start/end delta rules, one prepared cache file, and a narrow export
+state machine. The Android adapter provides safe metadata and a user-selected ContentResolver sink;
+neither layer participates in packet, media, or Session control paths.
