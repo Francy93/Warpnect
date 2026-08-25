@@ -419,3 +419,13 @@ callbacks, ordinary input dispatch, and latency sampling emit no diagnostic even
 
 Snapshots materialize a bounded cursor range on their caller's cold path. RFC-006E adds no
 diagnostic worker, Handler, executor, timer, delivery queue, or per-event JNI call.
+
+## RFC-006F Runtime Diagnostics UI
+
+Runtime producers remain unchanged. While the diagnostics surface is visible, its controller owns
+one screen-scoped coroutine on an existing background dispatcher. That coroutine performs one
+TelemetryHub WNTM snapshot, one incremental WNDE/event-history read, and immutable UI projection.
+Compose consumes only the resulting StateFlow on Main.
+
+At most one refresh is in flight. Leaving the diagnostics surface cancels its scheduler; no
+permanent diagnostics thread, Handler, Executor, queue, or process-wide timer is introduced.

@@ -870,3 +870,20 @@ native/tests/
 and strict WNDE parsing. The portable native ring owns fixed records and WNDE serialization. The
 optional Android Logcat adapter is a secondary, sanitized developer sink; production composition
 keeps it disabled while retaining structured history.
+
+## RFC-006F Runtime Diagnostics UI
+
+```text
+app/src/main/java/io/warpnect/diagnostics/ui/
+  DiagnosticsUiModel.kt
+  DiagnosticsPresentation.kt
+  DiagnosticsUiController.kt
+app/src/main/java/io/warpnect/platform/diagnostics/
+  AndroidDiagnosticsUiClock.kt
+app/src/main/java/io/warpnect/ui/
+  DiagnosticsScreen.kt
+```
+
+`diagnostics/ui/` contains immutable presentation models, pure rate/value/histogram formatting, and
+the screen-owned cold snapshot controller. `ui/DiagnosticsScreen.kt` renders those models through
+the existing Compose stack; it does not own or invoke runtime telemetry/event objects.

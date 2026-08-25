@@ -75,6 +75,10 @@ class DiagnosticEventHub(
     private val historyEnabled: Boolean = true,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
+
+    /** Presentation consumers can report disabled history without treating an empty ring as healthy. */
+    val enabled: Boolean
+        get() = historyEnabled && !closed.get()
     private val ring = DiagnosticEventRing()
     private val lastObservedOverwrites = AtomicLong(0L)
     private val lastObservedNativeOverwrites = AtomicLong(0L)

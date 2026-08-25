@@ -626,3 +626,20 @@ duplicate media transmission.
 > Native diagnostic events use one bounded local WNDE batch on the cold snapshot path. There is
 > never a JNI transition for one emitted event, and Kotlin/native clock domains are not falsely
 > combined into a globally ordered timeline.
+
+## RFC-006F Runtime Diagnostics UI
+
+> Runtime diagnostics UI consumes bounded cold snapshots and never observes packet, frame, audio,
+> or input updates directly.
+
+> Diagnostics sampling is screen and lifecycle scoped. An inactive diagnostics surface performs no
+> periodic telemetry or event-history collection.
+
+> UI-derived rates compare cumulative counters only when the TelemetrySourceId is unchanged. A
+> component or generation replacement breaks the rate series instead of producing a false delta.
+
+> Diagnostics histogram percentiles are fixed-bucket derived upper bounds. The UI neither
+> reconstructs raw samples nor retains a metric time series.
+
+> Application and native event providers retain their clock-domain identity. The UI never fabricates
+> one exact timeline by sorting incompatible raw monotonic timestamps.

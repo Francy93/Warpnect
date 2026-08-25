@@ -41,6 +41,7 @@ fun SecureSessionScreen(
     onClientViewsAttached: (SurfaceView, WarpnectInputCaptureView) -> Unit,
     onClientViewsDetached: (SurfaceView, WarpnectInputCaptureView) -> Unit,
     onDeveloperManual: () -> Unit,
+    onDiagnostics: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var hosts by remember { mutableStateOf(emptyList<DiscoveredPresence>()) }
@@ -105,6 +106,9 @@ fun SecureSessionScreen(
         }
         OutlinedButton(onClick = onDeveloperManual, modifier = Modifier.fillMaxWidth()) {
             Text("Developer Manual")
+        }
+        OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
+            Text("Diagnostics")
         }
     }
 }

@@ -261,6 +261,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-006C Network & Recovery Diagnostics](docs/rfc/RFC-006C-Network-Recovery-Diagnostics.md)
 - [RFC-006D Latency Trace & Cross-Pipeline Correlation](docs/rfc/RFC-006D-Latency-Trace-Cross-Pipeline-Correlation.md)
 - [RFC-006E Diagnostic Logging & Bounded Event History](docs/rfc/RFC-006E-Diagnostic-Logging-Bounded-Event-History.md)
+- [RFC-006F Runtime Diagnostics UI](docs/rfc/RFC-006F-Runtime-Diagnostics-UI.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -304,5 +305,14 @@ reveals the loss. Event records contain no payloads, semantic input contents, SA
 key material, or arbitrary exception text; normal packets, frames, callbacks, security rejects,
 and latency samples remain aggregate metrics. Native history crosses the boundary through one
 local WNDE batch, never one JNI call per event and never a remote logging protocol.
+
+RFC-006F adds a local Android Runtime Diagnostics UI backed by those existing bounded models. The
+screen samples only while visible, performs one cold telemetry snapshot and one incremental event
+read per bounded refresh, and publishes immutable presentation state to Compose. Packet, frame,
+audio, and input updates never push directly into Compose. Counter rates span only the same
+TelemetrySourceId, bucket percentiles remain approximate upper bounds, and unsupported latency is
+shown as unavailable. Application and native event providers remain visibly separate rather than
+being falsely merged into one cross-domain timeline. The UI has no export, persistence, remote
+telemetry, runtime tuning controls, or time-series history.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.
