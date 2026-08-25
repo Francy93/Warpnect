@@ -44,11 +44,14 @@ class ReportExportController(
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val exportBusy = AtomicBoolean(false)
     private val benchmarkActive = AtomicBoolean(false)
+    private val benchmarkLock = Any()
     private val _state = MutableStateFlow(ReportExportUiState())
     val state: StateFlow<ReportExportUiState> = _state.asStateFlow()
 
     @Volatile
     private var baseline: BenchmarkBaseline? = null
+
+    private var benchmarkEpoch = 0L
 
     @Volatile
     private var prepared: File? = null
@@ -58,45 +61,59 @@ class ReportExportController(
     }
 
     fun startBenchmark(selection: ReportSessionSelection): Boolean {
-        if (exportBusy.get() || !benchmarkActive.compareAndSet(false, true)) return false
+        if (exportBusy.get()) return false
+        val epoch = synchronized(benchmarkLock) {
+            if (!benchmarkActive.compareAndSet(false, true)) return false
+            ++benchmarkEpoch
+        }
         _state.value = _state.value.copy(benchmark = BenchmarkCaptureStatus.Capturing, message = null)
         scope.launch {
             runCatching { builder.startBenchmark(selection) }.onSuccess { captured ->
-                baseline = captured
-                _state.value = _state.value.copy(benchmark = BenchmarkCaptureStatus.Capturing, message = null)
+                if (acceptStartedBenchmark(epoch, captured)) {
+                    _state.value = _state.value.copy(benchmark = BenchmarkCaptureStatus.Capturing, message = null)
+                }
             }.onFailure {
-                benchmarkActive.set(false)
-                _state.value = _state.value.copy(
-                    benchmark = BenchmarkCaptureStatus.Failed,
-                    message = "Benchmark start failed",
-                )
+                failBenchmarkStart(epoch)
             }
         }
         return true
     }
 
     fun stopBenchmark(): Boolean {
-        val captured = baseline ?: return false
-        if (!exportBusy.compareAndSet(false, true)) return false
+        val captured = synchronized(benchmarkLock) {
+            val activeBaseline = baseline ?: return false
+            if (!exportBusy.compareAndSet(false, true)) return false
+            baseline = null
+            activeBaseline
+        }
         _state.value = _state.value.copy(
             phase = ReportExportPhase.Capturing,
             benchmark = BenchmarkCaptureStatus.Preparing,
             message = null,
         )
         scope.launch {
-            runCatching { builder.stopBenchmark(captured) }.onSuccess { report ->
-                baseline = null
-                benchmarkActive.set(false)
-                prepareFile(report, "warpnect-benchmark")
-                _state.value = _state.value.copy(benchmark = BenchmarkCaptureStatus.ReadyToExport)
-            }.onFailure { failure -> fail(failure, BenchmarkCaptureStatus.Failed) }
+            runCatching {
+                builder.stopBenchmark(captured).also { report ->
+                    prepareFile(report, "warpnect-benchmark")
+                }
+            }.onSuccess {
+                finishBenchmarkStop(BenchmarkCaptureStatus.ReadyToExport)
+            }.onFailure { failure ->
+                finishBenchmarkStop(BenchmarkCaptureStatus.Failed)
+                fail(failure, BenchmarkCaptureStatus.Failed)
+            }
         }
         return true
     }
 
     fun cancelBenchmark() {
-        baseline = null
-        benchmarkActive.set(false)
+        if (exportBusy.get()) return
+        synchronized(benchmarkLock) {
+            if (!benchmarkActive.get()) return
+            baseline = null
+            benchmarkActive.set(false)
+            ++benchmarkEpoch
+        }
         val current = _state.value
         _state.value = current.copy(benchmark = BenchmarkCaptureStatus.Idle, message = null)
     }
@@ -115,7 +132,7 @@ class ReportExportController(
             suggestedFilename = null,
             message = null,
         ).let { state ->
-            if (baseline == null) state.copy(benchmark = BenchmarkCaptureStatus.Idle) else state
+            if (benchmarkActive.get()) state else state.copy(benchmark = BenchmarkCaptureStatus.Idle)
         }
     }
 
@@ -132,7 +149,7 @@ class ReportExportController(
                 exportBusy.set(false)
                 _state.value = _state.value.copy(
                     phase = ReportExportPhase.Succeeded,
-                    benchmark = if (baseline == null) BenchmarkCaptureStatus.Idle else _state.value.benchmark,
+                    benchmark = if (benchmarkActive.get()) _state.value.benchmark else BenchmarkCaptureStatus.Idle,
                     suggestedFilename = null,
                     message = "Exported",
                 )
@@ -145,11 +162,46 @@ class ReportExportController(
         if (!exportBusy.compareAndSet(false, true)) return false
         _state.value = _state.value.copy(phase = ReportExportPhase.Capturing, message = null)
         scope.launch {
-            runCatching(
-                build,
-            ).onSuccess { prepareFile(it, prefix) }.onFailure { fail(it, _state.value.benchmark) }
+            runCatching {
+                build().also { report -> prepareFile(report, prefix) }
+            }
+                .onFailure { fail(it, _state.value.benchmark) }
         }
         return true
+    }
+
+    private fun acceptStartedBenchmark(epoch: Long, captured: BenchmarkBaseline): Boolean =
+        synchronized(benchmarkLock) {
+            if (!benchmarkActive.get() || benchmarkEpoch != epoch) {
+                false
+            } else {
+                baseline = captured
+                true
+            }
+        }
+
+    private fun failBenchmarkStart(epoch: Long) {
+        val current = synchronized(benchmarkLock) {
+            if (benchmarkEpoch != epoch) return
+            baseline = null
+            benchmarkActive.set(false)
+            ++benchmarkEpoch
+            true
+        }
+        if (current) {
+            _state.value = _state.value.copy(
+                benchmark = BenchmarkCaptureStatus.Failed,
+                message = "Benchmark start failed",
+            )
+        }
+    }
+
+    private fun finishBenchmarkStop(status: BenchmarkCaptureStatus) {
+        synchronized(benchmarkLock) {
+            benchmarkActive.set(false)
+            ++benchmarkEpoch
+        }
+        _state.value = _state.value.copy(benchmark = status)
     }
 
     private fun prepareFile(report: DiagnosticReport, prefix: String) {
@@ -212,8 +264,11 @@ class ReportExportController(
     }
     override fun close() {
         cleanupPrepared()
-        baseline = null
-        benchmarkActive.set(false)
+        synchronized(benchmarkLock) {
+            baseline = null
+            benchmarkActive.set(false)
+            ++benchmarkEpoch
+        }
         scope.cancel()
     }
 }

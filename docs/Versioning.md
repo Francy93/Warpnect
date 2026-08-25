@@ -292,6 +292,12 @@ Current value:
 Diagnostic Report Schema V1 is the UTF-8 JSON file format used by RFC-006G. It is not a Runtime
 Telemetry, Diagnostic Event, SCL, or native bridge version and introduces no network protocol.
 
+## RFC-006H Integration
+
+RFC-006H validates the existing Phase 6 contracts only. Runtime Telemetry Model V1, WNTM V1,
+Diagnostic Event Model V1, WNDE V1, and Diagnostic Report Schema V1 remain unchanged, as do
+Architecture Version 1.0, SCL Protocol Version 1, and Native Bridge ABI Version 1.
+
 ## Application Version
 
 Current value:

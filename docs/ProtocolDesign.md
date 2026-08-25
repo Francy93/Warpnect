@@ -1636,3 +1636,9 @@ WNPB, WNSH, WNCP, WNSN, or WNSL path.
 RFC-006G defines no network report or benchmark protocol. Diagnostic Report Schema V1 is a local,
 explicitly user-exported JSON file only. `PayloadType.Telemetry` remains inactive; PacketHeader V1,
 Video/Audio/Input Payload V1, ClockSync, WNPB, WNSH, WNSD, WNCP, WNSN, and WNSL are unchanged.
+
+## RFC-006H Integration Audit
+
+RFC-006H is validation-only. It adds no protocol, payload, network diagnostic record, WNTM field,
+WNDE field, or report-schema field. `PayloadType.Telemetry` remains inactive and native diagnostic
+and report data remain process-local or explicit user-selected file output only.

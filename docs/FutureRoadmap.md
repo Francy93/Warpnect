@@ -94,7 +94,7 @@ status.
 
 ## Phase 6 - Telemetry and Diagnostics
 
-Status: in progress.
+Status: implementation-complete. Real-device validation debt remains.
 
 - RFC-006A - Unified Runtime Telemetry Model [complete]
 - RFC-006B - Media Pipeline Metrics Integration [complete]
@@ -103,7 +103,10 @@ Status: in progress.
 - RFC-006E - Diagnostic Logging & Bounded Event History [complete]
 - RFC-006F - Runtime Diagnostics UI [complete]
 - RFC-006G - Session Reports & Benchmark Export [complete]
-- RFC-006H - Diagnostics Integration & Validation [next]
+- RFC-006H - Diagnostics Integration & Validation [complete]
+
+Phase 6 is implementation-complete. Host/JVM, Android build, ABI, and native validation are green;
+real Android/hardware validation remains separately tracked because no device was attached.
 
 ## Phase 7 - Optimization
 

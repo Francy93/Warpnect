@@ -263,6 +263,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-006E Diagnostic Logging & Bounded Event History](docs/rfc/RFC-006E-Diagnostic-Logging-Bounded-Event-History.md)
 - [RFC-006F Runtime Diagnostics UI](docs/rfc/RFC-006F-Runtime-Diagnostics-UI.md)
 - [RFC-006G Session Reports & Benchmark Export](docs/rfc/RFC-006G-Session-Reports-Benchmark-Export.md)
+- [RFC-006H Diagnostics Integration & Validation](docs/rfc/RFC-006H-Diagnostics-Integration-Validation.md)
 - [Phase 1 Baseline Benchmarks](docs/benchmarks/Phase1Baseline.md)
 - [Phase 2 Video Baseline](docs/benchmarks/Phase2VideoBaseline.md)
 - [Phase 3 Audio Baseline](docs/benchmarks/Phase3AudioBaseline.md)
@@ -324,5 +325,15 @@ Source or generation replacement breaks derived counter/histogram deltas, and be
 minimum/maximum values remain unavailable rather than being fabricated from cumulative state.
 Reports encode exact 64-bit diagnostic values as decimal strings and exclude Session/Device IDs,
 peer identity, endpoints, cryptographic material, packet identifiers, SAS, and Input contents.
+
+Phase 6 - Telemetry & Diagnostics is implementation-complete through RFC-006H. The integrated
+runtime exposes bounded local media, Input, secure-network, recovery, ClockSync, supported latency,
+event-history, UI, report, and benchmark diagnostics. UI sampling is lifecycle-scoped cold work;
+benchmark capture uses exactly one start and one end snapshot with bounded event cursors. Diagnostics
+failure, disablement, source exhaustion, UI refresh failure, or report/export failure is
+observational and does not alter Session, media, Input, security, transport, migration, or recovery
+correctness. Unsupported cross-device latency remains unavailable, not zero. No remote telemetry,
+persistent diagnostics store, automatic upload, continuous benchmark recorder, or adaptive control
+was introduced. Real-device Android validation remains explicitly tracked separately.
 
 Real-device performance figures remain device-specific and must not be generalized from host benchmarks. Future RFCs must preserve Architecture Version 1.0 unless an ADR explicitly changes it.

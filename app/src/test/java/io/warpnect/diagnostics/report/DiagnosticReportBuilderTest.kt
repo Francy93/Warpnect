@@ -108,6 +108,54 @@ class DiagnosticReportBuilderTest {
         assertNull(histogram.windowMax)
     }
 
+    @Test
+    fun generationChangeInterruptsBenchmarkWithoutCrossGenerationDeltas() {
+        val selected = selection(11u, 22u, 1u)
+        val reader = FakeReader(snapshot(1_000_000_000u, counter(7u, 100u, selected)))
+        val reportBuilder = builder(reader)
+        val baseline = reportBuilder.startBenchmark(selected)
+        reader.nextSnapshot = snapshot(
+            2_000_000_000u,
+            counter(8u, 200u, selection(11u, 22u, 2u)),
+        )
+
+        val report = reportBuilder.stopBenchmark(baseline)
+        val counter = report.benchmark!!.metrics.single() as ReportBenchmarkMetric.Counter
+
+        assertEquals("interrupted", report.benchmark.status)
+        assertEquals("interrupted_by_generation_change", report.benchmark.interruptionReason)
+        assertNull(counter.delta)
+        assertEquals("interrupted_by_generation_change", counter.unavailableReason)
+    }
+
+    @Test
+    fun closedSessionInterruptsBenchmarkAndFixedInputsProduceStableJson() {
+        val selected = selection(11u, 22u, 1u)
+        val reader = FakeReader(snapshot(1_000_000_000u, counter(7u, ULong.MAX_VALUE, selected)))
+        val reportBuilder = builder(reader)
+        val first = reportBuilder.captureSnapshot(selected)
+        val second = reportBuilder.captureSnapshot(selected)
+        val firstJson = StringWriter().also {
+            DiagnosticReportJsonWriter().write(first, it)
+        }.toString()
+        val secondJson = StringWriter().also {
+            DiagnosticReportJsonWriter().write(second, it)
+        }.toString()
+
+        assertEquals(firstJson, secondJson)
+        assertTrue(firstJson.contains(ULong.MAX_VALUE.toString()))
+
+        val baseline = reportBuilder.startBenchmark(selected)
+        reader.nextSnapshot = snapshot(2_000_000_000u)
+        val benchmark = reportBuilder.stopBenchmark(baseline).benchmark!!
+        assertEquals("interrupted_by_session_close", benchmark.interruptionReason)
+        assertTrue(
+            benchmark.metrics.all {
+                (it as? ReportBenchmarkMetric.Counter)?.delta == null
+            },
+        )
+    }
+
     private fun builder(reader: FakeReader): DiagnosticReportBuilder = DiagnosticReportBuilder(
         reader,
         DiagnosticReportEnvironment(

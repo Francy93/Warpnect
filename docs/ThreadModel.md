@@ -437,3 +437,10 @@ The existing IO dispatcher performs fresh WNTM snapshots, bounded WNDE reads, re
 streaming temporary-file generation, and bounded destination copying. An active benchmark retains
 only its start snapshot and cursors: it creates no worker, timer, sampler, queue, or background
 event read until Stop performs the final cold capture.
+
+## RFC-006H Integrated Audit
+
+Phase 6 introduces no permanent thread. Screen-visible diagnostics use only the existing
+background dispatcher and a screen-scoped coroutine; report/benchmark control uses the existing IO
+dispatcher. WNTM/WNDE snapshot synchronization and report Start/Stop/Cancel coordination are cold
+control paths. No hot media, packet, Oboe, or Input callback waits for a diagnostics consumer.

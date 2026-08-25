@@ -904,3 +904,19 @@ The report package owns the local V1 JSON schema, sanitized cold-path projection
 streaming writer, benchmark start/end delta rules, one prepared cache file, and a narrow export
 state machine. The Android adapter provides safe metadata and a user-selected ContentResolver sink;
 neither layer participates in packet, media, or Session control paths.
+
+## RFC-006H Integration Validation
+
+```text
+app/src/test/java/io/warpnect/diagnostics/
+  Phase6DiagnosticsIntegrationTest.kt
+app/src/test/java/io/warpnect/diagnostics/report/
+  ReportExportControllerTest.kt
+docs/rfc/
+  RFC-006H-Diagnostics-Integration-Validation.md
+```
+
+The integration tests exercise provider failure isolation, high-rate anti-spam, event history gaps,
+benchmark generation/close boundaries, report controller races, JSON stability, and cold snapshot
+concurrency. The production report controller retains the existing export model and adds only
+cold-path ownership coordination for concurrent Start/Stop/Cancel requests.

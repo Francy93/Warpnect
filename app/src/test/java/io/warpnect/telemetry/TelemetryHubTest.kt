@@ -8,6 +8,7 @@ import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.SessionGeneration
 import io.warpnect.session.SessionId
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -183,6 +184,43 @@ class TelemetryHubTest {
         assertEquals(TelemetrySnapshotStatus.Partial, snapshot.status)
         assertTrue(TelemetrySnapshotError.ProviderFailure in snapshot.errors)
         registrations.forEach { it.source.close() }
+        hub.close()
+    }
+
+    @Test
+    fun concurrentColdSnapshotsDoNotBlockOrCorruptDirectCounterUpdates() {
+        val hub = TelemetryHub()
+        val source = hub.registerSource(
+            TelemetrySourceDefinition(TelemetryScope.Process, listOf(TelemetryMetricIds.SnapshotCount)),
+        ).source
+        val counter = source.counter(TelemetryMetricIds.SnapshotCount)
+        val start = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>(null)
+        val producer = thread {
+            runCatching {
+                start.await()
+                repeat(10_000) { counter.increment() }
+            }.onFailure { failure.compareAndSet(null, it) }
+        }
+        val readers = List(4) {
+            thread {
+                runCatching {
+                    start.await()
+                    repeat(64) { hub.snapshot() }
+                }.onFailure { failure.compareAndSet(null, it) }
+            }
+        }
+
+        start.countDown()
+        producer.join()
+        readers.forEach(Thread::join)
+
+        assertNull(failure.get())
+        val record = hub.snapshot().records.single {
+            it.sourceId == source.sourceId && it.metricId == TelemetryMetricIds.SnapshotCount
+        }
+        assertEquals(10_000uL, (record.value as TelemetryMetricValue.Counter).value)
+        source.close()
         hub.close()
     }
 

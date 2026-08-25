@@ -658,3 +658,16 @@ duplicate media transmission.
 
 > Reports exclude Session and peer identities, network endpoints, cryptographic material, packet
 > identifiers, and semantic Input content. Exact 64-bit values are encoded as decimal strings.
+
+## RFC-006H Integrated Diagnostics
+
+> Phase 6 diagnostics remain strictly observational. Telemetry, latency, event history, UI,
+> benchmark, and export failure or disablement never changes Session, media, Input, security,
+> transport, migration, or recovery correctness.
+
+> Runtime hot paths publish only bounded pre-bound primitives. UI materialization and report work
+> use cold bounded snapshots; a same-generation migration preserves source identity for surviving
+> components, while a fresh generation starts fresh telemetry and correlation source lifetimes.
+
+> Warpnect represents partial snapshots, history gaps, incompatible source lifetimes, and invalid
+> timestamp provenance explicitly. It never fabricates an unsupported measurement or a false delta.

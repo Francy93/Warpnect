@@ -616,3 +616,10 @@ Kotlin lifecycle/platform/component transition
 `WNDE` is a little-endian local/JNI representation only: it is never sent through SCL, UDP, or
 `PayloadType.Telemetry`. Native packet hot paths and Oboe callbacks do not emit diagnostic events;
 their high-rate outcomes remain bounded telemetry counters.
+
+## RFC-006H Integrated Boundary Audit
+
+WNTM and WNDE collection remain cold, bounded provider operations. Native producers update
+pre-bound telemetry atomics or the bounded rare-event ring; they perform no JNI, allocation,
+global TelemetryHub lookup, or per-packet/frame/audio/Input diagnostic event emission. UI and
+report consumers receive only parsed, bounded snapshot data and cannot affect native runtime state.
