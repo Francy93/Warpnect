@@ -445,9 +445,7 @@ private object CaptureBridgeDebugLog {
 
     fun resolutionStarted() = log("event=capture_bridge_resolution_started")
 
-    fun resolved(
-        component: CaptureBridgeComponent,
-    ) = log("event=capture_hidden_api_resolved component=$component")
+    fun resolved(component: CaptureBridgeComponent) = log("event=capture_hidden_api_resolved component=$component")
 
     fun missing(component: CaptureBridgeComponent, reason: CaptureBridgeResolutionFailure) =
         log("event=capture_hidden_api_missing component=$component reason=$reason")
