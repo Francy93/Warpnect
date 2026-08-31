@@ -40,3 +40,18 @@ For example:
 
 The device must already be awake and unlocked. The harness reports
 `DEVICE_LOCKED_OR_NOT_FOREGROUND` rather than attempting to bypass device security.
+
+## Experimental Capture Spike
+
+`capture-spike.ps1` exists only on the `experiment/android-capture-backends` branch. It enumerates
+every attached physical device, binds a separate debug-only Shizuku UserService, and records three
+bounded DisplayManager-mirroring probes: API resolution, mirror create/release, and a real encoder
+output frame. It creates no Warpnect Session, sends no media, persists no frames, and writes only
+safe booleans/enums plus device metadata to the ignored artifact directory.
+
+```powershell
+.\tools\android-h1\capture-spike.ps1 -Probe All
+```
+
+Use `WARPNECT_CAPTURE_DEVICES=<serial1>,<serial2>` or repeated `-Serial` values to constrain an
+experiment. These are optional runtime overrides; the script never embeds device-specific serials.
