@@ -44,8 +44,11 @@ fun interface ExactInputBackendAvailability {
 }
 
 /**
- * Side-effect-free RFC-005G validation over the existing Phase 2/3/4 planners and probes.
- * No codec, capture, playback, injection, or receiver worker is prepared or started here.
+ * RFC-005G validation over the existing Phase 2/3/4 planners and probes.
+ *
+ * Validation never prepares Session runtime, capture, playback, injection, or receiver workers. Video
+ * discovery may make a bounded exact-format MediaCodec probe solely to adjudicate negative CBR metadata;
+ * it captures no media and releases the temporary codec resources immediately.
  */
 class AndroidExactStreamConfigurationValidator(
     private val videoEncoderDiscovery: VideoEncoderDiscovery = AndroidVideoEncoderDiscovery(),

@@ -356,6 +356,73 @@ class LocalDiscoveryControllerTest {
     }
 
     @Test
+    fun lanRegistrationCallbackFailurePropagatesIntoTheHostDiscoverySnapshot() {
+        val lan = FakeBackend(DiscoveryRouteKind.Lan)
+        val controller = controller(
+            config = DiscoveryConfig(
+                mode = DiscoveryMode.AdvertiseOnly,
+                backendPolicy = DiscoveryBackendPolicy.LanOnly,
+            ),
+            backends = listOf(lan),
+        )
+
+        assertTrue(controller.startAdvertising().isSuccess)
+        lan.emitAdvertisingState(DiscoveryBackendState.Failed, DiscoveryError.RegistrationFailed)
+
+        assertEquals(DiscoveryControllerState.Error, controller.snapshot().state)
+        assertEquals(DiscoveryError.RegistrationFailed, controller.snapshot().lastError)
+        assertFalse(controller.snapshot().advertising)
+    }
+
+    @Test
+    fun lanDiscoveryCallbackFailurePropagatesIntoTheClientDiscoverySnapshot() {
+        val lan = FakeBackend(DiscoveryRouteKind.Lan)
+        val controller = controller(
+            config = DiscoveryConfig(
+                mode = DiscoveryMode.BrowseOnly,
+                backendPolicy = DiscoveryBackendPolicy.LanOnly,
+            ),
+            backends = listOf(lan),
+        )
+
+        assertTrue(controller.startBrowsing().isSuccess)
+        lan.emitBrowsingState(DiscoveryBackendState.Failed, DiscoveryError.DiscoveryFailed)
+
+        assertEquals(DiscoveryControllerState.Error, controller.snapshot().state)
+        assertEquals(DiscoveryError.DiscoveryFailed, controller.snapshot().lastError)
+        assertFalse(controller.snapshot().browsing)
+    }
+
+    @Test
+    fun oneAsyncBackendFailureKeepsDirectAndLanDiscoveryRunningDegraded() {
+        val lan = FakeBackend(DiscoveryRouteKind.Lan)
+        val direct = FakeBackend(DiscoveryRouteKind.Direct)
+        val controller = controller(backends = listOf(lan, direct))
+
+        assertTrue(controller.startBrowsing().isSuccess)
+        direct.emitBrowsingState(DiscoveryBackendState.Failed, DiscoveryError.DiscoveryFailed)
+        lan.emitBrowsingState(DiscoveryBackendState.Running)
+
+        assertEquals(DiscoveryControllerState.RunningDegraded, controller.snapshot().state)
+        assertEquals(DiscoveryError.DiscoveryFailed, controller.snapshot().directBackend.lastError)
+        assertEquals(DiscoveryBackendState.Running, controller.snapshot().lanBackend.state)
+    }
+
+    @Test
+    fun bothAsyncBackendFailuresLeaveNoApparentlyHealthyDiscoveryState() {
+        val lan = FakeBackend(DiscoveryRouteKind.Lan)
+        val direct = FakeBackend(DiscoveryRouteKind.Direct)
+        val controller = controller(backends = listOf(lan, direct))
+
+        assertTrue(controller.startBrowsing().isSuccess)
+        lan.emitBrowsingState(DiscoveryBackendState.Failed, DiscoveryError.DiscoveryFailed)
+        direct.emitBrowsingState(DiscoveryBackendState.Failed, DiscoveryError.DirectPermissionDenied)
+
+        assertEquals(DiscoveryControllerState.Error, controller.snapshot().state)
+        assertFalse(controller.snapshot().browsing)
+    }
+
+    @Test
     fun staleCallbacksAndOldRouteTokensCannotResurrectAStoppedGeneration() {
         val lan = FakeBackend(DiscoveryRouteKind.Lan)
         val controller = controller(
@@ -514,6 +581,7 @@ class LocalDiscoveryControllerTest {
     ) : DiscoveryBackend {
         private lateinit var observer: DiscoveryBackendObserver
         private var browseGeneration: Long? = null
+        private var advertisingRequest: DiscoveryBackendAdvertisingRequest? = null
         val advertisementRequests = mutableListOf<DiscoveryBackendAdvertisingRequest>()
         var stopAdvertisingCalls = 0
 
@@ -524,6 +592,7 @@ class LocalDiscoveryControllerTest {
 
         override fun startAdvertising(request: DiscoveryBackendAdvertisingRequest): DiscoveryBackendCommandResult {
             advertisementRequests += request
+            advertisingRequest = request
             return DiscoveryBackendCommandResult.Accepted
         }
 
@@ -554,6 +623,29 @@ class LocalDiscoveryControllerTest {
 
         fun lose(key: String, generation: Long = requireNotNull(browseGeneration)) {
             observer.onRouteLost(generation, kind, key)
+        }
+
+        fun emitAdvertisingState(state: DiscoveryBackendState, error: DiscoveryError = DiscoveryError.None) {
+            val request = requireNotNull(advertisingRequest)
+            observer.onBackendState(
+                request.controllerGeneration,
+                kind,
+                DiscoveryBackendOperation.Advertising,
+                request.advertisementGeneration,
+                state,
+                error,
+            )
+        }
+
+        fun emitBrowsingState(state: DiscoveryBackendState, error: DiscoveryError = DiscoveryError.None) {
+            observer.onBackendState(
+                requireNotNull(browseGeneration),
+                kind,
+                DiscoveryBackendOperation.Browsing,
+                null,
+                state,
+                error,
+            )
         }
     }
 }

@@ -30,8 +30,12 @@ import io.warpnect.session.handshake.AuthenticatedSessionRootSecret
 import io.warpnect.session.handshake.ExpectedPeerConstraint
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.handshake.SessionHandshakeAttemptId
+import io.warpnect.session.identity.IdentityFingerprint
 import io.warpnect.session.identity.ImmutableBytes
 import io.warpnect.session.lifecycle.DisconnectReason
+import io.warpnect.session.pairing.PairingAttemptId
+import io.warpnect.session.pairing.PairingEngineState
+import io.warpnect.session.pairing.PairingVerificationPrompt
 import io.warpnect.session.security.ProtectionContextIds
 import io.warpnect.session.security.SessionProtectionContextResult
 import io.warpnect.session.security.SessionProtectionError
@@ -99,6 +103,79 @@ class SecureSessionCoordinatorTest {
         assertEquals(2, driver.connectionStarts)
         assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
         assertTrue(events.containsAll(listOf("005C", "005D", "005E", "005F", "005G", "005H")))
+    }
+
+    @Test
+    fun hostResponderPromptForwardsConfirmAndRejectWhileHostRemainsDiscovering() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events).apply { hostPrompt = hostPairingPrompt() }
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Host,
+            driver,
+            RecordingPipelineFactory(events),
+            RecordingLifecycleFactory(events),
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.startDiscovery().error)
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+        assertNotNull(coordinator.snapshot.value.pairingVerificationPrompt)
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.approvePairing().error)
+        assertEquals(1, driver.hostPairingApprovals)
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+
+        driver.hostPrompt = hostPairingPrompt()
+        assertEquals(SecureSessionIntegrationError.None, coordinator.rejectPairing().error)
+        assertEquals(1, driver.hostPairingRejections)
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+
+        coordinator.advance()
+        assertEquals(null, coordinator.snapshot.value.pairingVerificationPrompt)
+    }
+
+    @Test
+    fun clientPairingFailureClearsThePublishedSasPromptBeforeReportingFailed() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events, pairingRequired = true)
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Client,
+            driver,
+            RecordingPipelineFactory(events),
+            RecordingLifecycleFactory(events),
+        )
+
+        coordinator.connect(request())
+        assertEquals(SecureSessionIntegrationError.None, coordinator.beginExplicitPairing().error)
+        driver.emitPairingPrompt(hostPairingPrompt())
+        assertNotNull(coordinator.snapshot.value.pairingVerificationPrompt)
+
+        driver.failPairing()
+
+        assertEquals(SecureSessionCoordinatorState.Failed, coordinator.snapshot.value.state)
+        assertEquals(SecureSessionIntegrationError.PairingFailed, coordinator.snapshot.value.lastError)
+        assertEquals(null, coordinator.snapshot.value.pairingVerificationPrompt)
+        assertEquals(1, driver.cancelCalls)
+    }
+
+    @Test
+    fun asynchronousDiscoveryFailureStopsTheRealDiscoveryPhaseInsteadOfLeavingClientSearching() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events)
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Client,
+            driver,
+            RecordingPipelineFactory(events),
+            RecordingLifecycleFactory(events),
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.startDiscovery().error)
+        driver.discoveryFailure = SecureSessionIntegrationError.DiscoveryStartFailed
+        coordinator.advance()
+
+        assertEquals(SecureSessionCoordinatorState.Failed, coordinator.snapshot.value.state)
+        assertEquals(SecureSessionIntegrationError.DiscoveryStartFailed, coordinator.snapshot.value.lastError)
+        assertEquals(1, driver.stopDiscoveryCalls)
+        assertEquals(0, driver.cancelCalls)
     }
 
     @Test
@@ -247,7 +324,12 @@ class SecureSessionCoordinatorTest {
         var connectionStarts = 0
         var pairingStarts = 0
         var cancelCalls = 0
+        var stopDiscoveryCalls = 0
+        var discoveryFailure = SecureSessionIntegrationError.None
         var legacyManualTransportStarts = 0
+        var hostPairingApprovals = 0
+        var hostPairingRejections = 0
+        var hostPrompt: PairingVerificationPrompt? = null
         private var listener: SecureSessionPhaseListener? = null
 
         override fun startDiscovery(role: SessionRole): SecureSessionIntegrationError {
@@ -255,7 +337,11 @@ class SecureSessionCoordinatorTest {
             return SecureSessionIntegrationError.None
         }
 
-        override fun stopDiscovery() = Unit
+        override fun stopDiscovery() {
+            stopDiscoveryCalls += 1
+        }
+
+        override fun discoveryFailure(): SecureSessionIntegrationError = discoveryFailure
 
         override fun beginConnection(
             request: SecureSessionConnectRequest,
@@ -284,8 +370,35 @@ class SecureSessionCoordinatorTest {
         }
 
         override fun approvePairing(): SecureSessionIntegrationError {
+            if (hostPrompt != null) {
+                hostPairingApprovals += 1
+                hostPrompt = null
+                return SecureSessionIntegrationError.None
+            }
             listener?.onPairingCompleted()
             return SecureSessionIntegrationError.None
+        }
+
+        override fun rejectPairing(): SecureSessionIntegrationError {
+            if (hostPrompt != null) {
+                hostPairingRejections += 1
+                hostPrompt = null
+                return SecureSessionIntegrationError.None
+            }
+            return SecureSessionIntegrationError.PairingRequired
+        }
+
+        override fun pendingPairingVerificationPrompt(): PairingVerificationPrompt? = hostPrompt
+
+        fun emitPairingPrompt(prompt: PairingVerificationPrompt) {
+            requireNotNull(listener).onPairingVerificationPrompt(prompt)
+        }
+
+        fun failPairing() {
+            requireNotNull(listener).onFailed(
+                SecureSessionIntegrationStage.Pairing,
+                SecureSessionIntegrationError.PairingFailed,
+            )
         }
 
         override fun createSecureCapabilityBootstrap(bootstrap: AuthenticatedSessionBootstrap): SecurePhaseResult {
@@ -423,6 +536,16 @@ class SecureSessionCoordinatorTest {
         session(1u), SessionGeneration.Initial, device(10u), device(11u), SessionRole.Client, SessionRole.Host,
         SessionHandshakeAttemptId.requireValid(0uL, 1uL), ImmutableBytes.copyOf(ByteArray(32)), endpoint(),
         AuthenticatedSessionRootSecret(ByteArray(32) { 8 }),
+    )
+
+    private fun hostPairingPrompt() = PairingVerificationPrompt(
+        attemptId = PairingAttemptId.requireValid(0uL, 7uL),
+        remoteUntrustedAlias = null,
+        remoteDeviceId = device(11u),
+        remoteIdentityFingerprint = IdentityFingerprint.requireSha256(ByteArray(32) { 7 }),
+        shortAuthenticationString = "123 456",
+        state = PairingEngineState.AwaitingUserConfirmation,
+        expiresAtMonotonicMs = 1_000L,
     )
 
     private fun preparedBootstrap(negotiated: NegotiatedSessionBootstrap): PreparedSessionBootstrap {

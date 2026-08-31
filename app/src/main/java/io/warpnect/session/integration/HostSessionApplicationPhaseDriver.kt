@@ -19,6 +19,10 @@ class HostSessionApplicationPhaseDriver(
 
     override fun stopDiscovery() = host.stopReadiness()
 
+    override fun discoverySnapshot() = host.discoverySnapshot()
+
+    override fun discoveryFailure() = host.discoveryFailure()
+
     override fun beginConnection(
         request: SecureSessionConnectRequest,
         listener: SecureSessionPhaseListener,
@@ -30,6 +34,8 @@ class HostSessionApplicationPhaseDriver(
     ): SecureSessionIntegrationError = SecureSessionIntegrationError.InvalidPresence
 
     override fun approvePairing(): SecureSessionIntegrationError = host.approvePairing()
+
+    override fun rejectPairing(): SecureSessionIntegrationError = host.rejectPairing()
 
     override fun pendingPairingVerificationPrompt(): PairingVerificationPrompt? = host.pendingPairingPrompt()
 

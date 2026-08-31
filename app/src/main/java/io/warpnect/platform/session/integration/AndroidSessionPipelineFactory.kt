@@ -54,6 +54,7 @@ import io.warpnect.telemetry.VideoDecoderTelemetry
 import io.warpnect.telemetry.VideoEncoderTelemetry
 import io.warpnect.video.session.VideoReceiverSessionConfig
 import io.warpnect.video.session.VideoReceiverSessionController
+import io.warpnect.video.session.VideoSessionControlResult
 import io.warpnect.video.session.VideoTransmitterSessionConfig
 import io.warpnect.video.session.VideoTransmitterSessionController
 import io.warpnect.video.transport.VideoReceiverRuntimeConfig
@@ -127,8 +128,29 @@ data class AndroidVideoReceiverPipeline(
     val controller: VideoReceiverSessionController,
     val config: VideoReceiverSessionConfig,
     val onPathMigrationCommitted: () -> Unit = {},
+    val onClose: () -> Unit = {},
     val telemetrySources: List<AutoCloseable> = emptyList(),
 )
+
+/** Development-only sender-start outcome. It retains fixed error enums and no media or Session data. */
+fun interface VideoPipelineStartDebugObserver {
+    fun onEvent(event: VideoPipelineStartDebugEvent)
+
+    companion object {
+        val None = VideoPipelineStartDebugObserver {}
+    }
+}
+
+data class VideoPipelineStartDebugEvent(
+    val kind: VideoPipelineStartDebugEventKind,
+    val result: VideoSessionControlResult? = null,
+)
+
+enum class VideoPipelineStartDebugEventKind {
+    SenderStartRequested,
+    SenderStartSucceeded,
+    SenderStartFailed,
+}
 
 data class AndroidAudioSenderPipeline(
     val controller: AudioTransmitterSessionController,
@@ -166,6 +188,7 @@ class AndroidSessionPipelineFactory(
     private val bindings: AndroidSessionPipelineBindings,
     private val telemetryHub: TelemetryHub = TelemetryHub.disabled(),
     private val diagnosticEventHub: DiagnosticEventHub? = null,
+    private val debugObserver: VideoPipelineStartDebugObserver = VideoPipelineStartDebugObserver.None,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -236,7 +259,12 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    VideoSenderComponent(pipeline, networkTelemetry, diagnosticWriter(bootstrap, channel))
+                    VideoSenderComponent(
+                        pipeline,
+                        networkTelemetry,
+                        diagnosticWriter(bootstrap, channel),
+                        debugObserver,
+                    )
                 }
             }
         } else {
@@ -261,6 +289,7 @@ class AndroidSessionPipelineFactory(
                     null
                 } else if (!pipeline.config.matches(channel)) {
                     pipeline.controller.close()
+                    pipeline.onClose()
                     clockSyncTelemetry?.close()
                     telemetry.close()
                     networkTelemetry?.close()
@@ -516,12 +545,25 @@ private class VideoSenderComponent(
     private val pipeline: AndroidVideoSenderPipeline,
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
+    private val debugObserver: VideoPipelineStartDebugObserver,
 ) : SessionPipelineComponent {
     override val name = "video-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(SessionChannelKind.Video)
     override fun start(): SessionPipelineComponentResult {
-        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        debugObserver.onEvent(VideoPipelineStartDebugEvent(VideoPipelineStartDebugEventKind.SenderStartRequested))
+        val result = runBlocking { pipeline.controller.start(pipeline.config) }
+        val started = result.isSuccess
+        debugObserver.onEvent(
+            VideoPipelineStartDebugEvent(
+                if (started) {
+                    VideoPipelineStartDebugEventKind.SenderStartSucceeded
+                } else {
+                    VideoPipelineStartDebugEventKind.SenderStartFailed
+                },
+                result,
+            ),
+        )
         diagnostics?.emit(
             if (started) DiagnosticEventIds.VideoEncoderStarted else DiagnosticEventIds.VideoEncoderFailed,
             DiagnosticReason.CodecFailure.code,
@@ -565,6 +607,7 @@ private class VideoReceiverComponent(
     override fun onPathMigrationCommitted() = pipeline.onPathMigrationCommitted()
     override fun close() {
         pipeline.controller.close()
+        pipeline.onClose()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
     }

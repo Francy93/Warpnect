@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -114,16 +115,35 @@ private fun DiagnosticsToolbar(
     onClose: () -> Unit,
     onChooseDestination: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedButton(onClick = onClose) { Text("Close") }
-        Button(onClick = { controller.setPaused(!state.paused) }) { Text(if (state.paused) "Resume" else "Pause") }
-        OutlinedButton(onClick = controller::manualRefresh) { Text("Refresh") }
-        Column(modifier = Modifier.weight(1f)) {
-            Text("Runtime Diagnostics", fontWeight = FontWeight.SemiBold)
-            Text(statusText(state))
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Runtime Diagnostics",
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    statusText(state),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            OutlinedButton(onClick = onClose) { Text("Close", maxLines = 1) }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                Button(onClick = { controller.setPaused(!state.paused) }) {
+                    Text(if (state.paused) "Resume" else "Pause", maxLines = 1)
+                }
+            }
+            item {
+                OutlinedButton(onClick = controller::manualRefresh) { Text("Refresh", maxLines = 1) }
+            }
         }
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

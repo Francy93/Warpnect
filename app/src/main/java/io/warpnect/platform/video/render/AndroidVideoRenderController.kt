@@ -64,6 +64,21 @@ class AndroidVideoRenderController(
         surfaceView.requestLayout()
     }
 
+    /** Called by the Activity-owned view bridge when Compose removes the current render target. */
+    fun detach(surfaceView: SurfaceView) {
+        if (attachedView !== surfaceView) {
+            return
+        }
+        attachedView = null
+        surfaceView.holder.removeCallback(this)
+        val generation = core.snapshot().surfaceGeneration
+        if (target != null) {
+            target = null
+            core.surfaceDestroyed()
+            targetListener.onRenderTargetDestroyed(generation)
+        }
+    }
+
     override fun setVideoGeometry(width: Int, height: Int): VideoRenderControlResult {
         val error = core.setVideoGeometry(width, height)
         attachedView?.requestLayout()

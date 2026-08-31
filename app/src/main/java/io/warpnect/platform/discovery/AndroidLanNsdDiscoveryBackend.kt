@@ -44,6 +44,7 @@ class AndroidLanNsdDiscoveryBackend(
 ) : DiscoveryBackend {
     override val kind: DiscoveryRouteKind = DiscoveryRouteKind.Lan
 
+    private val debugLog = AndroidDiscoveryDebugLog(context)
     private var observer: DiscoveryBackendObserver? = null
     private var registration: Registration? = null
     private var discovery: Discovery? = null
@@ -53,22 +54,24 @@ class AndroidLanNsdDiscoveryBackend(
     override fun prepare(observer: DiscoveryBackendObserver): DiscoveryBackendCommandResult {
         this.observer = observer
         val permissionError = permissionPlanner.lanError(environmentProvider.lanEnvironment())
-        if (permissionError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(permissionError)
+        if (permissionError != DiscoveryError.None) {
+            debugLog.event(kind, "prepare_failed", permissionError)
+            return DiscoveryBackendCommandResult.rejected(permissionError)
+        }
         return if (nsdManager != null) {
             DiscoveryBackendCommandResult.Accepted
         } else {
+            debugLog.event(kind, "prepare_failed", DiscoveryError.RequiredBackendUnavailable)
             DiscoveryBackendCommandResult.rejected(DiscoveryError.RequiredBackendUnavailable)
         }
     }
 
     override fun startAdvertising(request: DiscoveryBackendAdvertisingRequest): DiscoveryBackendCommandResult {
-        val manager = nsdManager ?: return DiscoveryBackendCommandResult.rejected(
-            DiscoveryError.RequiredBackendUnavailable,
-        )
+        val manager = nsdManager ?: return rejected("registration_failed", DiscoveryError.RequiredBackendUnavailable)
         val permissionError = permissionPlanner.lanError(environmentProvider.lanEnvironment())
-        if (permissionError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(permissionError)
+        if (permissionError != DiscoveryError.None) return rejected("registration_failed", permissionError)
         val multicastError = multicastLock.acquireForActiveNsd()
-        if (multicastError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(multicastError)
+        if (multicastError != DiscoveryError.None) return rejected("registration_failed", multicastError)
 
         val info = NsdServiceInfo().apply {
             serviceName = request.serviceInstanceName
@@ -82,7 +85,14 @@ class AndroidLanNsdDiscoveryBackend(
         val listener = object : NsdManager.RegistrationListener {
             override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                 dispatchToControl {
+                    debugLog.event(
+                        kind,
+                        "registration_failed",
+                        DiscoveryError.RegistrationFailed,
+                        errorCode,
+                    )
                     if (registration?.matches(request) == true) {
+                        debugLog.hostRegistrationLost()
                         observer?.onBackendState(
                             request.controllerGeneration,
                             kind,
@@ -107,7 +117,9 @@ class AndroidLanNsdDiscoveryBackend(
 
             override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {
                 dispatchToControl {
+                    debugLog.event(kind, "registration_succeeded")
                     if (registration?.matches(request) == true) {
+                        debugLog.hostRegistrationActive()
                         observer?.onEffectiveLanServiceName(
                             request.controllerGeneration,
                             request.advertisementGeneration,
@@ -124,20 +136,25 @@ class AndroidLanNsdDiscoveryBackend(
                 }
             }
 
-            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
+            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {
+                dispatchToControl {
+                    if (registration?.matches(request) == true) debugLog.hostRegistrationLost()
+                }
+            }
         }
         registration = Registration(request, listener)
         return try {
+            debugLog.event(kind, "registration_started")
             manager.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
             DiscoveryBackendCommandResult.Accepted
         } catch (_: SecurityException) {
             registration = null
             maybeReleaseMulticastLock()
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.LanPermissionDenied)
+            rejected("registration_failed", DiscoveryError.LanPermissionDenied)
         } catch (_: IllegalArgumentException) {
             registration = null
             maybeReleaseMulticastLock()
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.RegistrationFailed)
+            rejected("registration_failed", DiscoveryError.RegistrationFailed)
         }
     }
 
@@ -154,17 +171,21 @@ class AndroidLanNsdDiscoveryBackend(
     }
 
     override fun startBrowsing(controllerGeneration: Long): DiscoveryBackendCommandResult {
-        val manager = nsdManager ?: return DiscoveryBackendCommandResult.rejected(
-            DiscoveryError.RequiredBackendUnavailable,
-        )
+        val manager = nsdManager ?: return rejected("discovery_failed", DiscoveryError.RequiredBackendUnavailable)
         val permissionError = permissionPlanner.lanError(environmentProvider.lanEnvironment())
-        if (permissionError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(permissionError)
+        if (permissionError != DiscoveryError.None) return rejected("discovery_failed", permissionError)
         val multicastError = multicastLock.acquireForActiveNsd()
-        if (multicastError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(multicastError)
+        if (multicastError != DiscoveryError.None) return rejected("discovery_failed", multicastError)
 
         val listener = object : NsdManager.DiscoveryListener {
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                 dispatchToControl {
+                    debugLog.event(
+                        kind,
+                        "discovery_failed",
+                        DiscoveryError.DiscoveryFailed,
+                        errorCode,
+                    )
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         observer?.onBackendState(
                             controllerGeneration,
@@ -180,12 +201,19 @@ class AndroidLanNsdDiscoveryBackend(
 
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
                 dispatchToControl {
+                    debugLog.event(
+                        kind,
+                        "discovery_stop_failed",
+                        DiscoveryError.DiscoveryFailed,
+                        errorCode,
+                    )
                     observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.DiscoveryFailed)
                 }
             }
 
             override fun onDiscoveryStarted(serviceType: String) {
                 dispatchToControl {
+                    debugLog.event(kind, "discovery_started")
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         observer?.onBackendState(
                             controllerGeneration,
@@ -202,6 +230,7 @@ class AndroidLanNsdDiscoveryBackend(
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 dispatchToControl {
+                    debugLog.event(kind, "service_found")
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         resolveService(controllerGeneration, serviceInfo)
                     }
@@ -226,6 +255,7 @@ class AndroidLanNsdDiscoveryBackend(
         }
         discovery = Discovery(controllerGeneration, listener)
         return try {
+            debugLog.event(kind, "discovery_start_requested")
             manager.discoverServices(
                 DiscoveryPresenceSchema.LAN_SERVICE_TYPE,
                 NsdManager.PROTOCOL_DNS_SD,
@@ -235,11 +265,11 @@ class AndroidLanNsdDiscoveryBackend(
         } catch (_: SecurityException) {
             discovery = null
             maybeReleaseMulticastLock()
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.LanPermissionDenied)
+            rejected("discovery_failed", DiscoveryError.LanPermissionDenied)
         } catch (_: IllegalArgumentException) {
             discovery = null
             maybeReleaseMulticastLock()
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.DiscoveryFailed)
+            rejected("discovery_failed", DiscoveryError.DiscoveryFailed)
         }
     }
 
@@ -277,6 +307,12 @@ class AndroidLanNsdDiscoveryBackend(
         val listener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(failedServiceInfo: NsdServiceInfo, errorCode: Int) {
                 dispatchToControl {
+                    debugLog.event(
+                        kind,
+                        "resolve_failed",
+                        DiscoveryError.ResolutionFailed,
+                        errorCode,
+                    )
                     pendingResolutions.remove(serviceKey)
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.ResolutionFailed)
@@ -286,6 +322,7 @@ class AndroidLanNsdDiscoveryBackend(
 
             override fun onServiceResolved(resolvedServiceInfo: NsdServiceInfo) {
                 dispatchToControl {
+                    debugLog.event(kind, "resolve_succeeded")
                     pendingResolutions.remove(serviceKey)
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         publishResolvedService(controllerGeneration, serviceKey, resolvedServiceInfo)
@@ -302,9 +339,11 @@ class AndroidLanNsdDiscoveryBackend(
             }
         } catch (_: SecurityException) {
             pendingResolutions.remove(serviceKey)
+            debugLog.event(kind, "resolve_failed", DiscoveryError.LanPermissionDenied)
             observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.LanPermissionDenied)
         } catch (_: IllegalArgumentException) {
             pendingResolutions.remove(serviceKey)
+            debugLog.event(kind, "resolve_failed", DiscoveryError.ResolutionFailed)
             observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.ResolutionFailed)
         }
     }
@@ -344,6 +383,7 @@ class AndroidLanNsdDiscoveryBackend(
         }
         lanNetworksByRouteKey[routeKey] = network
         val advertisement = (decoded as DiscoveryAdvertisementDecodeResult.Decoded).advertisement
+        debugLog.routeObserved(kind)
         observer?.onRouteObserved(
             controllerGeneration,
             DiscoveryRouteObservation(
@@ -375,6 +415,11 @@ class AndroidLanNsdDiscoveryBackend(
 
     private fun serviceKey(serviceInfo: NsdServiceInfo): String =
         "${serviceInfo.serviceName}|${serviceInfo.serviceType.trimEnd('.')}"
+
+    private fun rejected(event: String, error: DiscoveryError): DiscoveryBackendCommandResult {
+        debugLog.event(kind, event, error)
+        return DiscoveryBackendCommandResult.rejected(error)
+    }
 
     private data class Registration(
         val request: DiscoveryBackendAdvertisingRequest,

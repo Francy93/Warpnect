@@ -17,7 +17,10 @@ interface VideoEncoderDiscovery {
     fun query(request: VideoEncoderRequest): VideoEncoderCapabilities
 }
 
-class AndroidVideoEncoderDiscovery : VideoEncoderDiscovery {
+internal class AndroidVideoEncoderDiscovery(
+    private val cbrFallback: CbrCapabilityFallback = CbrCapabilityFallback(processCbrProbe),
+    private val debugObserver: VideoEncoderCbrCapabilityDebugObserver = VideoEncoderCbrCapabilityDebugObserver.None,
+) : VideoEncoderDiscovery {
     override fun query(request: VideoEncoderRequest): VideoEncoderCapabilities {
         val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS)
             .codecInfos
@@ -42,7 +45,7 @@ class AndroidVideoEncoderDiscovery : VideoEncoderDiscovery {
         val widthRange = videoCapabilities.supportedWidths
         val heightRange = videoCapabilities.supportedHeights
 
-        return VideoEncoderCandidate(
+        val candidate = VideoEncoderCandidate(
             info = VideoEncoderCodecInfo(
                 codecName = name,
                 canonicalName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) canonicalName else null,
@@ -83,7 +86,34 @@ class AndroidVideoEncoderDiscovery : VideoEncoderDiscovery {
                 VideoProfileLevel(profile = it.profile, level = it.level)
             },
         )
+        return candidate.copy(
+            bitrateModeSupported = resolveCbrSupport(candidate, request),
+        )
     }
+
+    private fun resolveCbrSupport(candidate: VideoEncoderCandidate, request: VideoEncoderRequest): Boolean {
+        val metadataSupported = candidate.bitrateModeSupported
+        if (!metadataSupported && candidate.isEligibleForCbrProbe()) {
+            debugObserver.onActiveProbeStarted()
+        }
+        val decision = cbrFallback.resolve(
+            metadataSupported = metadataSupported,
+            allOtherRequirementsSupported = candidate.isEligibleForCbrProbe(),
+            key = ExactVideoEncoderCapabilityKey.from(candidate.info.codecName, request),
+        )
+        debugObserver.onDecision(decision)
+        return decision.supported
+    }
+
+    private fun VideoEncoderCandidate.isEligibleForCbrProbe() = supportsAvc &&
+        info.hardwareAcceleration == VideoEncoderHardwareAcceleration.Hardware &&
+        info.softwareOnly != true &&
+        supportsSurfaceInput &&
+        widthSupported &&
+        heightSupported &&
+        sizeSupported &&
+        sizeAndRateSupported &&
+        bitrateSupported
 
     private fun MediaCodecInfo.hardwareAcceleration(): VideoEncoderHardwareAcceleration =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -97,4 +127,20 @@ class AndroidVideoEncoderDiscovery : VideoEncoderDiscovery {
         }
 
     private fun Range<Int>.containsValue(value: Int): Boolean = contains(value)
+
+    private companion object {
+        val processCbrProbe = CachedExactVideoEncoderCapabilityProbe(AndroidExactVideoEncoderCapabilityProbe())
+    }
+}
+
+internal interface VideoEncoderCbrCapabilityDebugObserver {
+    fun onDecision(decision: CbrCapabilityDecision)
+
+    fun onActiveProbeStarted() = Unit
+
+    companion object {
+        val None = object : VideoEncoderCbrCapabilityDebugObserver {
+            override fun onDecision(decision: CbrCapabilityDecision) = Unit
+        }
+    }
 }

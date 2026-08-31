@@ -1,7 +1,6 @@
 package io.warpnect.platform.session.integration
 
 import android.content.Context
-import android.view.SurfaceView
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.encoder.AudioEncoderRequest
@@ -78,7 +77,7 @@ import io.warpnect.video.transport.VideoTransportFecConfig
  * handles are intentionally absent: RFC-005G owns and binds all of them before this factory runs.
  */
 data class AndroidSessionPipelineResources(
-    val clientRenderSurface: () -> SurfaceView? = { null },
+    val bindClientVideoRenderer: (AndroidVideoRenderController) -> AutoCloseable? = { null },
     val clientInputSurface: () -> WarpnectInputCaptureView? = { null },
     val clientViewportGeometry: VideoViewportGeometryProvider = VideoViewportGeometryProvider {
         VideoViewportGeometry()
@@ -136,9 +135,6 @@ class DefaultAndroidSessionPipelineBindings(
         receiver: NativeSclVideoReceiverController,
         telemetry: VideoDecoderTelemetry,
     ): AndroidVideoReceiverPipeline? {
-        val surface = resources.clientRenderSurface() ?: return null
-        if (!surface.holder.surface.isValid) return null
-
         lateinit var controller: DefaultVideoReceiverSessionController
         val renderer = AndroidVideoRenderController(
             targetListener = object : VideoRenderTargetListener {
@@ -161,13 +157,17 @@ class DefaultAndroidSessionPipelineBindings(
             renderController = renderer,
             telemetry = telemetry,
         )
-        renderer.attach(surface)
+        val rendererBinding = resources.bindClientVideoRenderer(renderer) ?: run {
+            controller.close()
+            return null
+        }
         return AndroidVideoReceiverPipeline(
             controller = controller,
             config = VideoReceiverSessionConfig(
                 receiverRuntimeConfig = channel.videoReceiverConfig(recovery),
             ),
             onPathMigrationCommitted = controller::requestContinuityResync,
+            onClose = rendererBinding::close,
             telemetrySources = listOf(telemetry),
         )
     }

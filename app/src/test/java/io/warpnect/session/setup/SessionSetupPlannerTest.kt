@@ -152,6 +152,23 @@ class SessionSetupPlannerTest {
         assertTrue(retained.isValidFor(withSystemAudio))
     }
 
+    @Test
+    fun retainedInputPreferenceAdoptsNegotiatedFlagsButKeepsReliabilityParameters() {
+        val negotiated = profile().copy(
+            inputFeatureFlags = CapabilityBits.INPUT_STATE_CONVERGENCE or CapabilityBits.INPUT_PRIVILEGED_INJECTION,
+        )
+        val requested = preferences()
+
+        val retained = requested.retainOnlySelectedChannels(negotiated)
+
+        assertEquals(negotiated.inputKinds, retained.input?.inputKinds)
+        assertEquals(negotiated.stablePresenceKinds, retained.input?.stablePresenceKinds)
+        assertEquals(negotiated.inputFeatureFlags, retained.input?.featureFlags)
+        assertEquals(requested.input?.criticalCopies, retained.input?.criticalCopies)
+        assertEquals(requested.input?.resetCopies, retained.input?.resetCopies)
+        assertEquals(null, SessionSetupPlanner.validateExactPreferences(negotiated, retained))
+    }
+
     private fun profile() = NegotiatedCapabilityProfile(
         selectedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
         eligiblePathKinds = CapabilityBits.PATH_LAN or CapabilityBits.PATH_DIRECT,

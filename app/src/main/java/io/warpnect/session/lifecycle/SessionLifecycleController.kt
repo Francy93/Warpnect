@@ -121,6 +121,7 @@ class SessionLifecycleController(
     private val pathTelemetry: Map<PathId, SessionPathTelemetry> = emptyMap(),
     private val diagnosticEvents: SessionLifecycleDiagnosticEvents? = null,
     private val pathDiagnosticScopes: Map<PathId, TelemetryScope.Path> = emptyMap(),
+    private val debugObserver: SessionLifecycleDebugObserver = SessionLifecycleDebugObserver.None,
 ) : AutoCloseable {
     private val lock = Any()
     private val engine = SessionLifecycleEngine(bootstrap.sessionId, bootstrap.generation, healthConfig, recoveryPolicy)
@@ -150,14 +151,34 @@ class SessionLifecycleController(
 
     /** Takes ownership from RFC-005G while all resources are still stopped. */
     fun start(): SessionLifecycleError = synchronized(lock) {
-        if (closed) return@synchronized SessionLifecycleError.Closed
+        debugObserver.onEvent(SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.StartRequested))
+        if (closed) {
+            return@synchronized rejectStart(
+                SessionLifecycleDebugEventKind.StartRejectedClosed,
+                SessionLifecycleError.Closed,
+            )
+        }
         if (bootstrap.localRole == SessionRole.Host && capacityOwner == null) {
-            return@synchronized record(SessionLifecycleError.InvalidState)
+            return@synchronized rejectStart(
+                SessionLifecycleDebugEventKind.StartRejectedMissingCapacity,
+                SessionLifecycleError.InvalidState,
+            )
         }
         val now = now()
-        if (!bootstrap.transferToLifecycle(now)) return@synchronized record(SessionLifecycleError.InvalidState)
-        if (bootstrap.localRole == SessionRole.Host && capacityOwner?.promote(bootstrap.sessionId, bootstrap.remoteDeviceId, bootstrap.generation) == false) {
-            return@synchronized record(SessionLifecycleError.InvalidState)
+        if (!bootstrap.transferToLifecycle(now)) {
+            return@synchronized rejectStart(
+                SessionLifecycleDebugEventKind.StartRejectedBootstrapTransfer,
+                SessionLifecycleError.InvalidState,
+            )
+        }
+        if (
+            bootstrap.localRole == SessionRole.Host &&
+            capacityOwner?.promote(bootstrap.sessionId, bootstrap.remoteDeviceId, bootstrap.generation) == false
+        ) {
+            return@synchronized rejectStart(
+                SessionLifecycleDebugEventKind.StartRejectedCapacityPromotion,
+                SessionLifecycleError.InvalidState,
+            )
         }
         control.setPayloadListener(::receiveActivePayload)
         val result = engine.consumePrepared(
@@ -173,6 +194,7 @@ class SessionLifecycleController(
         diagnosticEvents?.stateChanged(DiagnosticSessionState.Prepared, DiagnosticSessionState.Active)
         diagnosticEvents?.running()
         armNextWake()
+        debugObserver.onEvent(SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.StartSucceeded))
         SessionLifecycleError.None
     }
 
@@ -718,6 +740,14 @@ class SessionLifecycleController(
             now(),
         ).reconnectAttemptCount,
     )
+
+    private fun rejectStart(
+        kind: SessionLifecycleDebugEventKind,
+        error: SessionLifecycleError,
+    ): SessionLifecycleError {
+        debugObserver.onEvent(SessionLifecycleDebugEvent(kind, error))
+        return record(error)
+    }
 
     private fun sendMessage(message: SessionLifecycleMessage, candidatePath: Boolean): Boolean {
         val bytes = SessionLifecycleCodec.encode(message) ?: run {

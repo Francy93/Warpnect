@@ -2,7 +2,9 @@ package io.warpnect
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -14,9 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import io.warpnect.diagnostics.ui.DiagnosticsRuntimeSummary
 import io.warpnect.diagnostics.ui.DiagnosticsUiController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticsUiClock
+import io.warpnect.platform.discovery.AndroidDiscoveryEnvironmentProvider
+import io.warpnect.session.SessionRole
 import io.warpnect.ui.DiagnosticsScreen
 import io.warpnect.ui.MainScreen
 import io.warpnect.ui.SecureSessionScreen
@@ -37,6 +42,43 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun WarpnectApp(composition: io.warpnect.platform.session.integration.AndroidSecureSessionComposition?) {
     var surface by remember { mutableStateOf(AppSurface.SecureSession) }
+    val context = LocalContext.current
+    val discoveryEnvironment = remember(context) { AndroidDiscoveryEnvironmentProvider(context) }
+    var pendingDiscoveryRole by remember { mutableStateOf<SessionRole?>(null) }
+    var discoveryPermissionNotice by remember { mutableStateOf<String?>(null) }
+
+    val startDiscoveryNow: (SessionRole) -> Unit = { role ->
+        when (role) {
+            SessionRole.Host -> composition?.applicationController?.startHost()
+            SessionRole.Client -> composition?.applicationController?.startClientDiscovery()
+        }
+    }
+    val discoveryPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        val role = pendingDiscoveryRole ?: return@rememberLauncherForActivityResult
+        pendingDiscoveryRole = null
+        val stillMissing = discoveryEnvironment.missingWifiDirectRuntimePermissions()
+        discoveryPermissionNotice = if (stillMissing.isEmpty()) {
+            null
+        } else if (stillMissing.contains("android.permission.NEARBY_WIFI_DEVICES")) {
+            "Nearby Wi-Fi permission was not granted. Continuing with LAN discovery; Wi-Fi Direct is unavailable."
+        } else {
+            "Location permission was not granted. Continuing with LAN discovery; Wi-Fi Direct is unavailable."
+        }
+        startDiscoveryNow(role)
+    }
+
+    fun requestDiscoveryStart(role: SessionRole) {
+        val missingPermissions = discoveryEnvironment.missingWifiDirectRuntimePermissions()
+        if (missingPermissions.isEmpty()) {
+            discoveryPermissionNotice = null
+            startDiscoveryNow(role)
+        } else {
+            pendingDiscoveryRole = role
+            discoveryPermissionLauncher.launch(missingPermissions.toTypedArray())
+        }
+    }
 
     MaterialTheme {
         Surface {
@@ -74,10 +116,17 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                     modifier = Modifier,
                 )
             } else {
+                val clientVideoRendererBound by composition.uiResources.clientVideoRendererBound.collectAsState()
                 SecureSessionScreen(
                     controller = composition.applicationController,
-                    onClientViewsAttached = composition.uiResources::attachClientViews,
-                    onClientViewsDetached = composition.uiResources::clearClientViews,
+                    onEnableHost = { requestDiscoveryStart(SessionRole.Host) },
+                    onFindHosts = { requestDiscoveryStart(SessionRole.Client) },
+                    discoveryPermissionNotice = discoveryPermissionNotice,
+                    clientVideoRendererBound = clientVideoRendererBound,
+                    onClientRenderSurfaceAttached = composition.uiResources::attachClientRenderSurface,
+                    onClientRenderSurfaceDetached = composition.uiResources::clearClientRenderSurface,
+                    onClientInputSurfaceAttached = composition.uiResources::attachClientInputSurface,
+                    onClientInputSurfaceDetached = composition.uiResources::clearClientInputSurface,
                     onDeveloperManual = { surface = AppSurface.DeveloperManual },
                     onDiagnostics = { surface = AppSurface.Diagnostics },
                     modifier = Modifier,

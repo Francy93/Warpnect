@@ -7,6 +7,7 @@ import io.warpnect.session.capability.CapabilityNegotiationController
 import io.warpnect.session.capability.NegotiatedSessionBootstrap
 import io.warpnect.session.capability.SecureSessionCapabilityBootstrap
 import io.warpnect.session.control.SecureSessionControlTransport
+import io.warpnect.session.discovery.DiscoveryControllerState
 import io.warpnect.session.discovery.DiscoveryError
 import io.warpnect.session.discovery.DiscoveryPresenceStatus
 import io.warpnect.session.discovery.DiscoveryRouteDescriptor
@@ -115,6 +116,8 @@ class ControllerBackedClientSessionPhaseDriver(
     private val sessionIdGenerator: SecureSessionIdGenerator = RandomSecureSessionIdGenerator,
     /** Cold-path composition hook retaining only the selected ephemeral Direct route. */
     private val onConnectionRequest: (SecureSessionConnectRequest) -> Unit = {},
+    private val onHandshakeStarted: () -> Unit = {},
+    private val onHandshakeFailed: (SessionHandshakeError) -> Unit = {},
 ) : SecureSessionPhaseDriver {
     private val lock = Any()
     private var listener: SecureSessionPhaseListener? = null
@@ -130,19 +133,34 @@ class ControllerBackedClientSessionPhaseDriver(
         if (role != SessionRole.Client) return SecureSessionIntegrationError.InvalidPresence
         return synchronized(lock) {
             if (closed) return@synchronized SecureSessionIntegrationError.Closed
-            discovery.prepare().error.toIntegrationError()
-                .takeUnless { it != SecureSessionIntegrationError.None }
-                ?: discovery.startBrowsing().error.toIntegrationError()
+            val preparationError = discovery.prepare().error.toIntegrationError()
+            if (preparationError != SecureSessionIntegrationError.None) {
+                preparationError
+            } else {
+                discovery.startBrowsing().error.toIntegrationError()
+            }
         }
     }
 
     override fun stopDiscovery() {
         synchronized(lock) {
-            if (!closed) discovery.stopBrowsing()
+            if (!closed) discovery.stop()
         }
     }
 
     override fun discoveredPresences() = discovery.discoveredPresences()
+
+    override fun discoverySnapshot() = discovery.snapshot()
+
+    override fun discoveryFailure(): SecureSessionIntegrationError = discovery.snapshot()
+        .takeIf { it.state == DiscoveryControllerState.Error }
+        ?.lastError
+        ?.toIntegrationError()
+        ?: SecureSessionIntegrationError.None
+
+    override fun setDiscoveryUpdateListener(listener: (() -> Unit)?) {
+        discovery.setDiscoveryUpdateListener(listener)
+    }
 
     override fun beginConnection(
         request: SecureSessionConnectRequest,
@@ -166,6 +184,7 @@ class ControllerBackedClientSessionPhaseDriver(
             }
             handshake = controller
         }
+        onHandshakeStarted()
         val result = controller.startInitiator(
             endpoint,
             sessionIdGenerator.next(),
@@ -213,6 +232,14 @@ class ControllerBackedClientSessionPhaseDriver(
         val prompt = synchronized(lock) { pendingPairingPrompt }
             ?: return SecureSessionIntegrationError.PairingRequired
         return pair.acceptVerification(prompt.attemptId).error.toIntegrationError()
+    }
+
+    override fun rejectPairing(): SecureSessionIntegrationError {
+        val pair = synchronized(lock) { pairing }
+            ?: return currentErrorOr(SecureSessionIntegrationError.PairingRequired)
+        val prompt = synchronized(lock) { pendingPairingPrompt }
+            ?: return SecureSessionIntegrationError.PairingRequired
+        return pair.rejectVerification(prompt.attemptId).error.toIntegrationError()
     }
 
     override fun createSecureCapabilityBootstrap(bootstrap: AuthenticatedSessionBootstrap): SecurePhaseResult {
@@ -306,6 +333,7 @@ class ControllerBackedClientSessionPhaseDriver(
             }
             handshake = controller
         }
+        onHandshakeStarted()
         return controller.startInitiator(
             endpoint = endpoint,
             intent = SessionHandshakeIntent.ReconnectSession(
@@ -321,14 +349,34 @@ class ControllerBackedClientSessionPhaseDriver(
     /** Called by the existing serialized Phase 5 control scheduler; it creates no worker or queue. */
     override fun advance() {
         val pair = synchronized(lock) { pairing }
-        pair?.advance()?.error?.takeUnless { it == PairingError.None }?.let {
-            listener?.onFailed(
-                SecureSessionIntegrationStage.Pairing,
-                it.toIntegrationError(),
-            )
+        pair?.let { controller ->
+            val snapshot = controller.advance().snapshot
+            snapshot.lastError.takeUnless { it == PairingError.None }?.let { error ->
+                if (releasePairingAttempt() === controller) {
+                    controller.close()
+                    synchronized(lock) { listener }?.onFailed(
+                        SecureSessionIntegrationStage.Pairing,
+                        error.toIntegrationError(),
+                    )
+                }
+            }
         }
         synchronized(lock) { handshake }?.advance()
-        synchronized(lock) { capability }?.advance()
+        val negotiated = synchronized(lock) { capability }
+        negotiated?.let { controller ->
+            controller.advance()
+            controller.snapshot().lastError.takeUnless {
+                it == io.warpnect.session.capability.CapabilityNegotiationError.None
+            }?.let { error ->
+                if (releaseCapabilityAttempt() === controller) {
+                    controller.close()
+                    synchronized(lock) { listener }?.onFailed(
+                        SecureSessionIntegrationStage.Capabilities,
+                        error.toIntegrationError(),
+                    )
+                }
+            }
+        }
         synchronized(lock) { setup }?.advance()
     }
 
@@ -378,6 +426,7 @@ class ControllerBackedClientSessionPhaseDriver(
         }
 
         override fun onFailed(error: SessionHandshakeError) {
+            onHandshakeFailed(error)
             releaseHandshakeAttempt()?.close()
             if (error == SessionHandshakeError.PeerNotTrusted) {
                 listener?.onPairingRequired()
@@ -430,6 +479,12 @@ class ControllerBackedClientSessionPhaseDriver(
         result
     }
 
+    private fun releaseCapabilityAttempt(): CapabilityNegotiationController? = synchronized(lock) {
+        val result = capability
+        capability = null
+        result
+    }
+
     private fun currentErrorOr(fallback: SecureSessionIntegrationError): SecureSessionIntegrationError =
         synchronized(lock) {
             if (closed) SecureSessionIntegrationError.Closed else fallback
@@ -439,7 +494,7 @@ class ControllerBackedClientSessionPhaseDriver(
 private fun DiscoveryError.toIntegrationError(): SecureSessionIntegrationError = when (this) {
     DiscoveryError.None -> SecureSessionIntegrationError.None
     DiscoveryError.Closed -> SecureSessionIntegrationError.Closed
-    else -> SecureSessionIntegrationError.InvalidPresence
+    else -> SecureSessionIntegrationError.DiscoveryStartFailed
 }
 
 private fun PairingError.toIntegrationError(): SecureSessionIntegrationError = when (this) {

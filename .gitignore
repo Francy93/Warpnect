@@ -10,6 +10,7 @@ native/build-release/
 .cxx/
 .externalNativeBuild/
 captures/
+tools/android-h1/artifacts/
 
 *.iml
 *.apk

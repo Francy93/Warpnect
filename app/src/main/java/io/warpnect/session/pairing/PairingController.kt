@@ -120,6 +120,7 @@ class PairingController(
     private val eventListener: PairingEventListener? = null,
     private val completedListener: PairingCompletedListener? = null,
     private val diagnosticEvents: DiagnosticEventWriter? = null,
+    private val debugObserver: PairingDebugObserver? = null,
 ) : AutoCloseable {
     private val attempts = LinkedHashMap<PairingAttemptId, ManagedAttempt>()
     private val prompts = HashMap<PairingAttemptId, PairingVerificationPrompt>()
@@ -163,6 +164,7 @@ class PairingController(
         val managed = ManagedAttempt(engine, endpoint, remoteUntrustedAlias, nowMs)
         attempts[attemptId] = managed
         counters.initiatedAttempts += 1
+        debug(PairingDebugEventKind.AttemptStarted)
         diagnosticEvents?.emit(DiagnosticEventIds.PairingStarted)
         processEngineResult(managed, started.result, nowMs)
     }
@@ -170,6 +172,7 @@ class PairingController(
     fun acceptVerification(attemptId: PairingAttemptId): PairingControllerResult = synchronized(this) {
         val managed = attempts[attemptId] ?: return@synchronized result(PairingError.InvalidPacket)
         val nowMs = monotonicClock.nowMs()
+        debug(PairingDebugEventKind.LocalConfirm)
         processEngineResult(managed, managed.engine.acceptVerification(), nowMs)
     }
 
@@ -177,6 +180,7 @@ class PairingController(
         synchronized(this) {
             val managed = attempts[attemptId] ?: return@synchronized result(PairingError.InvalidPacket)
             val nowMs = monotonicClock.nowMs()
+            debug(PairingDebugEventKind.LocalReject)
             processEngineResult(managed, managed.engine.rejectVerification(mismatch), nowMs)
         }
 
@@ -231,6 +235,7 @@ class PairingController(
 
     override fun close() = synchronized(this) {
         if (closed) return@synchronized
+        debug(PairingDebugEventKind.ResetStarted)
         closed = true
         attempts.values.forEach { it.engine.close() }
         attempts.clear()
@@ -238,6 +243,7 @@ class PairingController(
         pairableUntilMs = null
         transport.setDatagramListener(null)
         transport.close()
+        debug(PairingDebugEventKind.ResetComplete)
     }
 
     private fun receiveDatagram(endpoint: PairingTransportEndpoint, datagram: ByteArray) {
@@ -251,6 +257,12 @@ class PairingController(
                 return
             }
             val nowMs = monotonicClock.nowMs()
+            debug(PairingDebugEventKind.ActionReceived, packet.message.type)
+            when (packet.message) {
+                is PairingBootstrapMessage.Confirm -> debug(PairingDebugEventKind.RemoteConfirmReceived)
+                is PairingBootstrapMessage.Reject -> debug(PairingDebugEventKind.RemoteRejectReceived)
+                else -> Unit
+            }
             val existing = attempts[packet.attemptId]
             if (packet.message is PairingBootstrapMessage.Commit && existing == null) {
                 receiveNewCommit(endpoint, packet, nowMs)
@@ -328,6 +340,7 @@ class PairingController(
                         expiresAtMonotonicMs = nowMs + config.userConfirmationTimeoutMs,
                     )
                     prompts[managed.engine.attemptId] = prompt
+                    debug(PairingDebugEventKind.SasReady)
                     diagnosticEvents?.emit(DiagnosticEventIds.PairingSasReady)
                     eventListener?.onVerificationPrompt(prompt)
                 }
@@ -337,6 +350,7 @@ class PairingController(
         if (managed.engine.state.isTerminal()) {
             if (managed.engine.state != PairingEngineState.Paired && !managed.terminalDiagnosticRecorded) {
                 managed.terminalDiagnosticRecorded = true
+                debug(PairingDebugEventKind.Failed, error = engineResult.error)
                 diagnosticEvents?.emit(DiagnosticEventIds.PairingFailed, engineResult.error.toDiagnosticReason().code)
             }
             prompts.remove(managed.engine.attemptId)
@@ -365,11 +379,13 @@ class PairingController(
         when (stored.error) {
             TrustStoreError.None -> {
                 counters.successfulPairings += 1
+                debug(PairingDebugEventKind.Succeeded)
                 diagnosticEvents?.emit(DiagnosticEventIds.PairingSucceeded)
                 completedListener?.onPairingCompleted(requireNotNull(stored.record))
             }
             TrustStoreError.AlreadyTrusted -> {
                 counters.alreadyTrusted += 1
+                debug(PairingDebugEventKind.Succeeded)
                 diagnosticEvents?.emit(DiagnosticEventIds.PairingSucceeded)
                 completedListener?.onPairingCompleted(requireNotNull(stored.record))
             }
@@ -385,6 +401,7 @@ class PairingController(
             lastError = PairingEngine.trustError(stored.error)
             if (!managed.terminalDiagnosticRecorded) {
                 managed.terminalDiagnosticRecorded = true
+                debug(PairingDebugEventKind.Failed, error = lastError)
                 diagnosticEvents?.emit(DiagnosticEventIds.PairingFailed, lastError.toDiagnosticReason().code)
             }
         }
@@ -393,6 +410,7 @@ class PairingController(
     private fun sendAction(managed: ManagedAttempt, packet: PairingBootstrapPacket, nowMs: Long) {
         val datagram = PairingBootstrapCodec.encode(packet)
         val sendResult = transport.send(managed.endpoint, datagram)
+        debug(PairingDebugEventKind.ActionSent, packet.message.type)
         if (sendResult == PairingTransportSendResult.Failed) counters.transportFailures += 1
         if (!packet.message.type.isRetryable()) return
         val existing = managed.pendingOutbound[packet.message.type]
@@ -405,6 +423,7 @@ class PairingController(
     }
 
     private fun sendStateless(endpoint: PairingTransportEndpoint, packet: PairingBootstrapPacket) {
+        debug(PairingDebugEventKind.ActionSent, packet.message.type)
         if (transport.send(endpoint, PairingBootstrapCodec.encode(packet)) == PairingTransportSendResult.Failed) {
             counters.transportFailures += 1
         }
@@ -485,6 +504,14 @@ class PairingController(
             -> counters.timeouts += 1
             else -> Unit
         }
+    }
+
+    private fun debug(
+        kind: PairingDebugEventKind,
+        messageType: PairingMessageType? = null,
+        error: PairingError? = null,
+    ) {
+        debugObserver?.onEvent(PairingDebugEvent(kind, messageType, error))
     }
 
     private fun result(error: PairingError, prompt: PairingVerificationPrompt? = null): PairingControllerResult =

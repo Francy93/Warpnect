@@ -37,9 +37,11 @@ class AndroidLocalDiscoveryController(
     endpointLeaseFactory: io.warpnect.session.discovery.DiscoveryContactEndpointLeaseFactory =
         AndroidDiscoveryContactEndpointLeaseFactory(),
 ) : LocalDiscoveryController {
+    private val debugLog = AndroidDiscoveryDebugLog(context)
     private val appContext = context.applicationContext
     private val controlThread = HandlerThread(THREAD_NAME).apply { start() }
     private val controlHandler = Handler(controlThread.looper)
+    private val discoveryUpdateListener = AtomicReference<(() -> Unit)?>()
     private val delegate = DefaultLocalDiscoveryController(
         config = config,
         backends = createBackends(),
@@ -47,6 +49,18 @@ class AndroidLocalDiscoveryController(
         clock = AndroidDiscoveryClock,
         presenceIdGenerator = presenceIdGenerator,
         availabilityProvider = availabilityProvider,
+        onPresenceCountChanged = { count ->
+            debugLog.presenceAccepted(count)
+            debugLog.presenceCount(count)
+            // Publish after the cache mutation has returned from DefaultLocalDiscoveryController's
+            // synchronized callback boundary, so UI observation never nests its lock.
+            controlHandler.post {
+                if (!closed) {
+                    debugLog.snapshotPublishRequested(count)
+                    discoveryUpdateListener.get()?.invoke()
+                }
+            }
+        },
     )
     private var directBackend: AndroidWifiDirectDnsSdDiscoveryBackend? = null
 
@@ -120,6 +134,10 @@ class AndroidLocalDiscoveryController(
 
     override fun discoveredPresences() = delegate.discoveredPresences()
 
+    override fun setDiscoveryUpdateListener(listener: (() -> Unit)?) {
+        discoveryUpdateListener.set(listener)
+    }
+
     /**
      * Resolves an opaque RFC-005B Direct route to the current Android P2P device address.
      * The address never enters discovery snapshots or portable SCL state; RFC-005G consumes it
@@ -136,6 +154,7 @@ class AndroidLocalDiscoveryController(
         onControl {
             if (!closed) {
                 controlHandler.removeCallbacks(expiryTask)
+                discoveryUpdateListener.set(null)
                 delegate.close()
                 closed = true
             }
@@ -171,12 +190,15 @@ class AndroidLocalDiscoveryController(
 
     private fun <T> onControl(block: () -> T): T {
         if (closed || Looper.myLooper() == controlThread.looper) return block()
-        val result = AtomicReference<T>()
+        // The discovery API intentionally has nullable reads (for example, a pairing transport
+        // before a contact endpoint exists). Wrap the completed value so null is not confused
+        // with a control-thread dispatch that failed to publish any result.
+        val result = AtomicReference<ControlResult<T>?>()
         val failure = AtomicReference<Throwable>()
         val complete = CountDownLatch(1)
         if (!controlHandler.post {
                 try {
-                    result.set(block())
+                    result.set(ControlResult(block()))
                 } catch (error: Throwable) {
                     failure.set(error)
                 } finally {
@@ -188,8 +210,10 @@ class AndroidLocalDiscoveryController(
         }
         complete.await()
         failure.get()?.let { throw IllegalStateException("Warpnect discovery control operation failed", it) }
-        return requireNotNull(result.get())
+        return requireNotNull(result.get()) { "Warpnect discovery control operation completed without a result" }.value
     }
+
+    private data class ControlResult<T>(val value: T)
 
     private object AndroidDiscoveryClock : DiscoveryMonotonicClock {
         override fun nowMs(): Long = SystemClock.elapsedRealtime()

@@ -101,6 +101,32 @@ class AndroidDiscoveryPermissionPlannerTest {
     }
 
     @Test
+    fun wifiDirectRuntimePermissionPlanRequestsNearbyBeforeP2pCallsOnApiThirtyThreeAndLater() {
+        assertEquals(
+            setOf(NEARBY_WIFI_DEVICES_PERMISSION),
+            planner.wifiDirectRuntimePermissions(
+                directEnvironment(deviceSdk = 36, targetSdk = 35, nearbyGranted = false, p2pEnabled = false),
+            ),
+        )
+        assertEquals(
+            emptySet<String>(),
+            planner.wifiDirectRuntimePermissions(
+                directEnvironment(deviceSdk = 36, targetSdk = 35, nearbyGranted = true, p2pEnabled = false),
+            ),
+        )
+    }
+
+    @Test
+    fun wifiDirectRuntimePermissionPlanUsesFineLocationOnlyOnLegacyAndroid() {
+        assertEquals(
+            setOf(ACCESS_FINE_LOCATION_PERMISSION),
+            planner.wifiDirectRuntimePermissions(
+                directEnvironment(deviceSdk = 32, targetSdk = 32, fineLocationGranted = false),
+            ),
+        )
+    }
+
+    @Test
     fun multicastPlannerOnlyRequestsCompatibilityLockBeforeTiramisuExtensionSeven() {
         val multicastPlanner = AndroidDiscoveryMulticastLockPlanner()
         assertEquals(

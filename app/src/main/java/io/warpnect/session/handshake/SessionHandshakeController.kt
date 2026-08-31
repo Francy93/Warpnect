@@ -11,6 +11,7 @@ import io.warpnect.session.discovery.DiscoveryPresenceId
 import io.warpnect.session.identity.LocalDeviceIdentitySigner
 import io.warpnect.session.pairing.PairingCryptoProvider
 import io.warpnect.session.trust.TrustedPeerStore
+import java.util.concurrent.atomic.AtomicLong
 
 data class SessionHandshakeConfig(
     val maxIncomingAttempts: Int = SessionHandshakeProtocol.DEFAULT_MAX_INCOMING_ATTEMPTS,
@@ -81,11 +82,13 @@ class SessionHandshakeController(
     private val recoveryAdmissionResolver: SessionHandshakeRecoveryAdmissionResolver? = null,
     private val eventListener: SessionHandshakeEventListener? = null,
     private val diagnosticEvents: DiagnosticEventWriter? = null,
+    private val debugObserver: SessionHandshakeDebugObserver? = null,
 ) : AutoCloseable {
     private val lock = Any()
     private val cookieManager = SessionHandshakeCookieManager(crypto, clock)
     private val active = LinkedHashMap<SessionHandshakeAttemptId, ManagedAttempt>()
     private val completed = LinkedHashMap<SessionHandshakeAttemptId, CompletedAttempt>()
+    private val pairingTrustEpoch = AtomicLong()
     private var controllerState = SessionHandshakeControllerState.Running
     private var counters = Counters()
     private var lastPeer: io.warpnect.session.DeviceId? = null
@@ -148,8 +151,15 @@ class SessionHandshakeController(
             expectedPeer = expectedPeer,
         )
         val engine = started.engine ?: return@synchronized record(started.result).also { emitHandshakeFailure(it.error) }
-        val managed = ManagedAttempt(engine, endpoint, incoming = false, startedAtMs = now())
+        val managed = ManagedAttempt(
+            engine = engine,
+            endpoint = endpoint,
+            incoming = false,
+            startedAtMs = now(),
+            trustEpoch = pairingTrustEpoch.get(),
+        )
         active[attemptId] = managed
+        debug(SessionHandshakeDebugEventKind.Started)
         diagnosticEvents?.emit(DiagnosticEventIds.HandshakeStarted)
         processLocked(managed, started.result)
     }
@@ -174,7 +184,15 @@ class SessionHandshakeController(
         }
         val existing = active[packet.header.attemptId]
         if (existing != null) {
-            processLocked(existing, existing.engine.receive(endpoint, datagram))
+            val result = existing.engine.receive(endpoint, datagram)
+            if (result.error != SessionHandshakeError.None) {
+                debug(
+                    SessionHandshakeDebugEventKind.ActionReceived,
+                    packet.message.type,
+                    packet.header.messageSequence,
+                )
+            }
+            processLocked(existing, result)
             return@synchronized
         }
         val hello = packet.message as? SessionHandshakeMessage.ClientHello ?: run {
@@ -238,6 +256,31 @@ class SessionHandshakeController(
             listOf(it.nextRetryAtMs.takeIf { value -> value > 0L }, it.startedAtMs + config.attemptTimeoutMs)
         }
         deadlines.filterNotNull().minOrNull()
+    }
+
+    /**
+     * RFC-005C success proves a previously untrusted peer can start a fresh WNSH attempt. The
+     * responder cannot correlate pairing and handshake UDP source ports, so it discards only
+     * provisional inbound attempts that existed before the pairing trust boundary. Completed,
+     * authenticated, and fresh post-pairing handshakes are deliberately left untouched.
+     */
+    fun discardUnauthenticatedIncomingAttemptsAfterPairing(): Int {
+        // Mark the boundary before contending for the transport callback lock. A ClientHello that
+        // arrives after pairing success can therefore never be mistaken for the untrusted attempt.
+        val boundary = pairingTrustEpoch.incrementAndGet()
+        return synchronized(lock) {
+            val provisional = active.values.filter {
+                it.incoming &&
+                    it.trustEpoch < boundary &&
+                    it.engine.state == SessionHandshakeState.WaitingForServerAuth
+            }
+            provisional.forEach { managed ->
+                managed.engine.close()
+                active.remove(managed.engine.attemptId)
+            }
+            if (provisional.isNotEmpty()) debug(SessionHandshakeDebugEventKind.PairingTrustBoundaryReset)
+            provisional.size
+        }
     }
 
     private fun issueCookieLocked(
@@ -321,8 +364,15 @@ class SessionHandshakeController(
             emitHandshakeFailure(started.result.error)
             return
         }
-        val managed = ManagedAttempt(engine, endpoint, incoming = true, startedAtMs = now())
+        val managed = ManagedAttempt(
+            engine = engine,
+            endpoint = endpoint,
+            incoming = true,
+            startedAtMs = now(),
+            trustEpoch = pairingTrustEpoch.get(),
+        )
         active[engine.attemptId] = managed
+        debug(SessionHandshakeDebugEventKind.Started)
         diagnosticEvents?.emit(DiagnosticEventIds.HandshakeStarted)
         processLocked(managed, started.result)
     }
@@ -338,6 +388,13 @@ class SessionHandshakeController(
             managed.retryIndex = 0
             managed.nextRetryAtMs = now() + SessionHandshakeProtocol.RETRY_DELAYS_MS.first()
             sends.forEach {
+                SessionHandshakeCodec.decode(it).first?.let { sent ->
+                    debug(
+                        SessionHandshakeDebugEventKind.ActionSent,
+                        sent.message.type,
+                        sent.header.messageSequence,
+                    )
+                }
                 if (!transport.send(
                         managed.endpoint,
                         it,
@@ -363,6 +420,7 @@ class SessionHandshakeController(
                 )
             }
             active.remove(managed.engine.attemptId)
+            debug(SessionHandshakeDebugEventKind.Authenticated)
             diagnosticEvents?.emit(DiagnosticEventIds.HandshakeSucceeded)
             eventListener?.onAuthenticated(bootstrap)
         }
@@ -378,6 +436,7 @@ class SessionHandshakeController(
 
     private fun record(result: SessionHandshakeEngineResult): SessionHandshakeEngineResult {
         if (result.error == SessionHandshakeError.None) return result
+        debug(SessionHandshakeDebugEventKind.Failed, error = result.error)
         lastError = result.error
         when (result.error) {
             SessionHandshakeError.SignatureFailure -> counters.serverAuthFailures += 1
@@ -389,6 +448,15 @@ class SessionHandshakeController(
             else -> Unit
         }
         return result
+    }
+
+    private fun debug(
+        kind: SessionHandshakeDebugEventKind,
+        messageType: SessionHandshakeMessageType? = null,
+        messageSequence: Int? = null,
+        error: SessionHandshakeError? = null,
+    ) {
+        debugObserver?.onEvent(SessionHandshakeDebugEvent(kind, messageType, messageSequence, error))
     }
 
     private fun emitHandshakeFailure(error: SessionHandshakeError) {
@@ -460,7 +528,16 @@ class SessionHandshakeController(
         }
     }
 
-    private data class ManagedAttempt(val engine: SessionHandshakeEngine, val endpoint: HandshakeTransportEndpoint, val incoming: Boolean, val startedAtMs: Long, var outbound: List<ByteArray> = emptyList(), var retryIndex: Int = 0, var nextRetryAtMs: Long = 0L)
+    private data class ManagedAttempt(
+        val engine: SessionHandshakeEngine,
+        val endpoint: HandshakeTransportEndpoint,
+        val incoming: Boolean,
+        val startedAtMs: Long,
+        val trustEpoch: Long,
+        var outbound: List<ByteArray> = emptyList(),
+        var retryIndex: Int = 0,
+        var nextRetryAtMs: Long = 0L,
+    )
     private data class CompletedAttempt(
         val endpoint: HandshakeTransportEndpoint,
         val sessionId: io.warpnect.session.SessionId,

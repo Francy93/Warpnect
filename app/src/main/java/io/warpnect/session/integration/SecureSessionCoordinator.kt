@@ -1,5 +1,6 @@
 package io.warpnect.session.integration
 
+import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.SessionRole
 import io.warpnect.session.discovery.DiscoveryPresenceStatus
 import io.warpnect.session.lifecycle.DisconnectReason
@@ -18,6 +19,7 @@ class SecureSessionCoordinator(
     private val pipelineFactory: SessionPipelineFactory,
     private val lifecycleFactory: SessionLifecycleSessionFactory,
     private val hostRegistry: HostSessionRuntimeRegistry? = null,
+    private val debugObserver: SessionStartupDebugObserver = SessionStartupDebugObserver.None,
 ) : AutoCloseable {
     private val lock = Any()
     private var state = SecureSessionCoordinatorState.Idle
@@ -31,9 +33,14 @@ class SecureSessionCoordinator(
     private var lastStage: SecureSessionIntegrationStage? = null
     private var lastError = SecureSessionIntegrationError.None
     private var closed = false
+    private var discoverySnapshotPublishedListener: ((Int) -> Unit)? = null
 
     private val _snapshot = MutableStateFlow(snapshotLocked())
     val snapshot: StateFlow<SecureSessionCoordinatorSnapshot> = _snapshot.asStateFlow()
+
+    init {
+        phaseDriver.setDiscoveryUpdateListener(::onDiscoveryUpdated)
+    }
 
     fun startDiscovery(): SessionIntegrationResult {
         val permitted = synchronized(lock) {
@@ -57,7 +64,7 @@ class SecureSessionCoordinator(
 
     /** Called by the existing Phase 5 control scheduler; it never starts a per-session worker. */
     fun advance() {
-        synchronized(lock) {
+        val discoveryActive = synchronized(lock) {
             if (closed || state in setOf(
                     SecureSessionCoordinatorState.Closed,
                     SecureSessionCoordinatorState.Failed,
@@ -65,9 +72,59 @@ class SecureSessionCoordinator(
             ) {
                 return
             }
+            state == SecureSessionCoordinatorState.Discovering
         }
         phaseDriver.advance()
+        if (discoveryActive) {
+            val discoveryFailure = phaseDriver.discoveryFailure()
+            if (discoveryFailure != SecureSessionIntegrationError.None) {
+                fail(0L, SecureSessionIntegrationStage.Discovery, discoveryFailure)
+                return
+            }
+            synchronized(lock) { publishLocked() }
+        }
         synchronized(lock) { runtime }?.advance()
+    }
+
+    /** Leaves client browsing without terminally closing the reusable application-scoped controller. */
+    fun cancelDiscovery(): SessionIntegrationResult {
+        if (localRole != SessionRole.Client) return result(SecureSessionIntegrationError.InvalidPresence)
+        val permitted = synchronized(lock) {
+            if (closed || state !in setOf(
+                    SecureSessionCoordinatorState.Discovering,
+                    SecureSessionCoordinatorState.Failed,
+                )
+            ) {
+                false
+            } else {
+                ++currentToken
+                state = SecureSessionCoordinatorState.Stopping
+                publishLocked()
+                true
+            }
+        }
+        if (!permitted) {
+            return result(
+                if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy,
+            )
+        }
+        phaseDriver.stopDiscovery()
+        synchronized(lock) {
+            if (!closed) {
+                selectedRequest = null
+                pairingVerificationPrompt = null
+                state = SecureSessionCoordinatorState.Idle
+                lastStage = SecureSessionIntegrationStage.Discovery
+                lastError = SecureSessionIntegrationError.None
+                publishLocked()
+            }
+        }
+        return result(SecureSessionIntegrationError.None)
+    }
+
+    /** The application owner republishes its immutable UI snapshot after an accepted cache update. */
+    fun setDiscoverySnapshotPublishedListener(listener: ((Int) -> Unit)?) = synchronized(lock) {
+        discoverySnapshotPublishedListener = listener
     }
 
     /** Exposes only the bounded ephemeral discovery cache needed by the normal Client chooser. */
@@ -108,7 +165,7 @@ class SecureSessionCoordinator(
         return result(error)
     }
 
-    /** Pairing is opt-in. Success deliberately creates a fresh RFC-005D connection attempt. */
+    /** A selected-peer connection begins RFC-005C only after RFC-005D proves trust is absent. */
     fun beginExplicitPairing(): SessionIntegrationResult {
         val requestAndToken = synchronized(lock) {
             val request = selectedRequest
@@ -133,10 +190,18 @@ class SecureSessionCoordinator(
     }
 
     fun approvePairing(): SessionIntegrationResult {
-        val token = synchronized(lock) {
-            if (closed || state != SecureSessionCoordinatorState.Pairing) null else currentToken
-        } ?: return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
+        val token = pairingDecisionToken()
+            ?: return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
         val error = phaseDriver.approvePairing()
+        if (error != SecureSessionIntegrationError.None) fail(token, SecureSessionIntegrationStage.Pairing, error)
+        return result(error)
+    }
+
+    /** Preserves RFC-005C's explicit user rejection rather than treating it as a local UI close. */
+    fun rejectPairing(): SessionIntegrationResult {
+        val token = pairingDecisionToken()
+            ?: return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
+        val error = phaseDriver.rejectPairing()
         if (error != SecureSessionIntegrationError.None) fail(token, SecureSessionIntegrationStage.Pairing, error)
         return result(error)
     }
@@ -236,6 +301,7 @@ class SecureSessionCoordinator(
         val owned = synchronized(lock) {
             if (closed) return
             closed = true
+            discoverySnapshotPublishedListener = null
             state = SecureSessionCoordinatorState.Stopping
             ++currentToken
             reconnectingRuntime = null
@@ -245,6 +311,7 @@ class SecureSessionCoordinator(
             hostRegistry?.remove(it.sessionId, it.generation)
             it.close(DisconnectReason.ApplicationStopping)
         }
+        phaseDriver.setDiscoveryUpdateListener(null)
         phaseDriver.cancel()
         phaseDriver.stopDiscovery()
         phaseDriver.close()
@@ -300,6 +367,7 @@ class SecureSessionCoordinator(
         }
 
         override fun onAuthenticated(bootstrap: io.warpnect.session.handshake.AuthenticatedSessionBootstrap) {
+            emitDebug(SessionStartupDebugEventKind.Authenticated)
             if (!setState(token, SecureSessionCoordinatorState.Securing, SecureSessionIntegrationStage.Security)) {
                 bootstrap.rootSecret.close()
                 bootstrap.admissionReservation?.close()
@@ -310,6 +378,7 @@ class SecureSessionCoordinator(
                 fail(token, SecureSessionIntegrationStage.Security, secure.error)
                 return
             }
+            emitDebug(SessionStartupDebugEventKind.SecureControlReady)
             val request = synchronized(lock) { selectedRequest } ?: run {
                 fail(token, SecureSessionIntegrationStage.Security, SecureSessionIntegrationError.Cancelled)
                 return
@@ -322,6 +391,7 @@ class SecureSessionCoordinator(
             ) {
                 return
             }
+            emitDebug(SessionStartupDebugEventKind.CapabilityNegotiationStarted)
             val error = phaseDriver.beginCapabilities(requireNotNull(secure.bootstrap), request, listenerFor(token))
             if (error != SecureSessionIntegrationError.None) {
                 fail(
@@ -333,6 +403,7 @@ class SecureSessionCoordinator(
         }
 
         override fun onCapabilitiesNegotiated(bootstrap: io.warpnect.session.capability.NegotiatedSessionBootstrap) {
+            emitDebug(SessionStartupDebugEventKind.CapabilityNegotiated)
             val request = synchronized(lock) {
                 if (!isCurrentLocked(token)) return
                 selectedRequest
@@ -345,11 +416,13 @@ class SecureSessionCoordinator(
             ) {
                 return
             }
+            emitDebug(SessionStartupDebugEventKind.SessionSetupStarted)
             val error = phaseDriver.beginSetup(bootstrap, request, listenerFor(token))
             if (error != SecureSessionIntegrationError.None) fail(token, SecureSessionIntegrationStage.Setup, error)
         }
 
         override fun onPrepared(bootstrap: PreparedSessionBootstrap) {
+            emitDebug(SessionStartupDebugEventKind.SessionPrepared)
             consumePreparedOrReconnect(token, bootstrap)
         }
 
@@ -359,6 +432,10 @@ class SecureSessionCoordinator(
     }
 
     private fun consumePrepared(token: Long, bootstrap: PreparedSessionBootstrap) {
+        if (bootstrap.channels.any { it.descriptor.kind == SessionChannelKind.Video }) {
+            emitDebug(SessionStartupDebugEventKind.VideoChannelReady)
+        }
+        emitDebug(SessionStartupDebugEventKind.MediaStartRequested)
         if (!setState(token, SecureSessionCoordinatorState.Starting, SecureSessionIntegrationStage.Lifecycle)) {
             bootstrap.close()
             return
@@ -393,6 +470,7 @@ class SecureSessionCoordinator(
             fail(token, stageFor(pipelineError), pipelineError)
             return
         }
+        emitDebug(SessionStartupDebugEventKind.MediaStartAccepted)
         val candidate = RunningSessionRuntime(lifecycle, pipeline)
         val registryError = if (localRole == SessionRole.Host) {
             hostRegistry?.register(candidate) ?: SecureSessionIntegrationError.RegistryCapacityExceeded
@@ -416,6 +494,7 @@ class SecureSessionCoordinator(
             lastError = SecureSessionIntegrationError.None
             publishLocked()
         }
+        emitDebug(SessionStartupDebugEventKind.RuntimeRunning)
         phaseDriver.refreshHostAvailability()
     }
 
@@ -492,10 +571,12 @@ class SecureSessionCoordinator(
     }
 
     private fun fail(token: Long, stage: SecureSessionIntegrationStage, error: SecureSessionIntegrationError) {
+        emitDebug(SessionStartupDebugEventKind.Failed, error)
         synchronized(lock) {
             if (token != 0L && !isCurrentLocked(token)) return
             lastStage = stage
             lastError = error
+            pairingVerificationPrompt = null
             state = if (localRole == SessionRole.Host) {
                 SecureSessionCoordinatorState.Discovering
             } else {
@@ -503,8 +584,28 @@ class SecureSessionCoordinator(
             }
             publishLocked()
         }
-        if (localRole == SessionRole.Client) phaseDriver.cancel()
+        if (stage == SecureSessionIntegrationStage.Discovery) {
+            phaseDriver.stopDiscovery()
+        } else if (localRole == SessionRole.Client) {
+            phaseDriver.cancel()
+        }
         phaseDriver.refreshHostAvailability()
+    }
+
+    private fun emitDebug(kind: SessionStartupDebugEventKind, error: SecureSessionIntegrationError? = null) {
+        debugObserver.onEvent(SessionStartupDebugEvent(kind, error))
+    }
+
+    /**
+     * The Client exposes its prompt through the coordinator's Pairing state. A Host responder is
+     * intentionally still Discovering while it waits for inbound attempts, so its current prompt
+     * remains owned by the Host phase driver. Both paths are one existing RFC-005C decision.
+     */
+    private fun pairingDecisionToken(): Long? {
+        val hostPromptPending = localRole == SessionRole.Host && phaseDriver.pendingPairingVerificationPrompt() != null
+        return synchronized(lock) {
+            if (closed || (state != SecureSessionCoordinatorState.Pairing && !hostPromptPending)) null else currentToken
+        }
     }
 
     /** Called only by the RFC-005H recovery delegate; it never reuses generation-N keys. */
@@ -578,8 +679,30 @@ class SecureSessionCoordinator(
         _snapshot.value = snapshotLocked()
     }
 
+    /** The platform discovery control context calls this only after an accepted cache mutation. */
+    private fun onDiscoveryUpdated() {
+        val notification = synchronized(lock) {
+            if (closed || state != SecureSessionCoordinatorState.Discovering) {
+                null
+            } else {
+                publishLocked()
+                val hostCount = _snapshot.value.discovery?.candidateCount ?: 0
+                discoverySnapshotPublishedListener?.let { listener -> { listener(hostCount) } }
+            }
+        }
+        notification?.invoke()
+    }
+
     private fun snapshotLocked(): SecureSessionCoordinatorSnapshot {
         val owned = runtime
+        // The long-lived Host stays Discovering while its responder owns a transient SAS prompt.
+        // Read that live responder state on each cold snapshot so a remote/local rejection cannot
+        // leave a cached prompt visible after RFC-005C has already terminated the attempt.
+        val prompt = if (localRole == SessionRole.Host) {
+            phaseDriver.pendingPairingVerificationPrompt()
+        } else {
+            pairingVerificationPrompt
+        }
         return SecureSessionCoordinatorSnapshot(
             state = state,
             localRole = localRole,
@@ -592,7 +715,8 @@ class SecureSessionCoordinator(
             activePathKind = owned?.lifecycle?.activePathKind,
             runningChannels = owned?.pipeline?.snapshot()?.selectedChannels ?: emptySet(),
             activeRuntimeCount = hostRegistry?.snapshotCount() ?: if (owned == null) 0 else 1,
-            pairingVerificationPrompt = pairingVerificationPrompt ?: phaseDriver.pendingPairingVerificationPrompt(),
+            pairingVerificationPrompt = prompt,
+            discovery = phaseDriver.discoverySnapshot(),
             lastStage = lastStage,
             lastError = lastError,
         )

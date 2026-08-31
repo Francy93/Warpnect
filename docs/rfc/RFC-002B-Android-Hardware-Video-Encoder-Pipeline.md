@@ -44,6 +44,21 @@ Hardware classification is explicit. On API levels with reliable framework metad
 
 Candidate selection is deterministic. After filtering, Warpnect prefers non-alias codecs and sorts by canonical name and codec name.
 
+### CBR Metadata Compatibility
+
+Strict CBR remains the required Android encoder policy. Real vendor hardware can report
+`EncoderCapabilities.isBitrateModeSupported(CBR)` and `CodecCapabilities.isFormatSupported()`
+as unsupported even though the exact production CBR `MediaFormat` successfully completes
+`configure()`, input-Surface creation, and `start()`.
+
+When every other mandatory hardware AVC predicate passes and CBR metadata alone rejects a
+candidate, Warpnect may perform one bounded, cold exact-format probe using
+`AndroidVideoEncoderFormatFactory`. The probe runs outside Main, starts no capture or Session,
+produces and persists no media, releases its codec and Surface immediately, and caches the
+safe result per exact request for the process lifetime. A failed probe leaves the candidate
+unavailable. This compatibility check never relaxes CBR to VBR or CBR_FD and introduces no
+Video Payload V1, SCL, Session-wire, or negotiated bitrate-mode semantic change.
+
 ## Encoder Request
 
 `VideoEncoderRequest` includes:

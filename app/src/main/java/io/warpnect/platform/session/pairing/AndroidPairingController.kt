@@ -14,6 +14,7 @@ import io.warpnect.session.pairing.PairingCompletedListener
 import io.warpnect.session.pairing.PairingConfig
 import io.warpnect.session.pairing.PairingController
 import io.warpnect.session.pairing.PairingControllerResult
+import io.warpnect.session.pairing.PairingDebugObserver
 import io.warpnect.session.pairing.PairingEventListener
 import io.warpnect.session.pairing.PairingMonotonicClock
 import io.warpnect.session.pairing.PairingSnapshot
@@ -37,6 +38,7 @@ class AndroidPairingController(
     eventListener: PairingEventListener? = null,
     completedListener: PairingCompletedListener? = null,
     diagnosticEvents: DiagnosticEventWriter? = null,
+    debugObserver: PairingDebugObserver? = null,
 ) : AutoCloseable {
     private val controlThread = HandlerThread(THREAD_NAME).apply { start() }
     private val controlHandler = Handler(controlThread.looper)
@@ -55,6 +57,7 @@ class AndroidPairingController(
         eventListener = eventListener,
         completedListener = completedListener,
         diagnosticEvents = diagnosticEvents,
+        debugObserver = debugObserver,
     )
 
     @Volatile

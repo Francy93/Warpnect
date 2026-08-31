@@ -52,6 +52,56 @@ import org.junit.Test
 
 class SessionLifecycleControllerTest {
     @Test
+    fun startRejectsBootstrapCreatedInAnIncompatibleClockDomain() {
+        val fixture = fixture(
+            SessionRole.Client,
+            TestControl(),
+            contextBase = 880,
+            bootstrapCreatedAtMs = 1_000,
+        )
+        val events = mutableListOf<SessionLifecycleDebugEvent>()
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            TestClock(999),
+            debugObserver = SessionLifecycleDebugObserver(events::add),
+        )
+
+        assertEquals(SessionLifecycleError.InvalidState, controller.start())
+        assertEquals(
+            listOf(
+                SessionLifecycleDebugEventKind.StartRequested,
+                SessionLifecycleDebugEventKind.StartRejectedBootstrapTransfer,
+            ),
+            events.map(SessionLifecycleDebugEvent::kind),
+        )
+    }
+
+    @Test
+    fun startReportsCapacityPromotionRejectionWithoutEnteringLifecycle() {
+        val clock = TestClock(100)
+        val fixture = fixture(SessionRole.Host, TestControl(), contextBase = 900)
+        val events = mutableListOf<SessionLifecycleDebugEvent>()
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            clock,
+            capacityOwner = TestCapacityOwner(promoteResult = false),
+            debugObserver = SessionLifecycleDebugObserver(events::add),
+        )
+
+        assertEquals(SessionLifecycleError.InvalidState, controller.start())
+        assertEquals(
+            listOf(
+                SessionLifecycleDebugEventKind.StartRequested,
+                SessionLifecycleDebugEventKind.StartRejectedCapacityPromotion,
+            ),
+            events.map(SessionLifecycleDebugEvent::kind),
+        )
+        assertEquals(SessionLifecycleError.InvalidState, events.last().error)
+    }
+
+    @Test
     fun acceptedLifecycleTransitionsAreRecordedOnceWithRetainedSessionScope() {
         val clock = TestClock(100)
         val control = TestControl()
@@ -453,6 +503,7 @@ class SessionLifecycleControllerTest {
         telemetry: SessionLifecycleTelemetry? = null,
         pathTelemetry: Map<PathId, SessionPathTelemetry> = emptyMap(),
         diagnosticEvents: SessionLifecycleDiagnosticEvents? = null,
+        debugObserver: SessionLifecycleDebugObserver = SessionLifecycleDebugObserver.None,
     ): SessionLifecycleController = SessionLifecycleController(
         bootstrap = fixture.bootstrap,
         pathProvider = FixturePathProvider(fixture),
@@ -464,6 +515,7 @@ class SessionLifecycleControllerTest {
         telemetry = telemetry,
         pathTelemetry = pathTelemetry,
         diagnosticEvents = diagnosticEvents,
+        debugObserver = debugObserver,
     )
 
     private fun assertCounter(snapshot: TelemetrySnapshot, id: TelemetryMetricId) {
@@ -481,6 +533,7 @@ class SessionLifecycleControllerTest {
         standby: Boolean = true,
         generation: SessionGeneration = SessionGeneration.Initial,
         session: SessionId = sessionId,
+        bootstrapCreatedAtMs: Long = 0,
     ): Fixture {
         val local = if (role == SessionRole.Client) clientDevice else hostDevice
         val remote = if (role == SessionRole.Client) hostDevice else clientDevice
@@ -540,8 +593,8 @@ class SessionLifecycleControllerTest {
             control,
             runtime,
             null,
-            0,
-            30_000,
+            bootstrapCreatedAtMs,
+            bootstrapCreatedAtMs + 30_000,
             preparedConfigurationHash = ByteArray(32) { 9 },
         )
         return Fixture(
@@ -751,14 +804,16 @@ class SessionLifecycleControllerTest {
         override fun close() = Unit
     }
 
-    private class TestCapacityOwner : SessionLifecycleCapacityOwner {
+    private class TestCapacityOwner(
+        private val promoteResult: Boolean = true,
+    ) : SessionLifecycleCapacityOwner {
         var promoteCount = 0
         var recoveryCount = 0
         var closeCount = 0
 
         override fun promote(sessionId: SessionId, peerDeviceId: DeviceId, generation: SessionGeneration): Boolean {
             promoteCount += 1
-            return true
+            return promoteResult
         }
 
         override fun beginRecovery(

@@ -8,7 +8,6 @@ import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.view.SurfaceView
 import io.warpnect.CoreOrchestrator
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
@@ -24,6 +23,7 @@ import io.warpnect.platform.audio.capture.AndroidSystemAudioCaptureController
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
 import io.warpnect.platform.diagnostics.AndroidReportSupport
+import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.AndroidInputInjectionController
@@ -50,6 +50,9 @@ import io.warpnect.platform.session.setup.AndroidExactStreamConfigurationValidat
 import io.warpnect.platform.telemetry.AndroidTelemetryClock
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
+import io.warpnect.platform.video.encoder.VideoEncoderCbrCapabilityDebugObserver
+import io.warpnect.platform.video.render.AndroidVideoRenderController
+import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
 import io.warpnect.session.PathId
 import io.warpnect.session.PathPreferencePolicy
 import io.warpnect.session.SecondaryPathPolicy
@@ -59,10 +62,12 @@ import io.warpnect.session.SessionManagerConfig
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.capability.CapabilityNegotiationController
+import io.warpnect.session.capability.CapabilityNegotiationDebugObserver
 import io.warpnect.session.capability.CapabilityNegotiationMonotonicClock
 import io.warpnect.session.capability.CapabilityRequest
 import io.warpnect.session.capability.FeatureRequirement
 import io.warpnect.session.capability.HostCapabilityPolicy
+import io.warpnect.session.capability.LocalCapabilityAvailability
 import io.warpnect.session.capability.MicrophoneRoutingSelection
 import io.warpnect.session.discovery.DiscoveryBackendPolicy
 import io.warpnect.session.discovery.DiscoveryConfig
@@ -72,8 +77,8 @@ import io.warpnect.session.discovery.DiscoveryRouteDescriptor
 import io.warpnect.session.discovery.DiscoveryRouteKind
 import io.warpnect.session.discovery.SessionManagerHostAvailabilityProvider
 import io.warpnect.session.handshake.CurrentDiscoveryPresenceProvider
-import io.warpnect.session.handshake.HandshakeTransportEndpoint
 import io.warpnect.session.handshake.SessionHandshakeController
+import io.warpnect.session.handshake.SessionHandshakeDebugObserver
 import io.warpnect.session.identity.LocalDeviceIdentityResult
 import io.warpnect.session.integration.ClientCapabilityNegotiationControllerFactory
 import io.warpnect.session.integration.ClientPairingControllerFactory
@@ -100,9 +105,11 @@ import io.warpnect.session.integration.SecureSessionConnectRequestFactory
 import io.warpnect.session.integration.SecureSessionCoordinator
 import io.warpnect.session.integration.SessionLifecycleControllerProvider
 import io.warpnect.session.integration.SessionPipelineRuntime
+import io.warpnect.session.integration.SessionStartupDebugObserver
 import io.warpnect.session.lifecycle.LifecyclePathBinding
 import io.warpnect.session.lifecycle.SessionContinuityParticipant
 import io.warpnect.session.lifecycle.SessionLifecycleController
+import io.warpnect.session.lifecycle.SessionLifecycleDebugObserver
 import io.warpnect.session.lifecycle.SessionLifecycleError
 import io.warpnect.session.lifecycle.SessionLifecyclePathProvider
 import io.warpnect.session.lifecycle.SessionLifecycleReconnectDelegate
@@ -111,6 +118,7 @@ import io.warpnect.session.lifecycle.SessionRecoveryIntent
 import io.warpnect.session.pairing.JcaPairingCryptoProvider
 import io.warpnect.session.pairing.PairingCompletedListener
 import io.warpnect.session.pairing.PairingController
+import io.warpnect.session.pairing.PairingDebugObserver
 import io.warpnect.session.pairing.PairingError
 import io.warpnect.session.pairing.PairingEventListener
 import io.warpnect.session.pairing.PairingVerificationPrompt
@@ -121,7 +129,7 @@ import io.warpnect.session.setup.HostSessionSetupPolicy
 import io.warpnect.session.setup.PathSocketBinding
 import io.warpnect.session.setup.PreparedSessionBootstrap
 import io.warpnect.session.setup.SessionSetupController
-import io.warpnect.session.setup.SessionSetupMonotonicClock
+import io.warpnect.session.setup.SessionSetupDebugObserver
 import io.warpnect.session.setup.SessionSetupPreferences
 import io.warpnect.session.setup.SessionSetupRuntime
 import io.warpnect.session.setup.SetupPathCandidate
@@ -141,9 +149,11 @@ import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.telemetry.TelemetryScope
 import io.warpnect.video.decoder.VideoDecoderConfig
 import io.warpnect.video.encoder.VideoEncoderRequest
-import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -192,8 +202,10 @@ class AndroidSecureSessionComposition private constructor(
             ),
         )
         private val crypto = JcaPairingCryptoProvider()
+        private val routeLocalAddressResolver = AndroidRouteLocalAddressResolver()
         private val uiResources = AndroidSessionUiResources()
         private val hostRegistry = HostSessionRuntimeRegistry()
+        private val discoveryDebugLog = AndroidDiscoveryDebugLog(context)
         private val clientDiscovery = AndroidLocalDiscoveryController(
             context,
             DiscoveryConfig(
@@ -241,12 +253,13 @@ class AndroidSecureSessionComposition private constructor(
             DefaultAndroidSessionPipelineBindings(
                 context,
                 AndroidSessionPipelineResources(
-                    clientRenderSurface = uiResources::renderSurface,
+                    bindClientVideoRenderer = uiResources::bindClientVideoRenderer,
                     clientInputSurface = uiResources::inputCaptureSurface,
                 ),
             ),
             telemetryHub,
             diagnosticEventHub,
+            VideoPipelineStartDebugObserver(discoveryDebugLog::videoPipelineStart),
         )
 
         fun create(): AndroidSecureSessionComposition {
@@ -264,6 +277,10 @@ class AndroidSecureSessionComposition private constructor(
             }
             lateinit var client: SecureSessionCoordinator
             lateinit var host: SecureSessionCoordinator
+            val applicationReference = AtomicReference<SecureSessionApplicationController?>()
+            val controlScheduler = AndroidSessionControlScheduler {
+                applicationReference.get()?.advance()
+            }
 
             val clientDriver = ControllerBackedClientSessionPhaseDriver(
                 discovery = clientDiscovery,
@@ -284,6 +301,7 @@ class AndroidSecureSessionComposition private constructor(
                         diagnosticEvents = diagnosticEventHub.writer(
                             TelemetryScope.Component(TelemetryComponent.Handshake),
                         ),
+                        debugObserver = SessionHandshakeDebugObserver(discoveryDebugLog::handshake),
                     )
                 },
                 pairingTransportFactory = ClientPairingTransportFactory {
@@ -299,6 +317,7 @@ class AndroidSecureSessionComposition private constructor(
                         diagnosticEvents = diagnosticEventHub.writer(
                             TelemetryScope.Component(TelemetryComponent.Pairing),
                         ),
+                        debugObserver = PairingDebugObserver(discoveryDebugLog::pairing),
                     )
                 },
                 protection = SessionProtectionController(NativeSessionProtectionRuntimeFactory),
@@ -308,15 +327,22 @@ class AndroidSecureSessionComposition private constructor(
                         capabilityCollector(),
                         monotonicCapabilityClock(),
                         onCompleted = completed,
+                        debugObserver = CapabilityNegotiationDebugObserver(discoveryDebugLog::capability),
                     )
                 },
                 setupFactory = ClientSessionSetupControllerFactory { completed ->
-                    SessionSetupController(monotonicSetupClock(), onCompleted = completed)
+                    SessionSetupController(
+                        monotonicSetupClock(),
+                        onCompleted = completed,
+                        debugObserver = SessionSetupDebugObserver(discoveryDebugLog::sessionSetup),
+                    )
                 },
                 setupRuntimeFactory = ClientSessionSetupRuntimeFactory { bootstrap, request ->
                     sessionSetupRuntime(bootstrap, directRouteState.routeTokenFor(request))
                 },
                 onConnectionRequest = directRouteState::select,
+                onHandshakeStarted = discoveryDebugLog::handshakeStarted,
+                onHandshakeFailed = discoveryDebugLog::handshakeFailed,
             )
 
             val lifecycleFactory = ControllerManagedLifecycleSessionFactory(
@@ -335,6 +361,7 @@ class AndroidSecureSessionComposition private constructor(
                 phaseDriver = clientDriver,
                 pipelineFactory = pipelineFactory,
                 lifecycleFactory = lifecycleFactory,
+                debugObserver = SessionStartupDebugObserver(discoveryDebugLog::sessionStartup),
             )
 
             lateinit var hostDriver: ControllerBackedHostSessionPhaseDriver
@@ -356,15 +383,25 @@ class AndroidSecureSessionComposition private constructor(
                         },
                         eventListener = listener,
                         diagnosticEvents = diagnosticEventHub.writer(TelemetryScope.Component(TelemetryComponent.Handshake)),
+                        debugObserver = SessionHandshakeDebugObserver(discoveryDebugLog::handshake),
                     )
                 },
                 protection = SessionProtectionController(NativeSessionProtectionRuntimeFactory),
                 secureControlFactory = hostSecureControlFactory(),
                 capabilityFactory = HostCapabilityNegotiationControllerFactory { completed ->
-                    CapabilityNegotiationController(capabilityCollector(), monotonicCapabilityClock(), onCompleted = completed)
+                    CapabilityNegotiationController(
+                        capabilityCollector(),
+                        monotonicCapabilityClock(),
+                        onCompleted = completed,
+                        debugObserver = CapabilityNegotiationDebugObserver(discoveryDebugLog::capability),
+                    )
                 },
                 setupFactory = HostSessionSetupControllerFactory { completed ->
-                    SessionSetupController(monotonicSetupClock(), onCompleted = completed)
+                    SessionSetupController(
+                        monotonicSetupClock(),
+                        onCompleted = completed,
+                        debugObserver = SessionSetupDebugObserver(discoveryDebugLog::sessionSetup),
+                    )
                 },
                 setupRuntimeFactory = HostSessionSetupRuntimeFactory { bootstrap ->
                     sessionSetupRuntime(bootstrap, null)
@@ -378,8 +415,11 @@ class AndroidSecureSessionComposition private constructor(
                         signer,
                         trustedPeers,
                         diagnosticEventHub.writer(TelemetryScope.Component(TelemetryComponent.Pairing)),
+                        PairingDebugObserver(discoveryDebugLog::pairing),
                     )
                 },
+                onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
+                onHostReadinessStopped = discoveryDebugLog::hostLifecycleStopped,
             )
             host = SecureSessionCoordinator(
                 localRole = SessionRole.Host,
@@ -387,6 +427,7 @@ class AndroidSecureSessionComposition private constructor(
                 pipelineFactory = pipelineFactory,
                 lifecycleFactory = lifecycleFactory,
                 hostRegistry = hostRegistry,
+                debugObserver = SessionStartupDebugObserver(discoveryDebugLog::sessionStartup),
             )
 
             val application = SecureSessionApplicationController(
@@ -399,7 +440,10 @@ class AndroidSecureSessionComposition private constructor(
                         setupPreferences = productionSetupPreferences(),
                     )
                 },
+                onClientDiscoverySnapshotPublished = discoveryDebugLog::snapshotPublished,
+                controlDispatcher = controlScheduler,
             )
+            applicationReference.set(application)
             val orchestrator = CoreOrchestrator(
                 localDiscoveryController = clientDiscovery,
                 localDeviceIdentityRepository = identityRepository,
@@ -417,7 +461,7 @@ class AndroidSecureSessionComposition private constructor(
                 diagnosticEventHub,
                 reportExportController,
                 hostRegistry,
-                AndroidSessionControlScheduler(application),
+                controlScheduler,
                 directPathBackend,
             )
         }
@@ -465,7 +509,17 @@ class AndroidSecureSessionComposition private constructor(
                 SessionRole.Client -> directRouteState.isUsable()
             }
             val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
-            val encoder = AndroidVideoEncoderDiscovery().query(
+            val encoder = AndroidVideoEncoderDiscovery(
+                debugObserver = object : VideoEncoderCbrCapabilityDebugObserver {
+                    override fun onDecision(decision: io.warpnect.platform.video.encoder.CbrCapabilityDecision) {
+                        discoveryDebugLog.encoderCbrCapability(decision)
+                    }
+
+                    override fun onActiveProbeStarted() {
+                        discoveryDebugLog.encoderCbrActiveProbeStarted()
+                    }
+                },
+            ).query(
                 VideoEncoderRequest(
                     width = videoMode.width,
                     height = videoMode.height,
@@ -519,7 +573,7 @@ class AndroidSecureSessionComposition private constructor(
             } else {
                 null
             }
-            return AndroidCapabilityProbeSnapshot(
+            val snapshot = AndroidCapabilityProbeSnapshot(
                 lanSecurePathAvailable = true,
                 directPathBackendImplemented = directImplemented,
                 directPathAvailable = directAvailable,
@@ -536,16 +590,50 @@ class AndroidSecureSessionComposition private constructor(
                     CapabilityBits.INPUT_TOUCHSCREEN or CapabilityBits.INPUT_TOUCHPAD or CapabilityBits.INPUT_STYLUS,
                 separateMicrophonePerPeerAvailable = false,
             )
+            val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
+            val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
+            discoveryDebugLog.localCapabilityProbe(
+                role = role.name,
+                videoAvailable = videoAvailable,
+                videoError = encoder.error.name,
+                inputAvailable = local.input.injectionKinds != 0,
+                inputError = injection?.lastError?.name ?: "NotApplicable",
+            )
+            return snapshot
         }
 
         private fun sessionSetupRuntime(
             bootstrap: io.warpnect.session.capability.NegotiatedSessionBootstrap,
             directRouteToken: String?,
         ): SessionSetupRuntime? {
+            discoveryDebugLog.routeLocalAddressResolutionStarted()
             val remoteAddress = requireNotNull(
                 InetAddress.getByAddress(bootstrap.endpoint.addressBytes()).hostAddress,
             )
-            val localAddress = localAddressFor(bootstrap.endpoint) ?: return null
+            val routeResolution = routeLocalAddressResolver.resolveDetailed(bootstrap.endpoint)
+            val localAddress = when (routeResolution) {
+                is RouteLocalAddressResolution.Resolved -> {
+                    discoveryDebugLog.routeLocalAddressResolutionSucceeded(routeResolution.family.name)
+                    routeResolution.address
+                }
+                is RouteLocalAddressResolution.Wildcard -> {
+                    discoveryDebugLog.routeLocalAddressResolutionFailed("WildcardAddress", routeResolution.family.name)
+                    return null
+                }
+                RouteLocalAddressResolution.ChannelOpenFailed -> {
+                    discoveryDebugLog.routeLocalAddressResolutionFailed("ChannelOpenFailed")
+                    return null
+                }
+                RouteLocalAddressResolution.ConnectFailed -> {
+                    discoveryDebugLog.routeLocalAddressResolutionFailed("ConnectFailed")
+                    return null
+                }
+                RouteLocalAddressResolution.LocalAddressUnavailable -> {
+                    discoveryDebugLog.routeLocalAddressResolutionFailed("LocalAddressUnavailable")
+                    return null
+                }
+            }
+            discoveryDebugLog.sessionSetupRuntimeCreated()
             val directCoordinator = directPathBackend?.createCoordinator(
                 bootstrap.secureSessionControl,
                 DirectPeerAddressResolver(clientDiscovery::directPeerAddress),
@@ -708,6 +796,8 @@ class AndroidSecureSessionComposition private constructor(
                         )
                     }
                 },
+                debugObserver = SessionLifecycleDebugObserver(discoveryDebugLog::sessionLifecycle),
+                clock = AndroidSessionMonotonicClock(),
             )
             controllerReference.set(controller)
             val directPathIds = (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath))
@@ -747,13 +837,6 @@ class AndroidSecureSessionComposition private constructor(
                 manager.getLinkProperties(network)?.linkAddresses?.any { linkAddress ->
                     linkAddress.address.hostAddress?.substringBefore('%') == localAddress
                 } == true
-            }
-        }.getOrNull()
-
-        private fun localAddressFor(endpoint: HandshakeTransportEndpoint): String? = runCatching {
-            DatagramSocket().use { socket ->
-                socket.connect(InetAddress.getByAddress(endpoint.addressBytes()), endpoint.port)
-                socket.localAddress.hostAddress.takeUnless { it == "0.0.0.0" || it == "::" }
             }
         }.getOrNull()
 
@@ -828,26 +911,57 @@ class AndroidSecureSessionComposition private constructor(
             SystemClock.elapsedRealtime()
         }
 
-        private fun monotonicSetupClock() = SessionSetupMonotonicClock { SystemClock.elapsedRealtime() }
+        private fun monotonicSetupClock() = AndroidSessionMonotonicClock()
     }
 }
 
 /** Ephemeral Activity-owned view references; no session keying material is ever retained here. */
 class AndroidSessionUiResources {
-    private val render = AtomicReference<SurfaceView?>()
+    private val render = AtomicReference<WarpnectVideoSurfaceView?>()
     private val input = AtomicReference<WarpnectInputCaptureView?>()
+    private val rendererLock = Any()
+    private var renderer: AndroidVideoRenderController? = null
+    private val _clientVideoRendererBound = MutableStateFlow(false)
+    val clientVideoRendererBound: StateFlow<Boolean> = _clientVideoRendererBound.asStateFlow()
 
-    fun attachClientViews(renderSurface: SurfaceView, inputSurface: WarpnectInputCaptureView) {
+    fun attachClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
         render.set(renderSurface)
+        synchronized(rendererLock) { renderer }?.let(renderSurface::attachController)
+    }
+
+    fun clearClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
+        synchronized(rendererLock) { renderer }?.detach(renderSurface)
+        render.compareAndSet(renderSurface, null)
+    }
+
+    fun attachClientInputSurface(inputSurface: WarpnectInputCaptureView) {
         input.set(inputSurface)
     }
 
-    fun clearClientViews(renderSurface: SurfaceView, inputSurface: WarpnectInputCaptureView) {
-        render.compareAndSet(renderSurface, null)
+    fun clearClientInputSurface(inputSurface: WarpnectInputCaptureView) {
         input.compareAndSet(inputSurface, null)
     }
 
-    fun renderSurface(): SurfaceView? = render.get()
+    /**
+     * Establishes the single real receiver-pipeline ownership that is allowed to request a
+     * Compose SurfaceView. It never touches a View because pipeline construction is control-path
+     * work rather than a UI callback.
+     */
+    fun bindClientVideoRenderer(value: AndroidVideoRenderController): AutoCloseable? = synchronized(rendererLock) {
+        if (renderer != null) {
+            return@synchronized null
+        }
+        renderer = value
+        _clientVideoRendererBound.value = true
+        AutoCloseable {
+            synchronized(rendererLock) {
+                if (renderer === value) {
+                    renderer = null
+                    _clientVideoRendererBound.value = false
+                }
+            }
+        }
+    }
 
     fun inputCaptureSurface(): WarpnectInputCaptureView? = input.get()
 }
@@ -902,6 +1016,7 @@ private class UnavailableMigrationAdapter : io.warpnect.session.lifecycle.Sessio
 private class AndroidHostPairingResponder private constructor(
     private val controller: AndroidPairingController,
     private val prompt: AtomicReference<PairingVerificationPrompt?>,
+    private val pairingCompletedListener: AtomicReference<(() -> Unit)?>,
 ) : HostPairingResponder {
     override fun start(): io.warpnect.session.integration.SecureSessionIntegrationError =
         controller.openPairingWindow().error.toHostPairingIntegrationError()
@@ -911,7 +1026,23 @@ private class AndroidHostPairingResponder private constructor(
         return controller.acceptVerification(current.attemptId).error.toHostPairingIntegrationError()
     }
 
-    override fun pendingPrompt(): PairingVerificationPrompt? = prompt.get()
+    override fun rejectPairing(): io.warpnect.session.integration.SecureSessionIntegrationError {
+        val current = prompt.get() ?: return io.warpnect.session.integration.SecureSessionIntegrationError.PairingRequired
+        return controller.rejectVerification(current.attemptId).error.toHostPairingDecisionIntegrationError()
+    }
+
+    override fun pendingPrompt(): PairingVerificationPrompt? {
+        val current = prompt.get() ?: return null
+        if (controller.snapshot().state == io.warpnect.session.pairing.PairingControllerState.AwaitingUserConfirmation) {
+            return current
+        }
+        prompt.compareAndSet(current, null)
+        return null
+    }
+
+    override fun setPairingCompletedListener(listener: () -> Unit) {
+        pairingCompletedListener.set(listener)
+    }
 
     override fun close() = controller.close()
 
@@ -921,17 +1052,23 @@ private class AndroidHostPairingResponder private constructor(
             signer: io.warpnect.session.identity.LocalDeviceIdentitySigner,
             trustedPeers: TrustedPeerStore,
             diagnosticEvents: io.warpnect.diagnostics.DiagnosticEventWriter,
+            debugObserver: PairingDebugObserver,
         ): AndroidHostPairingResponder? {
             val prompt = AtomicReference<PairingVerificationPrompt?>()
+            val pairingCompletedListener = AtomicReference<(() -> Unit)?>()
             val controller = AndroidPairingControllerFactory.createResponderForAdvertisedDiscovery(
                 discovery,
                 signer,
                 trustedPeers,
                 eventListener = PairingEventListener { prompt.set(it) },
-                completedListener = PairingCompletedListener { prompt.set(null) },
+                completedListener = PairingCompletedListener {
+                    prompt.set(null)
+                    pairingCompletedListener.get()?.invoke()
+                },
                 diagnosticEvents = diagnosticEvents,
+                debugObserver = debugObserver,
             ) ?: return null
-            return AndroidHostPairingResponder(controller, prompt)
+            return AndroidHostPairingResponder(controller, prompt, pairingCompletedListener)
         }
     }
 }
@@ -941,4 +1078,13 @@ private fun PairingError.toHostPairingIntegrationError(): io.warpnect.session.in
         PairingError.None -> io.warpnect.session.integration.SecureSessionIntegrationError.None
         PairingError.Closed -> io.warpnect.session.integration.SecureSessionIntegrationError.Closed
         else -> io.warpnect.session.integration.SecureSessionIntegrationError.PairingFailed
+    }
+
+/** A deliberate local SAS rejection ends only that inbound attempt; Host discovery remains ready. */
+private fun PairingError.toHostPairingDecisionIntegrationError(): io.warpnect.session.integration.SecureSessionIntegrationError =
+    when (this) {
+        PairingError.UserRejected,
+        PairingError.VerificationMismatch,
+        -> io.warpnect.session.integration.SecureSessionIntegrationError.None
+        else -> toHostPairingIntegrationError()
     }

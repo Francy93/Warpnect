@@ -44,6 +44,12 @@ interface LocalDiscoveryController : AutoCloseable {
     /** Bounded, ephemeral RFC-005B observations for an application chooser; never peer identity. */
     fun discoveredPresences(): List<DiscoveredPresence> = emptyList()
 
+    /**
+     * Cold control-path notification after the bounded candidate snapshot changes. Implementations
+     * must not invoke this from a packet or media path.
+     */
+    fun setDiscoveryUpdateListener(listener: (() -> Unit)?) = Unit
+
     fun snapshot(): DiscoverySnapshot
 }
 
@@ -54,6 +60,7 @@ class DefaultLocalDiscoveryController(
     private val clock: DiscoveryMonotonicClock,
     private val presenceIdGenerator: DiscoveryPresenceIdGenerator = SecureRandomDiscoveryPresenceIdGenerator(),
     private val availabilityProvider: HostAvailabilityProvider? = null,
+    private val onPresenceCountChanged: ((Int) -> Unit)? = null,
 ) : LocalDiscoveryController, DiscoveryBackendObserver {
     private val backendsByKind = backends.associateBy(DiscoveryBackend::kind)
     private val cache = DiscoveryPresenceCache(
@@ -87,6 +94,7 @@ class DefaultLocalDiscoveryController(
     private var browsingRequested = false
     private var advertisingPublished = false
     private var lastError = DiscoveryError.None
+    private var discoveryUpdateListener: (() -> Unit)? = null
 
     @Synchronized
     override fun prepare(): DiscoveryOperationResult {
@@ -100,6 +108,7 @@ class DefaultLocalDiscoveryController(
         if (prepared) return resultLocked(DiscoveryError.None)
 
         state = DiscoveryControllerState.Preparing
+        lastError = DiscoveryError.None
         var acceptedCount = 0
         selectedKinds().forEach { kind ->
             val backend = backendsByKind[kind]
@@ -248,6 +257,11 @@ class DefaultLocalDiscoveryController(
     override fun discoveredPresences(): List<DiscoveredPresence> = cache.snapshot().candidates
 
     @Synchronized
+    override fun setDiscoveryUpdateListener(listener: (() -> Unit)?) {
+        discoveryUpdateListener = listener
+    }
+
+    @Synchronized
     override fun snapshot(): DiscoverySnapshot = snapshotLocked()
 
     @Synchronized
@@ -259,6 +273,7 @@ class DefaultLocalDiscoveryController(
         state = DiscoveryControllerState.Closed
         backendStatus.values.forEach { it.state = DiscoveryBackendState.Closed }
         backendsByKind.values.forEach(DiscoveryBackend::close)
+        discoveryUpdateListener = null
     }
 
     @Synchronized
@@ -313,7 +328,10 @@ class DefaultLocalDiscoveryController(
     override fun onRouteObserved(controllerGeneration: Long, observation: DiscoveryRouteObservation) {
         if (closed || controllerGeneration != activeControllerGeneration || !browsingRequested) return
         when (cache.observe(observation, ownPresenceId, clock.nowMs()).change) {
-            DiscoveryCacheChange.Accepted -> Unit
+            DiscoveryCacheChange.Accepted -> {
+                onPresenceCountChanged?.invoke(cache.snapshot().candidates.size)
+                discoveryUpdateListener?.invoke()
+            }
             DiscoveryCacheChange.SelfSuppressed -> counters.selfDiscoveryDrops += 1
             DiscoveryCacheChange.Conflicted -> counters.conflictingAdvertisements += 1
             DiscoveryCacheChange.CapacityDropped -> counters.capacityDrops += 1

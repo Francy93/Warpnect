@@ -395,13 +395,22 @@ data class SessionSetupPreferences(
     }
 }
 
-/** Removes local preferences for optional channels that WNCP did not select. */
+/**
+ * Removes local preferences for optional channels that WNCP did not select and binds Input's
+ * negotiated capability fields while preserving the local fixed reliability parameters.
+ */
 fun SessionSetupPreferences.retainOnlySelectedChannels(profile: NegotiatedCapabilityProfile): SessionSetupPreferences =
     copy(
         video = video.takeIf { profile.selectedChannels and CapabilityBits.CHANNEL_VIDEO != 0 },
         systemAudio = systemAudio.takeIf { profile.selectedChannels and CapabilityBits.CHANNEL_SYSTEM_AUDIO != 0 },
         microphoneAudio = microphoneAudio.takeIf { profile.selectedChannels and CapabilityBits.CHANNEL_MICROPHONE_AUDIO != 0 },
-        input = input.takeIf { profile.selectedChannels and CapabilityBits.CHANNEL_INPUT != 0 },
+        input = input
+            ?.takeIf { profile.selectedChannels and CapabilityBits.CHANNEL_INPUT != 0 }
+            ?.copy(
+                inputKinds = profile.inputKinds,
+                stablePresenceKinds = profile.stablePresenceKinds,
+                featureFlags = profile.inputFeatureFlags,
+            ),
     )
 
 data class ChannelEndpointOffer(

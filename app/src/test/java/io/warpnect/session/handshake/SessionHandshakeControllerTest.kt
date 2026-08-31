@@ -248,6 +248,45 @@ class SessionHandshakeControllerTest {
         server.close()
     }
 
+    @Test
+    fun pairingTrustBoundaryDiscardsOnlyTheProvisionalIncomingHandshake() {
+        val clientSigner = signer(61u)
+        val serverSigner = signer(62u)
+        val clientTransport = QueuedTransport()
+        val serverTransport = QueuedTransport()
+        val client = SessionHandshakeController(
+            clientTransport,
+            clientSigner,
+            TrustedPeerStore(InMemoryTrustedPeerStorePersistence(), crypto::sha256),
+            manager(clientSigner.identity.deviceId),
+            crypto,
+        )
+        val server = SessionHandshakeController(
+            serverTransport,
+            serverSigner,
+            TrustedPeerStore(InMemoryTrustedPeerStorePersistence(), crypto::sha256),
+            manager(serverSigner.identity.deviceId),
+            crypto,
+        )
+
+        assertEquals(SessionHandshakeError.None, client.startInitiator(serverEndpoint, session(61u)).error)
+        drain(clientTransport, serverTransport, client, server)
+        assertEquals(1, server.snapshot().activeIncomingAttempts)
+
+        assertEquals(1, server.discardUnauthenticatedIncomingAttemptsAfterPairing())
+        assertEquals(0, server.snapshot().activeIncomingAttempts)
+        assertEquals(0, server.snapshot().recentCompletedCacheSize)
+
+        assertEquals(SessionHandshakeError.None, client.startInitiator(serverEndpoint, session(62u)).error)
+        clientTransport.drain().forEach { server.receive(clientEndpoint, it) }
+        serverTransport.drain().forEach { client.receive(serverEndpoint, it) }
+        clientTransport.drain().forEach { server.receive(clientEndpoint, it) }
+
+        assertEquals(1, server.snapshot().activeIncomingAttempts)
+        client.close()
+        server.close()
+    }
+
     private fun drain(
         clientTransport: QueuedTransport,
         serverTransport: QueuedTransport,

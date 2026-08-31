@@ -3,7 +3,9 @@ package io.warpnect.platform.capture.privileged
 import android.graphics.Rect
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.Surface
+import io.warpnect.BuildConfig
 import io.warpnect.capture.CaptureBackend
 import io.warpnect.capture.CaptureCapabilities
 import io.warpnect.capture.CaptureDisplayInfo
@@ -20,6 +22,7 @@ import java.lang.reflect.Method
 
 internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
     private var resolved: ResolvedSurfaceControlApi? = null
+    private var lastResolutionFailure: CaptureBridgeResolutionFailure? = null
     private var displayToken: IBinder? = null
     private var activeRequest: CaptureRequest? = null
     private var activeDisplayInfo: CaptureDisplayInfo? = null
@@ -54,7 +57,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         if (displayToken != null) {
             return remember(CaptureError.AlreadyRunning)
         }
-        val api = resolveApi() ?: return remember(CaptureError.HiddenApiUnavailable)
+        val api = resolveApi() ?: return rememberHiddenApiUnavailable()
         val displayInfo = api.queryDisplayInfo(request.sourceDisplayId)
             ?: return remember(CaptureError.SourceDisplayNotFound)
 
@@ -81,7 +84,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
 
     override fun updateCapture(request: CaptureRequest): CaptureError {
         val token = displayToken ?: return remember(CaptureError.NotRunning)
-        val api = resolveApi() ?: return remember(CaptureError.HiddenApiUnavailable)
+        val api = resolveApi() ?: return rememberHiddenApiUnavailable()
         val displayInfo = api.queryDisplayInfo(request.sourceDisplayId)
             ?: return remember(CaptureError.DisplayRemoved)
         val currentTarget = activeRequest ?: return remember(CaptureError.NotRunning)
@@ -195,40 +198,150 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
 
     private fun resolveApi(): ResolvedSurfaceControlApi? {
         resolved?.let { return it }
-        return runCatching {
-            val surfaceControl = Class.forName("android.view.SurfaceControl")
-            val displayManagerGlobal = Class.forName("android.hardware.display.DisplayManagerGlobal")
-            ResolvedSurfaceControlApi(
-                createDisplay = surfaceControl.method(
-                    "createDisplay",
-                    String::class.java,
-                    Boolean::class.javaPrimitiveType!!,
-                ),
-                destroyDisplay = surfaceControl.method("destroyDisplay", IBinder::class.java),
-                setDisplaySurface = surfaceControl.method(
-                    "setDisplaySurface",
-                    IBinder::class.java,
-                    Surface::class.java,
-                ),
-                setDisplayProjection = surfaceControl.method(
-                    "setDisplayProjection",
-                    IBinder::class.java,
-                    Int::class.javaPrimitiveType!!,
-                    Rect::class.java,
-                    Rect::class.java,
-                ),
-                setDisplayLayerStack = surfaceControl.method(
-                    "setDisplayLayerStack",
-                    IBinder::class.java,
-                    Int::class.javaPrimitiveType!!,
-                ),
-                getDisplayManagerGlobal = displayManagerGlobal.method("getInstance"),
-                getDisplayInfo = displayManagerGlobal.method(
-                    "getDisplayInfo",
-                    Int::class.javaPrimitiveType!!,
-                ),
-            )
-        }.getOrNull()?.also { resolved = it }
+        CaptureBridgeDebugLog.resolutionStarted()
+        lastResolutionFailure = null
+
+        val surfaceControl = resolveClass(
+            name = "android.view.SurfaceControl",
+            component = CaptureBridgeComponent.SurfaceControlClass,
+        ) ?: return null
+        val displayManagerGlobal = resolveClass(
+            name = "android.hardware.display.DisplayManagerGlobal",
+            component = CaptureBridgeComponent.DisplayManagerGlobalClass,
+        ) ?: return null
+        val displayInfo = resolveClass(
+            name = "android.view.DisplayInfo",
+            component = CaptureBridgeComponent.DisplayInfoClass,
+        ) ?: return null
+
+        return ResolvedSurfaceControlApi(
+            createDisplay = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.CreateDisplay,
+                "createDisplay",
+                String::class.java,
+                Boolean::class.javaPrimitiveType!!,
+            ) ?: return null,
+            destroyDisplay = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.DestroyDisplay,
+                "destroyDisplay",
+                IBinder::class.java,
+            ) ?: return null,
+            setDisplaySurface = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.SetDisplaySurface,
+                "setDisplaySurface",
+                IBinder::class.java,
+                Surface::class.java,
+            ) ?: return null,
+            setDisplayProjection = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.SetDisplayProjection,
+                "setDisplayProjection",
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+                Rect::class.java,
+                Rect::class.java,
+            ) ?: return null,
+            setDisplayLayerStack = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.SetDisplayLayerStack,
+                "setDisplayLayerStack",
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+            ) ?: return null,
+            getDisplayManagerGlobal = resolveMethod(
+                displayManagerGlobal,
+                CaptureBridgeComponent.GetDisplayManagerGlobal,
+                "getInstance",
+            ) ?: return null,
+            getDisplayInfo = resolveMethod(
+                displayManagerGlobal,
+                CaptureBridgeComponent.GetDisplayInfo,
+                "getDisplayInfo",
+                Int::class.javaPrimitiveType!!,
+            ) ?: return null,
+            logicalWidth = resolveField(
+                displayInfo,
+                CaptureBridgeComponent.DisplayLogicalWidth,
+                "logicalWidth",
+            ) ?: return null,
+            logicalHeight = resolveField(
+                displayInfo,
+                CaptureBridgeComponent.DisplayLogicalHeight,
+                "logicalHeight",
+            ) ?: return null,
+            rotation = resolveField(
+                displayInfo,
+                CaptureBridgeComponent.DisplayRotation,
+                "rotation",
+            ) ?: return null,
+            refreshRate = resolveOptionalField(displayInfo, "refreshRate"),
+            layerStack = resolveOptionalField(displayInfo, "layerStack"),
+        ).also {
+            resolved = it
+            CaptureBridgeDebugLog.resolved(CaptureBridgeComponent.Complete)
+        }
+    }
+
+    private fun resolveClass(name: String, component: CaptureBridgeComponent): Class<*>? =
+        runCatching { Class.forName(name) }
+            .onSuccess { CaptureBridgeDebugLog.resolved(component) }
+            .getOrElse { resolutionFailed(component, it) }
+
+    private fun resolveMethod(
+        owner: Class<*>,
+        component: CaptureBridgeComponent,
+        name: String,
+        vararg parameterTypes: Class<*>,
+    ): Method? = runCatching { owner.method(name, *parameterTypes) }
+        .onSuccess { CaptureBridgeDebugLog.resolved(component) }
+        .getOrElse { resolutionFailed(component, it) }
+
+    private fun resolveField(owner: Class<*>, component: CaptureBridgeComponent, name: String): Field? =
+        runCatching { owner.getDeclaredField(name).apply { isAccessible = true } }
+            .onSuccess { CaptureBridgeDebugLog.resolved(component) }
+            .getOrElse { resolutionFailed(component, it) }
+
+    private fun resolveOptionalField(owner: Class<*>, name: String): Field? =
+        runCatching { owner.getDeclaredField(name).apply { isAccessible = true } }.getOrNull()
+
+    private fun resolutionFailed(component: CaptureBridgeComponent, throwable: Throwable): Nothing? {
+        val failure = CaptureBridgeResolutionFailure.from(throwable)
+        lastResolutionFailure = failure
+        CaptureBridgeDebugLog.missing(component, failure)
+        if (component == CaptureBridgeComponent.CreateDisplay) {
+            probeDisplayControlCreateDisplay()
+        }
+        return null
+    }
+
+    /**
+     * Android moved virtual display creation out of SurfaceControl on newer releases. This
+     * resolution-only probe records whether the replacement bridge is present; it never invokes
+     * the method or creates a display.
+     */
+    private fun probeDisplayControlCreateDisplay() {
+        val displayControl = resolveClass(
+            name = "com.android.server.display.DisplayControl",
+            component = CaptureBridgeComponent.DisplayControlClass,
+        ) ?: return
+        resolveMethod(
+            owner = displayControl,
+            component = CaptureBridgeComponent.DisplayControlCreateDisplay,
+            name = "createDisplay",
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+        )
+    }
+
+    private fun rememberHiddenApiUnavailable(): CaptureError {
+        CaptureBridgeDebugLog.startFailed(
+            reason = CaptureError.HiddenApiUnavailable,
+            detail = lastResolutionFailure,
+        )
+        return remember(CaptureError.HiddenApiUnavailable)
     }
 
     private fun remember(error: CaptureError): CaptureError {
@@ -262,13 +375,12 @@ private data class ResolvedSurfaceControlApi(
     val setDisplayLayerStack: Method,
     val getDisplayManagerGlobal: Method,
     val getDisplayInfo: Method,
+    private val logicalWidth: Field,
+    private val logicalHeight: Field,
+    private val rotation: Field,
+    private val refreshRate: Field?,
+    private val layerStack: Field?,
 ) {
-    private val logicalWidth = displayInfoField("logicalWidth")
-    private val logicalHeight = displayInfoField("logicalHeight")
-    private val rotation = displayInfoField("rotation")
-    private val refreshRate = displayInfoFieldOrNull("refreshRate")
-    private val layerStack = displayInfoFieldOrNull("layerStack")
-
     fun queryDisplayInfo(displayId: Int): CaptureDisplayInfo? {
         val manager = getDisplayManagerGlobal.invoke(null) ?: return null
         val info = getDisplayInfo.invoke(manager, displayId) ?: return null
@@ -281,14 +393,78 @@ private data class ResolvedSurfaceControlApi(
             layerStack = layerStack?.getInt(info) ?: displayId,
         )
     }
-
-    private fun displayInfoField(name: String): Field =
-        displayInfoClass().getDeclaredField(name).apply { isAccessible = true }
-
-    private fun displayInfoFieldOrNull(name: String): Field? = runCatching { displayInfoField(name) }.getOrNull()
-
-    private fun displayInfoClass(): Class<*> = Class.forName("android.view.DisplayInfo")
 }
 
 private fun Class<*>.method(name: String, vararg parameterTypes: Class<*>): Method =
     getDeclaredMethod(name, *parameterTypes).apply { isAccessible = true }
+
+private enum class CaptureBridgeComponent {
+    SurfaceControlClass,
+    DisplayManagerGlobalClass,
+    DisplayInfoClass,
+    DisplayControlClass,
+    CreateDisplay,
+    DisplayControlCreateDisplay,
+    DestroyDisplay,
+    SetDisplaySurface,
+    SetDisplayProjection,
+    SetDisplayLayerStack,
+    GetDisplayManagerGlobal,
+    GetDisplayInfo,
+    DisplayLogicalWidth,
+    DisplayLogicalHeight,
+    DisplayRotation,
+    Complete,
+}
+
+private enum class CaptureBridgeResolutionFailure {
+    ClassNotFound,
+    MethodNotFound,
+    FieldNotFound,
+    AccessDenied,
+    Unexpected,
+    ;
+
+    companion object {
+        fun from(throwable: Throwable): CaptureBridgeResolutionFailure = when (throwable) {
+            is ClassNotFoundException,
+            is NoClassDefFoundError,
+            -> ClassNotFound
+            is NoSuchMethodException -> MethodNotFound
+            is NoSuchFieldException -> FieldNotFound
+            is IllegalAccessException,
+            is SecurityException,
+            -> AccessDenied
+            else -> Unexpected
+        }
+    }
+}
+
+private object CaptureBridgeDebugLog {
+    private const val TAG = "WarpnectDiscovery"
+
+    fun resolutionStarted() = log("event=capture_bridge_resolution_started")
+
+    fun resolved(
+        component: CaptureBridgeComponent,
+    ) = log("event=capture_hidden_api_resolved component=$component")
+
+    fun missing(component: CaptureBridgeComponent, reason: CaptureBridgeResolutionFailure) =
+        log("event=capture_hidden_api_missing component=$component reason=$reason")
+
+    fun startFailed(reason: CaptureError, detail: CaptureBridgeResolutionFailure?) {
+        val message = buildString {
+            append("event=capture_gateway_start_failed reason=")
+            append(reason.name)
+            detail?.let {
+                append(" detail=")
+                append(it.name)
+            }
+        }
+        log(message)
+    }
+
+    private fun log(message: String) {
+        if (BuildConfig.DEBUG) Log.d(TAG, message)
+    }
+}

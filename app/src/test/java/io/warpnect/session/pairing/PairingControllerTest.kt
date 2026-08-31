@@ -112,6 +112,28 @@ class PairingControllerTest {
     }
 
     @Test
+    fun remoteRejectionTerminatesTheAttemptAndClearsTheInitiatorPrompt() {
+        val clock = TestClock()
+        val network = TestNetwork()
+        val initiator = controller(1u, clock, network.a)
+        val responder = controller(2u, clock, network.b)
+        responder.openPairingWindow()
+
+        initiator.beginPairing(network.b.endpoint)
+        val attemptId = network.a.firstAttemptId()
+        exchangeUntilPrompts(network)
+
+        assertTrue(initiator.verificationPrompt(attemptId) != null)
+        assertEquals(PairingError.UserRejected, responder.rejectVerification(attemptId).error)
+        network.deliverBtoA()
+
+        assertEquals(PairingError.RejectedByPeer, initiator.snapshot().lastError)
+        assertEquals(0, initiator.snapshot().activeAttemptCount)
+        assertEquals(null, initiator.verificationPrompt(attemptId))
+        assertEquals(0, initiator.snapshot().trustedPeerCount)
+    }
+
+    @Test
     fun rePairRepairsOneSidedFinalConfirmLossWithoutReplacingTrustedKey() {
         val clock = TestClock()
         val network = TestNetwork()

@@ -44,6 +44,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
     override val kind: DiscoveryRouteKind = DiscoveryRouteKind.Direct
 
     private val appContext = context.applicationContext
+    private val debugLog = AndroidDiscoveryDebugLog(context)
     private var observer: DiscoveryBackendObserver? = null
     private var channel: WifiP2pManager.Channel? = null
     private var receiverRegistered = false
@@ -63,6 +64,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                 WifiP2pManager.WIFI_P2P_STATE_DISABLED,
             ) == WifiP2pManager.WIFI_P2P_STATE_ENABLED
             if (!p2pEnabled) {
+                debugLog.event(kind, "p2p_disabled", DiscoveryError.P2pDisabled)
                 browsingGeneration?.let { generation ->
                     observer?.onBackendState(
                         generation,
@@ -89,12 +91,13 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
 
     override fun prepare(observer: DiscoveryBackendObserver): DiscoveryBackendCommandResult {
         this.observer = observer
-        val manager = p2pManager ?: return DiscoveryBackendCommandResult.rejected(
+        val manager = p2pManager ?: return rejected(
+            "prepare_failed",
             DiscoveryError.DirectDiscoveryUnsupported,
         )
         ensureStateReceiver()
         val capabilityError = directReadinessError()
-        if (capabilityError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(capabilityError)
+        if (capabilityError != DiscoveryError.None) return rejected("prepare_failed", capabilityError)
         val initializedChannel = manager.initialize(
             appContext,
             controlHandler.looper,
@@ -103,7 +106,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                     dispatchToControl { notifyChannelLost() }
                 }
             },
-        ) ?: return DiscoveryBackendCommandResult.rejected(DiscoveryError.DirectDiscoveryUnsupported)
+        ) ?: return rejected("prepare_failed", DiscoveryError.DirectDiscoveryUnsupported)
         channel = initializedChannel
         return try {
             manager.setDnsSdResponseListeners(
@@ -112,26 +115,29 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                     // TXT data is the authoritative Warpnect record. The paired listener is
                     // intentionally registered so framework DNS-SD response handling remains
                     // complete without manufacturing a peer identity from a device address.
+                    dispatchToControl { debugLog.event(kind, "dns_sd_service_response") }
                 },
                 WifiP2pManager.DnsSdTxtRecordListener { fullDomain, record, device ->
                     dispatchToControl {
+                        debugLog.event(kind, "dns_sd_txt_record_received")
                         publishTxtRecord(fullDomain, record, device)
                     }
                 },
             )
             DiscoveryBackendCommandResult.Accepted
         } catch (_: SecurityException) {
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.DirectPermissionDenied)
+            rejected("prepare_failed", DiscoveryError.DirectPermissionDenied)
         }
     }
 
     override fun startAdvertising(request: DiscoveryBackendAdvertisingRequest): DiscoveryBackendCommandResult {
-        val manager = p2pManager ?: return DiscoveryBackendCommandResult.rejected(
+        val manager = p2pManager ?: return rejected(
+            "local_service_failed",
             DiscoveryError.DirectDiscoveryUnsupported,
         )
-        val activeChannel = channel ?: return DiscoveryBackendCommandResult.rejected(DiscoveryError.NotPrepared)
+        val activeChannel = channel ?: return rejected("local_service_failed", DiscoveryError.NotPrepared)
         val capabilityError = directReadinessError()
-        if (capabilityError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(capabilityError)
+        if (capabilityError != DiscoveryError.None) return rejected("local_service_failed", capabilityError)
         val serviceInfo = WifiP2pDnsSdServiceInfo.newInstance(
             request.serviceInstanceName,
             DiscoveryPresenceSchema.SERVICE_TYPE,
@@ -141,6 +147,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
         advertisingGeneration = request.advertisementGeneration
         advertisingControllerGeneration = request.controllerGeneration
         return try {
+            debugLog.event(kind, "local_service_add_requested")
             manager.addLocalService(
                 activeChannel,
                 serviceInfo,
@@ -149,6 +156,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                     operation = DiscoveryBackendOperation.Advertising,
                     operationGeneration = request.advertisementGeneration,
                     onSuccess = {
+                        debugLog.event(kind, "local_service_added")
                         observer?.onBackendState(
                             request.controllerGeneration,
                             kind,
@@ -162,10 +170,10 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
             DiscoveryBackendCommandResult.Accepted
         } catch (_: SecurityException) {
             clearAdvertisingIfMatches(request.controllerGeneration, request.advertisementGeneration)
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.DirectPermissionDenied)
+            rejected("local_service_failed", DiscoveryError.DirectPermissionDenied)
         } catch (_: IllegalArgumentException) {
             clearAdvertisingIfMatches(request.controllerGeneration, request.advertisementGeneration)
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.RegistrationFailed)
+            rejected("local_service_failed", DiscoveryError.RegistrationFailed)
         }
     }
 
@@ -184,16 +192,18 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
     }
 
     override fun startBrowsing(controllerGeneration: Long): DiscoveryBackendCommandResult {
-        val manager = p2pManager ?: return DiscoveryBackendCommandResult.rejected(
+        val manager = p2pManager ?: return rejected(
+            "service_request_failed",
             DiscoveryError.DirectDiscoveryUnsupported,
         )
-        val activeChannel = channel ?: return DiscoveryBackendCommandResult.rejected(DiscoveryError.NotPrepared)
+        val activeChannel = channel ?: return rejected("service_request_failed", DiscoveryError.NotPrepared)
         val capabilityError = directReadinessError()
-        if (capabilityError != DiscoveryError.None) return DiscoveryBackendCommandResult.rejected(capabilityError)
+        if (capabilityError != DiscoveryError.None) return rejected("service_request_failed", capabilityError)
         val request = WifiP2pDnsSdServiceRequest.newInstance(DiscoveryPresenceSchema.SERVICE_TYPE)
         serviceRequest = request
         browsingGeneration = controllerGeneration
         return try {
+            debugLog.event(kind, "service_request_add_requested")
             manager.addServiceRequest(
                 activeChannel,
                 request,
@@ -202,6 +212,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                     DiscoveryBackendOperation.Browsing,
                     operationGeneration = null,
                     onSuccess = {
+                        debugLog.event(kind, "service_request_added")
                         startServiceDiscovery(controllerGeneration, request)
                     },
                 ),
@@ -209,10 +220,10 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
             DiscoveryBackendCommandResult.Accepted
         } catch (_: SecurityException) {
             clearBrowsingIfMatches(controllerGeneration)
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.DirectPermissionDenied)
+            rejected("service_request_failed", DiscoveryError.DirectPermissionDenied)
         } catch (_: IllegalArgumentException) {
             clearBrowsingIfMatches(controllerGeneration)
-            DiscoveryBackendCommandResult.rejected(DiscoveryError.DiscoveryFailed)
+            rejected("service_request_failed", DiscoveryError.DiscoveryFailed)
         }
     }
 
@@ -253,9 +264,16 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
 
     private fun startServiceDiscovery(controllerGeneration: Long, request: WifiP2pDnsSdServiceRequest) {
         if (browsingGeneration != controllerGeneration || serviceRequest != request) return
-        val manager = p2pManager ?: return
-        val activeChannel = channel ?: return
+        val manager = p2pManager ?: run {
+            reportBrowsingFailure(controllerGeneration, DiscoveryError.DirectDiscoveryUnsupported)
+            return
+        }
+        val activeChannel = channel ?: run {
+            reportBrowsingFailure(controllerGeneration, DiscoveryError.NotPrepared)
+            return
+        }
         try {
+            debugLog.event(kind, "discovery_start_requested")
             manager.discoverServices(
                 activeChannel,
                 actionListener(
@@ -264,6 +282,7 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                     operationGeneration = null,
                     onSuccess = {
                         if (browsingGeneration == controllerGeneration) {
+                            debugLog.event(kind, "discovery_started")
                             observer?.onBackendState(
                                 controllerGeneration,
                                 kind,
@@ -276,40 +295,44 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
                 ),
             )
         } catch (_: SecurityException) {
-            observer?.onBackendState(
-                controllerGeneration,
-                kind,
-                DiscoveryBackendOperation.Browsing,
-                null,
-                DiscoveryBackendState.Failed,
-                DiscoveryError.DirectPermissionDenied,
-            )
+            reportBrowsingFailure(controllerGeneration, DiscoveryError.DirectPermissionDenied)
         }
     }
 
     private fun publishTxtRecord(fullDomain: String, record: Map<String, String>, device: WifiP2pDevice) {
         val controllerGeneration = browsingGeneration ?: return
-        if (!fullDomain.matchesWarpnectServiceType()) return
+        if (!fullDomain.matchesWarpnectServiceType()) {
+            debugLog.event(kind, "dns_sd_txt_ignored_service")
+            return
+        }
         val decoded = DiscoveryAdvertisementCodec.decode(record)
         if (decoded is DiscoveryAdvertisementDecodeResult.Rejected) {
+            debugLog.event(kind, "dns_sd_txt_rejected")
             observer?.onMalformedAdvertisement(controllerGeneration, kind, decoded.error)
             return
         }
         val advertisement = (decoded as DiscoveryAdvertisementDecodeResult.Decoded).advertisement
         val port = advertisement.bootstrapPort
         if (port == null) {
+            debugLog.event(kind, "dns_sd_txt_missing_port")
             observer?.onMalformedAdvertisement(controllerGeneration, kind, DiscoveryAdvertisementError.InvalidPort)
             return
         }
-        val deviceAddress = device.deviceAddress.takeIf(String::isNotBlank) ?: return
+        val deviceAddress = device.deviceAddress.takeIf(String::isNotBlank) ?: run {
+            debugLog.event(kind, "dns_sd_txt_missing_peer")
+            return
+        }
         val routeKey = "$deviceAddress|$fullDomain"
         if (routeKey !in directPeersByRouteKey &&
             directPeersByRouteKey.size >= DiscoveryBounds.HARD_MAX_DISCOVERED_PRESENCES
         ) {
+            debugLog.event(kind, "dns_sd_route_capacity_dropped")
             observer?.onRouteCapacityDropped(controllerGeneration, kind)
             return
         }
         directPeersByRouteKey[routeKey] = WifiP2pDevice(device)
+        debugLog.event(kind, "dns_sd_txt_accepted")
+        debugLog.routeObserved(kind)
         observer?.onRouteObserved(
             controllerGeneration,
             DiscoveryRouteObservation(
@@ -336,6 +359,11 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
 
         override fun onFailure(reason: Int) {
             dispatchToControl {
+                val event = when (operation) {
+                    DiscoveryBackendOperation.Advertising -> "local_service_failed"
+                    DiscoveryBackendOperation.Browsing -> "discovery_failed"
+                }
+                debugLog.event(kind, event, reason.toDiscoveryError(), reason)
                 observer?.onBackendState(
                     controllerGeneration,
                     kind,
@@ -365,6 +393,8 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
         }
 
     private fun notifyChannelLost() {
+        debugLog.event(kind, "channel_lost", DiscoveryError.P2pChannelLost)
+        debugLog.p2pChannelDisconnected()
         browsingGeneration?.let { generation ->
             observer?.onBackendState(
                 generation,
@@ -422,6 +452,23 @@ class AndroidWifiDirectDnsSdDiscoveryBackend(
 
     private fun dispatchToControl(block: () -> Unit) {
         controlHandler.post(block)
+    }
+
+    private fun rejected(event: String, error: DiscoveryError): DiscoveryBackendCommandResult {
+        debugLog.event(kind, event, error)
+        return DiscoveryBackendCommandResult.rejected(error)
+    }
+
+    private fun reportBrowsingFailure(controllerGeneration: Long, error: DiscoveryError) {
+        debugLog.event(kind, "discovery_failed", error)
+        observer?.onBackendState(
+            controllerGeneration,
+            kind,
+            DiscoveryBackendOperation.Browsing,
+            null,
+            DiscoveryBackendState.Failed,
+            error,
+        )
     }
 }
 

@@ -48,6 +48,69 @@ class SessionSetupControllerTest {
     }
 
     @Test
+    fun lanSetupUsesNegotiatedInputFlagsForBothPeers() {
+        val profile = profile().copy(
+            inputFeatureFlags = CapabilityBits.INPUT_STATE_CONVERGENCE or CapabilityBits.INPUT_PRIVILEGED_INJECTION,
+        )
+        val fixture = Fixture(profile = profile)
+
+        fixture.start()
+
+        val hostInput = fixture.hostCompletions.single().channels.flatMap { it.configuration }
+            .filterIsInstance<SetupConfiguration.Input>()
+            .single()
+            .config
+        val clientInput = fixture.clientCompletions.single().channels.flatMap { it.configuration }
+            .filterIsInstance<SetupConfiguration.Input>()
+            .single()
+            .config
+        assertEquals(profile.inputFeatureFlags, hostInput.featureFlags)
+        assertEquals(profile.inputFeatureFlags, clientInput.featureFlags)
+    }
+
+    @Test
+    fun debugObserverReportsBoundedLanSetupMilestonesWithoutPayloadData() {
+        val fixture = Fixture()
+
+        fixture.start()
+
+        assertTrue(SessionSetupDebugEventKind.OfferBuildStarted in fixture.clientDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.OfferBuilt in fixture.clientDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.OfferSent in fixture.clientDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.OfferReceived in fixture.hostDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.PathSelectionSent in fixture.hostDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.PathSelectionReceived in fixture.clientDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.SocketPathBindingSucceeded in fixture.hostDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.ChannelPlanValidationSucceeded in fixture.hostDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.Committed in fixture.hostDebugKinds)
+        assertTrue(SessionSetupDebugEventKind.Committed in fixture.clientDebugKinds)
+    }
+
+    @Test
+    fun debugObserverReportsTheTypedPreconditionFailureExactlyOnce() {
+        val fixture = Fixture()
+
+        assertEquals(
+            SessionSetupError.None,
+            fixture.host.registerHost(
+                fixture.hostBootstrap,
+                fixture.hostSetupRuntime,
+                HostSessionSetupPolicy(fixture.preferences),
+            ),
+        )
+        assertEquals(
+            SessionSetupError.InvalidConfig,
+            fixture.client.beginClient(
+                fixture.clientBootstrap,
+                fixture.clientSetupRuntime,
+                SessionSetupPreferences(),
+            ),
+        )
+
+        assertEquals(1, fixture.clientDebugKinds.count { it == SessionSetupDebugEventKind.Failed })
+    }
+
+    @Test
     fun duplicateAcceptUsesCompletionCacheWithoutAllocatingOrRenewingAgain() {
         val fixture = Fixture()
         fixture.start()
@@ -314,6 +377,8 @@ class SessionSetupControllerTest {
         val clientPreparer = TestTransportPreparer()
         val hostCompletions = mutableListOf<PreparedSessionBootstrap>()
         val clientCompletions = mutableListOf<PreparedSessionBootstrap>()
+        val hostDebugKinds = mutableListOf<SessionSetupDebugEventKind>()
+        val clientDebugKinds = mutableListOf<SessionSetupDebugEventKind>()
         val profileHash = ByteArray(32) { (it + 3).toByte() }
         val hostBootstrap = bootstrap(SessionRole.Host, hostRuntime, hostTransport, reservation)
         val clientBootstrap = bootstrap(SessionRole.Client, clientRuntime, clientTransport, null)
@@ -323,6 +388,7 @@ class SessionSetupControllerTest {
             PathAttemptIdGenerator { PathAttemptId.requireValid(81u) },
             timer = hostTimer,
             onCompleted = hostCompletions::add,
+            debugObserver = SessionSetupDebugObserver { event -> hostDebugKinds += event.kind },
         )
         val client = SessionSetupController(
             clock,
@@ -330,9 +396,10 @@ class SessionSetupControllerTest {
             PathAttemptIdGenerator { PathAttemptId.requireValid(81u) },
             timer = clientTimer,
             onCompleted = clientCompletions::add,
+            debugObserver = SessionSetupDebugObserver { event -> clientDebugKinds += event.kind },
         )
-        private val hostSetupRuntime = setupRuntime(hostAllocator, hostPreparer, hostDirect, PASS_VALIDATOR)
-        private val clientSetupRuntime = setupRuntime(clientAllocator, clientPreparer, clientDirect, clientValidator)
+        val hostSetupRuntime = setupRuntime(hostAllocator, hostPreparer, hostDirect, PASS_VALIDATOR)
+        val clientSetupRuntime = setupRuntime(clientAllocator, clientPreparer, clientDirect, clientValidator)
 
         init {
             hostTransport.peer = clientTransport
@@ -345,7 +412,14 @@ class SessionSetupControllerTest {
                 SessionSetupError.None,
                 host.registerHost(hostBootstrap, hostSetupRuntime, HostSessionSetupPolicy(preferences)),
             )
-            assertEquals(SessionSetupError.None, client.beginClient(clientBootstrap, clientSetupRuntime, preferences))
+            assertEquals(
+                SessionSetupError.None,
+                client.beginClient(
+                    clientBootstrap,
+                    clientSetupRuntime,
+                    preferences.retainOnlySelectedChannels(profile),
+                ),
+            )
         }
 
         private fun bootstrap(

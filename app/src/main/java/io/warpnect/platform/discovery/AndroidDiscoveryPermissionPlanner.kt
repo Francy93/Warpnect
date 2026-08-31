@@ -8,6 +8,7 @@ import android.provider.Settings
 import io.warpnect.session.discovery.DiscoveryError
 
 const val ACCESS_LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+const val ACCESS_FINE_LOCATION_PERMISSION = "android.permission.ACCESS_FINE_LOCATION"
 const val NEARBY_WIFI_DEVICES_PERMISSION = "android.permission.NEARBY_WIFI_DEVICES"
 
 data class AndroidLanPermissionEnvironment(
@@ -49,6 +50,21 @@ enum class AndroidWifiDirectDiscoveryPlan(
  * never calls requestPermissions() or silently changes the requested backend policy.
  */
 class AndroidDiscoveryPermissionPlanner {
+    /**
+     * Runtime permissions required before the app may invoke Wi-Fi Direct discovery APIs. This is
+     * deliberately separate from capability readiness: a disabled P2P radio must not hide a
+     * missing runtime permission from the UI.
+     */
+    fun wifiDirectRuntimePermissions(environment: AndroidWifiDirectDiscoveryEnvironment): Set<String> = when {
+        environment.deviceSdk >= Build.VERSION_CODES.TIRAMISU &&
+            environment.targetSdk >= Build.VERSION_CODES.TIRAMISU &&
+            !environment.nearbyWifiDevicesGranted -> setOf(NEARBY_WIFI_DEVICES_PERMISSION)
+        environment.deviceSdk <= Build.VERSION_CODES.S_V2 && !environment.fineLocationGranted -> {
+            setOf(ACCESS_FINE_LOCATION_PERMISSION)
+        }
+        else -> emptySet()
+    }
+
     fun planLan(environment: AndroidLanPermissionEnvironment): AndroidLanPermissionPlan = when {
         environment.targetSdk < ANDROID_17_SDK || environment.deviceSdk < ANDROID_17_SDK -> {
             AndroidLanPermissionPlan.NotRequiredForCurrentTarget
@@ -71,12 +87,7 @@ class AndroidDiscoveryPermissionPlanner {
             AndroidWifiDirectDiscoveryPlan.Unsupported
         }
         !environment.p2pEnabled -> AndroidWifiDirectDiscoveryPlan.Disabled
-        environment.deviceSdk >= Build.VERSION_CODES.TIRAMISU &&
-            environment.targetSdk >= Build.VERSION_CODES.TIRAMISU &&
-            !environment.nearbyWifiDevicesGranted -> AndroidWifiDirectDiscoveryPlan.PermissionRequired
-        environment.deviceSdk <= Build.VERSION_CODES.S_V2 && !environment.fineLocationGranted -> {
-            AndroidWifiDirectDiscoveryPlan.PermissionRequired
-        }
+        wifiDirectRuntimePermissions(environment).isNotEmpty() -> AndroidWifiDirectDiscoveryPlan.PermissionRequired
         !environment.locationServicesEnabled -> {
             AndroidWifiDirectDiscoveryPlan.LocationServicesDisabled
         }
@@ -110,6 +121,9 @@ class AndroidDiscoveryEnvironmentProvider(
             managerAvailable = context.getSystemService(Context.WIFI_P2P_SERVICE) != null,
             p2pEnabled = p2pEnabled,
         )
+
+    fun missingWifiDirectRuntimePermissions(): Set<String> = AndroidDiscoveryPermissionPlanner()
+        .wifiDirectRuntimePermissions(wifiDirectEnvironment(p2pEnabled = true))
 
     private fun requestedPermissions(): Set<String> = try {
         context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)

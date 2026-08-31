@@ -101,6 +101,7 @@ class CapabilityNegotiationController(
     private val idGenerator: CapabilityNegotiationIdGenerator = SecureCapabilityNegotiationIdGenerator,
     private val config: CapabilityNegotiationConfig = CapabilityNegotiationConfig(),
     private val onCompleted: (NegotiatedSessionBootstrap) -> Unit = {},
+    private val debugObserver: CapabilityNegotiationDebugObserver = CapabilityNegotiationDebugObserver.None,
 ) : AutoCloseable {
     private val lock = Any()
     private val bindings = LinkedHashMap<SessionId, Binding>()
@@ -176,6 +177,7 @@ class CapabilityNegotiationController(
         ) {
             CapabilityNegotiationError.SecureControlFailure
         } else {
+            emitDebug(CapabilityNegotiationDebugEventKind.ClientOfferSent)
             CapabilityNegotiationError.None
         }
     }
@@ -252,6 +254,7 @@ class CapabilityNegotiationController(
         packet: DecodedCapabilityNegotiationPacket,
         offer: CapabilityNegotiationMessage.ClientOffer,
     ) {
+        emitDebug(CapabilityNegotiationDebugEventKind.ClientOfferReceived)
         if (binding.bootstrap.localRole != SessionRole.Host || binding.policy == null) {
             fail(active[key], CapabilityNegotiationError.RoleMismatch, releaseReservation = true)
             return
@@ -299,6 +302,7 @@ class CapabilityNegotiationController(
             binding.bootstrap.admissionReservation?.close()
             removeBindingIfUnusedLocked(key.sessionId)
             record(selection.error)
+            emitDebug(CapabilityNegotiationDebugEventKind.Failed, selection.error)
             return
         }
         val profile = requireNotNull(selection.profile)
@@ -336,7 +340,9 @@ class CapabilityNegotiationController(
             nextRetryAtMs = now + CapabilityNegotiationProtocol.RETRY_DELAYS_MS.first(),
         )
         active[key] = managed
-        send(managed, responseBytes, retry = false)
+        if (send(managed, responseBytes, retry = false)) {
+            emitDebug(CapabilityNegotiationDebugEventKind.HostSelectionSent)
+        }
     }
 
     private fun handleHostSelection(
@@ -345,6 +351,7 @@ class CapabilityNegotiationController(
         packet: DecodedCapabilityNegotiationPacket,
         selection: CapabilityNegotiationMessage.HostSelection,
     ) {
+        emitDebug(CapabilityNegotiationDebugEventKind.HostSelectionReceived)
         val managed = active[key] ?: return
         if (binding.bootstrap.localRole != SessionRole.Client || managed.state !in setOf(
                 CapabilityNegotiationState.ClientOfferSent,
@@ -411,7 +418,9 @@ class CapabilityNegotiationController(
         managed.state = CapabilityNegotiationState.ClientConfirmSent
         managed.retryIndex = 0
         managed.nextRetryAtMs = now() + CapabilityNegotiationProtocol.RETRY_DELAYS_MS.first()
-        send(managed, confirmBytes, retry = false)
+        if (send(managed, confirmBytes, retry = false)) {
+            emitDebug(CapabilityNegotiationDebugEventKind.ClientConfirmSent)
+        }
     }
 
     private fun handleClientConfirm(
@@ -420,6 +429,7 @@ class CapabilityNegotiationController(
         packet: DecodedCapabilityNegotiationPacket,
         confirm: CapabilityNegotiationMessage.ClientConfirm,
     ) {
+        emitDebug(CapabilityNegotiationDebugEventKind.ClientConfirmReceived)
         val cached = completed[key]
         if (cached != null) {
             if (cached.matches(confirm)) {
@@ -456,6 +466,7 @@ class CapabilityNegotiationController(
                 return
             }
         if (!send(managed, completeBytes, retry = false)) return
+        emitDebug(CapabilityNegotiationDebugEventKind.HostCompleteSent)
         active.remove(key)
         trimCompletionCacheLocked()
         completed[key] = CompletedNegotiation(
@@ -475,6 +486,7 @@ class CapabilityNegotiationController(
         packet: DecodedCapabilityNegotiationPacket,
         complete: CapabilityNegotiationMessage.HostComplete,
     ) {
+        emitDebug(CapabilityNegotiationDebugEventKind.HostCompleteReceived)
         val managed = active[key] ?: return
         if (binding.bootstrap.localRole != SessionRole.Client || managed.state != CapabilityNegotiationState.ClientConfirmSent ||
             !complete.clientOfferHash.contentEquals(managed.clientOfferHash) ||
@@ -530,6 +542,7 @@ class CapabilityNegotiationController(
         counters.lastProfileHash = profileHash.copyOf()
         counters.lastDurationMs = (now() - managed.startedAtMs).coerceAtLeast(0L)
         record(CapabilityNegotiationError.None)
+        emitDebug(CapabilityNegotiationDebugEventKind.Completed)
         onCompleted(
             NegotiatedSessionBootstrap(
                 managed.binding.bootstrap.sessionId,
@@ -551,6 +564,7 @@ class CapabilityNegotiationController(
     private fun fail(managed: ManagedNegotiation?, error: CapabilityNegotiationError, releaseReservation: Boolean) {
         if (managed == null) {
             record(error)
+            emitDebug(CapabilityNegotiationDebugEventKind.Failed, error)
             return
         }
         active.remove(managed.key)
@@ -562,6 +576,11 @@ class CapabilityNegotiationController(
             else -> CapabilityNegotiationState.Failed
         }
         record(error)
+        emitDebug(CapabilityNegotiationDebugEventKind.Failed, error)
+    }
+
+    private fun emitDebug(kind: CapabilityNegotiationDebugEventKind, error: CapabilityNegotiationError? = null) {
+        debugObserver.onEvent(CapabilityNegotiationDebugEvent(kind, error))
     }
 
     private fun expireCompletedLocked() {

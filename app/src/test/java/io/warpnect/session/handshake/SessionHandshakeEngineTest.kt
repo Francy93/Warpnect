@@ -75,6 +75,90 @@ class SessionHandshakeEngineTest {
         )
     }
 
+    @Test
+    fun duplicateHelloRetryAfterCookieHelloDoesNotFailTheInitiator() {
+        val flow = flow()
+        assertArrayEquals(flow.cookieHello, flow.client.initialOutbound())
+
+        val duplicate = flow.client.receive(endpoint, flow.helloRetry)
+
+        assertEquals(SessionHandshakeError.None, duplicate.error)
+        assertTrue(duplicate.actions.isEmpty())
+        assertArrayEquals(flow.cookieHello, flow.client.initialOutbound())
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+        val clientAuth = send(flow.client.receive(endpoint, flow.serverAuth))
+        val serverResult = flow.server.receive(endpoint, clientAuth)
+        assertEquals(SessionHandshakeError.None, serverResult.error)
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, send(serverResult)).error)
+    }
+
+    @Test
+    fun helloRetryAfterServerHelloRemainsUnexpectedSequence() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+
+        assertEquals(SessionHandshakeError.UnexpectedSequence, flow.client.receive(endpoint, flow.helloRetry).error)
+    }
+
+    @Test
+    fun duplicateServerHelloAfterClientAuthDoesNotFailTheInitiator() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+        val clientAuth = send(flow.client.receive(endpoint, flow.serverAuth))
+        val serverResult = flow.server.receive(endpoint, clientAuth)
+        val duplicate = flow.client.receive(endpoint, flow.serverHello)
+
+        assertEquals(SessionHandshakeError.None, duplicate.error)
+        assertTrue(duplicate.actions.isEmpty())
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, send(serverResult)).error)
+    }
+
+    @Test
+    fun duplicateServerAuthAfterClientAuthDoesNotFailTheInitiator() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+        val clientAuth = send(flow.client.receive(endpoint, flow.serverAuth))
+
+        val duplicate = flow.client.receive(endpoint, flow.serverAuth)
+        assertEquals(SessionHandshakeError.None, duplicate.error)
+        assertTrue(duplicate.actions.isEmpty())
+
+        val serverResult = flow.server.receive(endpoint, clientAuth)
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, send(serverResult)).error)
+    }
+
+    @Test
+    fun differentServerAuthAfterClientAuthRemainsUnexpectedSequence() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+        send(flow.client.receive(endpoint, flow.serverAuth))
+        val different = flow.serverAuth.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+
+        assertEquals(SessionHandshakeError.UnexpectedSequence, flow.client.receive(endpoint, different).error)
+    }
+
+    @Test
+    fun differentServerHelloAfterClientAuthRemainsUnexpectedSequence() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.None, flow.client.receive(endpoint, flow.serverHello).error)
+        send(flow.client.receive(endpoint, flow.serverAuth))
+        val different = flow.serverHello.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
+
+        assertEquals(SessionHandshakeError.UnexpectedSequence, flow.client.receive(endpoint, different).error)
+    }
+
+    @Test
+    fun serverAuthBeforeServerHelloRemainsUnexpectedSequence() {
+        val flow = flow()
+
+        assertEquals(SessionHandshakeError.UnexpectedSequence, flow.client.receive(endpoint, flow.serverAuth).error)
+    }
+
     private fun completedHandshake(flow: Flow): Pair<AuthenticatedSessionBootstrap, AuthenticatedSessionBootstrap> {
         flow.client.receive(endpoint, flow.serverHello)
         val serverResult = flow.server.receive(endpoint, send(flow.client.receive(endpoint, flow.serverAuth)))
@@ -119,7 +203,8 @@ class SessionHandshakeEngineTest {
                     SessionHandshakeCodec.encode(attempt, 1, SessionHandshakeMessage.HelloRetry(cookie)),
                 ),
             )
-        val cookieHello = packet(send(client.receive(endpoint, retry.datagram)))
+        val cookieHelloDatagram = send(client.receive(endpoint, retry.datagram))
+        val cookieHello = packet(cookieHelloDatagram)
         val serverStarted = SessionHandshakeEngine.respond(
             endpoint,
             initial,
@@ -132,7 +217,16 @@ class SessionHandshakeEngineTest {
         )
         val server = requireNotNull(serverStarted.engine)
         val sends = serverStarted.result.actions.filterIsInstance<SessionHandshakeEngineAction.Send>()
-        return Flow(client, server, clientSigner, serverSigner, sends[0].datagram, sends[1].datagram)
+        return Flow(
+            client,
+            server,
+            clientSigner,
+            serverSigner,
+            retry.datagram,
+            cookieHelloDatagram,
+            sends[0].datagram,
+            sends[1].datagram,
+        )
     }
 
     private fun reservationAdmission(): SessionHandshakeAdmission = SessionHandshakeAdmission {
@@ -192,6 +286,8 @@ class SessionHandshakeEngineTest {
         val server: SessionHandshakeEngine,
         val clientSigner: JcaSoftwareIdentitySigner,
         val serverSigner: JcaSoftwareIdentitySigner,
+        val helloRetry: ByteArray,
+        val cookieHello: ByteArray,
         val serverHello: ByteArray,
         val serverAuth: ByteArray,
     )

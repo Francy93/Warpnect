@@ -25,6 +25,37 @@ fun interface SessionSetupTimer {
     fun schedule(delayMs: Long, task: () -> Unit): AutoCloseable
 }
 
+/** Cold-path setup milestones; payloads, endpoints, and identifiers are intentionally absent. */
+data class SessionSetupDebugEvent(
+    val kind: SessionSetupDebugEventKind,
+    val error: SessionSetupError? = null,
+)
+
+enum class SessionSetupDebugEventKind {
+    OfferBuildStarted,
+    OfferBuilt,
+    OfferSent,
+    OfferReceived,
+    PathSelectionBuilt,
+    PathSelectionSent,
+    PathSelectionReceived,
+    ChannelPlanValidationStarted,
+    ChannelPlanValidationSucceeded,
+    ChannelPlanValidationFailed,
+    SocketPathBindingStarted,
+    SocketPathBindingSucceeded,
+    Committed,
+    Failed,
+}
+
+fun interface SessionSetupDebugObserver {
+    fun onEvent(event: SessionSetupDebugEvent)
+
+    companion object {
+        val None = SessionSetupDebugObserver { }
+    }
+}
+
 fun interface ExactStreamConfigurationValidator {
     fun validate(
         localRole: SessionRole,
@@ -137,6 +168,7 @@ class SessionSetupController(
     private val config: SessionSetupControllerConfig = SessionSetupControllerConfig(),
     private val timer: SessionSetupTimer? = null,
     private val onCompleted: (PreparedSessionBootstrap) -> Unit = {},
+    private val debugObserver: SessionSetupDebugObserver = SessionSetupDebugObserver.None,
 ) : AutoCloseable {
     private val lock = Any()
     private val bindings = LinkedHashMap<SessionId, Binding>()
@@ -150,13 +182,16 @@ class SessionSetupController(
         runtime: SessionSetupRuntime,
         policy: HostSessionSetupPolicy,
     ): SessionSetupError = synchronized(lock) {
+        val effectivePolicy = policy.copy(
+            streamPreferences = policy.streamPreferences.retainOnlySelectedChannels(bootstrap.profile),
+        )
         if (closed) return@synchronized record(SessionSetupError.Closed)
         if (!config.isValid() || bootstrap.localRole != SessionRole.Host || bootstrap.remoteRole != SessionRole.Client ||
-            !policy.isValidFor(bootstrap) || bindings.containsKey(bootstrap.sessionId) || !runtime.isValid()
+            !effectivePolicy.isValidFor(bootstrap) || bindings.containsKey(bootstrap.sessionId) || !runtime.isValid()
         ) {
             return@synchronized record(SessionSetupError.InvalidConfig)
         }
-        bindings[bootstrap.sessionId] = Binding(bootstrap, runtime, policy)
+        bindings[bootstrap.sessionId] = Binding(bootstrap, runtime, effectivePolicy)
         bootstrap.secureSessionControl.setPayloadListener { bytes -> receive(bootstrap.sessionId, bytes) }
         SessionSetupError.None
     }
@@ -176,6 +211,7 @@ class SessionSetupController(
         SessionSetupPlanner.validateExactPreferences(bootstrap.profile, preferences)?.let {
             return@synchronized record(it)
         }
+        emitDebug(SessionSetupDebugEventKind.OfferBuildStarted)
         val setupId = setupIdGenerator.next()
         val request = SessionSetupMessage.ClientSetupRequest(
             SessionSetupHeader(SessionSetupMessageType.ClientSetupRequest, setupId, 0),
@@ -184,6 +220,7 @@ class SessionSetupController(
             preferences,
         )
         val bytes = SessionSetupCodec.encode(request) ?: return@synchronized record(SessionSetupError.InvalidConfig)
+        emitDebug(SessionSetupDebugEventKind.OfferBuilt)
         val now = now()
         val managed = ManagedSetup(
             SetupKey(bootstrap.sessionId, setupId),
@@ -200,7 +237,11 @@ class SessionSetupController(
         bootstrap.secureSessionControl.setPayloadListener { payload -> receive(bootstrap.sessionId, payload) }
         counters.lastSetupId = setupId
         counters.lastSessionId = bootstrap.sessionId
-        if (sendFlight(managed, bytes)) SessionSetupError.None else SessionSetupError.SecureControlFailure
+        if (sendFlight(managed, bytes, SessionSetupDebugEventKind.OfferSent)) {
+            SessionSetupError.None
+        } else {
+            SessionSetupError.SecureControlFailure
+        }
     }
 
     fun receive(sessionId: SessionId, payload: ByteArray) = synchronized(lock) {
@@ -280,6 +321,7 @@ class SessionSetupController(
         request: SessionSetupMessage.ClientSetupRequest,
     ) {
         if (binding.bootstrap.localRole != SessionRole.Host || binding.policy == null) return
+        emitDebug(SessionSetupDebugEventKind.OfferReceived)
         active[key]?.let { existing ->
             semanticDuplicate(existing, packet)?.let { duplicate ->
                 if (duplicate) existing.outboundBytes?.let { sendFlight(existing, it) }
@@ -402,6 +444,7 @@ class SessionSetupController(
             fail(setup, SessionSetupError.CapabilityProfileMismatch, true)
             return
         }
+        emitDebug(SessionSetupDebugEventKind.PathSelectionReceived)
         semanticDuplicate(setup, packet)?.let { duplicate ->
             if (duplicate) setup.outboundBytes?.let { sendFlight(setup, it) }
             return
@@ -559,7 +602,8 @@ class SessionSetupController(
             fail(setup, SessionSetupError.InvalidConfig, true)
             return
         }
-        sendFlight(setup, bytes)
+        emitDebug(SessionSetupDebugEventKind.PathSelectionBuilt)
+        sendFlight(setup, bytes, SessionSetupDebugEventKind.PathSelectionSent)
     }
 
     private fun allocateClientEndpointsAndSend(setup: ManagedSetup) {
@@ -614,6 +658,7 @@ class SessionSetupController(
     }
 
     private fun prepareHostProposal(setup: ManagedSetup) {
+        emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationStarted)
         val policy = requireNotNull(setup.binding.policy)
         val selection = requireNotNull(setup.pathSelection)
         val offer = requireNotNull(setup.clientEndpointOffer)
@@ -646,6 +691,7 @@ class SessionSetupController(
             policy.recoveryPolicy,
         )
         if (plan !is SetupPlanResult.Success) {
+            emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationFailed, (plan as SetupPlanResult.Failure).error)
             fail(setup, (plan as SetupPlanResult.Failure).error, true)
             return
         }
@@ -655,9 +701,11 @@ class SessionSetupController(
             plan.configurations,
         )
         if (exact != SessionSetupError.None) {
+            emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationFailed, exact)
             fail(setup, exact, true)
             return
         }
+        emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationSucceeded)
         val prepared = prepareChannels(setup, descriptors, plan.configurations, selection.active.remoteAddress)
             ?: return
         setup.preparedChannels += prepared
@@ -692,6 +740,7 @@ class SessionSetupController(
     ) {
         val setup = active[key] ?: return
         if (setup.binding.bootstrap.localRole != SessionRole.Client) return
+        emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationStarted)
         setup.proposalHash?.let { previousHash ->
             if (previousHash.contentEquals(packet.hash)) {
                 setup.outboundBytes?.let { sendFlight(setup, it) }
@@ -715,10 +764,18 @@ class SessionSetupController(
             selection.active,
         )
         if (validation != null || !proposal.clientEndpointOfferHash.contentEquals(setup.clientEndpointOfferHash)) {
+            emitDebug(
+                SessionSetupDebugEventKind.ChannelPlanValidationFailed,
+                validation ?: SessionSetupError.EndpointMismatch,
+            )
             decline(setup, packet.hash, proposal.proposalGeneration, validation ?: SessionSetupError.EndpointMismatch)
             return
         }
         if (!proposalAllowed(setup.clientPreferences, proposal.configurations)) {
+            emitDebug(
+                SessionSetupDebugEventKind.ChannelPlanValidationFailed,
+                SessionSetupError.ExactVideoConfigurationUnavailable,
+            )
             decline(
                 setup,
                 packet.hash,
@@ -733,9 +790,11 @@ class SessionSetupController(
             proposal.configurations,
         )
         if (exact != SessionSetupError.None) {
+            emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationFailed, exact)
             decline(setup, packet.hash, proposal.proposalGeneration, exact)
             return
         }
+        emitDebug(SessionSetupDebugEventKind.ChannelPlanValidationSucceeded)
         setup.pathSelection = PathSelection(
             selection.active.copy(pathId = proposal.activePathId),
             selection.standby?.let { standby -> proposal.standbyPathId?.let { standby.copy(pathId = it) } },
@@ -997,6 +1056,7 @@ class SessionSetupController(
     }
 
     private fun allocateEndpoints(setup: ManagedSetup, binding: PathSocketBinding): List<ChannelEndpointLease>? {
+        emitDebug(SessionSetupDebugEventKind.SocketPathBindingStarted)
         val kinds = SessionSetupPlanner.selectedChannelKinds(setup.binding.bootstrap.profile.selectedChannels)
             ?: run {
                 fail(setup, SessionSetupError.ChannelPlanInvalid, true)
@@ -1016,6 +1076,7 @@ class SessionSetupController(
             }
             leases += allocated.lease
         }
+        emitDebug(SessionSetupDebugEventKind.SocketPathBindingSucceeded)
         return leases
     }
 
@@ -1067,7 +1128,12 @@ class SessionSetupController(
             io.warpnect.session.security.SessionProtectionError.None
     }
 
-    private fun sendFlight(setup: ManagedSetup, bytes: ByteArray, retry: Boolean = false): Boolean {
+    private fun sendFlight(
+        setup: ManagedSetup,
+        bytes: ByteArray,
+        event: SessionSetupDebugEventKind? = null,
+        retry: Boolean = false,
+    ): Boolean {
         if (bytes.size > setup.binding.bootstrap.secureSessionControl.maxPayloadBytes) {
             fail(setup, SessionSetupError.InvalidConfig, true)
             return false
@@ -1089,6 +1155,7 @@ class SessionSetupController(
             fail(setup, SessionSetupError.SecureControlFailure, true)
             return false
         }
+        event?.let(::emitDebug)
         return true
     }
 
@@ -1173,6 +1240,7 @@ class SessionSetupController(
         counters.lastStandbyPath = prepared.standbyPath?.kind
         counters.lastDurationMs = (now - setup.startedAtMs).coerceAtLeast(0L)
         record(SessionSetupError.None)
+        emitDebug(SessionSetupDebugEventKind.Committed)
         onCompleted(prepared)
     }
 
@@ -1304,7 +1372,12 @@ class SessionSetupController(
     private fun now(): Long = clock.nowMs().coerceAtLeast(0L)
     private fun record(error: SessionSetupError): SessionSetupError {
         counters.lastError = error
+        if (error != SessionSetupError.None) emitDebug(SessionSetupDebugEventKind.Failed, error)
         return error
+    }
+
+    private fun emitDebug(kind: SessionSetupDebugEventKind, error: SessionSetupError? = null) {
+        debugObserver.onEvent(SessionSetupDebugEvent(kind, error))
     }
 
     private data class Binding(

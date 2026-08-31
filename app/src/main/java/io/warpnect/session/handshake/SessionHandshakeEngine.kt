@@ -78,6 +78,11 @@ class SessionHandshakeEngine private constructor(
     }
 
     private fun onHelloRetry(packet: SessionHandshakePacket): SessionHandshakeEngineResult {
+        if (state == SessionHandshakeState.CookieClientHelloSent && packet.header.messageSequence == 1) {
+            // UDP may deliver a second stateless retry after the cookie-bearing ClientHello. The
+            // existing controller keeps that ClientHello as its bounded retransmission payload.
+            return SessionHandshakeEngineResult()
+        }
         if (state != SessionHandshakeState.WaitingForRetryOrServerHello || packet.header.messageSequence != 1) {
             return failed(
                 SessionHandshakeError.UnexpectedSequence,
@@ -94,6 +99,15 @@ class SessionHandshakeEngine private constructor(
     }
 
     private fun onServerHello(packet: SessionHandshakePacket): SessionHandshakeEngineResult {
+        if (
+            state in setOf(SessionHandshakeState.WaitingForServerAuth, SessionHandshakeState.WaitingForServerComplete) &&
+            packet.header.messageSequence == 3 &&
+            cachedServerHello?.contentEquals(packet.datagram) == true
+        ) {
+            // UDP may redeliver ServerHello after the initiator has advanced. It is only safe to
+            // ignore the byte-identical cached message; any different packet remains unexpected.
+            return SessionHandshakeEngineResult()
+        }
         if (state !in setOf(SessionHandshakeState.WaitingForRetryOrServerHello, SessionHandshakeState.CookieClientHelloSent) || packet.header.messageSequence != 3) {
             return failed(SessionHandshakeError.UnexpectedSequence)
         }
@@ -112,6 +126,15 @@ class SessionHandshakeEngine private constructor(
     }
 
     private fun onServerAuth(packet: SessionHandshakePacket): SessionHandshakeEngineResult {
+        if (
+            state == SessionHandshakeState.WaitingForServerComplete &&
+            packet.header.messageSequence == 4 &&
+            cachedServerAuth?.contentEquals(packet.datagram) == true
+        ) {
+            // A retransmitted ServerAuth can cross the ClientAuth send on UDP. It must be the
+            // exact authenticated record already in the transcript; do not emit ClientAuth again.
+            return SessionHandshakeEngineResult()
+        }
         if (state != SessionHandshakeState.WaitingForServerAuth || packet.header.messageSequence != 4) {
             return failed(
                 SessionHandshakeError.UnexpectedSequence,

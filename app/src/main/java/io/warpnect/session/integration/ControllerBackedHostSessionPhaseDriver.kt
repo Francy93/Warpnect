@@ -8,6 +8,7 @@ import io.warpnect.session.capability.HostCapabilityPolicy
 import io.warpnect.session.capability.NegotiatedSessionBootstrap
 import io.warpnect.session.capability.SecureSessionCapabilityBootstrap
 import io.warpnect.session.control.SecureSessionControlTransport
+import io.warpnect.session.discovery.DiscoveryControllerState
 import io.warpnect.session.discovery.LocalDiscoveryController
 import io.warpnect.session.handshake.AuthenticatedSessionBootstrap
 import io.warpnect.session.handshake.SessionHandshakeController
@@ -25,7 +26,11 @@ import io.warpnect.session.setup.SessionSetupRuntime
 interface HostPairingResponder : AutoCloseable {
     fun start(): SecureSessionIntegrationError
     fun approvePairing(): SecureSessionIntegrationError
+    fun rejectPairing(): SecureSessionIntegrationError = SecureSessionIntegrationError.PairingRequired
     fun pendingPrompt(): PairingVerificationPrompt?
+
+    /** Pairing has persisted trust; a fresh WNSH attempt must not inherit an untrusted precursor. */
+    fun setPairingCompletedListener(listener: () -> Unit) = Unit
 }
 
 fun interface HostPairingResponderFactory {
@@ -72,11 +77,14 @@ class ControllerBackedHostSessionPhaseDriver(
     private val onPrepared: (PreparedSessionBootstrap) -> Unit,
     private val pairingResponderFactory: HostPairingResponderFactory? = null,
     private val onFailure: (SecureSessionIntegrationStage, SecureSessionIntegrationError) -> Unit = { _, _ -> },
+    private val onHostReadinessStarted: () -> Unit = {},
+    private val onHostReadinessStopped: () -> Unit = {},
 ) : AutoCloseable {
     private val lock = Any()
     private val sessions = LinkedHashMap<SessionId, HostSessionFlight>()
     private var handshake: SessionHandshakeController? = null
     private var pairingResponder: HostPairingResponder? = null
+    private var readinessStarted = false
     private var closed = false
 
     /** Starts Host control prerequisites only: discovery/advertising and the existing WNSH responder. */
@@ -86,21 +94,34 @@ class ControllerBackedHostSessionPhaseDriver(
 
         // RFC-005B owns the advertised bootstrap socket. Prepare/advertise it before borrowing
         // its one WNSH reader; otherwise a real Android responder can never attach.
-        val discoveryError = discovery.prepare().error.toHostIntegrationError()
-            .takeUnless { it != SecureSessionIntegrationError.None }
-            ?: discovery.startAdvertising().error.toHostIntegrationError()
+        val preparationError = discovery.prepare().error.toHostIntegrationError()
+        val availabilityError = if (preparationError != SecureSessionIntegrationError.None) {
+            preparationError
+        } else {
+            // Refresh before the first publication. Refreshing after publication intentionally
+            // replaces a visible advertisement, so doing it there turns one Host action into two.
+            discovery.refreshAvailability().error.toHostIntegrationError()
+        }
+        val discoveryError = if (availabilityError != SecureSessionIntegrationError.None) {
+            availabilityError
+        } else {
+            discovery.startAdvertising().error.toHostIntegrationError()
+        }
         if (discoveryError != SecureSessionIntegrationError.None) {
-            close()
+            stopReadiness()
             return discoveryError
         }
         val responder = pairingResponderFactory?.create()
         if (pairingResponderFactory != null && responder == null) {
-            close()
+            stopReadiness()
             return SecureSessionIntegrationError.PairingFailed
+        }
+        responder?.setPairingCompletedListener {
+            synchronized(lock) { handshake }?.discardUnauthenticatedIncomingAttemptsAfterPairing()
         }
         if (responder != null && responder.start() != SecureSessionIntegrationError.None) {
             responder.close()
-            close()
+            stopReadiness()
             return SecureSessionIntegrationError.PairingFailed
         }
         val controller = synchronized(lock) {
@@ -111,7 +132,7 @@ class ControllerBackedHostSessionPhaseDriver(
             }
         } ?: run {
             responder?.close()
-            close()
+            stopReadiness()
             return SecureSessionIntegrationError.AuthenticationFailed
         }
         synchronized(lock) {
@@ -122,8 +143,9 @@ class ControllerBackedHostSessionPhaseDriver(
             }
             handshake = controller
             pairingResponder = responder
+            readinessStarted = true
         }
-        refreshAvailability()
+        onHostReadinessStarted()
         return SecureSessionIntegrationError.None
     }
 
@@ -141,8 +163,19 @@ class ControllerBackedHostSessionPhaseDriver(
         if (!closed) discovery.refreshAvailability()
     }
 
+    fun discoverySnapshot() = discovery.snapshot()
+
+    fun discoveryFailure(): SecureSessionIntegrationError = discovery.snapshot()
+        .takeIf { it.state == DiscoveryControllerState.Error }
+        ?.lastError
+        ?.toHostIntegrationError()
+        ?: SecureSessionIntegrationError.None
+
     fun approvePairing(): SecureSessionIntegrationError =
         synchronized(lock) { pairingResponder }?.approvePairing() ?: SecureSessionIntegrationError.PairingRequired
+
+    fun rejectPairing(): SecureSessionIntegrationError =
+        synchronized(lock) { pairingResponder }?.rejectPairing() ?: SecureSessionIntegrationError.PairingRequired
 
     fun pendingPairingPrompt(): PairingVerificationPrompt? = synchronized(lock) { pairingResponder }?.pendingPrompt()
 
@@ -154,31 +187,37 @@ class ControllerBackedHostSessionPhaseDriver(
 
     /** Stops Host readiness without terminally closing the application-scoped responder. */
     fun stopReadiness() {
-        val owned = synchronized(lock) {
+        val (owned, notifyStopped) = synchronized(lock) {
             if (closed) return
             val result = sessions.values.toList() + listOfNotNull(handshake, pairingResponder)
+            val wasStarted = readinessStarted
             sessions.clear()
             handshake = null
             pairingResponder = null
-            result
+            readinessStarted = false
+            result to wasStarted
         }
         owned.asReversed().forEach(AutoCloseable::close)
-        discovery.stopAdvertising()
+        discovery.stop()
+        if (notifyStopped) onHostReadinessStopped()
     }
 
     override fun close() {
-        val owned = synchronized(lock) {
+        val (owned, notifyStopped) = synchronized(lock) {
             if (closed) return
             closed = true
             val result = sessions.values.toList() + listOfNotNull(handshake, pairingResponder)
+            val wasStarted = readinessStarted
             sessions.clear()
             handshake = null
             pairingResponder = null
-            result
+            readinessStarted = false
+            result to wasStarted
         }
         owned.asReversed().forEach(AutoCloseable::close)
         protection.close()
         discovery.close()
+        if (notifyStopped) onHostReadinessStopped()
     }
 
     private fun handshakeListener(): SessionHandshakeEventListener = object : SessionHandshakeEventListener {
@@ -315,7 +354,7 @@ private fun io.warpnect.session.discovery.DiscoveryError.toHostIntegrationError(
     when (this) {
         io.warpnect.session.discovery.DiscoveryError.None -> SecureSessionIntegrationError.None
         io.warpnect.session.discovery.DiscoveryError.Closed -> SecureSessionIntegrationError.Closed
-        else -> SecureSessionIntegrationError.InvalidPresence
+        else -> SecureSessionIntegrationError.DiscoveryStartFailed
     }
 
 private fun SessionHandshakeError.toHostIntegrationError(): SecureSessionIntegrationError = when (this) {

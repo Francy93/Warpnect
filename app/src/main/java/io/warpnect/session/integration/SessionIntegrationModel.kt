@@ -8,6 +8,7 @@ import io.warpnect.session.SessionId
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityRequest
 import io.warpnect.session.discovery.DiscoveredPresence
+import io.warpnect.session.discovery.DiscoverySnapshot
 import io.warpnect.session.handshake.ExpectedPeerConstraint
 import io.warpnect.session.lifecycle.DisconnectReason
 import io.warpnect.session.lifecycle.RecoverableSessionRecord
@@ -53,6 +54,7 @@ enum class SecureSessionIntegrationError {
     Busy,
     Closed,
     InvalidPresence,
+    DiscoveryStartFailed,
     PairingRequired,
     PairingFailed,
     AuthenticationFailed,
@@ -124,6 +126,8 @@ data class SecureSessionCoordinatorSnapshot(
     val runningChannels: Set<SessionChannelKind>,
     val activeRuntimeCount: Int,
     val pairingVerificationPrompt: PairingVerificationPrompt?,
+    /** Current bounded RFC-005B state for truthful discovery presentation; it contains no peer identity. */
+    val discovery: DiscoverySnapshot?,
     val lastStage: SecureSessionIntegrationStage?,
     val lastError: SecureSessionIntegrationError,
 )
@@ -242,6 +246,15 @@ interface SecureSessionPhaseDriver : AutoCloseable {
     /** Bounded RFC-005B observations for the normal Client chooser; never persistent identity. */
     fun discoveredPresences(): List<io.warpnect.session.discovery.DiscoveredPresence> = emptyList()
 
+    /** Exposes bounded discovery state to the coordinator/UI without creating a second state machine. */
+    fun discoverySnapshot(): DiscoverySnapshot? = null
+
+    /** Asynchronous platform start failures are reported by the existing control scheduler. */
+    fun discoveryFailure(): SecureSessionIntegrationError = SecureSessionIntegrationError.None
+
+    /** Bounded discovery-cache change notification for presentation; it does not create a new state machine. */
+    fun setDiscoveryUpdateListener(listener: (() -> Unit)?) = Unit
+
     /** Host pairing prompts are exposed without teaching the coordinator any pairing protocol. */
     fun pendingPairingVerificationPrompt(): PairingVerificationPrompt? = null
 
@@ -256,6 +269,9 @@ interface SecureSessionPhaseDriver : AutoCloseable {
     ): SecureSessionIntegrationError
 
     fun approvePairing(): SecureSessionIntegrationError
+
+    /** Sends the RFC-005C user-rejection outcome for the currently displayed SAS prompt. */
+    fun rejectPairing(): SecureSessionIntegrationError = SecureSessionIntegrationError.PairingRequired
 
     /** Creates RFC-005E from the fresh RFC-005D bootstrap and never returns plaintext control. */
     fun createSecureCapabilityBootstrap(
@@ -303,7 +319,7 @@ data class SecurePhaseResult(
 interface SecureSessionPhaseListener {
     fun onPairingRequired()
 
-    /** A SAS is shown only after the user explicitly entered the RFC-005C pairing flow. */
+    /** A SAS is shown only after an explicit selected-peer connection entered RFC-005C pairing. */
     fun onPairingVerificationPrompt(prompt: PairingVerificationPrompt) = Unit
 
     fun onPairingCompleted()
