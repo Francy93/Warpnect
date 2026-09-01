@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Proposed. Architecture and specification only; production implementation is not started.
+Status: Accepted. Production implementation is not started.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
@@ -57,9 +57,9 @@ not universal SDK rules.
 The split ownership experiment proved on both A41 devices that a normal application UID can own
 MediaCodec while the Shizuku UserService owns only display mirroring. The actual MediaCodec input
 Surface crossed Binder to the helper, which mirrored the real display into it. The app process then
-received an encoded access unit. Startup-to-first-frame observations were approximately 90 ms on
-API 30 and 186 ms on API 31. They are startup observations only, not end-to-end or steady-state
-latency measurements.
+received an encoded access unit. Observed startup-to-first-frame values of approximately 90 ms,
+186 ms, 257 ms, and 315 ms were experimental startup observations only. They are not capture,
+end-to-end, or steady-state latency measurements.
 
 ### Architectural Decision
 
@@ -271,5 +271,6 @@ contract and no wire change.
 
 ## Implementation Status
 
-The supporting experiments are hardware-validated. RFC-002H production implementation, regression
-coverage, production integration, and H1 completion remain pending.
+The supporting experiments are hardware-validated and this architecture is accepted. RFC-002H
+production implementation, regression coverage, production integration, and H1 completion remain
+pending.
