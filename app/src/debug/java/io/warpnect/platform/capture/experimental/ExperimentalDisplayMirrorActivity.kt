@@ -2,7 +2,9 @@ package io.warpnect.platform.capture.experimental
 
 import android.app.Activity
 import android.content.ComponentName
+import android.content.Intent
 import android.content.ServiceConnection
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
@@ -26,7 +28,8 @@ import rikka.shizuku.Shizuku
  */
 class ExperimentalDisplayMirrorActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var connection: ServiceConnection? = null
+    private var userServiceConnection: ServiceConnection? = null
+    private var codecServiceConnection: ServiceConnection? = null
     private lateinit var args: Shizuku.UserServiceArgs
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,59 +51,135 @@ class ExperimentalDisplayMirrorActivity : Activity() {
                 Bundle().apply { putString(KEY_CLIENT_FAILURE, "ShizukuUnavailableOrPermissionRequired") }
             } else {
                 withContext(Dispatchers.Default) {
-                    val service = bindService() ?: return@withContext Bundle().apply {
-                        putString(KEY_CLIENT_FAILURE, "UserServiceBindFailed")
+                    if (probe == ExperimentalDisplayMirrorProbeKind.SplitProcessLegacyFrame) {
+                        runSplitProcessLegacyFrame()
+                    } else {
+                        runUserServiceProbe(probe)
                     }
-                    runCatching { service.runProbe(probe.code) }
-                        .getOrElse { throwable ->
-                            Bundle().apply { putString(KEY_CLIENT_FAILURE, remoteFailureReason(throwable)) }
-                        }
                 }
             }
             result.putString(KEY_CLIENT_REVISION, CLIENT_REVISION)
             persistResult(runId, probe, result)
             logResult(runId, probe, result)
-            unbindService()
+            unbindServices()
             finish()
         }
     }
 
     override fun onDestroy() {
-        unbindService()
+        unbindServices()
         scope.cancel()
         super.onDestroy()
     }
 
-    private suspend fun bindService(): IExperimentalDisplayMirrorService? = withTimeoutOrNull(BIND_TIMEOUT_MS) {
+    private suspend fun runUserServiceProbe(probe: ExperimentalDisplayMirrorProbeKind): Bundle {
+        val service = bindUserService() ?: return Bundle().apply {
+            putString(KEY_CLIENT_FAILURE, "UserServiceBindFailed")
+        }
+        return runCatching { service.runProbe(probe.code) }
+            .getOrElse { throwable ->
+                Bundle().apply { putString(KEY_CLIENT_FAILURE, remoteFailureReason(throwable)) }
+            }
+    }
+
+    private suspend fun runSplitProcessLegacyFrame(): Bundle {
+        val mirrorService = bindUserService() ?: return Bundle().apply {
+            putString(KEY_CLIENT_FAILURE, "UserServiceBindFailed")
+        }
+        val codecService = bindCodecService() ?: return Bundle().apply {
+            putString(KEY_CLIENT_FAILURE, "CodecServiceBindFailed")
+        }
+        var result = Bundle()
+        try {
+            result = codecService.runSplitProcessLegacyFrame(
+                mirrorService.asBinder(),
+                Build.VERSION.SDK_INT <= Build.VERSION_CODES.R,
+            )
+        } catch (throwable: Throwable) {
+            result = Bundle().apply {
+                putString(KEY_CLIENT_FAILURE, codecServiceFailureReason(throwable))
+            }
+        } finally {
+            // The app-owned codec process may abort natively; the Activity retains the mirror binder.
+            val mirrorCleanup = runCatching { mirrorService.stopLegacyMirror() }
+                .getOrNull()
+                ?.getBoolean(KEY_CLEANUP_SUCCEEDED, false) == true
+            val codecCleanup = !result.containsKey(KEY_CLEANUP_SUCCEEDED) ||
+                result.getBoolean(KEY_CLEANUP_SUCCEEDED, false)
+            result.putBoolean(KEY_CLEANUP_SUCCEEDED, codecCleanup && mirrorCleanup)
+            unbindCodecService()
+            unbindUserService()
+        }
+        return result
+    }
+
+    private suspend fun bindUserService(): IExperimentalDisplayMirrorService? = withTimeoutOrNull(BIND_TIMEOUT_MS) {
         suspendCancellableCoroutine { continuation ->
             val serviceConnection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName, service: IBinder) {
-                    connection = this
+                    userServiceConnection = this
                     if (continuation.isActive) {
                         continuation.resume(IExperimentalDisplayMirrorService.Stub.asInterface(service))
                     }
                 }
 
                 override fun onServiceDisconnected(name: ComponentName) {
-                    connection = null
+                    userServiceConnection = null
                     if (continuation.isActive) continuation.resume(null)
                 }
             }
-            connection = serviceConnection
-            continuation.invokeOnCancellation { unbindService() }
+            userServiceConnection = serviceConnection
+            continuation.invokeOnCancellation { unbindUserService() }
             runCatching { Shizuku.bindUserService(args, serviceConnection) }
                 .onFailure {
-                    connection = null
+                    userServiceConnection = null
                     if (continuation.isActive) continuation.resume(null)
                 }
         }
     }
 
-    private fun unbindService() {
-        connection?.let { current ->
+    private suspend fun bindCodecService(): IExperimentalAppCodecService? = withTimeoutOrNull(BIND_TIMEOUT_MS) {
+        suspendCancellableCoroutine { continuation ->
+            val serviceConnection = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                    codecServiceConnection = this
+                    if (continuation.isActive) {
+                        continuation.resume(IExperimentalAppCodecService.Stub.asInterface(service))
+                    }
+                }
+
+                override fun onServiceDisconnected(name: ComponentName) {
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            }
+            codecServiceConnection = serviceConnection
+            continuation.invokeOnCancellation { unbindCodecService() }
+            val intent = Intent(
+                this@ExperimentalDisplayMirrorActivity,
+                ExperimentalAppCodecService::class.java,
+            )
+            if (!bindService(intent, serviceConnection, BIND_AUTO_CREATE)) {
+                codecServiceConnection = null
+                if (continuation.isActive) continuation.resume(null)
+            }
+        }
+    }
+
+    private fun unbindUserService() {
+        userServiceConnection?.let { current ->
             runCatching { Shizuku.unbindUserService(args, current, true) }
         }
-        connection = null
+        userServiceConnection = null
+    }
+
+    private fun unbindCodecService() {
+        codecServiceConnection?.let { current -> runCatching { unbindService(current) } }
+        codecServiceConnection = null
+    }
+
+    private fun unbindServices() {
+        unbindCodecService()
+        unbindUserService()
     }
 
     private fun isShizukuReady(): Boolean = runCatching {
@@ -113,6 +192,12 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         is android.os.RemoteException -> "UserServiceRemoteException"
         is SecurityException -> "UserServicePermissionDenied"
         else -> "ProbeRemoteFailure"
+    }
+
+    private fun codecServiceFailureReason(throwable: Throwable): String = when (throwable) {
+        is android.os.DeadObjectException -> "CodecOwnerProcessDied"
+        is android.os.RemoteException -> "CodecServiceRemoteException"
+        else -> "CodecServiceFailure"
     }
 
     private fun logResult(runId: String, probe: ExperimentalDisplayMirrorProbeKind, result: Bundle) {
@@ -150,9 +235,9 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
 
         // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
-        const val SERVICE_VERSION = 19
+        const val SERVICE_VERSION = 20
         const val SERVICE_TAG = "capture-experiment-v2-reflection"
-        const val CLIENT_REVISION = "activity-v2-a41-legacy-vbr-frame-1"
+        const val CLIENT_REVISION = "activity-v2-split-process-mirror-1"
         const val BIND_TIMEOUT_MS = 5_000L
         const val RESULT_DIRECTORY = "capture-experiment"
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,40}")
@@ -245,6 +330,16 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "legacy_vbr_secure",
             "legacy_vbr_mirror_outcome",
             "capture_backend_frame_proof_only",
+            "codec_owner_process",
+            "codec_owner_uid",
+            "mirror_owner_process",
+            "mirror_owner_uid",
+            "app_codec_configured",
+            "app_codec_input_surface_created",
+            "app_codec_started",
+            "surface_transfer_accepted",
+            "legacy_mirror_outcome",
+            "cleanup_succeeded",
             "legacy_surfacecontrol_available",
             "legacy_resolution_error",
             "legacy_start_error",
@@ -258,5 +353,6 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         )
         const val KEY_CLIENT_FAILURE = "client_failure"
         const val KEY_CLIENT_REVISION = "client_revision"
+        const val KEY_CLEANUP_SUCCEEDED = "cleanup_succeeded"
     }
 }

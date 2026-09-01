@@ -30,6 +30,7 @@ import java.lang.reflect.Modifier
 /** A new debug-only UserService class forces Shizuku to load the current experimental bytecode. */
 class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService.Stub() {
     private val lock = Any()
+    private var activeLegacyMirror: LegacyDisplayMirror? = null
 
     override fun runProbe(probeKind: Int): Bundle = synchronized(lock) {
         val kind = ExperimentalDisplayMirrorProbeKind.fromCode(probeKind)
@@ -44,6 +45,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
                 ExperimentalDisplayMirrorProbeKind.LegacyCompatibility -> runLegacyCompatibility()
                 ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame -> runLegacyEncoderFrame()
                 ExperimentalDisplayMirrorProbeKind.LegacyVbrEncoderFrame -> runLegacyVbrEncoderFrame()
+                ExperimentalDisplayMirrorProbeKind.SplitProcessLegacyFrame -> initialResult(kind)
                 ExperimentalDisplayMirrorProbeKind.VideoMetadata -> runVideoMetadata()
             }
         } catch (throwable: Throwable) {
@@ -52,6 +54,41 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         result.apply {
             putString(KEY_PROBE_REVISION, PROBE_REVISION)
         }
+    }
+
+    override fun startLegacyMirror(targetSurface: Surface?, secure: Boolean): Bundle = synchronized(lock) {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.SplitProcessLegacyFrame)
+        result.putString(KEY_MIRROR_OWNER_PROCESS, "ShizukuUserService")
+        result.putInt(KEY_MIRROR_OWNER_UID, Process.myUid())
+        if (activeLegacyMirror != null || targetSurface?.isValid != true) {
+            return@synchronized result.failure(Failure.DisplayConfigurationRejected)
+        }
+        val methods = resolveLegacyCompatibilityMethods(result) ?: return@synchronized result
+        val displayState = resolveLegacyDisplayState(methods) ?: return@synchronized result
+        val attempt = createLegacyMirror(
+            methods = methods,
+            displayState = displayState,
+            surface = targetSurface,
+            secureVariants = listOf(secure),
+        )
+        result.putBoolean(KEY_SURFACE_TRANSFER_ACCEPTED, targetSurface.isValid)
+        result.putString(KEY_LEGACY_VBR_MIRROR_OUTCOME, attempt.outcome)
+        result.putString(KEY_LEGACY_MIRROR_OUTCOME, attempt.outcome)
+        activeLegacyMirror = attempt.mirror
+        result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, attempt.mirror != null)
+        result.putBoolean(KEY_LEGACY_SURFACE_ATTACHED, attempt.mirror != null)
+        result.putBoolean(KEY_MIRROR_CREATED, attempt.mirror != null)
+        return@synchronized result
+    }
+
+    override fun stopLegacyMirror(): Bundle = synchronized(lock) {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.SplitProcessLegacyFrame)
+        result.putString(KEY_MIRROR_OWNER_PROCESS, "ShizukuUserService")
+        result.putInt(KEY_MIRROR_OWNER_UID, Process.myUid())
+        val mirror = activeLegacyMirror
+        activeLegacyMirror = null
+        result.putBoolean(KEY_CLEANUP_SUCCEEDED, mirror?.release() ?: true)
+        return@synchronized result
     }
 
     /** Reports only the relevant Surface-targeted DisplayManager method shapes. */
@@ -318,7 +355,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         var codec: MediaCodec? = null
         var inputSurface: Surface? = null
         var codecStarted = false
-        var mirror: LegacyVbrMirror? = null
+        var mirror: LegacyDisplayMirror? = null
         try {
             codec = MediaCodec.createByCodecName(codecInfo.name)
             codec.configure(
@@ -333,7 +370,12 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
             codecStarted = true
             result.putBoolean(KEY_ENCODER_STARTED, true)
 
-            val mirrorAttempt = createLegacyVbrMirror(methods, displayState, checkNotNull(inputSurface))
+            val mirrorAttempt = createLegacyMirror(
+                methods = methods,
+                displayState = displayState,
+                surface = checkNotNull(inputSurface),
+                secureVariants = listOf(true, false),
+            )
             result.putString(KEY_LEGACY_VBR_MIRROR_OUTCOME, mirrorAttempt.outcome)
             mirror = mirrorAttempt.mirror
             result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, mirror != null)
@@ -958,13 +1000,14 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         }
     }
 
-    private fun createLegacyVbrMirror(
+    private fun createLegacyMirror(
         methods: LegacyCompatibilityMethods,
         displayState: LegacyDisplayState,
         surface: Surface,
-    ): LegacyVbrMirrorAttempt {
+        secureVariants: List<Boolean>,
+    ): LegacyDisplayMirrorAttempt {
         var latestOutcome = "NoVariantSucceeded"
-        for (secure in listOf(true, false)) {
+        for (secure in secureVariants) {
             val token = try {
                 methods.createDisplay.invoke(null, LEGACY_COMPATIBILITY_DISPLAY_NAME, secure) as? IBinder
             } catch (exception: InvocationTargetException) {
@@ -1025,13 +1068,13 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
             }
             latestOutcome = "$latestOutcome,close=$closeResult"
             if (completed && closeResult == "Succeeded") {
-                return LegacyVbrMirrorAttempt(
-                    mirror = LegacyVbrMirror(methods, token, secure),
+                return LegacyDisplayMirrorAttempt(
+                    mirror = LegacyDisplayMirror(methods, token, secure),
                     outcome = latestOutcome,
                 )
             }
         }
-        return LegacyVbrMirrorAttempt(mirror = null, outcome = latestOutcome)
+        return LegacyDisplayMirrorAttempt(mirror = null, outcome = latestOutcome)
     }
 
     private fun invokeLegacyCompatibilityStep(method: Method, vararg arguments: Any): String = try {
@@ -1102,7 +1145,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         val targetRect: Rect,
     )
 
-    private data class LegacyVbrMirror(
+    private data class LegacyDisplayMirror(
         private val methods: LegacyCompatibilityMethods,
         private val token: IBinder,
         val secure: Boolean,
@@ -1114,8 +1157,8 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         }
     }
 
-    private data class LegacyVbrMirrorAttempt(
-        val mirror: LegacyVbrMirror?,
+    private data class LegacyDisplayMirrorAttempt(
+        val mirror: LegacyDisplayMirror?,
         val outcome: String,
     )
 
@@ -1208,7 +1251,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
     fun destroy() = Unit
 
     private companion object {
-        const val PROBE_REVISION = "v2-a41-legacy-vbr-frame-1"
+        const val PROBE_REVISION = "v2-split-process-mirror-1"
         const val KEY_PROBE_REVISION = "probe_revision"
         const val DISPLAY_MANAGER_GLOBAL = "android.hardware.display.DisplayManagerGlobal"
         const val DISPLAY_MANAGER = "android.hardware.display.DisplayManager"
@@ -1325,7 +1368,12 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val KEY_LEGACY_VBR_CODEC = "legacy_vbr_codec"
         const val KEY_LEGACY_VBR_SECURE = "legacy_vbr_secure"
         const val KEY_LEGACY_VBR_MIRROR_OUTCOME = "legacy_vbr_mirror_outcome"
+        const val KEY_LEGACY_MIRROR_OUTCOME = "legacy_mirror_outcome"
         const val KEY_CAPTURE_BACKEND_FRAME_PROOF_ONLY = "capture_backend_frame_proof_only"
+        const val KEY_MIRROR_OWNER_PROCESS = "mirror_owner_process"
+        const val KEY_MIRROR_OWNER_UID = "mirror_owner_uid"
+        const val KEY_SURFACE_TRANSFER_ACCEPTED = "surface_transfer_accepted"
+        const val KEY_CLEANUP_SUCCEEDED = "cleanup_succeeded"
         const val KEY_LEGACY_SURFACECONTROL_AVAILABLE = "legacy_surfacecontrol_available"
         const val KEY_LEGACY_RESOLUTION_ERROR = "legacy_resolution_error"
         const val KEY_LEGACY_START_ERROR = "legacy_start_error"

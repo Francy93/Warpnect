@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "VideoCapability", "VideoMetadata", "InputCapability", "LegacyLifecycle", "LegacyCompatibility", "LegacyEncoderFrame", "LegacyVbrEncoderFrame", "All")]
+    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "VideoCapability", "VideoMetadata", "InputCapability", "LegacyLifecycle", "LegacyCompatibility", "LegacyEncoderFrame", "LegacyVbrEncoderFrame", "SplitProcessLegacyFrame", "All")]
     [string]$Probe = "All",
     [string[]]$Serial = @(),
     [switch]$SkipBuild,
@@ -156,6 +156,7 @@ function Get-ProbeCode {
         "VideoMetadata" { return 8 }
         "LegacyCompatibility" { return 9 }
         "LegacyVbrEncoderFrame" { return 10 }
+        "SplitProcessLegacyFrame" { return 11 }
         default { throw "Unsupported probe '$ProbeName'." }
     }
 }

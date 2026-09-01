@@ -61,8 +61,21 @@ experiment, not RFC-002B qualification. It is intentionally excluded from `All` 
 `-AllowRiskyCodecProbe`, because a vendor codec may abort its isolated Shizuku UserService even
 for advertised VBR configuration. Do not run it to retry strict-CBR capability probing.
 
+`SplitProcessLegacyFrame` is the follow-up ownership experiment. A debug-only secondary Warpnect
+app process creates an AVC encoder using a metadata-advertised VBR format, then transfers only its
+actual input `Surface` through Binder to the Shizuku UserService. The UserService performs the
+already-qualified legacy display mirror and owns only its temporary display lifecycle. The app
+process observes one encoded access unit and immediately releases all resources. The probe has no
+Session, networking, pixel readback, frame persistence, or production-backend integration. It is
+also not RFC-002B qualification: strict-CBR probing is deliberately excluded.
+
+The secondary process isolates a potential vendor codec abort from the main debug UI. The Activity
+retains the mirror binder and sends an idempotent stop request even if that codec-owner process
+dies. This is experimental crash containment, not a multi-process media-runtime decision.
+
 ```powershell
 .\tools\android-h1\capture-spike.ps1 -Probe All
+.\tools\android-h1\capture-spike.ps1 -Probe SplitProcessLegacyFrame
 ```
 
 Use `WARPNECT_CAPTURE_DEVICES=<serial1>,<serial2>` or repeated `-Serial` values to constrain an

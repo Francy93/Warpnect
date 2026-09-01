@@ -25,6 +25,7 @@ internal enum class ExperimentalDisplayMirrorProbeKind(val code: Int) {
     VideoMetadata(8),
     LegacyCompatibility(9),
     LegacyVbrEncoderFrame(10),
+    SplitProcessLegacyFrame(11),
     ;
 
     companion object {
@@ -58,6 +59,7 @@ internal class ExperimentalDisplayMirrorProbeV2 {
             ExperimentalDisplayMirrorProbeKind.LegacyCompatibility,
             ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame,
             ExperimentalDisplayMirrorProbeKind.LegacyVbrEncoderFrame,
+            ExperimentalDisplayMirrorProbeKind.SplitProcessLegacyFrame,
             ExperimentalDisplayMirrorProbeKind.VideoMetadata,
             -> result
             ExperimentalDisplayMirrorProbeKind.Resolution -> result

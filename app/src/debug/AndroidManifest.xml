@@ -6,6 +6,10 @@
             android:name=".platform.capture.experimental.ExperimentalDisplayMirrorActivity"
             android:exported="true"
             android:theme="@style/Theme.Warpnect" />
+        <service
+            android:name=".platform.capture.experimental.ExperimentalAppCodecService"
+            android:exported="false"
+            android:process=":codecExperiment" />
     </application>
 
 </manifest>
