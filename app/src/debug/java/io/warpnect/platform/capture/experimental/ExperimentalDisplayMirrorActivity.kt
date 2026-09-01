@@ -127,7 +127,7 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
 
         // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
-        const val SERVICE_VERSION = 9
+        const val SERVICE_VERSION = 10
         const val SERVICE_TAG = "capture-experiment-v2-reflection"
         const val CLIENT_REVISION = "activity-v2-descriptor-1"
         const val BIND_TIMEOUT_MS = 5_000L
@@ -155,9 +155,13 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "create_mirror_display",
             "surface_attached",
             "mirror_lifecycle_succeeded",
+            "mirror_created",
             "capture_started",
+            "encoder_stage",
+            "encoder_configured",
             "encoder_started",
             "first_real_frame_encoded",
+            "first_frame_elapsed_ms",
             "release_succeeded",
             "failure",
             "failure_stage",
