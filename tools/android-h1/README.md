@@ -51,6 +51,10 @@ metadata result has made that bounded experiment appropriate. It creates no Warp
 sends no media, persists no frames, and writes only safe booleans/enums plus device metadata to
 the ignored artifact directory.
 
+The legacy lifecycle probe records the reflection boundary, temporary-display cleanup, and the
+first configuration operation that fails. The DisplayManager resolution probe reports only
+Surface-targeted `createVirtualDisplay` method shapes; it does not invoke alternate signatures.
+
 ```powershell
 .\tools\android-h1\capture-spike.ps1 -Probe All
 ```

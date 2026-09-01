@@ -150,9 +150,9 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
 
         // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
-        const val SERVICE_VERSION = 14
+        const val SERVICE_VERSION = 17
         const val SERVICE_TAG = "capture-experiment-v2-reflection"
-        const val CLIENT_REVISION = "activity-v2-a41-compatibility-1"
+        const val CLIENT_REVISION = "activity-v2-a41-legacy-diagnostics-3"
         const val BIND_TIMEOUT_MS = 5_000L
         const val RESULT_DIRECTORY = "capture-experiment"
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,40}")
@@ -163,6 +163,7 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "probe_revision",
             "display_manager_service_available",
             "display_0_available",
+            "modern_mirror_method_shapes",
             "mirror_method_available",
             "expected_signature_available",
             "method_parameter_count",
@@ -203,7 +204,36 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "input_available",
             "input_reason",
             "legacy_surfacecontrol_class_available",
+            "legacy_display_manager_global_class_available",
+            "legacy_display_info_class_available",
             "legacy_create_display_available",
+            "legacy_destroy_display_available",
+            "legacy_set_display_surface_available",
+            "legacy_set_display_projection_available",
+            "legacy_set_display_layer_stack_available",
+            "legacy_get_instance_available",
+            "legacy_get_display_info_available",
+            "legacy_logical_width_field_available",
+            "legacy_logical_height_field_available",
+            "legacy_rotation_field_available",
+            "legacy_method_parameter_count",
+            "legacy_argument_count",
+            "legacy_argument_count_match",
+            "legacy_argument_types_match",
+            "legacy_arg_0_assignable",
+            "legacy_arg_1_assignable",
+            "legacy_create_display_stage",
+            "legacy_reflection_invocation_accepted",
+            "legacy_create_display_outcome",
+            "legacy_direct_token_returned",
+            "legacy_direct_destroy_succeeded",
+            "legacy_configuration_attempted",
+            "legacy_configuration_create_outcome",
+            "legacy_configuration_display_info_available",
+            "legacy_configuration_surface_result",
+            "legacy_configuration_layer_stack_result",
+            "legacy_configuration_projection_result",
+            "legacy_configuration_release_succeeded",
             "legacy_surfacecontrol_available",
             "legacy_resolution_error",
             "legacy_start_error",

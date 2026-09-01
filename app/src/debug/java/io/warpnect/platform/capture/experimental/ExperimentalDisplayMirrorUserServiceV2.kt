@@ -1,16 +1,19 @@
 package io.warpnect.platform.capture.experimental
 
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.media.ImageReader
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.view.Surface
 import io.warpnect.capture.CaptureError
+import io.warpnect.capture.CaptureGeometry
 import io.warpnect.capture.CaptureRequest
 import io.warpnect.platform.capture.privileged.SurfaceControlDisplayCaptureApi
 import io.warpnect.platform.input.injection.ReflectivePrivilegedInputManagerApi
@@ -26,12 +29,12 @@ import java.lang.reflect.Modifier
 /** A new debug-only UserService class forces Shizuku to load the current experimental bytecode. */
 class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService.Stub() {
     private val lock = Any()
-    private val probe = ExperimentalDisplayMirrorProbeV2()
 
     override fun runProbe(probeKind: Int): Bundle = synchronized(lock) {
         val kind = ExperimentalDisplayMirrorProbeKind.fromCode(probeKind)
         val result = try {
             when (kind) {
+                ExperimentalDisplayMirrorProbeKind.Resolution -> runResolution()
                 ExperimentalDisplayMirrorProbeKind.MirrorLifecycle -> runMirrorLifecycle()
                 ExperimentalDisplayMirrorProbeKind.EncoderFrame -> runEncoderFrame()
                 ExperimentalDisplayMirrorProbeKind.VideoCapability -> runVideoCapability()
@@ -39,7 +42,6 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
                 ExperimentalDisplayMirrorProbeKind.LegacyLifecycle -> runLegacyLifecycle()
                 ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame -> runLegacyEncoderFrame()
                 ExperimentalDisplayMirrorProbeKind.VideoMetadata -> runVideoMetadata()
-                ExperimentalDisplayMirrorProbeKind.Resolution -> probe.run(kind)
             }
         } catch (throwable: Throwable) {
             initialResult(kind).failure(Failure.from(throwable))
@@ -47,6 +49,18 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         result.apply {
             putString(KEY_PROBE_REVISION, PROBE_REVISION)
         }
+    }
+
+    /** Reports only the relevant Surface-targeted DisplayManager method shapes. */
+    private fun runResolution(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.Resolution)
+        inspectModernMirrorMethodShapes(result)
+        try {
+            resolveMirror(result)
+        } catch (throwable: Throwable) {
+            result.failure(Failure.from(throwable))
+        }
+        return result
     }
 
     private fun runMirrorLifecycle(): Bundle {
@@ -213,6 +227,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         val captureApi = SurfaceControlDisplayCaptureApi()
         try {
             resolveLegacyStructure(result)
+            if (!diagnoseLegacyCreateDisplay(result)) return result
             val capabilities = captureApi.queryCapabilities()
             result.putBoolean(KEY_LEGACY_SURFACECONTROL_AVAILABLE, capabilities.backendAvailable)
             result.putString(KEY_LEGACY_RESOLUTION_ERROR, capabilities.lastError.name)
@@ -223,6 +238,11 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
             result.putString(KEY_LEGACY_START_ERROR, start.name)
             result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, start == CaptureError.None)
             result.putBoolean(KEY_LEGACY_SURFACE_ATTACHED, start == CaptureError.None && reader.surface.isValid)
+            if (start == CaptureError.ProjectionConfigurationFailed &&
+                result.getString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME) == "TokenReturned"
+            ) {
+                diagnoseLegacyConfiguration(result, reader.surface)
+            }
         } catch (throwable: Throwable) {
             result.failure(Failure.from(throwable))
         } finally {
@@ -366,16 +386,323 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
     private fun resolveLegacyStructure(result: Bundle) {
         val surfaceControl = runCatching { Class.forName(LEGACY_SURFACE_CONTROL) }.getOrNull()
         result.putBoolean(KEY_LEGACY_SURFACECONTROL_CLASS_AVAILABLE, surfaceControl != null)
-        val createDisplay = surfaceControl?.let { owner ->
-            runCatching {
-                owner.getDeclaredMethod(
-                    LEGACY_CREATE_DISPLAY,
-                    String::class.java,
-                    Boolean::class.javaPrimitiveType!!,
-                ).apply { isAccessible = true }
-            }.getOrNull()
-        }
+        val displayManagerGlobal = runCatching { Class.forName(DISPLAY_MANAGER_GLOBAL) }.getOrNull()
+        val displayInfo = runCatching { Class.forName(LEGACY_DISPLAY_INFO) }.getOrNull()
+        result.putBoolean(KEY_LEGACY_DISPLAY_MANAGER_GLOBAL_CLASS_AVAILABLE, displayManagerGlobal != null)
+        result.putBoolean(KEY_LEGACY_DISPLAY_INFO_CLASS_AVAILABLE, displayInfo != null)
+        val createDisplay = surfaceControl?.declaredMethod(
+            LEGACY_CREATE_DISPLAY,
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+        )
         result.putBoolean(KEY_LEGACY_CREATE_DISPLAY_AVAILABLE, createDisplay != null)
+        result.putBoolean(
+            KEY_LEGACY_DESTROY_DISPLAY_AVAILABLE,
+            surfaceControl?.declaredMethod(LEGACY_DESTROY_DISPLAY, IBinder::class.java) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_SET_DISPLAY_SURFACE_AVAILABLE,
+            surfaceControl?.declaredMethod(
+                LEGACY_SET_DISPLAY_SURFACE,
+                IBinder::class.java,
+                Surface::class.java,
+            ) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_SET_DISPLAY_PROJECTION_AVAILABLE,
+            surfaceControl?.declaredMethod(
+                LEGACY_SET_DISPLAY_PROJECTION,
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+                android.graphics.Rect::class.java,
+                android.graphics.Rect::class.java,
+            ) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_SET_DISPLAY_LAYER_STACK_AVAILABLE,
+            surfaceControl?.declaredMethod(
+                LEGACY_SET_DISPLAY_LAYER_STACK,
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+            ) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_GET_INSTANCE_AVAILABLE,
+            displayManagerGlobal?.declaredMethod(GET_INSTANCE) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_GET_DISPLAY_INFO_AVAILABLE,
+            displayManagerGlobal?.declaredMethod(
+                GET_DISPLAY_INFO,
+                Int::class.javaPrimitiveType!!,
+            ) != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_LOGICAL_WIDTH_FIELD_AVAILABLE,
+            displayInfo?.declaredField("logicalWidth") != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_LOGICAL_HEIGHT_FIELD_AVAILABLE,
+            displayInfo?.declaredField("logicalHeight") != null,
+        )
+        result.putBoolean(
+            KEY_LEGACY_ROTATION_FIELD_AVAILABLE,
+            displayInfo?.declaredField("rotation") != null,
+        )
+    }
+
+    /**
+     * Calls exactly the legacy production createDisplay signature, without configuring capture.
+     * A non-null token is destroyed before the unchanged bridge lifecycle is exercised below.
+     */
+    private fun diagnoseLegacyCreateDisplay(result: Bundle): Boolean {
+        val surfaceControl = runCatching { Class.forName(LEGACY_SURFACE_CONTROL) }.getOrNull()
+            ?: return true
+        val createDisplay = surfaceControl.declaredMethod(
+            LEGACY_CREATE_DISPLAY,
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+        ) ?: return true
+        val destroyDisplay = surfaceControl.declaredMethod(
+            LEGACY_DESTROY_DISPLAY,
+            IBinder::class.java,
+        )
+        if (destroyDisplay == null) {
+            result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, "DestroyUnavailable")
+            return false
+        }
+
+        result.putInt(KEY_LEGACY_METHOD_PARAMETER_COUNT, createDisplay.parameterCount)
+        result.putInt(KEY_LEGACY_ARGUMENT_COUNT, LEGACY_CREATE_DISPLAY_ARGUMENT_COUNT)
+        result.putBoolean(
+            KEY_LEGACY_ARGUMENT_COUNT_MATCH,
+            createDisplay.parameterCount == LEGACY_CREATE_DISPLAY_ARGUMENT_COUNT,
+        )
+        val arguments = arrayOf(LEGACY_DISPLAY_NAME, LEGACY_DISPLAY_SECURE)
+        val assignable = createDisplay.parameterTypes.zip(arguments).mapIndexed {
+                index,
+                (expected, value),
+            ->
+            expected.accepts(value).also { accepted ->
+                result.putBoolean(
+                    "$KEY_LEGACY_ARGUMENT_ASSIGNABLE_PREFIX$index$KEY_ARGUMENT_ASSIGNABLE_SUFFIX",
+                    accepted,
+                )
+            }
+        }
+        result.putBoolean(KEY_LEGACY_ARGUMENT_TYPES_MATCH, assignable.all { it })
+        if (!result.getBoolean(KEY_LEGACY_ARGUMENT_COUNT_MATCH) || !assignable.all { it }) {
+            result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, "ReflectionArgument")
+            return true
+        }
+
+        result.putString(KEY_LEGACY_CREATE_DISPLAY_STAGE, "invoke_started")
+        val token = try {
+            createDisplay.invoke(null, *arguments) as? IBinder
+        } catch (exception: InvocationTargetException) {
+            result.putBoolean(KEY_LEGACY_REFLECTION_INVOCATION_ACCEPTED, true)
+            result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, legacyInvocationOutcome(exception.targetException))
+            return true
+        } catch (exception: IllegalArgumentException) {
+            result.putBoolean(KEY_LEGACY_REFLECTION_INVOCATION_ACCEPTED, false)
+            result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, "ReflectionArgument")
+            return true
+        }
+        result.putBoolean(KEY_LEGACY_REFLECTION_INVOCATION_ACCEPTED, true)
+        result.putBoolean(KEY_LEGACY_DIRECT_TOKEN_RETURNED, token != null)
+        if (token == null) {
+            result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, "NullToken")
+            return true
+        }
+        result.putString(KEY_LEGACY_CREATE_DISPLAY_OUTCOME, "TokenReturned")
+        val destroyed = runCatching { destroyDisplay.invoke(null, token) }.isSuccess
+        result.putBoolean(
+            KEY_LEGACY_DIRECT_DESTROY_SUCCEEDED,
+            destroyed,
+        )
+        return destroyed
+    }
+
+    /**
+     * Replays the existing configuration call order only after the unchanged bridge reports a
+     * projection configuration failure. This owns and releases a separate temporary display.
+     */
+    private fun diagnoseLegacyConfiguration(result: Bundle, targetSurface: Surface) {
+        result.putBoolean(KEY_LEGACY_CONFIGURATION_ATTEMPTED, true)
+        val surfaceControl = runCatching { Class.forName(LEGACY_SURFACE_CONTROL) }.getOrNull() ?: return
+        val createDisplay = surfaceControl.declaredMethod(
+            LEGACY_CREATE_DISPLAY,
+            String::class.java,
+            Boolean::class.javaPrimitiveType!!,
+        ) ?: return
+        val destroyDisplay = surfaceControl.declaredMethod(LEGACY_DESTROY_DISPLAY, IBinder::class.java) ?: return
+        val setDisplaySurface = surfaceControl.declaredMethod(
+            LEGACY_SET_DISPLAY_SURFACE,
+            IBinder::class.java,
+            Surface::class.java,
+        ) ?: return
+        val setDisplayLayerStack = surfaceControl.declaredMethod(
+            LEGACY_SET_DISPLAY_LAYER_STACK,
+            IBinder::class.java,
+            Int::class.javaPrimitiveType!!,
+        ) ?: return
+        val setDisplayProjection = surfaceControl.declaredMethod(
+            LEGACY_SET_DISPLAY_PROJECTION,
+            IBinder::class.java,
+            Int::class.javaPrimitiveType!!,
+            Rect::class.java,
+            Rect::class.java,
+        ) ?: return
+        val displayManagerGlobal = runCatching { Class.forName(DISPLAY_MANAGER_GLOBAL) }.getOrNull() ?: return
+        val getInstance = displayManagerGlobal.declaredMethod(GET_INSTANCE) ?: return
+        val getDisplayInfo = displayManagerGlobal.declaredMethod(
+            GET_DISPLAY_INFO,
+            Int::class.javaPrimitiveType!!,
+        ) ?: return
+
+        val token = try {
+            createDisplay.invoke(null, LEGACY_CONFIGURATION_DISPLAY_NAME, LEGACY_DISPLAY_SECURE) as? IBinder
+        } catch (exception: InvocationTargetException) {
+            result.putString(
+                KEY_LEGACY_CONFIGURATION_CREATE_OUTCOME,
+                legacyInvocationOutcome(exception.targetException),
+            )
+            return
+        } catch (exception: IllegalArgumentException) {
+            result.putString(KEY_LEGACY_CONFIGURATION_CREATE_OUTCOME, "ReflectionArgument")
+            return
+        }
+        if (token == null) {
+            result.putString(KEY_LEGACY_CONFIGURATION_CREATE_OUTCOME, "NullToken")
+            return
+        }
+        result.putString(KEY_LEGACY_CONFIGURATION_CREATE_OUTCOME, "TokenReturned")
+
+        try {
+            val manager = getInstance.invoke(null) ?: return
+            val displayInfo = getDisplayInfo.invoke(manager, DISPLAY_ID)
+            result.putBoolean(KEY_LEGACY_CONFIGURATION_DISPLAY_INFO_AVAILABLE, displayInfo != null)
+            if (displayInfo == null) return
+            val infoClass = displayInfo.javaClass
+            val width = infoClass.declaredField("logicalWidth")?.getInt(displayInfo) ?: return
+            val height = infoClass.declaredField("logicalHeight")?.getInt(displayInfo) ?: return
+            val rotation = infoClass.declaredField("rotation")?.getInt(displayInfo) ?: return
+            val layerStack = infoClass.declaredField("layerStack")?.getInt(displayInfo) ?: DISPLAY_ID
+            val projection = try {
+                CaptureGeometry.computeProjection(
+                    sourceWidth = width,
+                    sourceHeight = height,
+                    sourceRotation = rotation,
+                    targetWidth = WIDTH,
+                    targetHeight = HEIGHT,
+                )
+            } catch (_: IllegalArgumentException) {
+                result.putString(KEY_LEGACY_CONFIGURATION_PROJECTION_RESULT, "GeometryRejected")
+                return
+            }
+            if (!invokeLegacyConfigurationStep(
+                    result,
+                    KEY_LEGACY_CONFIGURATION_SURFACE_RESULT,
+                    setDisplaySurface,
+                    token,
+                    targetSurface,
+                )
+            ) {
+                return
+            }
+            if (!invokeLegacyConfigurationStep(
+                    result,
+                    KEY_LEGACY_CONFIGURATION_LAYER_STACK_RESULT,
+                    setDisplayLayerStack,
+                    token,
+                    layerStack,
+                )
+            ) {
+                return
+            }
+            invokeLegacyConfigurationStep(
+                result,
+                KEY_LEGACY_CONFIGURATION_PROJECTION_RESULT,
+                setDisplayProjection,
+                token,
+                projection.orientation,
+                Rect(
+                    projection.sourceCrop.left,
+                    projection.sourceCrop.top,
+                    projection.sourceCrop.right,
+                    projection.sourceCrop.bottom,
+                ),
+                Rect(
+                    projection.targetRect.left,
+                    projection.targetRect.top,
+                    projection.targetRect.right,
+                    projection.targetRect.bottom,
+                ),
+            )
+        } finally {
+            runCatching { setDisplaySurface.invoke(null, token, null) }
+            result.putBoolean(
+                KEY_LEGACY_CONFIGURATION_RELEASE_SUCCEEDED,
+                runCatching { destroyDisplay.invoke(null, token) }.isSuccess,
+            )
+        }
+    }
+
+    private fun invokeLegacyConfigurationStep(
+        result: Bundle,
+        key: String,
+        method: Method,
+        vararg arguments: Any,
+    ): Boolean = try {
+        method.invoke(null, *arguments)
+        result.putString(key, "Succeeded")
+        true
+    } catch (exception: InvocationTargetException) {
+        result.putString(key, legacyInvocationOutcome(exception.targetException))
+        false
+    } catch (exception: IllegalArgumentException) {
+        result.putString(key, "ReflectionArgument")
+        false
+    }
+
+    private fun inspectModernMirrorMethodShapes(result: Bundle) {
+        val manager = runCatching { Class.forName(DISPLAY_MANAGER) }.getOrNull() ?: return
+        val shapes = manager.declaredMethods.asSequence()
+            .filter { method -> method.name == CREATE_VIRTUAL_DISPLAY }
+            .filter { method -> method.parameterTypes.any { type -> type == Surface::class.java } }
+            .map { method ->
+                val receiver = if (Modifier.isStatic(method.modifiers)) "static" else "instance"
+                "$receiver(${method.parameterTypes.joinToString(",") { it.simpleName }})"
+            }
+            .distinct()
+            .sorted()
+            .joinToString("|")
+        result.putString(KEY_MODERN_MIRROR_METHOD_SHAPES, shapes.ifEmpty { "None" })
+    }
+
+    private fun Class<*>.declaredMethod(name: String, vararg parameterTypes: Class<*>): Method? =
+        runCatching { getDeclaredMethod(name, *parameterTypes).apply { isAccessible = true } }.getOrNull()
+
+    private fun Class<*>.declaredField(name: String): java.lang.reflect.Field? =
+        runCatching { getDeclaredField(name).apply { isAccessible = true } }.getOrNull()
+
+    private fun Class<*>.accepts(value: Any): Boolean = when {
+        !isPrimitive -> isInstance(value)
+        this == Int::class.javaPrimitiveType -> value is Int
+        this == Boolean::class.javaPrimitiveType -> value is Boolean
+        else -> false
+    }
+
+    private fun legacyInvocationOutcome(throwable: Throwable): String = when (throwable) {
+        is SecurityException -> "InvocationTargetSecurityException"
+        is IllegalArgumentException -> "InvocationTargetIllegalArgumentException"
+        is IllegalStateException -> "InvocationTargetIllegalStateException"
+        is UnsupportedOperationException -> "InvocationTargetUnsupportedOperationException"
+        is NullPointerException -> "InvocationTargetNullPointerException"
+        is android.os.RemoteException -> "InvocationTargetRemoteException"
+        is RuntimeException -> "InvocationTargetRuntimeException"
+        is Error -> "InvocationTargetError"
+        else -> "InvocationTargetOther"
     }
 
     private fun videoRequest() = VideoEncoderRequest(
@@ -467,18 +794,26 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
     fun destroy() = Unit
 
     private companion object {
-        const val PROBE_REVISION = "v2-a41-compatibility-2"
+        const val PROBE_REVISION = "v2-a41-legacy-diagnostics-3"
         const val KEY_PROBE_REVISION = "probe_revision"
         const val DISPLAY_MANAGER_GLOBAL = "android.hardware.display.DisplayManagerGlobal"
         const val DISPLAY_MANAGER = "android.hardware.display.DisplayManager"
         const val LEGACY_SURFACE_CONTROL = "android.view.SurfaceControl"
+        const val LEGACY_DISPLAY_INFO = "android.view.DisplayInfo"
         const val VIRTUAL_DISPLAY = "android.hardware.display.VirtualDisplay"
         const val GET_INSTANCE = "getInstance"
         const val GET_DISPLAY_INFO = "getDisplayInfo"
         const val CREATE_VIRTUAL_DISPLAY = "createVirtualDisplay"
         const val LEGACY_CREATE_DISPLAY = "createDisplay"
+        const val LEGACY_DESTROY_DISPLAY = "destroyDisplay"
+        const val LEGACY_SET_DISPLAY_SURFACE = "setDisplaySurface"
+        const val LEGACY_SET_DISPLAY_PROJECTION = "setDisplayProjection"
+        const val LEGACY_SET_DISPLAY_LAYER_STACK = "setDisplayLayerStack"
         const val RELEASE = "release"
         const val DISPLAY_NAME = "WarpnectCaptureExperiment"
+        const val LEGACY_DISPLAY_NAME = "WarpnectCaptureExperimentLegacy"
+        const val LEGACY_CONFIGURATION_DISPLAY_NAME = "WarpnectCaptureExperimentLegacyConfig"
+        const val LEGACY_DISPLAY_SECURE = true
         const val DISPLAY_ID = 0
         const val WIDTH = 1280
         const val HEIGHT = 720
@@ -487,6 +822,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val I_FRAME_INTERVAL_SECONDS = 1f
         const val IMAGE_READER_BUFFERS = 2
         const val MIRROR_ARGUMENT_COUNT = 5
+        const val LEGACY_CREATE_DISPLAY_ARGUMENT_COUNT = 2
         const val ENCODE_TIMEOUT_MS = 3_000L
         const val DEQUEUE_TIMEOUT_US = 10_000L
 
@@ -496,6 +832,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val KEY_SELINUX_CONTEXT = "selinux_context"
         const val KEY_DISPLAY_MANAGER_SERVICE_AVAILABLE = "display_manager_service_available"
         const val KEY_DISPLAY_0_AVAILABLE = "display_0_available"
+        const val KEY_MODERN_MIRROR_METHOD_SHAPES = "modern_mirror_method_shapes"
         const val KEY_MIRROR_METHOD_AVAILABLE = "mirror_method_available"
         const val KEY_EXPECTED_SIGNATURE_AVAILABLE = "expected_signature_available"
         const val KEY_SURFACE_ATTACHED = "surface_attached"
@@ -532,7 +869,35 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val KEY_INPUT_AVAILABLE = "input_available"
         const val KEY_INPUT_REASON = "input_reason"
         const val KEY_LEGACY_SURFACECONTROL_CLASS_AVAILABLE = "legacy_surfacecontrol_class_available"
+        const val KEY_LEGACY_DISPLAY_MANAGER_GLOBAL_CLASS_AVAILABLE = "legacy_display_manager_global_class_available"
+        const val KEY_LEGACY_DISPLAY_INFO_CLASS_AVAILABLE = "legacy_display_info_class_available"
         const val KEY_LEGACY_CREATE_DISPLAY_AVAILABLE = "legacy_create_display_available"
+        const val KEY_LEGACY_DESTROY_DISPLAY_AVAILABLE = "legacy_destroy_display_available"
+        const val KEY_LEGACY_SET_DISPLAY_SURFACE_AVAILABLE = "legacy_set_display_surface_available"
+        const val KEY_LEGACY_SET_DISPLAY_PROJECTION_AVAILABLE = "legacy_set_display_projection_available"
+        const val KEY_LEGACY_SET_DISPLAY_LAYER_STACK_AVAILABLE = "legacy_set_display_layer_stack_available"
+        const val KEY_LEGACY_GET_INSTANCE_AVAILABLE = "legacy_get_instance_available"
+        const val KEY_LEGACY_GET_DISPLAY_INFO_AVAILABLE = "legacy_get_display_info_available"
+        const val KEY_LEGACY_LOGICAL_WIDTH_FIELD_AVAILABLE = "legacy_logical_width_field_available"
+        const val KEY_LEGACY_LOGICAL_HEIGHT_FIELD_AVAILABLE = "legacy_logical_height_field_available"
+        const val KEY_LEGACY_ROTATION_FIELD_AVAILABLE = "legacy_rotation_field_available"
+        const val KEY_LEGACY_METHOD_PARAMETER_COUNT = "legacy_method_parameter_count"
+        const val KEY_LEGACY_ARGUMENT_COUNT = "legacy_argument_count"
+        const val KEY_LEGACY_ARGUMENT_COUNT_MATCH = "legacy_argument_count_match"
+        const val KEY_LEGACY_ARGUMENT_TYPES_MATCH = "legacy_argument_types_match"
+        const val KEY_LEGACY_ARGUMENT_ASSIGNABLE_PREFIX = "legacy_arg_"
+        const val KEY_LEGACY_CREATE_DISPLAY_STAGE = "legacy_create_display_stage"
+        const val KEY_LEGACY_REFLECTION_INVOCATION_ACCEPTED = "legacy_reflection_invocation_accepted"
+        const val KEY_LEGACY_CREATE_DISPLAY_OUTCOME = "legacy_create_display_outcome"
+        const val KEY_LEGACY_DIRECT_TOKEN_RETURNED = "legacy_direct_token_returned"
+        const val KEY_LEGACY_DIRECT_DESTROY_SUCCEEDED = "legacy_direct_destroy_succeeded"
+        const val KEY_LEGACY_CONFIGURATION_ATTEMPTED = "legacy_configuration_attempted"
+        const val KEY_LEGACY_CONFIGURATION_CREATE_OUTCOME = "legacy_configuration_create_outcome"
+        const val KEY_LEGACY_CONFIGURATION_DISPLAY_INFO_AVAILABLE = "legacy_configuration_display_info_available"
+        const val KEY_LEGACY_CONFIGURATION_SURFACE_RESULT = "legacy_configuration_surface_result"
+        const val KEY_LEGACY_CONFIGURATION_LAYER_STACK_RESULT = "legacy_configuration_layer_stack_result"
+        const val KEY_LEGACY_CONFIGURATION_PROJECTION_RESULT = "legacy_configuration_projection_result"
+        const val KEY_LEGACY_CONFIGURATION_RELEASE_SUCCEEDED = "legacy_configuration_release_succeeded"
         const val KEY_LEGACY_SURFACECONTROL_AVAILABLE = "legacy_surfacecontrol_available"
         const val KEY_LEGACY_RESOLUTION_ERROR = "legacy_resolution_error"
         const val KEY_LEGACY_START_ERROR = "legacy_start_error"
