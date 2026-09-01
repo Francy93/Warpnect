@@ -31,8 +31,8 @@ Implemented the platform-independent C++20 networking core:
 
 ## Phase 2 - Video Pipeline
 
-Status: Core implementation complete through RFC-002G. RFC-002H is accepted supplemental Android
-capture compatibility architecture and is not implemented.
+Status: Core implementation complete through RFC-002G. RFC-002H is implemented supplemental
+Android capture compatibility architecture.
 
 Implemented:
 
@@ -43,12 +43,13 @@ Implemented:
 - RFC-002E - Low-Latency Rendering Pipeline [complete]
 - RFC-002F - End-to-End Video Streaming [complete]
 - RFC-002G - Video Latency, Recovery and Performance Tuning [complete]
-- RFC-002H - Android Privileged Screen Capture Backend & Privilege Boundary [accepted]
+- RFC-002H - Android Privileged Screen Capture Backend & Privilege Boundary [implemented]
 
-Phase 2 core history remains complete through RFC-002G. H1 hardware validation remains open pending
-RFC-002H production implementation and renewed device validation. Open hardware follow-up is kept
-separate: the RFC-002B exact strict-CBR active probe can abort tested MediaTek vendor codec code,
-and A41 `InputApiUnavailable` remains a Phase 4 privileged Input compatibility issue.
+Phase 2 core history remains complete through RFC-002G. RFC-002H production capture has hardware
+validation on legacy API 30/API 31 and modern API 36 paths; H1 remains open for separate end-to-end
+streaming validation. Open hardware follow-up is kept separate: the RFC-002B exact strict-CBR
+active probe can abort tested MediaTek vendor codec code, and A41 `InputApiUnavailable` remains a
+Phase 4 privileged Input compatibility issue.
 
 ## Phase 3 - Audio Pipeline
 

@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Accepted. Production implementation is in progress; H1 remains open.
+Status: Implemented. Production hardware validation is complete; H1 remains open.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
@@ -14,8 +14,8 @@ is unavailable on tested modern Android hardware even though a privileged compos
 path is available through a different framework adapter.
 
 This supplemental RFC defines the production ownership boundary and a capability-driven strategy
-model for Android privileged display mirroring. It does not implement a backend, change Phase 2
-history, resume H1, or change any media, Session, or SCL contract.
+model for Android privileged display mirroring. Its implementation does not change Phase 2 history,
+resume H1, or change any media, Session, or SCL contract.
 
 ## Evidence Status
 
@@ -271,6 +271,7 @@ contract and no wire change.
 
 ## Implementation Status
 
-The supporting experiments are hardware-validated and this architecture is accepted. RFC-002H
-production implementation, regression coverage, production integration, and H1 completion remain
-pending.
+The supporting experiments established the architecture. Production implementation and focused
+regression coverage are complete, with hardware validation of legacy SurfaceControl on API 30/API
+31 and modern DisplayManager mirroring on API 36. H1 remains open for its separate end-to-end
+streaming validation.
