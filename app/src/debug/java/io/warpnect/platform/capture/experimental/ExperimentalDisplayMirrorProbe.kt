@@ -18,6 +18,11 @@ internal enum class ExperimentalDisplayMirrorProbeKind(val code: Int) {
     Resolution(1),
     MirrorLifecycle(2),
     EncoderFrame(3),
+    VideoCapability(4),
+    InputCapability(5),
+    LegacyLifecycle(6),
+    LegacyEncoderFrame(7),
+    VideoMetadata(8),
     ;
 
     companion object {
@@ -45,6 +50,12 @@ internal class ExperimentalDisplayMirrorProbeV2 {
         return when (kind) {
             ExperimentalDisplayMirrorProbeKind.MirrorLifecycle -> runMirrorLifecycle(resolved, result)
             ExperimentalDisplayMirrorProbeKind.EncoderFrame -> runEncoderFrame(resolved, result)
+            ExperimentalDisplayMirrorProbeKind.VideoCapability,
+            ExperimentalDisplayMirrorProbeKind.InputCapability,
+            ExperimentalDisplayMirrorProbeKind.LegacyLifecycle,
+            ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame,
+            ExperimentalDisplayMirrorProbeKind.VideoMetadata,
+            -> result
             ExperimentalDisplayMirrorProbeKind.Resolution -> result
         }
     }

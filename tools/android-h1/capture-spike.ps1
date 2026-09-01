@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "All")]
+    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "VideoCapability", "VideoMetadata", "InputCapability", "LegacyLifecycle", "LegacyEncoderFrame", "All")]
     [string]$Probe = "All",
     [string[]]$Serial = @(),
     [switch]$SkipBuild,
@@ -54,7 +54,9 @@ function Invoke-AdbText {
         throw "ADB_TIMEOUT on ${DeviceSerial}: $($Arguments -join ' ')"
     }
     $output = (($stdout.GetAwaiter().GetResult()) + ($stderr.GetAwaiter().GetResult())).Trim()
-    if ($process.ExitCode -ne 0) { throw "ADB_FAILED on ${DeviceSerial}: $($Arguments -join ' ')" }
+    if ($process.ExitCode -ne 0) {
+        throw "ADB_FAILED on ${DeviceSerial}: $($Arguments -join ' ') :: $output"
+    }
     return $output
 }
 
@@ -142,6 +144,11 @@ function Get-ProbeCode {
         "Resolution" { return 1 }
         "MirrorLifecycle" { return 2 }
         "EncoderFrame" { return 3 }
+        "VideoCapability" { return 4 }
+        "InputCapability" { return 5 }
+        "LegacyLifecycle" { return 6 }
+        "LegacyEncoderFrame" { return 7 }
+        "VideoMetadata" { return 8 }
         default { throw "Unsupported probe '$ProbeName'." }
     }
 }
@@ -151,6 +158,17 @@ function Convert-ExperimentLogLine {
     $result = [ordered]@{}
     foreach ($match in [regex]::Matches($Line, "(?<key>[a-z0-9_]+)=(?<value>[^\s]+)")) {
         $result[$match.Groups["key"].Value] = $match.Groups["value"].Value
+    }
+    return [pscustomobject]$result
+}
+
+function Convert-ExperimentResultFile {
+    param([string]$Text)
+    $result = [ordered]@{}
+    foreach ($line in $Text -split "`r?`n") {
+        if ($line -match "^(?<key>[a-z0-9_]+)=(?<value>.*)$") {
+            $result[$Matches["key"]] = $Matches["value"]
+        }
     }
     return [pscustomobject]$result
 }
@@ -166,11 +184,15 @@ function Invoke-Probe {
     ) | Out-Null
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
-        $lines = Invoke-AdbText $Device.serial @("logcat", "-d", "-v", "brief", "-s", "$($script:LogTag):I")
-        $line = $lines -split "`r?`n" | Where-Object {
-            $_ -match "event=capture_experiment_result" -and $_ -match "run=$runId(?:\s|$)"
-        } | Select-Object -Last 1
-        if ($line) { return Convert-ExperimentLogLine $line }
+        $resultPath = "cache/capture-experiment/$runId.txt"
+        $text = try {
+            Invoke-AdbText $Device.serial @("shell", "run-as", $script:PackageName, "cat", $resultPath) 2000
+        } catch {
+            $null
+        }
+        if ($text -match "event=capture_experiment_result") {
+            return Convert-ExperimentResultFile $text
+        }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     return [pscustomobject]@{
@@ -207,7 +229,11 @@ foreach ($device in $devices) {
     if (-not $SkipInstall) { Install-Apk $device $apk.path }
 }
 
-$probeNames = if ($Probe -eq "All") { @("Resolution", "MirrorLifecycle", "EncoderFrame") } else { @($Probe) }
+$probeNames = if ($Probe -eq "All") {
+    @("VideoMetadata", "InputCapability", "LegacyLifecycle", "Resolution", "MirrorLifecycle")
+} else {
+    @($Probe)
+}
 $results = @()
 $sequence = 1
 foreach ($device in $devices) {

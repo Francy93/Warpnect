@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import io.warpnect.BuildConfig
+import java.io.File
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,10 +52,13 @@ class ExperimentalDisplayMirrorActivity : Activity() {
                         putString(KEY_CLIENT_FAILURE, "UserServiceBindFailed")
                     }
                     runCatching { service.runProbe(probe.code) }
-                        .getOrElse { Bundle().apply { putString(KEY_CLIENT_FAILURE, "ProbeRemoteFailure") } }
+                        .getOrElse { throwable ->
+                            Bundle().apply { putString(KEY_CLIENT_FAILURE, remoteFailureReason(throwable)) }
+                        }
                 }
             }
             result.putString(KEY_CLIENT_REVISION, CLIENT_REVISION)
+            persistResult(runId, probe, result)
             logResult(runId, probe, result)
             unbindService()
             finish()
@@ -103,19 +107,38 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
     }.getOrDefault(false)
 
+    private fun remoteFailureReason(throwable: Throwable): String = when (throwable) {
+        is android.os.DeadObjectException -> "UserServiceDied"
+        is android.os.TransactionTooLargeException -> "UserServiceResultTooLarge"
+        is android.os.RemoteException -> "UserServiceRemoteException"
+        is SecurityException -> "UserServicePermissionDenied"
+        else -> "ProbeRemoteFailure"
+    }
+
     private fun logResult(runId: String, probe: ExperimentalDisplayMirrorProbeKind, result: Bundle) {
-        val fields = SAFE_KEYS.mapNotNull { key ->
-            when {
-                result.containsKey(key) -> "$key=${result.get(key)}"
-                else -> null
-            }
-        }
+        val fields = safeFields(result)
         val event = listOf(
             "event=capture_experiment_result",
             "run=$runId",
             "probe=${probe.name}",
         ) + fields
         Log.i(TAG, event.joinToString(" "))
+    }
+
+    /** The harness reads this private, safe-only result instead of polling device-wide logcat. */
+    private fun persistResult(runId: String, probe: ExperimentalDisplayMirrorProbeKind, result: Bundle) {
+        val lines = listOf(
+            "event=capture_experiment_result",
+            "run=$runId",
+            "probe=${probe.name}",
+        ) + safeFields(result)
+        val directory = File(cacheDir, RESULT_DIRECTORY)
+        check(directory.exists() || directory.mkdirs())
+        File(directory, "$runId.txt").writeText(lines.joinToString("\n"))
+    }
+
+    private fun safeFields(result: Bundle): List<String> = SAFE_KEYS.mapNotNull { key ->
+        if (result.containsKey(key)) "$key=${result.get(key)}" else null
     }
 
     @VisibleForTesting
@@ -127,10 +150,11 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
 
         // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
-        const val SERVICE_VERSION = 10
+        const val SERVICE_VERSION = 14
         const val SERVICE_TAG = "capture-experiment-v2-reflection"
-        const val CLIENT_REVISION = "activity-v2-descriptor-1"
+        const val CLIENT_REVISION = "activity-v2-a41-compatibility-1"
         const val BIND_TIMEOUT_MS = 5_000L
+        const val RESULT_DIRECTORY = "capture-experiment"
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,40}")
         val SAFE_KEYS = listOf(
             "uid",
@@ -166,6 +190,28 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "failure",
             "failure_stage",
             "failure_origin",
+            "avc_encoder_count",
+            "avc_encoder_inventory",
+            "video_encoder_available",
+            "video_encoder_reason",
+            "video_selected_codec",
+            "video_probe_failure",
+            "video_metadata_only",
+            "input_api_resolved",
+            "input_async_supported",
+            "input_display_supported",
+            "input_available",
+            "input_reason",
+            "legacy_surfacecontrol_class_available",
+            "legacy_create_display_available",
+            "legacy_surfacecontrol_available",
+            "legacy_resolution_error",
+            "legacy_start_error",
+            "legacy_display_created",
+            "legacy_surface_attached",
+            "legacy_release_succeeded",
+            "legacy_first_real_frame_encoded",
+            "legacy_first_frame_elapsed_ms",
             KEY_CLIENT_FAILURE,
             KEY_CLIENT_REVISION,
         )

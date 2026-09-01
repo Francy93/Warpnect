@@ -44,10 +44,12 @@ The device must already be awake and unlocked. The harness reports
 ## Experimental Capture Spike
 
 `capture-spike.ps1` exists only on the `experiment/android-capture-backends` branch. It enumerates
-every attached physical device, binds a separate debug-only Shizuku UserService, and records three
-bounded DisplayManager-mirroring probes: API resolution, mirror create/release, and a real encoder
-output frame. It creates no Warpnect Session, sends no media, persists no frames, and writes only
-safe booleans/enums plus device metadata to the ignored artifact directory.
+every attached physical device, binds a separate debug-only Shizuku UserService, and records
+bounded metadata, Input-reflection, legacy SurfaceControl, and DisplayManager-mirroring probes.
+`All` intentionally avoids instantiating a codec; use the separate encoder probes only after the
+metadata result has made that bounded experiment appropriate. It creates no Warpnect Session,
+sends no media, persists no frames, and writes only safe booleans/enums plus device metadata to
+the ignored artifact directory.
 
 ```powershell
 .\tools\android-h1\capture-spike.ps1 -Probe All

@@ -3,12 +3,21 @@ package io.warpnect.platform.capture.experimental
 import android.graphics.PixelFormat
 import android.media.ImageReader
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
+import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
 import android.view.Surface
+import io.warpnect.capture.CaptureError
+import io.warpnect.capture.CaptureRequest
+import io.warpnect.platform.capture.privileged.SurfaceControlDisplayCaptureApi
+import io.warpnect.platform.input.injection.ReflectivePrivilegedInputManagerApi
+import io.warpnect.platform.video.encoder.AndroidExactVideoEncoderCapabilityProbe
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderFormatFactory
+import io.warpnect.platform.video.encoder.ExactVideoEncoderCapabilityKey
 import io.warpnect.video.encoder.VideoEncoderRequest
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
@@ -21,10 +30,19 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
 
     override fun runProbe(probeKind: Int): Bundle = synchronized(lock) {
         val kind = ExperimentalDisplayMirrorProbeKind.fromCode(probeKind)
-        val result = when (kind) {
-            ExperimentalDisplayMirrorProbeKind.MirrorLifecycle -> runMirrorLifecycle()
-            ExperimentalDisplayMirrorProbeKind.EncoderFrame -> runEncoderFrame()
-            ExperimentalDisplayMirrorProbeKind.Resolution -> probe.run(kind)
+        val result = try {
+            when (kind) {
+                ExperimentalDisplayMirrorProbeKind.MirrorLifecycle -> runMirrorLifecycle()
+                ExperimentalDisplayMirrorProbeKind.EncoderFrame -> runEncoderFrame()
+                ExperimentalDisplayMirrorProbeKind.VideoCapability -> runVideoCapability()
+                ExperimentalDisplayMirrorProbeKind.InputCapability -> runInputCapability()
+                ExperimentalDisplayMirrorProbeKind.LegacyLifecycle -> runLegacyLifecycle()
+                ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame -> runLegacyEncoderFrame()
+                ExperimentalDisplayMirrorProbeKind.VideoMetadata -> runVideoMetadata()
+                ExperimentalDisplayMirrorProbeKind.Resolution -> probe.run(kind)
+            }
+        } catch (throwable: Throwable) {
+            initialResult(kind).failure(Failure.from(throwable))
         }
         result.apply {
             putString(KEY_PROBE_REVISION, PROBE_REVISION)
@@ -59,13 +77,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
 
     private fun runEncoderFrame(): Bundle {
         val result = initialResult(ExperimentalDisplayMirrorProbeKind.EncoderFrame)
-        val request = VideoEncoderRequest(
-            width = WIDTH,
-            height = HEIGHT,
-            frameRate = FRAME_RATE,
-            bitrateBps = BITRATE_BPS,
-            iFrameIntervalSeconds = I_FRAME_INTERVAL_SECONDS,
-        )
+        val request = videoRequest()
         val capabilities = AndroidVideoEncoderDiscovery().query(request)
         if (!capabilities.isSupported) return result.failure(Failure.EncoderUnavailable)
         val codecName = capabilities.selectedCodec?.codecName ?: return result.failure(Failure.EncoderUnavailable)
@@ -127,6 +139,252 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         }
         return result
     }
+
+    /**
+     * Inventory only. The exact production discovery query is retained as the authoritative
+     * availability result; the raw rows explain vendor metadata without admitting a new profile.
+     */
+    private fun runVideoCapability(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.VideoCapability)
+        try {
+            val request = videoRequest()
+            val rows = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+                .asSequence()
+                .filter { it.isEncoder }
+                .filter { info -> info.supportedTypes.any { it.equals(AVC_MIME, ignoreCase = true) } }
+                .map { info -> rawAvcRow(info, request, allowActiveProbe = true) }
+                .toList()
+            val capabilities = AndroidVideoEncoderDiscovery().query(request)
+            result.putInt(KEY_AVC_ENCODER_COUNT, rows.size)
+            result.putString(KEY_AVC_ENCODER_INVENTORY, rows.joinToString("|"))
+            result.putBoolean(KEY_VIDEO_ENCODER_AVAILABLE, capabilities.isSupported)
+            result.putString(KEY_VIDEO_ENCODER_REASON, capabilities.error.name)
+            capabilities.selectedCodec?.let { result.putString(KEY_VIDEO_SELECTED_CODEC, it.codecName) }
+        } catch (throwable: Throwable) {
+            result.putString(KEY_VIDEO_PROBE_FAILURE, Failure.from(throwable).name)
+            result.failure(Failure.from(throwable))
+        }
+        return result
+    }
+
+    /** Reads raw Android metadata only and never instantiates a temporary codec. */
+    private fun runVideoMetadata(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.VideoMetadata)
+        val request = videoRequest()
+        val rows = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+            .asSequence()
+            .filter { it.isEncoder }
+            .filter { info -> info.supportedTypes.any { it.equals(AVC_MIME, ignoreCase = true) } }
+            .map { info -> rawAvcRow(info, request, allowActiveProbe = false) }
+            .toList()
+        result.putInt(KEY_AVC_ENCODER_COUNT, rows.size)
+        result.putString(KEY_AVC_ENCODER_INVENTORY, rows.joinToString("|"))
+        result.putBoolean(KEY_VIDEO_METADATA_ONLY, true)
+        return result
+    }
+
+    /** Resolves the existing privileged InputManager bridge without injecting an input event. */
+    private fun runInputCapability(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.InputCapability)
+        val capabilities = ReflectivePrivilegedInputManagerApi().resolve()
+        val available = capabilities.apiResolved &&
+            capabilities.asyncInjectionSupported &&
+            capabilities.displayTargetingSupported
+        result.putBoolean(KEY_INPUT_API_RESOLVED, capabilities.apiResolved)
+        result.putBoolean(KEY_INPUT_ASYNC_SUPPORTED, capabilities.asyncInjectionSupported)
+        result.putBoolean(KEY_INPUT_DISPLAY_SUPPORTED, capabilities.displayTargetingSupported)
+        result.putBoolean(KEY_INPUT_AVAILABLE, available)
+        result.putString(
+            KEY_INPUT_REASON,
+            when {
+                available -> "None"
+                !capabilities.apiResolved -> capabilities.lastError.name
+                !capabilities.asyncInjectionSupported -> "InputApiUnavailable"
+                else -> "DisplayTargetingUnsupported"
+            },
+        )
+        return result
+    }
+
+    /** Runs the unchanged production legacy SurfaceControl bridge against a temporary Surface. */
+    private fun runLegacyLifecycle(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.LegacyLifecycle)
+        var reader: ImageReader? = null
+        val captureApi = SurfaceControlDisplayCaptureApi()
+        try {
+            resolveLegacyStructure(result)
+            val capabilities = captureApi.queryCapabilities()
+            result.putBoolean(KEY_LEGACY_SURFACECONTROL_AVAILABLE, capabilities.backendAvailable)
+            result.putString(KEY_LEGACY_RESOLUTION_ERROR, capabilities.lastError.name)
+            if (!capabilities.backendAvailable) return result
+
+            reader = ImageReader.newInstance(WIDTH, HEIGHT, PixelFormat.RGBA_8888, IMAGE_READER_BUFFERS)
+            val start = captureApi.startCapture(CaptureRequest(DISPLAY_ID, WIDTH, HEIGHT), reader.surface)
+            result.putString(KEY_LEGACY_START_ERROR, start.name)
+            result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, start == CaptureError.None)
+            result.putBoolean(KEY_LEGACY_SURFACE_ATTACHED, start == CaptureError.None && reader.surface.isValid)
+        } catch (throwable: Throwable) {
+            result.failure(Failure.from(throwable))
+        } finally {
+            val stopped = runCatching { captureApi.stopCapture() }.getOrNull() == CaptureError.None
+            val readerReleased = runCatching { reader?.close() }.isSuccess
+            result.putBoolean(KEY_LEGACY_RELEASE_SUCCEEDED, stopped && readerReleased)
+        }
+        return result
+    }
+
+    /**
+     * Uses the exact existing encoder surface and unchanged legacy capture bridge. No Session,
+     * network transport, or encoded output persistence is involved.
+     */
+    private fun runLegacyEncoderFrame(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame)
+        val request = videoRequest()
+        val capabilities = AndroidVideoEncoderDiscovery().query(request)
+        if (!capabilities.isSupported) return result.failure(Failure.EncoderUnavailable)
+        val codecName = capabilities.selectedCodec?.codecName ?: return result.failure(Failure.EncoderUnavailable)
+        val captureApi = SurfaceControlDisplayCaptureApi()
+        var codec: MediaCodec? = null
+        var inputSurface: Surface? = null
+        var codecStarted = false
+        try {
+            resolveLegacyStructure(result)
+            val legacyCapabilities = captureApi.queryCapabilities()
+            result.putBoolean(KEY_LEGACY_SURFACECONTROL_AVAILABLE, legacyCapabilities.backendAvailable)
+            result.putString(KEY_LEGACY_RESOLUTION_ERROR, legacyCapabilities.lastError.name)
+            if (!legacyCapabilities.backendAvailable) return result
+
+            codec = MediaCodec.createByCodecName(codecName)
+            codec.configure(
+                AndroidVideoEncoderFormatFactory.create(request),
+                null,
+                null,
+                MediaCodec.CONFIGURE_FLAG_ENCODE,
+            )
+            result.putBoolean(KEY_ENCODER_CONFIGURED, true)
+            inputSurface = codec.createInputSurface()
+            codec.start()
+            codecStarted = true
+            result.putBoolean(KEY_ENCODER_STARTED, true)
+
+            val captureStartMs = SystemClock.elapsedRealtime()
+            val start = captureApi.startCapture(
+                CaptureRequest(DISPLAY_ID, WIDTH, HEIGHT),
+                checkNotNull(inputSurface),
+            )
+            result.putString(KEY_LEGACY_START_ERROR, start.name)
+            result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, start == CaptureError.None)
+            result.putBoolean(KEY_LEGACY_SURFACE_ATTACHED, start == CaptureError.None)
+            if (start != CaptureError.None) return result
+
+            val bufferInfo = MediaCodec.BufferInfo()
+            val deadlineMs = SystemClock.elapsedRealtime() + ENCODE_TIMEOUT_MS
+            while (SystemClock.elapsedRealtime() < deadlineMs) {
+                val index = codec.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)
+                if (index >= 0) {
+                    val hasFrame = bufferInfo.size > 0 &&
+                        bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+                    codec.releaseOutputBuffer(index, false)
+                    if (hasFrame) {
+                        result.putBoolean(KEY_LEGACY_FIRST_REAL_FRAME_ENCODED, true)
+                        result.putLong(
+                            KEY_LEGACY_FIRST_FRAME_ELAPSED_MS,
+                            SystemClock.elapsedRealtime() - captureStartMs,
+                        )
+                        break
+                    }
+                }
+            }
+            if (!result.getBoolean(KEY_LEGACY_FIRST_REAL_FRAME_ENCODED, false)) {
+                result.failure(Failure.EncoderOutputTimeout)
+            }
+        } catch (throwable: Throwable) {
+            result.failure(Failure.from(throwable))
+        } finally {
+            var released = runCatching { captureApi.stopCapture() }.getOrNull() == CaptureError.None
+            if (codecStarted) released = runCatching { codec?.stop() }.isSuccess && released
+            released = runCatching { inputSurface?.release() }.isSuccess && released
+            released = runCatching { codec?.release() }.isSuccess && released
+            result.putBoolean(KEY_LEGACY_RELEASE_SUCCEEDED, released)
+        }
+        return result
+    }
+
+    private fun rawAvcRow(info: MediaCodecInfo, request: VideoEncoderRequest, allowActiveProbe: Boolean): String {
+        val capabilities = runCatching { info.getCapabilitiesForType(AVC_MIME) }.getOrNull()
+            ?: return "${info.name},capabilities=false"
+        val video = capabilities.videoCapabilities
+        val encoder = capabilities.encoderCapabilities
+        val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isHardwareAccelerated
+        val software = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isSoftwareOnly
+        val vendor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isVendor
+        val alias = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isAlias
+        val surface = capabilities.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+        val width = video.supportedWidths.contains(request.width)
+        val height = video.supportedHeights.contains(request.height)
+        val size = runCatching { video.isSizeSupported(request.width, request.height) }.getOrDefault(false)
+        val frameRate = runCatching {
+            video.areSizeAndRateSupported(request.width, request.height, request.frameRate.toDouble())
+        }.getOrDefault(false)
+        val bitrate = video.bitrateRange.contains(request.bitrateBps)
+        val cbr = encoder.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+        val cbrFd = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            encoder.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR_FD)
+        val format = runCatching { capabilities.isFormatSupported(AndroidVideoEncoderFormatFactory.create(request)) }
+            .getOrDefault(false)
+        val eligible = hardware && !software && surface && width && height && size && frameRate && bitrate
+        val activeProbe = if (!allowActiveProbe) {
+            "NotRun"
+        } else if (!cbr && eligible) {
+            AndroidExactVideoEncoderCapabilityProbe()
+                .probe(ExactVideoEncoderCapabilityKey.from(info.name, request))
+                .probeResult
+                ?.name ?: "None"
+        } else {
+            "NotNeeded"
+        }
+        return listOf(
+            info.name,
+            "hw=$hardware",
+            "sw=$software",
+            "vendor=$vendor",
+            "alias=$alias",
+            "surface=$surface",
+            "width=$width",
+            "height=$height",
+            "size=$size",
+            "fps60=$frameRate",
+            "bitrate8m=$bitrate",
+            "cbr=$cbr",
+            "cbrfd=$cbrFd",
+            "format=$format",
+            "probe=$activeProbe",
+            "profiles=${capabilities.profileLevels.size}",
+        ).joinToString(",")
+    }
+
+    private fun resolveLegacyStructure(result: Bundle) {
+        val surfaceControl = runCatching { Class.forName(LEGACY_SURFACE_CONTROL) }.getOrNull()
+        result.putBoolean(KEY_LEGACY_SURFACECONTROL_CLASS_AVAILABLE, surfaceControl != null)
+        val createDisplay = surfaceControl?.let { owner ->
+            runCatching {
+                owner.getDeclaredMethod(
+                    LEGACY_CREATE_DISPLAY,
+                    String::class.java,
+                    Boolean::class.javaPrimitiveType!!,
+                ).apply { isAccessible = true }
+            }.getOrNull()
+        }
+        result.putBoolean(KEY_LEGACY_CREATE_DISPLAY_AVAILABLE, createDisplay != null)
+    }
+
+    private fun videoRequest() = VideoEncoderRequest(
+        width = WIDTH,
+        height = HEIGHT,
+        frameRate = FRAME_RATE,
+        bitrateBps = BITRATE_BPS,
+        iFrameIntervalSeconds = I_FRAME_INTERVAL_SECONDS,
+    )
 
     private fun initialResult(kind: ExperimentalDisplayMirrorProbeKind): Bundle = Bundle().apply {
         putString(KEY_PROBE, kind.name)
@@ -209,14 +467,16 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
     fun destroy() = Unit
 
     private companion object {
-        const val PROBE_REVISION = "v2-direct-encoder-1"
+        const val PROBE_REVISION = "v2-a41-compatibility-2"
         const val KEY_PROBE_REVISION = "probe_revision"
         const val DISPLAY_MANAGER_GLOBAL = "android.hardware.display.DisplayManagerGlobal"
         const val DISPLAY_MANAGER = "android.hardware.display.DisplayManager"
+        const val LEGACY_SURFACE_CONTROL = "android.view.SurfaceControl"
         const val VIRTUAL_DISPLAY = "android.hardware.display.VirtualDisplay"
         const val GET_INSTANCE = "getInstance"
         const val GET_DISPLAY_INFO = "getDisplayInfo"
         const val CREATE_VIRTUAL_DISPLAY = "createVirtualDisplay"
+        const val LEGACY_CREATE_DISPLAY = "createDisplay"
         const val RELEASE = "release"
         const val DISPLAY_NAME = "WarpnectCaptureExperiment"
         const val DISPLAY_ID = 0
@@ -259,6 +519,29 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val KEY_RELEASE_SUCCEEDED = "release_succeeded"
         const val KEY_FAILURE = "failure"
         const val KEY_FAILURE_STAGE = "failure_stage"
+        const val KEY_AVC_ENCODER_COUNT = "avc_encoder_count"
+        const val KEY_AVC_ENCODER_INVENTORY = "avc_encoder_inventory"
+        const val KEY_VIDEO_ENCODER_AVAILABLE = "video_encoder_available"
+        const val KEY_VIDEO_ENCODER_REASON = "video_encoder_reason"
+        const val KEY_VIDEO_SELECTED_CODEC = "video_selected_codec"
+        const val KEY_VIDEO_PROBE_FAILURE = "video_probe_failure"
+        const val KEY_VIDEO_METADATA_ONLY = "video_metadata_only"
+        const val KEY_INPUT_API_RESOLVED = "input_api_resolved"
+        const val KEY_INPUT_ASYNC_SUPPORTED = "input_async_supported"
+        const val KEY_INPUT_DISPLAY_SUPPORTED = "input_display_supported"
+        const val KEY_INPUT_AVAILABLE = "input_available"
+        const val KEY_INPUT_REASON = "input_reason"
+        const val KEY_LEGACY_SURFACECONTROL_CLASS_AVAILABLE = "legacy_surfacecontrol_class_available"
+        const val KEY_LEGACY_CREATE_DISPLAY_AVAILABLE = "legacy_create_display_available"
+        const val KEY_LEGACY_SURFACECONTROL_AVAILABLE = "legacy_surfacecontrol_available"
+        const val KEY_LEGACY_RESOLUTION_ERROR = "legacy_resolution_error"
+        const val KEY_LEGACY_START_ERROR = "legacy_start_error"
+        const val KEY_LEGACY_DISPLAY_CREATED = "legacy_display_created"
+        const val KEY_LEGACY_SURFACE_ATTACHED = "legacy_surface_attached"
+        const val KEY_LEGACY_RELEASE_SUCCEEDED = "legacy_release_succeeded"
+        const val KEY_LEGACY_FIRST_REAL_FRAME_ENCODED = "legacy_first_real_frame_encoded"
+        const val KEY_LEGACY_FIRST_FRAME_ELAPSED_MS = "legacy_first_frame_elapsed_ms"
+        const val AVC_MIME = "video/avc"
     }
 }
 
