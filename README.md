@@ -10,7 +10,7 @@ SCL is the protocol layer. It owns packet foundations, transport abstractions, t
 
 ## Current Status
 
-This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and Phase 5 discovery, secure-session, lifecycle, and RFC-005I integration.
+This repository contains the frozen architecture baseline, the complete SCL Phase 1 core networking foundation, the complete Phase 2 Android video pipeline through RFC-002G, proposed supplemental RFC-002H Android capture compatibility architecture, the complete Phase 3 audio pipeline through RFC-003H, the complete Phase 4 reverse-input pipeline through RFC-004G, and Phase 5 discovery, secure-session, lifecycle, and RFC-005I integration.
 
 Present:
 
@@ -232,6 +232,7 @@ The produced Android shared library is `libscl_core.so`.
 - [RFC-002E Android Low-Latency Rendering Pipeline](docs/rfc/RFC-002E-Android-Low-Latency-Rendering-Pipeline.md)
 - [RFC-002F End-to-End Video Streaming](docs/rfc/RFC-002F-End-to-End-Video-Streaming.md)
 - [RFC-002G Video Latency, Recovery and Performance Tuning](docs/rfc/RFC-002G-Video-Latency-Recovery-Performance-Tuning.md)
+- [RFC-002H Android Privileged Screen Capture Backend and Privilege Boundary](docs/rfc/RFC-002H-Android-Privileged-Screen-Capture-Backend.md)
 - [RFC-003A Android Low-Latency Audio Capture Foundation](docs/rfc/RFC-003A-Android-Low-Latency-Audio-Capture-Foundation.md)
 - [RFC-003B Portable Ultra-Low-Latency Opus Audio Encoder Pipeline](docs/rfc/RFC-003B-Portable-Ultra-Low-Latency-Opus-Audio-Encoder-Pipeline.md)
 - [RFC-003C SCL Audio Payload and Transport Integration](docs/rfc/RFC-003C-SCL-Audio-Payload-Transport-Integration.md)
@@ -276,7 +277,7 @@ The produced Android shared library is `libscl_core.so`.
 
 ## Roadmap Summary
 
-Phase 1 networking is complete. Phase 2 video is complete: RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, RFC-002F end-to-end video session orchestration, and RFC-002G latency/recovery/performance tuning are implemented.
+Phase 1 networking is complete. Phase 2 core video is complete: RFC-002A privileged Android capture, RFC-002B hardware AVC encoding, RFC-002C encoded AVC transport over SCL, RFC-002D hardware AVC decoding, RFC-002E low-latency Surface rendering, RFC-002F end-to-end video session orchestration, and RFC-002G latency/recovery/performance tuning are implemented. RFC-002H is a proposed supplemental Android privileged screen-capture compatibility architecture grounded in hardware experiments; it is not implemented. H1 remains open pending its production implementation and renewed device validation.
 
 Phase 3 audio is implementation-complete. RFC-003A implements PCM capture foundations for privileged system/game playback where supported and independent microphone capture. RFC-003B adds a portable RestrictedLowDelay Opus encoder foundation for short raw Opus packets. RFC-003C adds SCL Audio Payload Version 1 transport for both system and microphone streams. RFC-003D adds a portable queue-free Opus decoder foundation with borrowed PCM output. RFC-003E adds an Android low-latency native playback foundation based on Oboe and a bounded PCM handoff ring. RFC-003F integrates end-to-end audio streaming with receiver-first StreamConfig handling, immediate sample-position ordering, small-gap Opus PLC, and freshness resets for large gaps. RFC-003G adds a latency-bounded A/V synchronization foundation that uses audio hardware presentation as the master clock, qualifies video timestamp compatibility before using scheduled rendering, and falls back to immediate presentation when trustworthy timing is unavailable. RFC-003H adds Phase 3 performance configuration, reproducible host-native audio benchmarks, freshness-oriented recovery evaluation, and documented production defaults.
 

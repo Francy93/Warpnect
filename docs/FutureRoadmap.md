@@ -2,7 +2,7 @@
 
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
-This roadmap is architectural context. Phase 1 core networking and Phase 2 video implementation are complete.
+This roadmap is architectural context. Phase 1 core networking and Phase 2 core video implementation are complete.
 
 ## Phase 0 - Architecture, Repository & Toolchain
 
@@ -31,7 +31,8 @@ Implemented the platform-independent C++20 networking core:
 
 ## Phase 2 - Video Pipeline
 
-Status: Complete.
+Status: Core implementation complete through RFC-002G. RFC-002H is proposed supplemental Android
+capture compatibility architecture and is not implemented.
 
 Implemented:
 
@@ -42,6 +43,12 @@ Implemented:
 - RFC-002E - Low-Latency Rendering Pipeline [complete]
 - RFC-002F - End-to-End Video Streaming [complete]
 - RFC-002G - Video Latency, Recovery and Performance Tuning [complete]
+- RFC-002H - Android Privileged Screen Capture Backend & Privilege Boundary [proposed]
+
+Phase 2 core history remains complete through RFC-002G. H1 hardware validation remains open pending
+RFC-002H production implementation and renewed device validation. Open hardware follow-up is kept
+separate: the RFC-002B exact strict-CBR active probe can abort tested MediaTek vendor codec code,
+and A41 `InputApiUnavailable` remains a Phase 4 privileged Input compatibility issue.
 
 ## Phase 3 - Audio Pipeline
 
