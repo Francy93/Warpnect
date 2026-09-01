@@ -30,7 +30,8 @@ internal enum class ExperimentalDisplayMirrorProbeKind(val code: Int) {
  * A bounded compatibility probe for the hidden static DisplayManager mirror API used as prior art
  * by current scrcpy. This creates no Warpnect Session, persists no pixels, and never sends media.
  */
-internal class ExperimentalDisplayMirrorProbe {
+/** A V2 helper prevents Shizuku from reusing the prior probe class during this isolated spike. */
+internal class ExperimentalDisplayMirrorProbeV2 {
     fun run(kind: ExperimentalDisplayMirrorProbeKind): Bundle {
         val result = Bundle().apply {
             putString(KEY_PROBE, kind.name)
@@ -99,7 +100,7 @@ internal class ExperimentalDisplayMirrorProbe {
         try {
             reader = ImageReader.newInstance(WIDTH, HEIGHT, PixelFormat.RGBA_8888, IMAGE_READER_BUFFERS)
             result.putBoolean(KEY_SURFACE_ATTACHED, reader.surface.isValid)
-            virtualDisplay = resolved.createVirtualDisplay(reader.surface)
+            virtualDisplay = resolved.createVirtualDisplay(reader.surface, result)
             result.putBoolean(KEY_CREATE_MIRROR_DISPLAY, virtualDisplay != null)
             if (virtualDisplay == null) {
                 result.failure(ExperimentalDisplayMirrorFailure.VirtualDisplayCreationFailed, null)
@@ -154,7 +155,7 @@ internal class ExperimentalDisplayMirrorProbe {
             codecStarted = true
             result.putBoolean(KEY_ENCODER_STARTED, true)
 
-            virtualDisplay = resolved.createVirtualDisplay(inputSurface)
+            virtualDisplay = resolved.createVirtualDisplay(inputSurface, result)
             result.putBoolean(KEY_CAPTURE_STARTED, virtualDisplay != null)
             if (virtualDisplay == null) {
                 result.failure(ExperimentalDisplayMirrorFailure.VirtualDisplayCreationFailed, null)
@@ -206,8 +207,50 @@ internal class ExperimentalDisplayMirrorProbe {
         null
     }
 
-    private fun ResolvedDisplayManagerMirror.createVirtualDisplay(surface: Surface): Any? =
-        createVirtualDisplay.invoke(null, DISPLAY_NAME, WIDTH, HEIGHT, DISPLAY_ID, surface)
+    private fun ResolvedDisplayManagerMirror.createVirtualDisplay(surface: Surface, result: Bundle): Any? {
+        val arguments: Array<Any> = arrayOf(DISPLAY_NAME, WIDTH, HEIGHT, DISPLAY_ID, surface)
+        result.putString(KEY_REFLECTION_STAGE, "arguments_created")
+        val expectedParameterTypes = arrayOf(
+            String::class.java,
+            Int::class.javaPrimitiveType!!,
+            Int::class.javaPrimitiveType!!,
+            Int::class.javaPrimitiveType!!,
+            Surface::class.java,
+        )
+        result.putString(KEY_REFLECTION_STAGE, "arguments_checked")
+        result.putInt(KEY_METHOD_PARAMETER_COUNT, expectedParameterTypes.size)
+        result.putInt(KEY_MIRROR_ARGUMENT_COUNT, arguments.size)
+        result.putBoolean(KEY_MIRROR_ARGUMENT_COUNT_MATCH, expectedParameterTypes.size == arguments.size)
+        val argumentsAssignable = expectedParameterTypes.zip(arguments).mapIndexed { index, (expected, value) ->
+            expected.accepts(value).also { assignable ->
+                result.putBoolean("$KEY_ARGUMENT_ASSIGNABLE_PREFIX$index$KEY_ARGUMENT_ASSIGNABLE_SUFFIX", assignable)
+            }
+        }
+        result.putBoolean(KEY_MIRROR_ARGUMENT_TYPES_MATCH, argumentsAssignable.all { it })
+        result.putString(KEY_REFLECTION_STAGE, "invoke_started")
+        return try {
+            createVirtualDisplay.invoke(null, DISPLAY_NAME, WIDTH, HEIGHT, DISPLAY_ID, surface).also {
+                result.putBoolean(KEY_REFLECTION_INVOCATION_ACCEPTED, true)
+            }
+        } catch (exception: InvocationTargetException) {
+            // The target method was entered; its wrapped failure is a service/platform result.
+            result.putBoolean(KEY_REFLECTION_INVOCATION_ACCEPTED, true)
+            throw exception
+        } catch (exception: IllegalArgumentException) {
+            result.putBoolean(KEY_REFLECTION_INVOCATION_ACCEPTED, false)
+            throw exception
+        }
+    }
+
+    private fun Class<*>.accepts(value: Any): Boolean = when {
+        !isPrimitive -> isInstance(value)
+        this == Int::class.javaPrimitiveType -> value is Int
+        this == Boolean::class.javaPrimitiveType -> value is Boolean
+        this == Long::class.javaPrimitiveType -> value is Long
+        this == Float::class.javaPrimitiveType -> value is Float
+        this == Double::class.javaPrimitiveType -> value is Double
+        else -> false
+    }
 
     private fun releaseVirtualDisplay(virtualDisplay: Any?): Boolean {
         if (virtualDisplay == null) return true
@@ -238,6 +281,7 @@ internal class ExperimentalDisplayMirrorProbe {
             KEY_FAILURE_STAGE,
             throwable?.let { ExperimentalDisplayMirrorFailure.from(it).name } ?: failure.name,
         )
+        throwable?.let { putString(KEY_FAILURE_ORIGIN, ExperimentalDisplayMirrorFailure.origin(it)) }
     }
 
     private data class ResolvedDisplayManagerMirror(val createVirtualDisplay: Method)
@@ -262,6 +306,14 @@ internal class ExperimentalDisplayMirrorProbe {
         const val KEY_DISPLAY_0_AVAILABLE = "display_0_available"
         const val KEY_MIRROR_METHOD_AVAILABLE = "mirror_method_available"
         const val KEY_EXPECTED_SIGNATURE_AVAILABLE = "expected_signature_available"
+        const val KEY_METHOD_PARAMETER_COUNT = "method_parameter_count"
+        const val KEY_MIRROR_ARGUMENT_COUNT = "mirror_argument_count"
+        const val KEY_MIRROR_ARGUMENT_COUNT_MATCH = "mirror_argument_count_match"
+        const val KEY_MIRROR_ARGUMENT_TYPES_MATCH = "mirror_argument_types_match"
+        const val KEY_ARGUMENT_ASSIGNABLE_PREFIX = "arg_"
+        const val KEY_ARGUMENT_ASSIGNABLE_SUFFIX = "_assignable"
+        const val KEY_REFLECTION_STAGE = "reflection_stage"
+        const val KEY_REFLECTION_INVOCATION_ACCEPTED = "reflection_invocation_accepted"
         const val KEY_CREATE_MIRROR_DISPLAY = "create_mirror_display"
         const val KEY_SURFACE_ATTACHED = "surface_attached"
         const val KEY_RELEASE_SUCCEEDED = "release_succeeded"
@@ -271,6 +323,7 @@ internal class ExperimentalDisplayMirrorProbe {
         const val KEY_FIRST_REAL_FRAME_ENCODED = "first_real_frame_encoded"
         const val KEY_FAILURE = "failure"
         const val KEY_FAILURE_STAGE = "failure_stage"
+        const val KEY_FAILURE_ORIGIN = "failure_origin"
     }
 }
 
@@ -281,7 +334,10 @@ private enum class ExperimentalDisplayMirrorFailure {
     SignatureMismatch,
     DisplayUnavailable,
     PermissionDenied,
-    InvocationFailed,
+    ReflectionArgumentMismatch,
+    DisplayConfigurationRejected,
+    BinderCallRejected,
+    PlatformInvocationFailed,
     VirtualDisplayCreationFailed,
     EncoderUnavailable,
     EncoderConfigurationFailed,
@@ -300,10 +356,28 @@ private enum class ExperimentalDisplayMirrorFailure {
                 is NoSuchMethodException -> MethodNotFound
                 is SecurityException -> PermissionDenied
                 is IllegalAccessException -> PermissionDenied
-                is IllegalArgumentException -> SignatureMismatch
+                is IllegalArgumentException -> {
+                    if (throwable is InvocationTargetException) {
+                        DisplayConfigurationRejected
+                    } else {
+                        ReflectionArgumentMismatch
+                    }
+                }
+                is android.os.RemoteException -> BinderCallRejected
                 is android.media.MediaCodec.CodecException -> EncoderStartFailed
-                else -> InvocationFailed
+                else -> PlatformInvocationFailed
             }
+        }
+
+        fun origin(throwable: Throwable): String = when (throwable) {
+            is InvocationTargetException -> when (throwable.targetException) {
+                is SecurityException -> "TargetSecurity"
+                is IllegalArgumentException -> "TargetIllegalArgument"
+                else -> "TargetFailure"
+            }
+            is IllegalArgumentException -> "ReflectionArgument"
+            is IllegalAccessException -> "ReflectionAccess"
+            else -> "ResolutionOrInvocation"
         }
     }
 }

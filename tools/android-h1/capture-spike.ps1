@@ -9,6 +9,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw "PowerShell 7 or later is required for the bounded ADB process runner."
+}
+
 $script:Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $script:ArtifactRoot = Join-Path $PSScriptRoot "artifacts"
 $script:RunDirectory = Join-Path $script:ArtifactRoot ((Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ"))
@@ -29,7 +33,7 @@ function Find-Adb {
 $script:Adb = Find-Adb
 
 function Invoke-AdbText {
-    param([string]$DeviceSerial, [string[]]$Arguments, [int]$TimeoutMilliseconds = 10_000)
+    param([string]$DeviceSerial, [string[]]$Arguments, [int]$TimeoutMilliseconds = 10000)
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $script:Adb
     $startInfo.UseShellExecute = $false
@@ -85,19 +89,20 @@ function Get-PhysicalDevices {
 
 function Get-DeviceInfo {
     param([pscustomobject]$Device)
-    $property = {
-        param([string]$name)
-        Invoke-AdbText $Device.serial @("shell", "getprop", $name)
-    }
     return [pscustomobject]@{
         serial = $Device.serial
-        manufacturer = & $property "ro.product.manufacturer"
-        model = & $property "ro.product.model"
-        android_release = & $property "ro.build.version.release"
-        api_level = & $property "ro.build.version.sdk"
-        abi = & $property "ro.product.cpu.abi"
+        manufacturer = Get-DeviceProperty $Device.serial "ro.product.manufacturer"
+        model = Get-DeviceProperty $Device.serial "ro.product.model"
+        android_release = Get-DeviceProperty $Device.serial "ro.build.version.release"
+        api_level = Get-DeviceProperty $Device.serial "ro.build.version.sdk"
+        abi = Get-DeviceProperty $Device.serial "ro.product.cpu.abi"
         connection = "adb"
     }
+}
+
+function Get-DeviceProperty {
+    param([string]$DeviceSerial, [string]$Name)
+    return Invoke-AdbText $DeviceSerial @("shell", "getprop", $Name)
 }
 
 function Write-ArtifactJson {
@@ -125,7 +130,7 @@ function Get-ApkInfo {
 
 function Install-Apk {
     param([pscustomobject]$Device, [string]$Apk)
-    $output = Invoke-AdbText $Device.serial @("install", "-r", $Apk) 120_000
+    $output = Invoke-AdbText $Device.serial @("install", "-r", $Apk) 120000
     if ($output -notmatch "Success") { throw "INSTALL_FAILED on $($Device.serial): $output" }
     $packagePath = Invoke-AdbText $Device.serial @("shell", "pm", "path", $script:PackageName)
     if ($packagePath -notmatch "package:") { throw "Warpnect package is missing on $($Device.serial)." }
@@ -133,10 +138,10 @@ function Install-Apk {
 
 function Get-ProbeCode {
     param([string]$ProbeName)
-    return switch ($ProbeName) {
-        "Resolution" { 1 }
-        "MirrorLifecycle" { 2 }
-        "EncoderFrame" { 3 }
+    switch ($ProbeName) {
+        "Resolution" { return 1 }
+        "MirrorLifecycle" { return 2 }
+        "EncoderFrame" { return 3 }
         default { throw "Unsupported probe '$ProbeName'." }
     }
 }
@@ -144,7 +149,7 @@ function Get-ProbeCode {
 function Convert-ExperimentLogLine {
     param([string]$Line)
     $result = [ordered]@{}
-    foreach ($match in [regex]::Matches($Line, "(?<key>[a-z_]+)=(?<value>[^\s]+)")) {
+    foreach ($match in [regex]::Matches($Line, "(?<key>[a-z0-9_]+)=(?<value>[^\s]+)")) {
         $result[$match.Groups["key"].Value] = $match.Groups["value"].Value
     }
     return [pscustomobject]$result

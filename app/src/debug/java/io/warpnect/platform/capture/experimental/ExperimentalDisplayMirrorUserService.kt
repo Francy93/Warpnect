@@ -8,7 +8,7 @@ import android.os.Bundle
  */
 class ExperimentalDisplayMirrorUserService : IExperimentalDisplayMirrorService.Stub() {
     private val lock = Any()
-    private val probe = ExperimentalDisplayMirrorProbe()
+    private val probe = ExperimentalDisplayMirrorProbeV2()
 
     override fun runProbe(probeKind: Int): Bundle = synchronized(lock) {
         probe.run(ExperimentalDisplayMirrorProbeKind.fromCode(probeKind))

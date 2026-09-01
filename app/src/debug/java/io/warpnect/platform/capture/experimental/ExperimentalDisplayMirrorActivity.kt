@@ -35,12 +35,12 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             intent.getIntExtra(EXTRA_PROBE_KIND, ExperimentalDisplayMirrorProbeKind.Resolution.code),
         )
         args = Shizuku.UserServiceArgs(
-            ComponentName(packageName, ExperimentalDisplayMirrorUserService::class.java.name),
+            ComponentName(packageName, ExperimentalDisplayMirrorUserServiceV2::class.java.name),
         )
             .daemon(false)
             .debuggable(BuildConfig.DEBUG)
-            .processNameSuffix("capture-experiment")
-            .tag("capture-experiment")
+            .processNameSuffix("capture-experiment-v2")
+            .tag(SERVICE_TAG)
             .version(SERVICE_VERSION)
         scope.launch {
             val result = if (!isShizukuReady()) {
@@ -54,6 +54,7 @@ class ExperimentalDisplayMirrorActivity : Activity() {
                         .getOrElse { Bundle().apply { putString(KEY_CLIENT_FAILURE, "ProbeRemoteFailure") } }
                 }
             }
+            result.putString(KEY_CLIENT_REVISION, CLIENT_REVISION)
             logResult(runId, probe, result)
             unbindService()
             finish()
@@ -124,17 +125,33 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val TAG = "WarpnectCaptureExperiment"
         const val EXTRA_RUN_ID = "io.warpnect.capture.experiment.RUN_ID"
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
-        const val SERVICE_VERSION = 1
+
+        // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
+        const val SERVICE_VERSION = 9
+        const val SERVICE_TAG = "capture-experiment-v2-reflection"
+        const val CLIENT_REVISION = "activity-v2-descriptor-1"
         const val BIND_TIMEOUT_MS = 5_000L
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,40}")
         val SAFE_KEYS = listOf(
             "uid",
             "identity_mode",
             "selinux_context",
+            "probe_revision",
             "display_manager_service_available",
             "display_0_available",
             "mirror_method_available",
             "expected_signature_available",
+            "method_parameter_count",
+            "mirror_argument_count",
+            "mirror_argument_count_match",
+            "mirror_argument_types_match",
+            "arg_0_assignable",
+            "arg_1_assignable",
+            "arg_2_assignable",
+            "arg_3_assignable",
+            "arg_4_assignable",
+            "reflection_stage",
+            "reflection_invocation_accepted",
             "create_mirror_display",
             "surface_attached",
             "mirror_lifecycle_succeeded",
@@ -144,8 +161,11 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "release_succeeded",
             "failure",
             "failure_stage",
+            "failure_origin",
             KEY_CLIENT_FAILURE,
+            KEY_CLIENT_REVISION,
         )
         const val KEY_CLIENT_FAILURE = "client_failure"
+        const val KEY_CLIENT_REVISION = "client_revision"
     }
 }
