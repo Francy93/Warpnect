@@ -150,9 +150,9 @@ class ExperimentalDisplayMirrorActivity : Activity() {
         const val EXTRA_PROBE_KIND = "io.warpnect.capture.experiment.PROBE_KIND"
 
         // Shizuku uses this value to recreate a UserService after its debug bytecode changes.
-        const val SERVICE_VERSION = 17
+        const val SERVICE_VERSION = 19
         const val SERVICE_TAG = "capture-experiment-v2-reflection"
-        const val CLIENT_REVISION = "activity-v2-a41-legacy-diagnostics-3"
+        const val CLIENT_REVISION = "activity-v2-a41-legacy-vbr-frame-1"
         const val BIND_TIMEOUT_MS = 5_000L
         const val RESULT_DIRECTORY = "capture-experiment"
         val RUN_ID_PATTERN = Regex("[A-Za-z0-9_-]{1,40}")
@@ -234,6 +234,17 @@ class ExperimentalDisplayMirrorActivity : Activity() {
             "legacy_configuration_layer_stack_result",
             "legacy_configuration_projection_result",
             "legacy_configuration_release_succeeded",
+            "legacy_compatibility_methods_resolved",
+            "legacy_compatibility_arguments_assignable",
+            "legacy_compatibility_surface_valid",
+            "legacy_compatibility_surface_released",
+            "legacy_compatibility_matrix",
+            "legacy_compatibility_release_succeeded",
+            "legacy_vbr_advertised",
+            "legacy_vbr_codec",
+            "legacy_vbr_secure",
+            "legacy_vbr_mirror_outcome",
+            "capture_backend_frame_proof_only",
             "legacy_surfacecontrol_available",
             "legacy_resolution_error",
             "legacy_start_error",

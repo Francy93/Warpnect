@@ -1,10 +1,11 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "VideoCapability", "VideoMetadata", "InputCapability", "LegacyLifecycle", "LegacyEncoderFrame", "All")]
+    [ValidateSet("Resolution", "MirrorLifecycle", "EncoderFrame", "VideoCapability", "VideoMetadata", "InputCapability", "LegacyLifecycle", "LegacyCompatibility", "LegacyEncoderFrame", "LegacyVbrEncoderFrame", "All")]
     [string]$Probe = "All",
     [string[]]$Serial = @(),
     [switch]$SkipBuild,
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$AllowRiskyCodecProbe
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +32,10 @@ function Find-Adb {
 }
 
 $script:Adb = Find-Adb
+
+if ($Probe -eq "LegacyVbrEncoderFrame" -and -not $AllowRiskyCodecProbe) {
+    throw "LegacyVbrEncoderFrame can abort a vendor codec process. Re-run only with -AllowRiskyCodecProbe."
+}
 
 function Invoke-AdbText {
     param([string]$DeviceSerial, [string[]]$Arguments, [int]$TimeoutMilliseconds = 10000)
@@ -149,6 +154,8 @@ function Get-ProbeCode {
         "LegacyLifecycle" { return 6 }
         "LegacyEncoderFrame" { return 7 }
         "VideoMetadata" { return 8 }
+        "LegacyCompatibility" { return 9 }
+        "LegacyVbrEncoderFrame" { return 10 }
         default { throw "Unsupported probe '$ProbeName'." }
     }
 }

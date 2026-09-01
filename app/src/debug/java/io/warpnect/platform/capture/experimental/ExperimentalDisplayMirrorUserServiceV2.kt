@@ -6,6 +6,7 @@ import android.media.ImageReader
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -40,7 +41,9 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
                 ExperimentalDisplayMirrorProbeKind.VideoCapability -> runVideoCapability()
                 ExperimentalDisplayMirrorProbeKind.InputCapability -> runInputCapability()
                 ExperimentalDisplayMirrorProbeKind.LegacyLifecycle -> runLegacyLifecycle()
+                ExperimentalDisplayMirrorProbeKind.LegacyCompatibility -> runLegacyCompatibility()
                 ExperimentalDisplayMirrorProbeKind.LegacyEncoderFrame -> runLegacyEncoderFrame()
+                ExperimentalDisplayMirrorProbeKind.LegacyVbrEncoderFrame -> runLegacyVbrEncoderFrame()
                 ExperimentalDisplayMirrorProbeKind.VideoMetadata -> runVideoMetadata()
             }
         } catch (throwable: Throwable) {
@@ -249,6 +252,126 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
             val stopped = runCatching { captureApi.stopCapture() }.getOrNull() == CaptureError.None
             val readerReleased = runCatching { reader?.close() }.isSuccess
             result.putBoolean(KEY_LEGACY_RELEASE_SUCCEEDED, stopped && readerReleased)
+        }
+        return result
+    }
+
+    /**
+     * Debug-only comparison of the existing no-transaction invocation with the scrcpy-style
+     * transaction ordering. It never starts a Session or retains a display after the probe.
+     */
+    private fun runLegacyCompatibility(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.LegacyCompatibility)
+        var reader: ImageReader? = null
+        try {
+            val methods = resolveLegacyCompatibilityMethods(result) ?: return result
+            reader = ImageReader.newInstance(WIDTH, HEIGHT, PixelFormat.RGBA_8888, IMAGE_READER_BUFFERS)
+            result.putBoolean(KEY_LEGACY_COMPATIBILITY_SURFACE_VALID, reader.surface.isValid)
+            result.putBoolean(KEY_LEGACY_COMPATIBILITY_SURFACE_RELEASED, false)
+            val displayState = resolveLegacyDisplayState(methods) ?: return result
+            val rows = listOf(
+                runLegacyCompatibilityVariant(
+                    methods = methods,
+                    displayState = displayState,
+                    surface = reader.surface,
+                    secure = true,
+                    transaction = false,
+                ),
+                runLegacyCompatibilityVariant(
+                    methods = methods,
+                    displayState = displayState,
+                    surface = reader.surface,
+                    secure = true,
+                    transaction = true,
+                ),
+                runLegacyCompatibilityVariant(
+                    methods = methods,
+                    displayState = displayState,
+                    surface = reader.surface,
+                    secure = false,
+                    transaction = true,
+                ),
+            )
+            result.putString(KEY_LEGACY_COMPATIBILITY_MATRIX, rows.joinToString("|"))
+        } catch (throwable: Throwable) {
+            result.failure(Failure.from(throwable))
+        } finally {
+            val released = runCatching { reader?.close() }.isSuccess
+            result.putBoolean(KEY_LEGACY_COMPATIBILITY_RELEASE_SUCCEEDED, released)
+        }
+        return result
+    }
+
+    /**
+     * Frame proof only for the legacy capture bridge. It uses an AVC VBR mode advertised by the
+     * local codec and is deliberately separate from Warpnect's strict-CBR production profile.
+     */
+    private fun runLegacyVbrEncoderFrame(): Bundle {
+        val result = initialResult(ExperimentalDisplayMirrorProbeKind.LegacyVbrEncoderFrame)
+        val methods = resolveLegacyCompatibilityMethods(result) ?: return result
+        val displayState = resolveLegacyDisplayState(methods) ?: return result
+        val codecInfo = findAdvertisedVbrAvcEncoder() ?: return result.failure(Failure.EncoderUnavailable)
+        result.putBoolean(KEY_LEGACY_VBR_ADVERTISED, true)
+        result.putBoolean(KEY_CAPTURE_BACKEND_FRAME_PROOF_ONLY, true)
+        result.putString(KEY_LEGACY_VBR_CODEC, codecInfo.name)
+
+        var codec: MediaCodec? = null
+        var inputSurface: Surface? = null
+        var codecStarted = false
+        var mirror: LegacyVbrMirror? = null
+        try {
+            codec = MediaCodec.createByCodecName(codecInfo.name)
+            codec.configure(
+                legacyVbrFormat(),
+                null,
+                null,
+                MediaCodec.CONFIGURE_FLAG_ENCODE,
+            )
+            result.putBoolean(KEY_ENCODER_CONFIGURED, true)
+            inputSurface = codec.createInputSurface()
+            codec.start()
+            codecStarted = true
+            result.putBoolean(KEY_ENCODER_STARTED, true)
+
+            val mirrorAttempt = createLegacyVbrMirror(methods, displayState, checkNotNull(inputSurface))
+            result.putString(KEY_LEGACY_VBR_MIRROR_OUTCOME, mirrorAttempt.outcome)
+            mirror = mirrorAttempt.mirror
+            result.putBoolean(KEY_LEGACY_DISPLAY_CREATED, mirror != null)
+            result.putBoolean(KEY_LEGACY_SURFACE_ATTACHED, mirror != null)
+            if (mirror == null) return result.failure(Failure.DisplayConfigurationRejected)
+            result.putBoolean(KEY_CAPTURE_STARTED, true)
+            result.putString(KEY_LEGACY_VBR_SECURE, mirror.secure.toString())
+
+            val captureStartMs = SystemClock.elapsedRealtime()
+            val bufferInfo = MediaCodec.BufferInfo()
+            val deadlineMs = captureStartMs + ENCODE_TIMEOUT_MS
+            while (SystemClock.elapsedRealtime() < deadlineMs) {
+                val index = codec.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)
+                if (index >= 0) {
+                    val hasFrame = bufferInfo.size > 0 &&
+                        bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+                    codec.releaseOutputBuffer(index, false)
+                    if (hasFrame) {
+                        result.putBoolean(KEY_LEGACY_FIRST_REAL_FRAME_ENCODED, true)
+                        result.putLong(
+                            KEY_LEGACY_FIRST_FRAME_ELAPSED_MS,
+                            SystemClock.elapsedRealtime() - captureStartMs,
+                        )
+                        break
+                    }
+                }
+            }
+            if (!result.getBoolean(KEY_LEGACY_FIRST_REAL_FRAME_ENCODED, false)) {
+                result.failure(Failure.EncoderOutputTimeout)
+            }
+        } catch (throwable: Throwable) {
+            result.failure(Failure.from(throwable))
+        } finally {
+            var released = mirror?.release() ?: true
+            if (codecStarted) released = runCatching { codec?.stop() }.isSuccess && released
+            released = runCatching { inputSurface?.release() }.isSuccess && released
+            released = runCatching { codec?.release() }.isSuccess && released
+            result.putBoolean(KEY_LEGACY_RELEASE_SUCCEEDED, released)
         }
         return result
     }
@@ -665,6 +788,261 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         false
     }
 
+    private fun resolveLegacyCompatibilityMethods(result: Bundle): LegacyCompatibilityMethods? {
+        val surfaceControl = runCatching { Class.forName(LEGACY_SURFACE_CONTROL) }.getOrNull() ?: return null
+        val displayManagerGlobal = runCatching { Class.forName(DISPLAY_MANAGER_GLOBAL) }.getOrNull() ?: return null
+        val methods = LegacyCompatibilityMethods(
+            createDisplay = surfaceControl.declaredMethod(
+                LEGACY_CREATE_DISPLAY,
+                String::class.java,
+                Boolean::class.javaPrimitiveType!!,
+            ) ?: return null,
+            destroyDisplay = surfaceControl.declaredMethod(LEGACY_DESTROY_DISPLAY, IBinder::class.java) ?: return null,
+            setDisplaySurface = surfaceControl.declaredMethod(
+                LEGACY_SET_DISPLAY_SURFACE,
+                IBinder::class.java,
+                Surface::class.java,
+            ) ?: return null,
+            setDisplayProjection = surfaceControl.declaredMethod(
+                LEGACY_SET_DISPLAY_PROJECTION,
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+                Rect::class.java,
+                Rect::class.java,
+            ) ?: return null,
+            setDisplayLayerStack = surfaceControl.declaredMethod(
+                LEGACY_SET_DISPLAY_LAYER_STACK,
+                IBinder::class.java,
+                Int::class.javaPrimitiveType!!,
+            ) ?: return null,
+            openTransaction = surfaceControl.declaredMethod(LEGACY_OPEN_TRANSACTION) ?: return null,
+            closeTransaction = surfaceControl.declaredMethod(LEGACY_CLOSE_TRANSACTION) ?: return null,
+            getInstance = displayManagerGlobal.declaredMethod(GET_INSTANCE) ?: return null,
+            getDisplayInfo = displayManagerGlobal.declaredMethod(
+                GET_DISPLAY_INFO,
+                Int::class.javaPrimitiveType!!,
+            ) ?: return null,
+        )
+        result.putBoolean(KEY_LEGACY_COMPATIBILITY_METHODS_RESOLVED, true)
+        result.putBoolean(KEY_LEGACY_COMPATIBILITY_ARGUMENTS_ASSIGNABLE, true)
+        return methods
+    }
+
+    private fun resolveLegacyDisplayState(methods: LegacyCompatibilityMethods): LegacyDisplayState? {
+        val manager = methods.getInstance.invoke(null) ?: return null
+        val info = methods.getDisplayInfo.invoke(manager, DISPLAY_ID) ?: return null
+        val owner = info.javaClass
+        val width = owner.declaredField("logicalWidth")?.getInt(info) ?: return null
+        val height = owner.declaredField("logicalHeight")?.getInt(info) ?: return null
+        val rotation = owner.declaredField("rotation")?.getInt(info) ?: return null
+        val layerStack = owner.declaredField("layerStack")?.getInt(info) ?: DISPLAY_ID
+        val projection = CaptureGeometry.computeProjection(
+            sourceWidth = width,
+            sourceHeight = height,
+            sourceRotation = rotation,
+            targetWidth = WIDTH,
+            targetHeight = HEIGHT,
+        )
+        return LegacyDisplayState(
+            layerStack = layerStack,
+            orientation = projection.orientation,
+            sourceRect = Rect(
+                projection.sourceCrop.left,
+                projection.sourceCrop.top,
+                projection.sourceCrop.right,
+                projection.sourceCrop.bottom,
+            ),
+            targetRect = Rect(
+                projection.targetRect.left,
+                projection.targetRect.top,
+                projection.targetRect.right,
+                projection.targetRect.bottom,
+            ),
+        )
+    }
+
+    private fun runLegacyCompatibilityVariant(
+        methods: LegacyCompatibilityMethods,
+        displayState: LegacyDisplayState,
+        surface: Surface,
+        secure: Boolean,
+        transaction: Boolean,
+    ): String {
+        val label = "secure=$secure,transaction=$transaction"
+        val token = try {
+            methods.createDisplay.invoke(null, LEGACY_COMPATIBILITY_DISPLAY_NAME, secure) as? IBinder
+        } catch (exception: InvocationTargetException) {
+            return "$label,token=${legacyInvocationOutcome(exception.targetException)},release=NotNeeded"
+        } catch (exception: IllegalArgumentException) {
+            return "$label,token=ReflectionArgument,release=NotNeeded"
+        }
+        if (token == null) return "$label,token=NullToken,release=NotNeeded"
+
+        var opened = false
+        var transactionResult = if (transaction) "NotOpened" else "NotRequested"
+        var surfaceResult = "NotReached"
+        var projectionResult = "NotReached"
+        var layerStackResult = "NotReached"
+        var released = false
+        try {
+            if (transaction) {
+                transactionResult = invokeLegacyCompatibilityStep(methods.openTransaction)
+                opened = transactionResult == "Succeeded"
+            }
+            if (!transaction || opened) {
+                surfaceResult = invokeLegacyCompatibilityStep(methods.setDisplaySurface, token, surface)
+                if (surfaceResult == "Succeeded") {
+                    projectionResult = invokeLegacyCompatibilityStep(
+                        methods.setDisplayProjection,
+                        token,
+                        displayState.orientation,
+                        displayState.sourceRect,
+                        displayState.targetRect,
+                    )
+                }
+                if (projectionResult == "Succeeded") {
+                    layerStackResult = invokeLegacyCompatibilityStep(
+                        methods.setDisplayLayerStack,
+                        token,
+                        displayState.layerStack,
+                    )
+                }
+            }
+        } finally {
+            if (opened) runCatching { methods.closeTransaction.invoke(null) }
+            runCatching { methods.setDisplaySurface.invoke(null, token, null) }
+            released = runCatching { methods.destroyDisplay.invoke(null, token) }.isSuccess
+        }
+        return listOf(
+            label,
+            "token=TokenReturned",
+            "transaction=$transactionResult",
+            "surface=$surfaceResult",
+            "projection=$projectionResult",
+            "layer_stack=$layerStackResult",
+            "release=${if (released) "Succeeded" else "Failed"}",
+        ).joinToString(",")
+    }
+
+    private fun findAdvertisedVbrAvcEncoder(): MediaCodecInfo? =
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull { info ->
+            if (!info.isEncoder || !info.supportedTypes.any { it.equals(AVC_MIME, ignoreCase = true) }) {
+                return@firstOrNull false
+            }
+            val capabilities = runCatching { info.getCapabilitiesForType(AVC_MIME) }.getOrNull()
+                ?: return@firstOrNull false
+            val video = capabilities.videoCapabilities
+            val encoder = capabilities.encoderCapabilities
+            val hardware = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info.isHardwareAccelerated
+            val surface = capabilities.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            hardware &&
+                !info.isSoftwareOnly &&
+                surface &&
+                video.isSizeSupported(WIDTH, HEIGHT) &&
+                video.areSizeAndRateSupported(WIDTH, HEIGHT, FRAME_RATE.toDouble()) &&
+                video.bitrateRange.contains(BITRATE_BPS) &&
+                encoder.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR) &&
+                capabilities.isFormatSupported(legacyVbrFormat())
+        }
+
+    private fun legacyVbrFormat(): MediaFormat {
+        return MediaFormat.createVideoFormat(AVC_MIME, WIDTH, HEIGHT).apply {
+            setInteger(
+                MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
+            )
+            setInteger(MediaFormat.KEY_BIT_RATE, BITRATE_BPS)
+            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+            setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
+            setFloat(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SECONDS)
+        }
+    }
+
+    private fun createLegacyVbrMirror(
+        methods: LegacyCompatibilityMethods,
+        displayState: LegacyDisplayState,
+        surface: Surface,
+    ): LegacyVbrMirrorAttempt {
+        var latestOutcome = "NoVariantSucceeded"
+        for (secure in listOf(true, false)) {
+            val token = try {
+                methods.createDisplay.invoke(null, LEGACY_COMPATIBILITY_DISPLAY_NAME, secure) as? IBinder
+            } catch (exception: InvocationTargetException) {
+                latestOutcome = "secure=$secure,token=${legacyInvocationOutcome(exception.targetException)}"
+                continue
+            } catch (exception: IllegalArgumentException) {
+                latestOutcome = "secure=$secure,token=ReflectionArgument"
+                continue
+            }
+            if (token == null) {
+                latestOutcome = "secure=$secure,token=NullToken"
+                continue
+            }
+
+            var opened = false
+            var completed = false
+            var closeResult = "NotReached"
+            var transactionResult = "NotReached"
+            var surfaceResult = "NotReached"
+            var projectionResult = "NotReached"
+            var layerStackResult = "NotReached"
+            try {
+                transactionResult = invokeLegacyCompatibilityStep(methods.openTransaction)
+                opened = transactionResult == "Succeeded"
+                if (opened) {
+                    surfaceResult = invokeLegacyCompatibilityStep(methods.setDisplaySurface, token, surface)
+                    if (surfaceResult == "Succeeded") {
+                        projectionResult = invokeLegacyCompatibilityStep(
+                            methods.setDisplayProjection,
+                            token,
+                            displayState.orientation,
+                            displayState.sourceRect,
+                            displayState.targetRect,
+                        )
+                    }
+                    if (projectionResult == "Succeeded") {
+                        layerStackResult = invokeLegacyCompatibilityStep(
+                            methods.setDisplayLayerStack,
+                            token,
+                            displayState.layerStack,
+                        )
+                    }
+                    completed = layerStackResult == "Succeeded"
+                }
+                latestOutcome = listOf(
+                    "secure=$secure",
+                    "transaction=$transactionResult",
+                    "surface=$surfaceResult",
+                    "projection=$projectionResult",
+                    "layer_stack=$layerStackResult",
+                ).joinToString(",")
+            } finally {
+                if (opened) closeResult = invokeLegacyCompatibilityStep(methods.closeTransaction)
+                if (!completed || closeResult != "Succeeded") {
+                    runCatching { methods.setDisplaySurface.invoke(null, token, null) }
+                    runCatching { methods.destroyDisplay.invoke(null, token) }
+                }
+            }
+            latestOutcome = "$latestOutcome,close=$closeResult"
+            if (completed && closeResult == "Succeeded") {
+                return LegacyVbrMirrorAttempt(
+                    mirror = LegacyVbrMirror(methods, token, secure),
+                    outcome = latestOutcome,
+                )
+            }
+        }
+        return LegacyVbrMirrorAttempt(mirror = null, outcome = latestOutcome)
+    }
+
+    private fun invokeLegacyCompatibilityStep(method: Method, vararg arguments: Any): String = try {
+        method.invoke(null, *arguments)
+        "Succeeded"
+    } catch (exception: InvocationTargetException) {
+        legacyInvocationOutcome(exception.targetException)
+    } catch (exception: IllegalArgumentException) {
+        "ReflectionArgument"
+    }
+
     private fun inspectModernMirrorMethodShapes(result: Bundle) {
         val manager = runCatching { Class.forName(DISPLAY_MANAGER) }.getOrNull() ?: return
         val shapes = manager.declaredMethods.asSequence()
@@ -704,6 +1082,42 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         is Error -> "InvocationTargetError"
         else -> "InvocationTargetOther"
     }
+
+    private data class LegacyCompatibilityMethods(
+        val createDisplay: Method,
+        val destroyDisplay: Method,
+        val setDisplaySurface: Method,
+        val setDisplayProjection: Method,
+        val setDisplayLayerStack: Method,
+        val openTransaction: Method,
+        val closeTransaction: Method,
+        val getInstance: Method,
+        val getDisplayInfo: Method,
+    )
+
+    private data class LegacyDisplayState(
+        val layerStack: Int,
+        val orientation: Int,
+        val sourceRect: Rect,
+        val targetRect: Rect,
+    )
+
+    private data class LegacyVbrMirror(
+        private val methods: LegacyCompatibilityMethods,
+        private val token: IBinder,
+        val secure: Boolean,
+    ) {
+        fun release(): Boolean {
+            val detached = runCatching { methods.setDisplaySurface.invoke(null, token, null) }.isSuccess
+            val destroyed = runCatching { methods.destroyDisplay.invoke(null, token) }.isSuccess
+            return detached && destroyed
+        }
+    }
+
+    private data class LegacyVbrMirrorAttempt(
+        val mirror: LegacyVbrMirror?,
+        val outcome: String,
+    )
 
     private fun videoRequest() = VideoEncoderRequest(
         width = WIDTH,
@@ -794,7 +1208,7 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
     fun destroy() = Unit
 
     private companion object {
-        const val PROBE_REVISION = "v2-a41-legacy-diagnostics-3"
+        const val PROBE_REVISION = "v2-a41-legacy-vbr-frame-1"
         const val KEY_PROBE_REVISION = "probe_revision"
         const val DISPLAY_MANAGER_GLOBAL = "android.hardware.display.DisplayManagerGlobal"
         const val DISPLAY_MANAGER = "android.hardware.display.DisplayManager"
@@ -809,10 +1223,13 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val LEGACY_SET_DISPLAY_SURFACE = "setDisplaySurface"
         const val LEGACY_SET_DISPLAY_PROJECTION = "setDisplayProjection"
         const val LEGACY_SET_DISPLAY_LAYER_STACK = "setDisplayLayerStack"
+        const val LEGACY_OPEN_TRANSACTION = "openTransaction"
+        const val LEGACY_CLOSE_TRANSACTION = "closeTransaction"
         const val RELEASE = "release"
         const val DISPLAY_NAME = "WarpnectCaptureExperiment"
         const val LEGACY_DISPLAY_NAME = "WarpnectCaptureExperimentLegacy"
         const val LEGACY_CONFIGURATION_DISPLAY_NAME = "WarpnectCaptureExperimentLegacyConfig"
+        const val LEGACY_COMPATIBILITY_DISPLAY_NAME = "WarpnectCaptureExperimentLegacyCompatibility"
         const val LEGACY_DISPLAY_SECURE = true
         const val DISPLAY_ID = 0
         const val WIDTH = 1280
@@ -898,6 +1315,17 @@ class ExperimentalDisplayMirrorUserServiceV2 : IExperimentalDisplayMirrorService
         const val KEY_LEGACY_CONFIGURATION_LAYER_STACK_RESULT = "legacy_configuration_layer_stack_result"
         const val KEY_LEGACY_CONFIGURATION_PROJECTION_RESULT = "legacy_configuration_projection_result"
         const val KEY_LEGACY_CONFIGURATION_RELEASE_SUCCEEDED = "legacy_configuration_release_succeeded"
+        const val KEY_LEGACY_COMPATIBILITY_METHODS_RESOLVED = "legacy_compatibility_methods_resolved"
+        const val KEY_LEGACY_COMPATIBILITY_ARGUMENTS_ASSIGNABLE = "legacy_compatibility_arguments_assignable"
+        const val KEY_LEGACY_COMPATIBILITY_SURFACE_VALID = "legacy_compatibility_surface_valid"
+        const val KEY_LEGACY_COMPATIBILITY_SURFACE_RELEASED = "legacy_compatibility_surface_released"
+        const val KEY_LEGACY_COMPATIBILITY_MATRIX = "legacy_compatibility_matrix"
+        const val KEY_LEGACY_COMPATIBILITY_RELEASE_SUCCEEDED = "legacy_compatibility_release_succeeded"
+        const val KEY_LEGACY_VBR_ADVERTISED = "legacy_vbr_advertised"
+        const val KEY_LEGACY_VBR_CODEC = "legacy_vbr_codec"
+        const val KEY_LEGACY_VBR_SECURE = "legacy_vbr_secure"
+        const val KEY_LEGACY_VBR_MIRROR_OUTCOME = "legacy_vbr_mirror_outcome"
+        const val KEY_CAPTURE_BACKEND_FRAME_PROOF_ONLY = "capture_backend_frame_proof_only"
         const val KEY_LEGACY_SURFACECONTROL_AVAILABLE = "legacy_surfacecontrol_available"
         const val KEY_LEGACY_RESOLUTION_ERROR = "legacy_resolution_error"
         const val KEY_LEGACY_START_ERROR = "legacy_start_error"

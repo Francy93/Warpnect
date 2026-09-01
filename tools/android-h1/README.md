@@ -55,6 +55,12 @@ The legacy lifecycle probe records the reflection boundary, temporary-display cl
 first configuration operation that fails. The DisplayManager resolution probe reports only
 Surface-targeted `createVirtualDisplay` method shapes; it does not invoke alternate signatures.
 
+`LegacyCompatibility` compares the legacy secure flag and transaction ordering using only a
+temporary `Surface`; it never creates a codec. `LegacyVbrEncoderFrame` is an explicit frame-proof
+experiment, not RFC-002B qualification. It is intentionally excluded from `All` and requires
+`-AllowRiskyCodecProbe`, because a vendor codec may abort its isolated Shizuku UserService even
+for advertised VBR configuration. Do not run it to retry strict-CBR capability probing.
+
 ```powershell
 .\tools\android-h1\capture-spike.ps1 -Probe All
 ```
