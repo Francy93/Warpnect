@@ -1,6 +1,7 @@
 package io.warpnect.platform.capture.privileged
 
 import android.graphics.Rect
+import android.media.ImageReader
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -23,6 +24,7 @@ import java.lang.reflect.Method
 internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
     private var resolved: ResolvedSurfaceControlApi? = null
     private var lastResolutionFailure: CaptureBridgeResolutionFailure? = null
+    private var qualification: LegacySurfaceControlQualification? = null
     private var displayToken: IBinder? = null
     private var activeRequest: CaptureRequest? = null
     private var activeDisplayInfo: CaptureDisplayInfo? = null
@@ -31,13 +33,10 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
     private var lastError = CaptureError.None
 
     override fun queryCapabilities(): CaptureCapabilities {
-        val api = resolveApi()
+        val qualified = qualify()
+        val api = qualified.api
+        val error = qualified.error
         val defaultDisplay = api?.queryDisplayInfo(DEFAULT_DISPLAY_ID)
-        val error = when {
-            api == null -> CaptureError.HiddenApiUnavailable
-            defaultDisplay == null -> CaptureError.SourceDisplayNotFound
-            else -> CaptureError.None
-        }
         return CaptureCapabilities(
             privilegeState = if (error == CaptureError.None) {
                 CapturePrivilegeState.Ready
@@ -57,12 +56,14 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         if (displayToken != null) {
             return remember(CaptureError.AlreadyRunning)
         }
-        val api = resolveApi() ?: return rememberHiddenApiUnavailable()
+        val qualified = qualify()
+        val api = qualified.api ?: return remember(qualified.error)
+        val secure = qualified.secure ?: return remember(qualified.error)
         val displayInfo = api.queryDisplayInfo(request.sourceDisplayId)
             ?: return remember(CaptureError.SourceDisplayNotFound)
 
         val token = try {
-            api.createDisplay.invoke(null, DISPLAY_NAME, true) as? IBinder
+            api.createDisplay.invoke(null, DISPLAY_NAME, secure) as? IBinder
                 ?: return remember(CaptureError.CaptureCreationFailed)
         } catch (throwable: Throwable) {
             return remember(mapInvocationFailure(throwable, CaptureError.CaptureCreationFailed))
@@ -117,13 +118,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         return if (api == null) {
             remember(CaptureError.None)
         } else {
-            try {
-                runCatching { api.setDisplaySurface.invoke(null, token, null) }
-                api.destroyDisplay.invoke(null, token)
-                remember(CaptureError.None)
-            } catch (throwable: Throwable) {
-                remember(mapInvocationFailure(throwable, CaptureError.BackendReleased))
-            }
+            remember(releaseDisplay(api, token))
         }
     }
 
@@ -169,30 +164,118 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         }
 
         return try {
-            if (targetSurface != null) {
-                api.setDisplaySurface.invoke(null, token, targetSurface)
-            }
-            api.setDisplayLayerStack.invoke(null, token, displayInfo.layerStack)
-            api.setDisplayProjection.invoke(
-                null,
-                token,
-                projection.orientation,
-                Rect(
-                    projection.sourceCrop.left,
-                    projection.sourceCrop.top,
-                    projection.sourceCrop.right,
-                    projection.sourceCrop.bottom,
-                ),
-                Rect(
-                    projection.targetRect.left,
-                    projection.targetRect.top,
-                    projection.targetRect.right,
-                    projection.targetRect.bottom,
-                ),
+            LegacySurfaceControlTransactionRunner.configure(
+                open = { api.openTransaction.invoke(null) },
+                attachSurface = targetSurface?.let { surface ->
+                    { api.setDisplaySurface.invoke(null, token, surface) }
+                },
+                setProjection = {
+                    api.setDisplayProjection.invoke(
+                        null,
+                        token,
+                        projection.orientation,
+                        Rect(
+                            projection.sourceCrop.left,
+                            projection.sourceCrop.top,
+                            projection.sourceCrop.right,
+                            projection.sourceCrop.bottom,
+                        ),
+                        Rect(
+                            projection.targetRect.left,
+                            projection.targetRect.top,
+                            projection.targetRect.right,
+                            projection.targetRect.bottom,
+                        ),
+                    )
+                },
+                setLayerStack = { api.setDisplayLayerStack.invoke(null, token, displayInfo.layerStack) },
+                close = { api.closeTransaction.invoke(null) },
             )
             CaptureError.None
         } catch (throwable: Throwable) {
             mapInvocationFailure(throwable, CaptureError.ProjectionConfigurationFailed)
+        }
+    }
+
+    private fun qualify(): LegacySurfaceControlQualification {
+        qualification?.let { return it }
+        val api = resolveApi()
+            ?: return LegacySurfaceControlQualification(null, null, CaptureError.HiddenApiUnavailable).also {
+                qualification = it
+            }
+        val defaultDisplay = api.queryDisplayInfo(DEFAULT_DISPLAY_ID)
+        if (defaultDisplay == null) {
+            return LegacySurfaceControlQualification(null, null, CaptureError.SourceDisplayNotFound).also {
+                qualification = it
+            }
+        }
+
+        val secure = LegacySecureModeSelector().select { candidate ->
+            probeSecureMode(api, defaultDisplay, candidate)
+        }
+        secure.secure?.let(CaptureBridgeDebugLog::legacySecureModeQualified)
+        return LegacySurfaceControlQualification(
+            api = if (secure.error == CaptureError.None) api else null,
+            secure = secure.secure,
+            error = secure.error,
+        ).also { qualification = it }
+    }
+
+    private fun probeSecureMode(
+        api: ResolvedSurfaceControlApi,
+        displayInfo: CaptureDisplayInfo,
+        secure: Boolean,
+    ): CaptureError {
+        val token = try {
+            api.createDisplay.invoke(null, QUALIFICATION_DISPLAY_NAME, secure) as? IBinder
+                ?: return CaptureError.CaptureCreationFailed
+        } catch (throwable: Throwable) {
+            return mapInvocationFailure(throwable, CaptureError.CaptureCreationFailed)
+        }
+        var reader: ImageReader? = null
+        var error = CaptureError.None
+        try {
+            reader = CaptureQualificationSurface.create()
+            if (!reader.surface.isValid) return CaptureError.InvalidTargetSurface
+            error = configureDisplay(
+                api = api,
+                token = token,
+                displayInfo = displayInfo,
+                request = CaptureRequest(
+                    sourceDisplayId = DEFAULT_DISPLAY_ID,
+                    outputWidth = QUALIFICATION_WIDTH,
+                    outputHeight = QUALIFICATION_HEIGHT,
+                ),
+                targetSurface = reader.surface,
+            )
+        } finally {
+            val released = releaseDisplay(api, token)
+            runCatching { reader?.close() }
+            if (error == CaptureError.None && released != CaptureError.None) {
+                error = released
+            }
+        }
+        return error
+    }
+
+    private fun releaseDisplay(api: ResolvedSurfaceControlApi, token: IBinder): CaptureError {
+        var detachFailure: Throwable? = null
+        try {
+            api.openTransaction.invoke(null)
+            try {
+                api.setDisplaySurface.invoke(null, token, null)
+            } finally {
+                api.closeTransaction.invoke(null)
+            }
+        } catch (throwable: Throwable) {
+            detachFailure = throwable
+        }
+        return try {
+            api.destroyDisplay.invoke(null, token)
+            detachFailure?.let { mapInvocationFailure(it, CaptureError.BackendReleased) }
+                ?: CaptureError.None
+        } catch (throwable: Throwable) {
+            mapInvocationFailure(throwable, CaptureError.BackendReleased)
         }
     }
 
@@ -250,6 +333,16 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
                 "setDisplayLayerStack",
                 IBinder::class.java,
                 Int::class.javaPrimitiveType!!,
+            ) ?: return null,
+            openTransaction = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.OpenTransaction,
+                "openTransaction",
+            ) ?: return null,
+            closeTransaction = resolveMethod(
+                surfaceControl,
+                CaptureBridgeComponent.CloseTransaction,
+                "closeTransaction",
             ) ?: return null,
             getDisplayManagerGlobal = resolveMethod(
                 displayManagerGlobal,
@@ -311,29 +404,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         val failure = CaptureBridgeResolutionFailure.from(throwable)
         lastResolutionFailure = failure
         CaptureBridgeDebugLog.missing(component, failure)
-        if (component == CaptureBridgeComponent.CreateDisplay) {
-            probeDisplayControlCreateDisplay()
-        }
         return null
-    }
-
-    /**
-     * Android moved virtual display creation out of SurfaceControl on newer releases. This
-     * resolution-only probe records whether the replacement bridge is present; it never invokes
-     * the method or creates a display.
-     */
-    private fun probeDisplayControlCreateDisplay() {
-        val displayControl = resolveClass(
-            name = "com.android.server.display.DisplayControl",
-            component = CaptureBridgeComponent.DisplayControlClass,
-        ) ?: return
-        resolveMethod(
-            owner = displayControl,
-            component = CaptureBridgeComponent.DisplayControlCreateDisplay,
-            name = "createDisplay",
-            String::class.java,
-            Boolean::class.javaPrimitiveType!!,
-        )
     }
 
     private fun rememberHiddenApiUnavailable(): CaptureError {
@@ -364,8 +435,37 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
     private companion object {
         const val DEFAULT_DISPLAY_ID = 0
         const val DISPLAY_NAME = "WarpnectCapture"
+        const val QUALIFICATION_DISPLAY_NAME = "WarpnectCaptureQualification"
+        const val QUALIFICATION_WIDTH = 64
+        const val QUALIFICATION_HEIGHT = 64
     }
 }
+
+internal class LegacySecureModeSelector {
+    fun select(probe: (Boolean) -> CaptureError): LegacySecureModeQualification {
+        val secureResult = probe(true)
+        if (secureResult == CaptureError.None) {
+            return LegacySecureModeQualification(secure = true, error = CaptureError.None)
+        }
+        val insecureResult = probe(false)
+        return if (insecureResult == CaptureError.None) {
+            LegacySecureModeQualification(secure = false, error = CaptureError.None)
+        } else {
+            LegacySecureModeQualification(secure = null, error = insecureResult)
+        }
+    }
+}
+
+internal data class LegacySecureModeQualification(
+    val secure: Boolean?,
+    val error: CaptureError,
+)
+
+private data class LegacySurfaceControlQualification(
+    val api: ResolvedSurfaceControlApi?,
+    val secure: Boolean?,
+    val error: CaptureError,
+)
 
 private data class ResolvedSurfaceControlApi(
     val createDisplay: Method,
@@ -373,6 +473,8 @@ private data class ResolvedSurfaceControlApi(
     val setDisplaySurface: Method,
     val setDisplayProjection: Method,
     val setDisplayLayerStack: Method,
+    val openTransaction: Method,
+    val closeTransaction: Method,
     val getDisplayManagerGlobal: Method,
     val getDisplayInfo: Method,
     private val logicalWidth: Field,
@@ -402,13 +504,13 @@ private enum class CaptureBridgeComponent {
     SurfaceControlClass,
     DisplayManagerGlobalClass,
     DisplayInfoClass,
-    DisplayControlClass,
     CreateDisplay,
-    DisplayControlCreateDisplay,
     DestroyDisplay,
     SetDisplaySurface,
     SetDisplayProjection,
     SetDisplayLayerStack,
+    OpenTransaction,
+    CloseTransaction,
     GetDisplayManagerGlobal,
     GetDisplayInfo,
     DisplayLogicalWidth,
@@ -449,6 +551,8 @@ private object CaptureBridgeDebugLog {
 
     fun missing(component: CaptureBridgeComponent, reason: CaptureBridgeResolutionFailure) =
         log("event=capture_hidden_api_missing component=$component reason=$reason")
+
+    fun legacySecureModeQualified(secure: Boolean) = log("event=capture_legacy_secure_mode_qualified secure=$secure")
 
     fun startFailed(reason: CaptureError, detail: CaptureBridgeResolutionFailure?) {
         val message = buildString {

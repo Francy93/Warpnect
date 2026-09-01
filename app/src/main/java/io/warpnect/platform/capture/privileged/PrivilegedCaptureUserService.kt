@@ -6,7 +6,7 @@ import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CaptureRequest
 
 class PrivilegedCaptureUserService : IPrivilegedCaptureService.Stub() {
-    private val captureApi: PrivilegedDisplayCaptureApi = SurfaceControlDisplayCaptureApi()
+    private val captureApi: PrivilegedDisplayCaptureApi = QualifiedPrivilegedDisplayCaptureApi()
 
     override fun queryCapabilities(): Bundle = captureApi.queryCapabilities().toBundle()
 

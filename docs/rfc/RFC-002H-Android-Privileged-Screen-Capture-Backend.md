@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Accepted. Production implementation is not started.
+Status: Accepted. Production implementation is in progress; H1 remains open.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
