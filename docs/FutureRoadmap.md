@@ -48,9 +48,9 @@ Implemented:
 Phase 2 core history remains complete through RFC-002G. RFC-002H production capture has hardware
 validation on legacy API 30/API 31 and modern API 36 paths. H1 real-device media validation is
 complete. RFC-002B strict-CBR metadata qualification now uses a disposable same-UID app process,
-which contains vendor codec failure without terminating Warpnect; API 30 A41 strict-CBR
-qualification passed in that normal application context. A41 `InputApiUnavailable` remains a
-separate Phase 4 privileged Input compatibility issue.
+which contains vendor codec failure without terminating Warpnect. Final same-UID qualification
+passed on two API 36 S22 devices plus tested API 30 and API 31 A41 devices. A41
+`InputApiUnavailable` remains a separate Phase 4 privileged Input compatibility issue.
 
 ## Phase 3 - Audio Pipeline
 

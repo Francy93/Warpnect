@@ -76,10 +76,20 @@ trigger vendor-native aborts. The caller maps failures to strict CBR unavailabil
 exposing vendor exception text or terminating the main runtime. This remains a safety boundary,
 not a CBR fallback.
 
-Hardware evidence is device-specific: an API 36 Exynos AVC encoder accepted the exact strict-CBR
-format despite negative metadata, and tested API 30 Galaxy A41 hardware accepted the exact format
-in the normal app-UID disposable process using `OMX.MTK.VIDEO.ENCODER.AVC`. This does not claim
-strict-CBR support for all MediaTek devices or remove typed failure handling for future codecs.
+Final same-UID probe validation used one exact APK on four physical devices. Each selected codec
+reached the metadata-negative active-probe path and accepted the exact strict-CBR format:
+
+| Device class | Android/API | Selected AVC encoder | Exact active probe |
+| --- | --- | --- | --- |
+| Galaxy S22 (two devices) | 16 / 36 | `c2.exynos.h264.encoder` | supported |
+| Galaxy A41 | 11 / 30 | `OMX.MTK.VIDEO.ENCODER.AVC` | supported |
+| Galaxy A41 | 12 / 31 | `c2.mtk.avc.encoder` | supported |
+
+On every tested device, the main application process and `:codecProbe` had distinct PIDs with the
+same application UID. The second exact capability query used the process-local cache and did not
+start another cold codec probe. The previously observed vendor abort was not reproduced in the
+disposable normal-app-UID probe on the tested A41 hardware. This does not claim strict-CBR support
+for all MediaTek devices or remove typed failure handling for future codecs.
 
 ## Encoder Request
 
@@ -244,6 +254,9 @@ Instrumentation tests cover:
 Instrumentation tests are device-dependent. If no Android device or emulator is connected, generic hardware AVC verification and RFC-002A-to-RFC-002B privileged capture verification remain pending and must not be reported as passed.
 
 An emulator that exposes only software AVC encoding is insufficient to claim hardware-path verification.
+
+The final strict-CBR qualification matrix above is hardware validated. It verifies cold capability
+qualification only; it is not a general MediaCodec performance or streaming-latency claim.
 
 ## Architecture Compliance
 
