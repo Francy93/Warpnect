@@ -39,8 +39,11 @@ import io.warpnect.platform.input.mapping.AndroidTargetInputMappingConfig
 import io.warpnect.platform.input.transport.NativeSclInputReceiverController
 import io.warpnect.platform.input.transport.NativeSclInputTransportController
 import io.warpnect.platform.video.decoder.AndroidMediaCodecVideoDecoder
+import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
+import io.warpnect.platform.video.encoder.VideoEncoderFrameDebugObserver
 import io.warpnect.platform.video.render.AndroidVideoRenderController
+import io.warpnect.platform.video.render.VideoRenderDebugObserver
 import io.warpnect.platform.video.transport.NativeSclVideoReceiverController
 import io.warpnect.platform.video.transport.NativeSclVideoTransportController
 import io.warpnect.session.SessionChannelKind
@@ -96,6 +99,9 @@ data class AndroidSessionPipelineResources(
 class DefaultAndroidSessionPipelineBindings(
     context: Context,
     private val resources: AndroidSessionPipelineResources = AndroidSessionPipelineResources(),
+    private val videoEncoderFrameDebugObserver: VideoEncoderFrameDebugObserver = VideoEncoderFrameDebugObserver.None,
+    private val videoDecoderDebugObserver: VideoDecoderDebugObserver = VideoDecoderDebugObserver.None,
+    private val videoRenderDebugObserver: VideoRenderDebugObserver = VideoRenderDebugObserver.None,
 ) : AndroidSessionPipelineBindings {
     private val appContext = context.applicationContext
 
@@ -108,7 +114,10 @@ class DefaultAndroidSessionPipelineBindings(
     ): AndroidVideoSenderPipeline {
         val controller = DefaultVideoTransmitterSessionController(
             captureController = AndroidVideoCaptureController(appContext),
-            encoderController = AndroidMediaCodecVideoEncoder(telemetry = telemetry),
+            encoderController = AndroidMediaCodecVideoEncoder(
+                telemetry = telemetry,
+                frameDebugObserver = videoEncoderFrameDebugObserver,
+            ),
             transportController = transport,
         )
         return AndroidVideoSenderPipeline(
@@ -150,10 +159,14 @@ class DefaultAndroidSessionPipelineBindings(
                     controller.onRenderTargetDestroyed(surfaceGeneration)
                 }
             },
+            debugObserver = videoRenderDebugObserver,
         )
         controller = DefaultVideoReceiverSessionController(
             receiverRuntimeController = receiver,
-            decoderController = AndroidMediaCodecVideoDecoder(telemetry = telemetry),
+            decoderController = AndroidMediaCodecVideoDecoder(
+                telemetry = telemetry,
+                debugObserver = videoDecoderDebugObserver,
+            ),
             renderController = renderer,
             telemetry = telemetry,
         )

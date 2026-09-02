@@ -254,6 +254,81 @@ class SecureSessionCoordinatorTest {
     }
 
     @Test
+    fun hostPreparedBootstrapDoesNotStartPipelineOnTheSetupCallbackThread() {
+        val events = mutableListOf<String>()
+        val dispatcher = QueuedDispatcher()
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Host,
+            TestPhaseDriver(events),
+            RecordingPipelineFactory(events),
+            RecordingLifecycleFactory(events),
+            HostSessionRuntimeRegistry(maxRuntimes = 1),
+            hostPreparedSessionDispatcher = dispatcher,
+        )
+        val bootstrap = preparedBootstrap(
+            NegotiatedSessionBootstrap(
+                session(46u),
+                SessionGeneration.Initial,
+                device(10u),
+                device(11u),
+                SessionRole.Host,
+                SessionRole.Client,
+                videoProfile(),
+                ByteArray(32),
+                TestProtectionRuntime(session(46u)),
+                TestControl(),
+                endpoint(),
+            ),
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.acceptPreparedHostSession(bootstrap).error)
+        assertEquals(SecureSessionCoordinatorState.ConfiguringSession, coordinator.snapshot.value.state)
+        assertTrue(events.isEmpty())
+        assertEquals(1, dispatcher.queuedCount)
+
+        dispatcher.runNext()
+
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        assertEquals(listOf("005H", "start:video-processor", "start:video-source"), events)
+    }
+
+    @Test
+    fun hostPreparedBootstrapFailsExplicitlyWhenControlDispatcherHasStopped() {
+        val events = mutableListOf<String>()
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Host,
+            TestPhaseDriver(events),
+            RecordingPipelineFactory(events),
+            RecordingLifecycleFactory(events),
+            HostSessionRuntimeRegistry(maxRuntimes = 1),
+            hostPreparedSessionDispatcher = SessionControlDispatcher { false },
+        )
+        val bootstrap = preparedBootstrap(
+            NegotiatedSessionBootstrap(
+                session(47u),
+                SessionGeneration.Initial,
+                device(10u),
+                device(11u),
+                SessionRole.Host,
+                SessionRole.Client,
+                videoProfile(),
+                ByteArray(32),
+                TestProtectionRuntime(session(47u)),
+                TestControl(),
+                endpoint(),
+            ),
+        )
+
+        assertEquals(
+            SecureSessionIntegrationError.LifecycleStartFailed,
+            coordinator.acceptPreparedHostSession(bootstrap).error,
+        )
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+        assertEquals(SecureSessionIntegrationError.LifecycleStartFailed, coordinator.snapshot.value.lastError)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
     fun hostPipelineFailureLeavesItsResponderAvailableForTheNextBoundedSession() {
         val events = mutableListOf<String>()
         val driver = TestPhaseDriver(events)
@@ -488,6 +563,20 @@ class SecureSessionCoordinatorTest {
             last = lifecycle
             return SessionLifecycleFactoryResult(SecureSessionIntegrationError.None, lifecycle)
         }
+    }
+
+    private class QueuedDispatcher : SessionControlDispatcher {
+        private val actions = mutableListOf<() -> Unit>()
+
+        val queuedCount: Int
+            get() = actions.size
+
+        override fun dispatch(action: () -> Unit): Boolean {
+            actions += action
+            return true
+        }
+
+        fun runNext() = actions.removeAt(0).invoke()
     }
 
     private class TestLifecycle(

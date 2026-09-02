@@ -1,6 +1,7 @@
 package io.warpnect.platform.audio.capture.privileged
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -25,7 +26,14 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
 
     override fun queryCapabilities(request: AudioCaptureRequest): AudioCaptureCapabilities {
         val context = currentApplicationContext()
-        val available = context != null && hiddenAudioPolicyClassesAvailable()
+        // This implementation has no MediaProjection token. Resolving hidden classes alone does
+        // not authorize an AudioPolicy sink for Warpnect's normal application attribution.
+        val qualification = AudioPolicyCapabilityQualification(
+            contextAvailable = context != null,
+            hiddenApiAvailable = hiddenAudioPolicyClassesAvailable(),
+            routingPermissionGranted = context?.hasModifyAudioRoutingPermission() == true,
+        )
+        val available = qualification.isAvailable
         return AudioCaptureCapabilities(
             source = AudioCaptureSource.SystemAudio,
             available = available,
@@ -41,7 +49,7 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
             } else {
                 AudioTimestampQuality.Unavailable
             },
-            lastError = if (available) AudioCaptureError.None else AudioCaptureError.AudioPolicyUnavailable,
+            lastError = qualification.error,
         )
     }
 
@@ -254,6 +262,10 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
         null
     }
 
+    private fun Context.hasModifyAudioRoutingPermission(): Boolean =
+        packageManager.checkPermission(MODIFY_AUDIO_ROUTING_PERMISSION, packageName) ==
+            PackageManager.PERMISSION_GRANTED
+
     private fun outputChannelMask(channelCount: Int): Int = when (channelCount) {
         1 -> AudioFormat.CHANNEL_OUT_MONO
         2 -> AudioFormat.CHANNEL_OUT_STEREO
@@ -266,6 +278,8 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
     )
 
     private companion object {
+        const val MODIFY_AUDIO_ROUTING_PERMISSION = "android.permission.MODIFY_AUDIO_ROUTING"
+
         val SYSTEM_AUDIO_USAGES = intArrayOf(
             AudioAttributes.USAGE_GAME,
             AudioAttributes.USAGE_MEDIA,

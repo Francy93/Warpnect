@@ -26,6 +26,7 @@ import io.warpnect.platform.session.channel.NativePreparedTransportKind
 import io.warpnect.platform.session.channel.takeNativePreparedHandle
 import io.warpnect.platform.video.transport.NativeSclVideoReceiverController
 import io.warpnect.platform.video.transport.NativeSclVideoTransportController
+import io.warpnect.platform.video.transport.VideoTransportDebugObserver
 import io.warpnect.session.SessionChannelDirection
 import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.SessionRole
@@ -189,6 +190,7 @@ class AndroidSessionPipelineFactory(
     private val telemetryHub: TelemetryHub = TelemetryHub.disabled(),
     private val diagnosticEventHub: DiagnosticEventHub? = null,
     private val debugObserver: VideoPipelineStartDebugObserver = VideoPipelineStartDebugObserver.None,
+    private val videoTransportDebugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -233,7 +235,7 @@ class AndroidSessionPipelineFactory(
             .singleOrNull()?.mode ?: return null
         val recovery = channel.configuration.filterIsInstance<SetupConfiguration.Recovery>().singleOrNull()?.config
         return if (channel.isSender(role)) {
-            val transport = NativeSclVideoTransportController()
+            val transport = NativeSclVideoTransportController(videoTransportDebugObserver)
             val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoSender)
             val networkTelemetry =
                 attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.VideoSender)
@@ -268,7 +270,7 @@ class AndroidSessionPipelineFactory(
                 }
             }
         } else {
-            val receiver = NativeSclVideoReceiverController()
+            val receiver = NativeSclVideoReceiverController(debugObserver = videoTransportDebugObserver)
             val handle = channel.transport.takeNativePreparedHandle(NativePreparedTransportKind.VideoReceiver)
             val networkTelemetry =
                 attachNetworkTelemetry(bootstrap, channel, handle, NativePreparedTransportKind.VideoReceiver)

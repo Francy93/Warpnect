@@ -58,6 +58,48 @@ function Invoke-AdbText {
     return (& $script:Adb -s $Serial @Arguments 2>&1 | Out-String).Trim()
 }
 
+function ConvertTo-WindowsProcessArgument {
+    param([string]$Argument)
+    if ([string]::IsNullOrEmpty($Argument)) { return '""' }
+    if ($Argument -notmatch '[\s"]') { return $Argument }
+
+    $builder = [System.Text.StringBuilder]::new()
+    [void]$builder.Append('"')
+    $backslashCount = 0
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq '\') {
+            $backslashCount++
+            continue
+        }
+        if ($character -eq '"') {
+            [void]$builder.Append((('\' * (($backslashCount * 2) + 1)) -join ''))
+            [void]$builder.Append('"')
+            $backslashCount = 0
+            continue
+        }
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append((('\' * $backslashCount) -join ''))
+            $backslashCount = 0
+        }
+        [void]$builder.Append($character)
+    }
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append((('\' * ($backslashCount * 2)) -join ''))
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Set-AdbProcessArguments {
+    param(
+        [System.Diagnostics.ProcessStartInfo]$StartInfo,
+        [string]$Serial,
+        [string[]]$Arguments
+    )
+    $tokens = @('-s', $Serial) + $Arguments
+    $StartInfo.Arguments = (($tokens | ForEach-Object { ConvertTo-WindowsProcessArgument $_ }) -join ' ')
+}
+
 function Invoke-AdbTextBounded {
     param([string]$Serial, [string[]]$Arguments, [int]$TimeoutMilliseconds = 5000)
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -66,9 +108,7 @@ function Invoke-AdbTextBounded {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in @("-s", $Serial) + $Arguments) {
-        [void]$startInfo.ArgumentList.Add($argument)
-    }
+    Set-AdbProcessArguments $startInfo $Serial $Arguments
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
@@ -186,9 +226,7 @@ function Install-CurrentApk {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in @("-s", $Device.Serial, "install", "-r", $Apk)) {
-        [void]$startInfo.ArgumentList.Add($argument)
-    }
+    Set-AdbProcessArguments $startInfo $Device.Serial @("install", "-r", $Apk)
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
@@ -278,35 +316,35 @@ function Start-Warpnect {
     Invoke-Adb $serial @("shell", "am", "force-stop", $script:PackageName)
     Invoke-Adb $serial @("shell", "am", "start", "-n", $script:ActivityName)
     if (-not (Wait-ForWarpnectForeground $Device)) {
-        throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial). Unlock the device and relaunch Warpnect; the harness will not bypass device security."
+        throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial) [foreground_check=$script:LastForegroundFailure]. Unlock the device and relaunch Warpnect; the harness will not bypass device security."
     }
 }
 
 function Get-UiDocument {
     param([pscustomobject]$Device)
-    $remote = "/sdcard/warpnect-h1-window.xml"
     $lastFailure = "unknown"
     for ($attempt = 1; $attempt -le 4; $attempt++) {
         try {
-            $dumpOutput = Invoke-AdbTextBounded ($Device.Serial) @("shell", "uiautomator", "dump", $remote)
-            $xmlText = Invoke-AdbTextBounded ($Device.Serial) @("exec-out", "cat", $remote)
+            # Stream the hierarchy directly to avoid an Android 16 race between dump and file readback.
+            $xmlText = Invoke-AdbTextBounded -Serial $Device.Serial -Arguments @("exec-out", "uiautomator", "dump", "/dev/tty") -TimeoutMilliseconds 12000
         } catch {
-            $lastFailure = "adb_timeout_or_failure"
+            $lastFailure = if ($_.Exception.Message -match "^ADB_TIMEOUT") { "adb_timeout" } else { "adb_failed" }
             Start-Sleep -Milliseconds 250
             continue
         }
-        if ($dumpOutput -match "null root node") {
+        if ($xmlText -match "null root node") {
             $lastFailure = "null_root"
             Start-Sleep -Milliseconds 250
             continue
         }
-        if ([string]::IsNullOrWhiteSpace($xmlText) -or $xmlText -notmatch "<hierarchy") {
+        $hierarchyEnd = $xmlText.LastIndexOf("</hierarchy>", [System.StringComparison]::Ordinal)
+        if ([string]::IsNullOrWhiteSpace($xmlText) -or $hierarchyEnd -lt 0) {
             $lastFailure = "empty_or_invalid_xml"
             Start-Sleep -Milliseconds 250
             continue
         }
         try {
-            [xml]$xml = $xmlText
+            [xml]$xml = $xmlText.Substring(0, $hierarchyEnd + "</hierarchy>".Length)
             if ($null -ne $xml.hierarchy) { return $xml }
             $lastFailure = "missing_hierarchy"
         } catch {
@@ -355,9 +393,7 @@ function Start-UiDump {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    foreach ($argument in @("-s", $Device.Serial, "exec-out", "uiautomator", "dump", "/dev/tty")) {
-        [void]$startInfo.ArgumentList.Add($argument)
-    }
+    Set-AdbProcessArguments $startInfo $Device.Serial @("exec-out", "uiautomator", "dump", "/dev/tty")
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
@@ -419,14 +455,23 @@ function Assert-WarpnectForeground {
 function Wait-ForWarpnectForeground {
     param([pscustomobject]$Device, [int]$TimeoutSeconds = 15)
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastFailure = "unknown"
     do {
         try {
             Assert-WarpnectForeground $Device
             return $true
         } catch {
+            $lastFailure = if ($_.Exception.Message -match "^ADB_TIMEOUT") {
+                "adb_timeout"
+            } elseif ($_.Exception.Message -match "^ADB_FAILED") {
+                "adb_failed"
+            } else {
+                "other_activity"
+            }
             Start-Sleep -Milliseconds 250
         }
     } while ([DateTime]::UtcNow -lt $deadline)
+    $script:LastForegroundFailure = $lastFailure
     return $false
 }
 
@@ -435,7 +480,7 @@ function Ensure-WarpnectForeground {
     if (Wait-ForWarpnectForeground $Device) { return }
     Invoke-Adb ($Device.Serial) @("shell", "am", "start", "-n", $script:ActivityName)
     if (-not (Wait-ForWarpnectForeground $Device)) {
-        throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial). Unlock the device and relaunch Warpnect; the harness will not bypass device security."
+        throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial) [foreground_check=$script:LastForegroundFailure]. Unlock the device and relaunch Warpnect; the harness will not bypass device security."
     }
 }
 
@@ -515,9 +560,6 @@ function Capture-DeviceEvidence {
     try {
         $xml = Get-UiDocument $Device
         Write-RunText (Join-Path $ScenarioDirectory ("{0}.ui.xml" -f $serial)) (Redact-SensitiveText $xml.OuterXml)
-        $screenshot = Join-Path $script:RunDirectory (Join-Path $ScenarioDirectory ("{0}.png" -f $serial))
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $screenshot) | Out-Null
-        Save-RedactedScreenshot $Device $xml $screenshot
     } catch {
         Write-RunText (Join-Path $ScenarioDirectory ("{0}.ui_capture_error.txt" -f $serial)) (
             "UI_CAPTURE_UNAVAILABLE: " + (Redact-SensitiveText $_.Exception.Message)
@@ -764,19 +806,57 @@ function Invoke-MediaStartupTrace {
     if (-not $hostAuthenticated -or -not $clientAuthenticated) {
         throw "Secure Session did not authenticate on both peers."
     }
-    Start-Sleep -Seconds 3
+    $firstFrameDeadline = [DateTime]::UtcNow.AddSeconds(20)
+    do {
+        $hostFirstFrameEncoded = Test-DiscoveryBreadcrumb $HostDevice "first_frame_encoded"
+        $hostFirstVideoDatagramSent = Test-DiscoveryBreadcrumb $HostDevice "first_video_datagram_sent"
+        $clientFirstVideoDatagramReceived = Test-DiscoveryBreadcrumb $ClientDevice "first_video_datagram_received"
+        $clientStreamConfigAvailable = Test-DiscoveryBreadcrumb $ClientDevice "client_video_stream_config_available"
+        $clientDecoderStarted = Test-DiscoveryBreadcrumb $ClientDevice "decoder_started"
+        $clientFirstAccessUnitSubmitted = Test-DiscoveryBreadcrumb $ClientDevice "first_video_access_unit_submitted_to_decoder"
+        $clientFirstFrameDecoded = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_decoded"
+        $clientFirstFrameRendered = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_rendered"
+        $clientStreaming = (Find-UiNode $ClientDevice "Streaming") -ne $null
+        if (
+            $hostFirstFrameEncoded -and
+            $hostFirstVideoDatagramSent -and
+            $clientFirstVideoDatagramReceived -and
+            $clientStreamConfigAvailable -and
+            $clientDecoderStarted -and
+            $clientFirstAccessUnitSubmitted -and
+            $clientFirstFrameDecoded -and
+            $clientFirstFrameRendered -and
+            $clientStreaming
+        ) {
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $firstFrameDeadline)
     return [pscustomobject]@{
         sas_equal = $sasEqual
         host_authenticated = $hostAuthenticated
         client_authenticated = $clientAuthenticated
         host_capability_completed = Test-DiscoveryBreadcrumb $HostDevice "capability_completed"
         client_capability_completed = Test-DiscoveryBreadcrumb $ClientDevice "capability_completed"
-        host_setup_completed = Test-DiscoveryBreadcrumb $HostDevice "session_prepared"
-        client_setup_completed = Test-DiscoveryBreadcrumb $ClientDevice "session_prepared"
+        host_setup_completed =
+            (Test-DiscoveryBreadcrumb $HostDevice "setup_committed") -or
+                (Test-DiscoveryBreadcrumb $HostDevice "session_prepared")
+        client_setup_completed =
+            (Test-DiscoveryBreadcrumb $ClientDevice "setup_committed") -or
+                (Test-DiscoveryBreadcrumb $ClientDevice "session_prepared")
         host_video_channel_ready = Test-DiscoveryBreadcrumb $HostDevice "video_channel_ready"
         client_video_channel_ready = Test-DiscoveryBreadcrumb $ClientDevice "video_channel_ready"
         host_media_started = Test-DiscoveryBreadcrumb $HostDevice "media_start_accepted"
         client_media_started = Test-DiscoveryBreadcrumb $ClientDevice "media_start_accepted"
+        host_first_frame_encoded = $hostFirstFrameEncoded
+        host_first_video_datagram_sent = $hostFirstVideoDatagramSent
+        client_first_video_datagram_received = $clientFirstVideoDatagramReceived
+        client_stream_config_available = $clientStreamConfigAvailable
+        client_decoder_started = $clientDecoderStarted
+        client_first_video_access_unit_submitted = $clientFirstAccessUnitSubmitted
+        client_first_frame_decoded = $clientFirstFrameDecoded
+        client_first_frame_rendered = $clientFirstFrameRendered
+        client_streaming_ui = $clientStreaming
     }
 }
 
@@ -826,8 +906,13 @@ try {
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated
         $scenarioResult["media"] = $media
-        $scenarioResult.result = "PASS"
-        $scenarioResult.reason = "secure Session trace captured"
+        if ($media.client_first_frame_rendered -and $media.client_streaming_ui) {
+            $scenarioResult.result = "PASS"
+            $scenarioResult.reason = "first real remote frame rendered on Client"
+        } else {
+            $scenarioResult.result = "FAIL"
+            $scenarioResult.reason = "first real remote frame was not rendered on Client"
+        }
     } else {
         $pairing = Invoke-PairingScenario $hostDevice $clientDevice
         $scenarioResult["sas_equal"] = $pairing.sas_equal

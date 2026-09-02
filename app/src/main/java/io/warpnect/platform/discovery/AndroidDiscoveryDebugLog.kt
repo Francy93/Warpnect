@@ -5,8 +5,10 @@ import android.content.pm.ApplicationInfo
 import android.util.Log
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
+import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
 import io.warpnect.platform.video.encoder.CbrCapabilityDecision
 import io.warpnect.platform.video.encoder.CbrCapabilityDecisionSource
+import io.warpnect.platform.video.transport.VideoTransportDebugEvent
 import io.warpnect.session.capability.CapabilityNegotiationDebugEvent
 import io.warpnect.session.capability.CapabilityNegotiationDebugEventKind
 import io.warpnect.session.discovery.DiscoveryError
@@ -198,6 +200,36 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         Log.d(TAG, message)
     }
 
+    fun firstVideoFrameEncoded() {
+        if (!enabled) return
+        Log.d(TAG, "event=first_frame_encoded")
+    }
+
+    fun videoTransport(event: VideoTransportDebugEvent) {
+        if (!enabled) return
+        Log.d(TAG, "event=${event.logName}")
+    }
+
+    fun videoDecoder(event: VideoDecoderDebugEvent) {
+        if (!enabled) return
+        Log.d(TAG, "event=${event.logName}")
+    }
+
+    fun clientRenderTargetAvailable() {
+        if (!enabled) return
+        Log.d(TAG, "event=client_render_target_available")
+    }
+
+    fun clientRenderSurfaceAttached(rendererAvailable: Boolean) {
+        if (!enabled) return
+        Log.d(TAG, "event=client_render_surface_attached renderer_available=$rendererAvailable")
+    }
+
+    fun clientRenderControllerAttached(surfaceWasValid: Boolean) {
+        if (!enabled) return
+        Log.d(TAG, "event=client_render_controller_attached surface_valid=$surfaceWasValid")
+    }
+
     fun sessionSetupRuntimeCreated() {
         if (enabled) Log.d(TAG, "event=setup_runtime_created")
     }
@@ -350,6 +382,11 @@ private val SessionLifecycleDebugEventKind.logName: String
         SessionLifecycleDebugEventKind.StartRejectedBootstrapTransfer -> "lifecycle_start_rejected_bootstrap_transfer"
         SessionLifecycleDebugEventKind.StartRejectedCapacityPromotion -> "lifecycle_start_rejected_capacity_promotion"
         SessionLifecycleDebugEventKind.StartSucceeded -> "lifecycle_start_succeeded"
+        SessionLifecycleDebugEventKind.FirstHeartbeatSent -> "lifecycle_first_heartbeat_sent"
+        SessionLifecycleDebugEventKind.FirstActiveControlPayloadReceived ->
+            "lifecycle_first_active_control_payload_received"
+        SessionLifecycleDebugEventKind.Suspended -> "lifecycle_suspended"
+        SessionLifecycleDebugEventKind.ReconnectRequested -> "lifecycle_reconnect_requested"
     }
 
 private val VideoPipelineStartDebugEventKind.logName: String
@@ -357,6 +394,22 @@ private val VideoPipelineStartDebugEventKind.logName: String
         VideoPipelineStartDebugEventKind.SenderStartRequested -> "video_sender_start_requested"
         VideoPipelineStartDebugEventKind.SenderStartSucceeded -> "video_sender_start_succeeded"
         VideoPipelineStartDebugEventKind.SenderStartFailed -> "video_sender_start_failed"
+    }
+
+private val VideoTransportDebugEvent.logName: String
+    get() = when (this) {
+        VideoTransportDebugEvent.FirstVideoDatagramSent -> "first_video_datagram_sent"
+        VideoTransportDebugEvent.FirstVideoDatagramReceived -> "first_video_datagram_received"
+        VideoTransportDebugEvent.FirstStreamConfigAvailable -> "client_video_stream_config_available"
+        VideoTransportDebugEvent.FirstVideoAccessUnitReceived -> "first_video_access_unit_received"
+    }
+
+private val VideoDecoderDebugEvent.logName: String
+    get() = when (this) {
+        VideoDecoderDebugEvent.DecoderStarted -> "decoder_started"
+        VideoDecoderDebugEvent.FirstAccessUnitSubmitted -> "first_video_access_unit_submitted_to_decoder"
+        VideoDecoderDebugEvent.FirstOutputAvailable -> "first_frame_decoded"
+        VideoDecoderDebugEvent.FirstFrameRendered -> "first_frame_rendered"
     }
 
 private val SessionSetupDebugEventKind.logName: String

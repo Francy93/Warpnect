@@ -25,6 +25,7 @@ import java.nio.ByteBuffer
 
 class NativeSclVideoReceiverController(
     private val pumpTimeoutUs: Long = DEFAULT_PUMP_TIMEOUT_US,
+    private val debugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
 ) : VideoReceiverRuntimeController {
     @Volatile
     private var nativeHandle: Long = 0
@@ -36,6 +37,9 @@ class NativeSclVideoReceiverController(
     private var worker: Thread? = null
 
     private var localSnapshot = VideoReceiverRuntimeSnapshot()
+    private var firstVideoDatagramReceivedObserved = false
+    private var firstStreamConfigAvailableObserved = false
+    private var firstVideoAccessUnitReceivedObserved = false
 
     /** RFC-005I adopts the stopped RFC-005G protected receiver instead of opening a UDP port. */
     internal fun adoptPreparedTransport(handle: Long): VideoTransportError {
@@ -142,12 +146,15 @@ class NativeSclVideoReceiverController(
                 val event = pumpOnce(pumpTimeoutUs)
                 when (event.type) {
                     VideoReceiverRuntimeEventType.StreamConfigReady -> {
+                        emitFirstVideoDatagramReceived()
                         val config = readStreamConfig(event)
                         if (config != null) {
+                            emitFirstStreamConfigAvailable()
                             listener.onStreamConfig(config)
                         }
                     }
                     VideoReceiverRuntimeEventType.AccessUnitReady -> {
+                        emitFirstVideoAccessUnitReceived()
                         listener.onAccessUnitReady(
                             VideoReceiverAccessUnitReady(
                                 configGeneration = event.configGeneration,
@@ -296,6 +303,30 @@ class NativeSclVideoReceiverController(
             configGeneration = event.configGeneration,
             codecSpecificData = csd,
         )
+    }
+
+    private fun emitFirstVideoDatagramReceived() {
+        if (firstVideoDatagramReceivedObserved) return
+        firstVideoDatagramReceivedObserved = true
+        runCatching {
+            debugObserver.onEvent(VideoTransportDebugEvent.FirstVideoDatagramReceived)
+        }
+    }
+
+    private fun emitFirstVideoAccessUnitReceived() {
+        if (firstVideoAccessUnitReceivedObserved) return
+        firstVideoAccessUnitReceivedObserved = true
+        runCatching {
+            debugObserver.onEvent(VideoTransportDebugEvent.FirstVideoAccessUnitReceived)
+        }
+    }
+
+    private fun emitFirstStreamConfigAvailable() {
+        if (firstStreamConfigAvailableObserved) return
+        firstStreamConfigAvailableObserved = true
+        runCatching {
+            debugObserver.onEvent(VideoTransportDebugEvent.FirstStreamConfigAvailable)
+        }
     }
 
     private fun remember(error: VideoTransportError): VideoTransportError {

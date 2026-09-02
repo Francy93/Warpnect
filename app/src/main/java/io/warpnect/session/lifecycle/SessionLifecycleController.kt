@@ -141,6 +141,10 @@ class SessionLifecycleController(
     private var closingNotified = false
     private var inputSafetyResetInvoked = false
     private var lastError = SessionLifecycleError.None
+    private var firstHeartbeatSentObserved = false
+    private var firstActiveControlPayloadReceivedObserved = false
+    private var suspensionObserved = false
+    private var reconnectRequestedObserved = false
 
     init {
         require(healthConfig.isValid()) { "Invalid lifecycle health configuration" }
@@ -373,6 +377,12 @@ class SessionLifecycleController(
 
     private fun receiveActivePayload(payload: ByteArray) = synchronized(lock) {
         if (closed) return@synchronized
+        if (!firstActiveControlPayloadReceivedObserved) {
+            firstActiveControlPayloadReceivedObserved = true
+            debugObserver.onEvent(
+                SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.FirstActiveControlPayloadReceived),
+            )
+        }
         onAuthenticatedReceive(now())
         SessionLifecycleCodec.decode(payload)?.let { receiveDecoded(it, candidatePath = false) }
             ?: record(SessionLifecycleError.MalformedMessage)
@@ -630,6 +640,12 @@ class SessionLifecycleController(
                     )
                 ) {
                     telemetry?.heartbeatSent?.increment()
+                    if (!firstHeartbeatSentObserved) {
+                        firstHeartbeatSentObserved = true
+                        debugObserver.onEvent(
+                            SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.FirstHeartbeatSent),
+                        )
+                    }
                 }
             }
             is LifecycleDecision.HeartbeatMissed -> telemetry?.heartbeatMiss?.increment()
@@ -648,6 +664,10 @@ class SessionLifecycleController(
                 continuityParticipants.forEach(SessionContinuityParticipant::onPathMigrationCommitted)
             }
             is LifecycleDecision.Suspended -> {
+                if (!suspensionObserved) {
+                    suspensionObserved = true
+                    debugObserver.onEvent(SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.Suspended))
+                }
                 telemetry?.suspended?.increment()
                 diagnosticEvents?.stateChanged(DiagnosticSessionState.Active, DiagnosticSessionState.Suspended)
                 diagnosticEvents?.suspended(DiagnosticReason.NetworkLost)
@@ -656,6 +676,7 @@ class SessionLifecycleController(
                 beginReconnect(decision.recoveryDeadlineMs)
             }
             is LifecycleDecision.BeginReconnect -> {
+                emitReconnectRequestedOnce()
                 telemetry?.reconnectAttempt?.increment()
                 diagnosticEvents?.reconnectStarted(decision.nextGeneration)
                 recoveryDelegate?.onReconnectRequired(recoveryRecord(), decision.nextGeneration)
@@ -721,6 +742,7 @@ class SessionLifecycleController(
         val decision = engine.beginReconnect(now())
         if (decision is LifecycleDecision.BeginReconnect) {
             // A reconnect is a new security generation; old contexts and all old path resources die first.
+            emitReconnectRequestedOnce()
             diagnosticEvents?.stateChanged(DiagnosticSessionState.Suspended, DiagnosticSessionState.Reconnecting)
             bootstrap.close()
             recoveryDelegate?.onReconnectRequired(recoveryRecord(deadline), decision.nextGeneration)
@@ -747,6 +769,12 @@ class SessionLifecycleController(
     ): SessionLifecycleError {
         debugObserver.onEvent(SessionLifecycleDebugEvent(kind, error))
         return record(error)
+    }
+
+    private fun emitReconnectRequestedOnce() {
+        if (reconnectRequestedObserved) return
+        reconnectRequestedObserved = true
+        debugObserver.onEvent(SessionLifecycleDebugEvent(SessionLifecycleDebugEventKind.ReconnectRequested))
     }
 
     private fun sendMessage(message: SessionLifecycleMessage, candidatePath: Boolean): Boolean {

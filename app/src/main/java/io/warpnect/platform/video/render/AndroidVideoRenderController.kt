@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference
 class AndroidVideoRenderController(
     private val clock: VideoRenderClock = SystemVideoRenderClock,
     private val targetListener: VideoRenderTargetListener = object : VideoRenderTargetListener {},
+    private val debugObserver: VideoRenderDebugObserver = VideoRenderDebugObserver.None,
 ) : VideoRenderController,
     SurfaceHolder.Callback {
     private val core = VideoRenderControllerCore()
@@ -35,6 +36,7 @@ class AndroidVideoRenderController(
 
     @Volatile
     private var attachedView: SurfaceView? = null
+    private var renderTargetObserved = false
 
     override val decodedVideoSink: DecodedVideoSink = object : DecodedVideoSink {
         override fun onFrameAvailable(frame: DecodedVideoFrame): DecodedVideoOutputAction = decideOutput(frame)
@@ -61,6 +63,13 @@ class AndroidVideoRenderController(
         previous?.holder?.removeCallback(this)
         attachedView = surfaceView
         surfaceView.holder.addCallback(this)
+        val surfaceWasValid = surfaceView.holder.surface.isValid
+        runCatching { debugObserver.onControllerAttached(surfaceWasValid) }
+        // Compose may attach the controller after Android has already created the SurfaceView surface.
+        // SurfaceHolder does not replay that lifecycle callback on every device, so publish it here.
+        if (surfaceWasValid) {
+            surfaceCreated(surfaceView.holder)
+        }
         surfaceView.requestLayout()
     }
 
@@ -120,6 +129,9 @@ class AndroidVideoRenderController(
             core.recordError(VideoRenderError.SurfaceInvalid)
             return
         }
+        if (target?.surface === surface && core.snapshot().surfaceAvailable) {
+            return
+        }
         val frame = holder.surfaceFrame
         val generation = core.surfaceCreated(frame.width(), frame.height())
         val renderTarget = VideoRenderTarget(
@@ -131,6 +143,7 @@ class AndroidVideoRenderController(
         target = renderTarget
         applyCurrentFrameRateHint()
         targetListener.onRenderTargetAvailable(renderTarget)
+        emitRenderTargetAvailable()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -150,6 +163,7 @@ class AndroidVideoRenderController(
         target = renderTarget
         applyCurrentFrameRateHint()
         targetListener.onRenderTargetChanged(renderTarget)
+        emitRenderTargetAvailable()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -182,6 +196,12 @@ class AndroidVideoRenderController(
             VideoRenderDecision.Drop -> DecodedVideoOutputAction.Drop
             is VideoRenderDecision.RenderAtLocalTime -> DecodedVideoOutputAction.RenderAt(decision.timestampNs)
         }
+    }
+
+    private fun emitRenderTargetAvailable() {
+        if (renderTargetObserved) return
+        renderTargetObserved = true
+        runCatching { debugObserver.onRenderTargetAvailable() }
     }
 
     private fun applyCurrentFrameRateHint() {

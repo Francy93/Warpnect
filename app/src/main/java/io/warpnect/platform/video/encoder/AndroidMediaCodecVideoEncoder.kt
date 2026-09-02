@@ -28,6 +28,7 @@ class AndroidMediaCodecVideoEncoder(
     private val clockUs: () -> Long = VideoEncoderClock::monotonicUs,
     private val drainTimeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS,
     private val telemetry: VideoEncoderTelemetry? = null,
+    private val frameDebugObserver: VideoEncoderFrameDebugObserver = VideoEncoderFrameDebugObserver.None,
 ) : VideoEncoderController {
     private val codecThread = HandlerThread(THREAD_NAME).apply { start() }
     private val codecHandler = Handler(codecThread.looper)
@@ -44,6 +45,7 @@ class AndroidMediaCodecVideoEncoder(
     private var drainTimeoutTask: Runnable? = null
     private var codecStarted = false
     private var closed = false
+    private var firstAccessUnitObserved = false
 
     override suspend fun queryCapabilities(request: VideoEncoderRequest): VideoEncoderCapabilities =
         discovery.query(request)
@@ -128,6 +130,7 @@ class AndroidMediaCodecVideoEncoder(
         if (beginError != VideoEncoderError.None) {
             return VideoEncoderPrepareResult(beginError, null, null, latestSnapshot)
         }
+        firstAccessUnitObserved = false
 
         val capabilities = discovery.query(request)
         if (!capabilities.isSupported) {
@@ -409,6 +412,10 @@ class AndroidMediaCodecVideoEncoder(
                     telemetry?.accessUnitSize?.record(info.size.toULong())
                     if (keyFrame) telemetry?.keyframes?.increment()
                     core.recordAccessUnit(info.size, info.presentationTimeUs, keyFrame)
+                    if (!firstAccessUnitObserved) {
+                        firstAccessUnitObserved = true
+                        runCatching { frameDebugObserver.onFirstAccessUnitEncoded() }
+                    }
                 }
                 publishSnapshot()
             }

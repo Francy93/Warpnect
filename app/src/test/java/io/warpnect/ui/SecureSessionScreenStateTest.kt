@@ -131,6 +131,37 @@ class SecureSessionScreenStateTest {
     }
 
     @Test
+    fun clientShowsStreamingOnlyAfterTheRendererPresentsAFrame() {
+        assertEquals(
+            "Running",
+            sessionStatusText(
+                activeRole = SessionRole.Client,
+                state = SecureSessionCoordinatorState.Running,
+                error = SecureSessionIntegrationError.None,
+                clientVideoStreaming = false,
+            ),
+        )
+        assertEquals(
+            "Streaming",
+            sessionStatusText(
+                activeRole = SessionRole.Client,
+                state = SecureSessionCoordinatorState.Running,
+                error = SecureSessionIntegrationError.None,
+                clientVideoStreaming = true,
+            ),
+        )
+        assertEquals(
+            "Running",
+            sessionStatusText(
+                activeRole = SessionRole.Host,
+                state = SecureSessionCoordinatorState.Running,
+                error = SecureSessionIntegrationError.None,
+                clientVideoStreaming = true,
+            ),
+        )
+    }
+
+    @Test
     fun connectFromUiContextRunsHandshakeTransportOnSerializedControlThreadOnceAndPublishesConnecting() {
         val transport = ThreadRecordingHandshakeTransport()
         val dispatcher = QueuedControlDispatcher()

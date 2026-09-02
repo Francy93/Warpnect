@@ -52,6 +52,47 @@ import org.junit.Test
 
 class SessionLifecycleControllerTest {
     @Test
+    fun lifecycleDebugBreadcrumbsAreOneShotAndIdentifyControlLivenessRecovery() {
+        val clock = TestClock(0)
+        val control = TestControl()
+        val fixture = fixture(SessionRole.Client, control, contextBase = 870, standby = false)
+        val events = mutableListOf<SessionLifecycleDebugEvent>()
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            clock,
+            debugObserver = SessionLifecycleDebugObserver(events::add),
+        )
+
+        assertEquals(SessionLifecycleError.None, controller.start())
+        val heartbeat = requireNotNull(
+            SessionLifecycleCodec.encode(
+                SessionLifecycleMessage.Heartbeat(
+                    header(SessionLifecycleMessageType.Heartbeat, 1u),
+                    HeartbeatId.requireValid(1u),
+                    directPath,
+                ),
+            ),
+        )
+        control.deliverInbound(heartbeat)
+        control.deliverInbound(heartbeat)
+
+        clock.nowMs = 500
+        controller.advance()
+        clock.nowMs = 800
+        controller.advance()
+        clock.nowMs = 1_300
+        controller.advance()
+        clock.nowMs = 1_600
+        controller.advance()
+
+        assertEquals(1, events.count { it.kind == SessionLifecycleDebugEventKind.FirstActiveControlPayloadReceived })
+        assertEquals(1, events.count { it.kind == SessionLifecycleDebugEventKind.FirstHeartbeatSent })
+        assertEquals(1, events.count { it.kind == SessionLifecycleDebugEventKind.Suspended })
+        assertEquals(1, events.count { it.kind == SessionLifecycleDebugEventKind.ReconnectRequested })
+    }
+
+    @Test
     fun startRejectsBootstrapCreatedInAnIncompatibleClockDomain() {
         val fixture = fixture(
             SessionRole.Client,

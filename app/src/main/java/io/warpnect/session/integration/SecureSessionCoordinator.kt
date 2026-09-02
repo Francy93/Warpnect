@@ -20,6 +20,10 @@ class SecureSessionCoordinator(
     private val lifecycleFactory: SessionLifecycleSessionFactory,
     private val hostRegistry: HostSessionRuntimeRegistry? = null,
     private val debugObserver: SessionStartupDebugObserver = SessionStartupDebugObserver.None,
+    private val hostPreparedSessionDispatcher: SessionControlDispatcher = SessionControlDispatcher { action ->
+        action()
+        true
+    },
 ) : AutoCloseable {
     private val lock = Any()
     private var state = SecureSessionCoordinatorState.Idle
@@ -235,23 +239,20 @@ class SecureSessionCoordinator(
             bootstrap.close()
             return result(if (closed) SecureSessionIntegrationError.Closed else SecureSessionIntegrationError.Busy)
         }
-        val token = intake.token
-        val previous = intake.previous
-        if (previous != null) {
-            if (previous.lifecycle.acceptFreshGeneration(bootstrap) != SecureSessionIntegrationError.None) {
-                bootstrap.close()
-                fail(token, SecureSessionIntegrationStage.Lifecycle, SecureSessionIntegrationError.LifecycleStartFailed)
-                return result(SecureSessionIntegrationError.LifecycleStartFailed)
-            }
-            synchronized(lock) {
-                hostRegistry?.remove(previous.sessionId, previous.generation)
-                previous.disposeForReconnect()
-                reconnectingRuntime = null
-                runtime = null
-            }
-        }
         synchronized(lock) { publishLocked() }
-        consumePrepared(token, bootstrap)
+        if (
+            !hostPreparedSessionDispatcher.dispatch {
+                consumePreparedHostSession(intake, bootstrap)
+            }
+        ) {
+            bootstrap.close()
+            fail(
+                intake.token,
+                SecureSessionIntegrationStage.Lifecycle,
+                SecureSessionIntegrationError.LifecycleStartFailed,
+            )
+            return result(SecureSessionIntegrationError.LifecycleStartFailed)
+        }
         return result(SecureSessionIntegrationError.None)
     }
 
@@ -523,6 +524,33 @@ class SecureSessionCoordinator(
             runtime = null
         }
         consumePrepared(token, bootstrap)
+    }
+
+    /** Keeps bootstrap UDP readers free while Host capture and encoder startup run on Session control ownership. */
+    private fun consumePreparedHostSession(intake: HostPreparedIntake, bootstrap: PreparedSessionBootstrap) {
+        if (!synchronized(lock) { isCurrentLocked(intake.token) }) {
+            bootstrap.close()
+            return
+        }
+        val previous = intake.previous
+        if (previous != null) {
+            if (previous.lifecycle.acceptFreshGeneration(bootstrap) != SecureSessionIntegrationError.None) {
+                bootstrap.close()
+                fail(
+                    intake.token,
+                    SecureSessionIntegrationStage.Lifecycle,
+                    SecureSessionIntegrationError.LifecycleStartFailed,
+                )
+                return
+            }
+            synchronized(lock) {
+                hostRegistry?.remove(previous.sessionId, previous.generation)
+                previous.disposeForReconnect()
+                reconnectingRuntime = null
+                runtime = null
+            }
+        }
+        consumePrepared(intake.token, bootstrap)
     }
 
     private fun lifecycleListenerFor(token: Long): SessionLifecycleRuntimeListener =

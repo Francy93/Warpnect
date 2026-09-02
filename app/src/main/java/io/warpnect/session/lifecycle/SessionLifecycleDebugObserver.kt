@@ -1,7 +1,7 @@
 package io.warpnect.session.lifecycle
 
 /**
- * Development-only lifecycle-start milestones for bounded physical-device investigation.
+ * Development-only lifecycle milestones for bounded physical-device investigation.
  * Events contain only fixed state and error enums; they intentionally expose no Session data.
  */
 fun interface SessionLifecycleDebugObserver {
@@ -24,4 +24,8 @@ enum class SessionLifecycleDebugEventKind {
     StartRejectedBootstrapTransfer,
     StartRejectedCapacityPromotion,
     StartSucceeded,
+    FirstHeartbeatSent,
+    FirstActiveControlPayloadReceived,
+    Suspended,
+    ReconnectRequested,
 }

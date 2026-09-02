@@ -49,10 +49,15 @@ import io.warpnect.platform.session.security.NativeSessionProtectionRuntimeFacto
 import io.warpnect.platform.session.setup.AndroidExactStreamConfigurationValidator
 import io.warpnect.platform.telemetry.AndroidTelemetryClock
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
+import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
+import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.VideoEncoderCbrCapabilityDebugObserver
+import io.warpnect.platform.video.encoder.VideoEncoderFrameDebugObserver
 import io.warpnect.platform.video.render.AndroidVideoRenderController
+import io.warpnect.platform.video.render.VideoRenderDebugObserver
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
+import io.warpnect.platform.video.transport.VideoTransportDebugObserver
 import io.warpnect.session.PathId
 import io.warpnect.session.PathPreferencePolicy
 import io.warpnect.session.SecondaryPathPolicy
@@ -203,9 +208,9 @@ class AndroidSecureSessionComposition private constructor(
         )
         private val crypto = JcaPairingCryptoProvider()
         private val routeLocalAddressResolver = AndroidRouteLocalAddressResolver()
-        private val uiResources = AndroidSessionUiResources()
-        private val hostRegistry = HostSessionRuntimeRegistry()
         private val discoveryDebugLog = AndroidDiscoveryDebugLog(context)
+        private val uiResources = AndroidSessionUiResources(discoveryDebugLog::clientRenderSurfaceAttached)
+        private val hostRegistry = HostSessionRuntimeRegistry()
         private val clientDiscovery = AndroidLocalDiscoveryController(
             context,
             DiscoveryConfig(
@@ -256,10 +261,27 @@ class AndroidSecureSessionComposition private constructor(
                     bindClientVideoRenderer = uiResources::bindClientVideoRenderer,
                     clientInputSurface = uiResources::inputCaptureSurface,
                 ),
+                VideoEncoderFrameDebugObserver(discoveryDebugLog::firstVideoFrameEncoded),
+                VideoDecoderDebugObserver { event ->
+                    discoveryDebugLog.videoDecoder(event)
+                    if (event == VideoDecoderDebugEvent.FirstFrameRendered) {
+                        uiResources.markClientVideoStreaming()
+                    }
+                },
+                object : VideoRenderDebugObserver {
+                    override fun onRenderTargetAvailable() {
+                        discoveryDebugLog.clientRenderTargetAvailable()
+                    }
+
+                    override fun onControllerAttached(surfaceWasValid: Boolean) {
+                        discoveryDebugLog.clientRenderControllerAttached(surfaceWasValid)
+                    }
+                },
             ),
             telemetryHub,
             diagnosticEventHub,
             VideoPipelineStartDebugObserver(discoveryDebugLog::videoPipelineStart),
+            VideoTransportDebugObserver(discoveryDebugLog::videoTransport),
         )
 
         fun create(): AndroidSecureSessionComposition {
@@ -428,6 +450,7 @@ class AndroidSecureSessionComposition private constructor(
                 lifecycleFactory = lifecycleFactory,
                 hostRegistry = hostRegistry,
                 debugObserver = SessionStartupDebugObserver(discoveryDebugLog::sessionStartup),
+                hostPreparedSessionDispatcher = controlScheduler,
             )
 
             val application = SecureSessionApplicationController(
@@ -916,17 +939,23 @@ class AndroidSecureSessionComposition private constructor(
 }
 
 /** Ephemeral Activity-owned view references; no session keying material is ever retained here. */
-class AndroidSessionUiResources {
+class AndroidSessionUiResources(
+    private val onClientRenderSurfaceAttached: (rendererAvailable: Boolean) -> Unit = {},
+) {
     private val render = AtomicReference<WarpnectVideoSurfaceView?>()
     private val input = AtomicReference<WarpnectInputCaptureView?>()
     private val rendererLock = Any()
     private var renderer: AndroidVideoRenderController? = null
     private val _clientVideoRendererBound = MutableStateFlow(false)
     val clientVideoRendererBound: StateFlow<Boolean> = _clientVideoRendererBound.asStateFlow()
+    private val _clientVideoStreaming = MutableStateFlow(false)
+    val clientVideoStreaming: StateFlow<Boolean> = _clientVideoStreaming.asStateFlow()
 
     fun attachClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
         render.set(renderSurface)
-        synchronized(rendererLock) { renderer }?.let(renderSurface::attachController)
+        val currentRenderer = synchronized(rendererLock) { renderer }
+        runCatching { onClientRenderSurfaceAttached(currentRenderer != null) }
+        currentRenderer?.let(renderSurface::attachController)
     }
 
     fun clearClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
@@ -952,13 +981,23 @@ class AndroidSessionUiResources {
             return@synchronized null
         }
         renderer = value
+        _clientVideoStreaming.value = false
         _clientVideoRendererBound.value = true
         AutoCloseable {
             synchronized(rendererLock) {
                 if (renderer === value) {
                     renderer = null
+                    _clientVideoStreaming.value = false
                     _clientVideoRendererBound.value = false
                 }
+            }
+        }
+    }
+
+    fun markClientVideoStreaming() {
+        synchronized(rendererLock) {
+            if (renderer != null) {
+                _clientVideoStreaming.value = true
             }
         }
     }

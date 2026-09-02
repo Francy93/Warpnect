@@ -1,5 +1,8 @@
 package io.warpnect.platform.session.capability
 
+import io.warpnect.audio.capture.AudioCaptureCapabilities
+import io.warpnect.audio.capture.AudioCaptureError
+import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.capability.LocalCapabilityAvailability
@@ -51,5 +54,20 @@ class AndroidLocalCapabilityCollectorTest {
         assertEquals(2, snapshot.paths.maxPaths)
         assertEquals(CapabilityBits.PATH_STANDBY_SUPPORTED, snapshot.paths.pathFlags)
         assertEquals(LocalCapabilityAvailability.Available, snapshot.localAvailability["directPath"])
+    }
+
+    @Test
+    fun unavailableSystemAudioIsNotAdvertisedIntoCapabilityNegotiation() {
+        val snapshot = AndroidCapabilityProbeSnapshot(
+            lanSecurePathAvailable = true,
+            systemAudioCapture = AudioCaptureCapabilities(
+                source = AudioCaptureSource.SystemAudio,
+                available = false,
+                lastError = AudioCaptureError.PermissionDenied,
+            ),
+        ).toLocalSnapshot(SessionRole.Host, 1)
+
+        assertEquals(0, snapshot.audio.audioFlags and CapabilityBits.AUDIO_SYSTEM_CAPTURE)
+        assertEquals(LocalCapabilityAvailability.SupportedButUnavailable, snapshot.localAvailability["systemAudio"])
     }
 }

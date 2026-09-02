@@ -35,6 +35,7 @@ class AndroidMediaCodecVideoDecoder(
     private val clockUs: () -> Long = VideoDecoderClock::monotonicUs,
     private val drainTimeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS,
     private val telemetry: VideoDecoderTelemetry? = null,
+    private val debugObserver: VideoDecoderDebugObserver = VideoDecoderDebugObserver.None,
 ) : VideoDecoderController {
     private val codecThread = HandlerThread(THREAD_NAME).apply { start() }
     private val codecHandler = Handler(codecThread.looper)
@@ -52,6 +53,9 @@ class AndroidMediaCodecVideoDecoder(
     private var codecStarted = false
     private var closed = false
     private var eosRequested = false
+    private var firstAccessUnitSubmittedObserved = false
+    private var firstOutputAvailableObserved = false
+    private var firstFrameRenderedObserved = false
 
     override fun queryCapabilities(config: VideoDecoderConfig): VideoDecoderCapabilities = discovery.query(config)
 
@@ -142,6 +146,9 @@ class AndroidMediaCodecVideoDecoder(
         if (beginError != VideoDecoderError.None) {
             return VideoDecoderPrepareResult(beginError, null, latestSnapshot)
         }
+        firstAccessUnitSubmittedObserved = false
+        firstOutputAvailableObserved = false
+        firstFrameRenderedObserved = false
         if (!outputSurface.isValid) {
             return prepareFailure(VideoDecoderError.InvalidTargetSurface, null)
         }
@@ -213,6 +220,7 @@ class AndroidMediaCodecVideoDecoder(
             codecStarted = true
             core.completeStart(VideoDecoderError.None)
             publishSnapshot()
+            runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.DecoderStarted) }
             VideoDecoderStartResult(VideoDecoderError.None, latestSnapshot)
         } catch (_: Exception) {
             startFailure(VideoDecoderError.CodecStartFailed)
@@ -348,6 +356,10 @@ class AndroidMediaCodecVideoDecoder(
         telemetry?.frameRendered(presentationTimeUs, nanoTime)
         publishSnapshot()
         runCatching { outputSink?.onFrameRendered(event) }
+        if (!firstFrameRenderedObserved) {
+            firstFrameRenderedObserved = true
+            runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstFrameRendered) }
+        }
     }
 
     private fun handleInputBuffer(codec: MediaCodec, index: Int) {
@@ -420,6 +432,10 @@ class AndroidMediaCodecVideoDecoder(
             telemetry?.decoderInput(result.presentationTimeUs, System.nanoTime())
             core.recordInputQueued(result.size, result.presentationTimeUs)
             publishSnapshot()
+            if (!firstAccessUnitSubmittedObserved) {
+                firstAccessUnitSubmittedObserved = true
+                runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstAccessUnitSubmitted) }
+            }
         } catch (_: Exception) {
             failAndStop(VideoDecoderError.InputBufferUnavailable)
         }
@@ -481,6 +497,10 @@ class AndroidMediaCodecVideoDecoder(
         }
         telemetry?.outputFrames?.increment()
         telemetry?.decoderOutput(info.presentationTimeUs, System.nanoTime())
+        if (!firstOutputAvailableObserved) {
+            firstOutputAvailableObserved = true
+            runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstOutputAvailable) }
+        }
         releaseOutput(codec, index, action, info.presentationTimeUs)
     }
 

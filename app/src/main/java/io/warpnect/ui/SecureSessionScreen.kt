@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,6 +49,7 @@ fun SecureSessionScreen(
     onFindHosts: () -> Unit,
     discoveryPermissionNotice: String?,
     clientVideoRendererBound: Boolean,
+    clientVideoStreaming: Boolean,
     onClientRenderSurfaceAttached: (WarpnectVideoSurfaceView) -> Unit,
     onClientRenderSurfaceDetached: (WarpnectVideoSurfaceView) -> Unit,
     onClientInputSurfaceAttached: (WarpnectInputCaptureView) -> Unit,
@@ -61,6 +63,7 @@ fun SecureSessionScreen(
     val active = uiModel.active
     val hosts = uiModel.hosts
     val cancellableClientDiscovery = shouldCancelClientDiscovery(uiModel.activeRole, active?.state)
+    val clientVideoSurfaceVisible = shouldComposeClientVideoSurface(uiModel.activeRole, clientVideoRendererBound)
     val context = LocalContext.current
     val discoveryDebugLog = remember(context) { AndroidDiscoveryDebugLog(context) }
 
@@ -75,69 +78,80 @@ fun SecureSessionScreen(
         controller.cancelClientDiscovery()
     }
 
-    Column(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("Warpnect", fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
-        Text(
-            sessionStatusText(uiModel.activeRole, active?.state, active?.lastError),
-            fontSize = 20.sp,
-        )
-        discoveryDetail(active?.discovery, discoveryPermissionNotice)?.let { detail -> Text(detail) }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (uiModel.activeRole == SessionRole.Host) {
-                Button(onClick = controller::stopHost) { Text("Disable Host") }
-            } else {
-                Button(onClick = onEnableHost) { Text("Enable Host") }
-            }
-            OutlinedButton(onClick = onFindHosts) {
-                Text("Find Hosts")
-            }
-        }
-        if (uiModel.activeRole == SessionRole.Client) {
-            if (cancellableClientDiscovery) {
-                OutlinedButton(
-                    onClick = controller::cancelClientDiscovery,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Cancel search")
-                }
-            }
-            if (uiModel.chooserVisible) {
-                HostChooser(
-                    rows = hostChooserRows(hosts),
-                    onConnect = { presence -> controller.connect(presence) },
-                    debugLog = discoveryDebugLog,
-                )
-            } else {
-                Text("No hosts found yet.")
-            }
-            if (shouldComposeClientVideoSurface(uiModel.activeRole, clientVideoRendererBound)) {
-                ClientVideoSurface(onClientRenderSurfaceAttached, onClientRenderSurfaceDetached)
-            }
-            ClientInputCaptureSurface(onClientInputSurfaceAttached, onClientInputSurfaceDetached)
-        }
-        active?.pairingVerificationPrompt?.let { prompt ->
-            SecurePeerVerification(
-                shortAuthenticationString = prompt.shortAuthenticationString,
-                onConfirm = controller::approvePairing,
-                onReject = controller::rejectPairing,
+    Column(modifier = modifier.fillMaxSize()) {
+        if (clientVideoSurfaceVisible) {
+            ClientVideoSurface(
+                onAttached = onClientRenderSurfaceAttached,
+                onDetached = onClientRenderSurfaceDetached,
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             )
         }
-        if (uiModel.activeRole == SessionRole.Client) {
-            Spacer(modifier = Modifier.height(4.dp))
-            if (!cancellableClientDiscovery) {
-                OutlinedButton(onClick = controller::disconnect, modifier = Modifier.fillMaxWidth()) {
-                    Text("Disconnect")
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Warpnect", fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                sessionStatusText(
+                    activeRole = uiModel.activeRole,
+                    state = active?.state,
+                    error = active?.lastError,
+                    clientVideoStreaming = clientVideoStreaming,
+                ),
+                fontSize = 20.sp,
+            )
+            discoveryDetail(active?.discovery, discoveryPermissionNotice)?.let { detail -> Text(detail) }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (uiModel.activeRole == SessionRole.Host) {
+                    Button(onClick = controller::stopHost) { Text("Disable Host") }
+                } else {
+                    Button(onClick = onEnableHost) { Text("Enable Host") }
+                }
+                OutlinedButton(onClick = onFindHosts) {
+                    Text("Find Hosts")
                 }
             }
-        }
-        OutlinedButton(onClick = onDeveloperManual, modifier = Modifier.fillMaxWidth()) {
-            Text("Developer Manual")
-        }
-        OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
-            Text("Diagnostics")
+            if (uiModel.activeRole == SessionRole.Client) {
+                if (cancellableClientDiscovery) {
+                    OutlinedButton(
+                        onClick = controller::cancelClientDiscovery,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Cancel search")
+                    }
+                }
+                if (uiModel.chooserVisible) {
+                    HostChooser(
+                        rows = hostChooserRows(hosts),
+                        onConnect = { presence -> controller.connect(presence) },
+                        debugLog = discoveryDebugLog,
+                    )
+                } else {
+                    Text("No hosts found yet.")
+                }
+                ClientInputCaptureSurface(onClientInputSurfaceAttached, onClientInputSurfaceDetached)
+            }
+            active?.pairingVerificationPrompt?.let { prompt ->
+                SecurePeerVerification(
+                    shortAuthenticationString = prompt.shortAuthenticationString,
+                    onConfirm = controller::approvePairing,
+                    onReject = controller::rejectPairing,
+                )
+            }
+            if (uiModel.activeRole == SessionRole.Client) {
+                Spacer(modifier = Modifier.height(4.dp))
+                if (!cancellableClientDiscovery) {
+                    OutlinedButton(onClick = controller::disconnect, modifier = Modifier.fillMaxWidth()) {
+                        Text("Disconnect")
+                    }
+                }
+            }
+            OutlinedButton(onClick = onDeveloperManual, modifier = Modifier.fillMaxWidth()) {
+                Text("Developer Manual")
+            }
+            OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                Text("Diagnostics")
+            }
         }
     }
 }
@@ -233,6 +247,7 @@ internal fun sessionStatusText(
     activeRole: SessionRole?,
     state: SecureSessionCoordinatorState?,
     error: SecureSessionIntegrationError?,
+    clientVideoStreaming: Boolean = false,
 ): String = when {
     error == SecureSessionIntegrationError.DiscoveryStartFailed -> "Discovery unavailable"
     state == SecureSessionCoordinatorState.Discovering && activeRole == SessionRole.Host -> "Waiting for clients"
@@ -240,6 +255,9 @@ internal fun sessionStatusText(
     state == SecureSessionCoordinatorState.Connecting -> "Connecting"
     state == SecureSessionCoordinatorState.PairingRequired -> "Securing connection"
     state == SecureSessionCoordinatorState.Pairing -> "Verifying secure connection"
+    state == SecureSessionCoordinatorState.Running &&
+        activeRole == SessionRole.Client &&
+        clientVideoStreaming -> "Streaming"
     state == SecureSessionCoordinatorState.Running -> "Running"
     state == SecureSessionCoordinatorState.Recovering -> "Recovering"
     state == SecureSessionCoordinatorState.Failed -> "Failed"
@@ -287,6 +305,7 @@ internal fun discoveryDetail(snapshot: DiscoverySnapshot?, permissionNotice: Str
 private fun ClientVideoSurface(
     onAttached: (WarpnectVideoSurfaceView) -> Unit,
     onDetached: (WarpnectVideoSurfaceView) -> Unit,
+    modifier: Modifier,
 ) {
     val context = LocalContext.current
     val renderSurface = remember { WarpnectVideoSurfaceView(context) }
@@ -296,7 +315,7 @@ private fun ClientVideoSurface(
     }
     AndroidView(
         factory = { renderSurface },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp),
+        modifier = modifier,
     )
 }
 

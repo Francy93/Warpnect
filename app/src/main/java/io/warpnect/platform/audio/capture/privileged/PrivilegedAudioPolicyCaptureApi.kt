@@ -18,6 +18,22 @@ internal data class PrivilegedAudioPolicyPrepareResult(
     val actualBufferSizeFrames: Int = 0,
 )
 
+/** Cold capability result for the current AudioPolicy-based system-audio implementation. */
+internal data class AudioPolicyCapabilityQualification(
+    val contextAvailable: Boolean,
+    val hiddenApiAvailable: Boolean,
+    val routingPermissionGranted: Boolean,
+) {
+    val error: AudioCaptureError = when {
+        !contextAvailable -> AudioCaptureError.PrivilegedServiceUnavailable
+        !hiddenApiAvailable -> AudioCaptureError.AudioPolicyUnavailable
+        !routingPermissionGranted -> AudioCaptureError.PermissionDenied
+        else -> AudioCaptureError.None
+    }
+
+    val isAvailable: Boolean get() = error == AudioCaptureError.None
+}
+
 internal interface PrivilegedAudioPolicyCaptureApi {
     fun queryCapabilities(request: AudioCaptureRequest): AudioCaptureCapabilities
 

@@ -16,9 +16,12 @@ import io.warpnect.video.transport.VideoTransportState
 import io.warpnect.video.transport.VideoTransportSubmitResult
 import java.nio.ByteBuffer
 
-class NativeSclVideoTransportController : VideoTransportController {
+class NativeSclVideoTransportController(
+    private val debugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
+) : VideoTransportController {
     private var nativeHandle: Long = 0
     private var localSnapshot = VideoTransportSnapshot()
+    private var firstVideoDatagramSentObserved = false
 
     /**
      * Cold-path RFC-005I adoption. The handle was created by RFC-005G with the negotiated socket
@@ -148,7 +151,14 @@ class NativeSclVideoTransportController : VideoTransportController {
                 keyframe = keyframe,
             ),
         )
-        return remember(error)
+        val remembered = remember(error)
+        if (remembered == VideoTransportError.None && !firstVideoDatagramSentObserved) {
+            firstVideoDatagramSentObserved = true
+            runCatching {
+                debugObserver.onEvent(VideoTransportDebugEvent.FirstVideoDatagramSent)
+            }
+        }
+        return remembered
     }
 
     override fun handleControlDatagram(buffer: ByteBuffer, offset: Int, size: Int): VideoTransportSubmitResult {
