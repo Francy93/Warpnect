@@ -18,7 +18,7 @@ interface VideoEncoderDiscovery {
 }
 
 internal class AndroidVideoEncoderDiscovery(
-    private val cbrFallback: CbrCapabilityFallback = CbrCapabilityFallback(processCbrProbe),
+    private val cbrFallback: CbrCapabilityFallback,
     private val debugObserver: VideoEncoderCbrCapabilityDebugObserver = VideoEncoderCbrCapabilityDebugObserver.None,
 ) : VideoEncoderDiscovery {
     override fun query(request: VideoEncoderRequest): VideoEncoderCapabilities {
@@ -127,10 +127,6 @@ internal class AndroidVideoEncoderDiscovery(
         }
 
     private fun Range<Int>.containsValue(value: Int): Boolean = contains(value)
-
-    private companion object {
-        val processCbrProbe = CachedExactVideoEncoderCapabilityProbe(AndroidExactVideoEncoderCapabilityProbe())
-    }
 }
 
 internal interface VideoEncoderCbrCapabilityDebugObserver {

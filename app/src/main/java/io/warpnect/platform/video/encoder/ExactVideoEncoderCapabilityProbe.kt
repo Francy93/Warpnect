@@ -2,6 +2,8 @@ package io.warpnect.platform.video.encoder
 
 import android.media.MediaCodec
 import android.os.Looper
+import io.warpnect.video.encoder.VideoBitrateMode
+import io.warpnect.video.encoder.VideoCodec
 import io.warpnect.video.encoder.VideoEncoderRequest
 import java.util.LinkedHashMap
 
@@ -55,13 +57,22 @@ internal enum class CbrCapabilityDecisionSource {
     ActiveProbeCache,
 }
 
-internal enum class ExactVideoEncoderCapabilityProbeResult {
-    Supported,
-    MainThreadRejected,
-    CodecCreationFailed,
-    ConfigureFailed,
-    InputSurfaceFailed,
-    StartFailed,
+internal enum class ExactVideoEncoderCapabilityProbeResult(val code: Int) {
+    Supported(0),
+    MainThreadRejected(1),
+    CodecCreationFailed(2),
+    ConfigureFailed(3),
+    InputSurfaceFailed(4),
+    StartFailed(5),
+    ProbeServiceUnavailable(6),
+    ProbeProcessDied(7),
+    ProbeTimedOut(8),
+    ;
+
+    companion object {
+        fun fromCode(code: Int): ExactVideoEncoderCapabilityProbeResult =
+            entries.firstOrNull { it.code == code } ?: ProbeServiceUnavailable
+    }
 }
 
 internal data class CbrCapabilityDecision(
@@ -88,6 +99,7 @@ internal class CachedExactVideoEncoderCapabilityProbe(
             eldest: MutableMap.MutableEntry<ExactVideoEncoderCapabilityKey, ExactVideoEncoderCapabilityProbeResult>,
         ): Boolean = size > capacity
     }
+    private var processDeathQuarantined = false
 
     init {
         require(capacity > 0)
@@ -102,13 +114,32 @@ internal class CachedExactVideoEncoderCapabilityProbe(
             )
         }
 
+        if (processDeathQuarantined) {
+            return cacheDecision(
+                key = key,
+                result = ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied,
+            )
+        }
+
         val decision = delegate.probe(key)
         val result = decision.probeResult
         if (result != null && result != ExactVideoEncoderCapabilityProbeResult.MainThreadRejected) {
             cache[key] = result
+            if (result == ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied) {
+                processDeathQuarantined = true
+            }
         }
         decision
     }
+
+    private fun cacheDecision(
+        key: ExactVideoEncoderCapabilityKey,
+        result: ExactVideoEncoderCapabilityProbeResult,
+    ): CbrCapabilityDecision = CbrCapabilityDecision(
+        supported = false,
+        source = CbrCapabilityDecisionSource.ActiveProbeCache,
+        probeResult = result,
+    ).also { cache[key] = result }
 
     private companion object {
         const val DEFAULT_CACHE_CAPACITY = 32
@@ -173,24 +204,8 @@ internal class AndroidExactVideoEncoderCapabilityProbe(
         if (isMainThread()) {
             return decision(ExactVideoEncoderCapabilityProbeResult.MainThreadRejected)
         }
-        val factory = codecFactory ?: codecFactoryFor(key)
-        return decision(ExactFormatEncoderProbeRunner.run(factory))
+        return decision(codecFactory?.let { ExactFormatEncoderProbeRunner.run(it) } ?: runExactProbe(key))
     }
-
-    private fun codecFactoryFor(key: ExactVideoEncoderCapabilityKey): ExactFormatEncoderProbeCodecFactory =
-        ExactFormatEncoderProbeCodecFactory {
-            val request = VideoEncoderRequest(
-                width = key.width,
-                height = key.height,
-                frameRate = key.frameRate,
-                bitrateBps = key.bitrateBps,
-                iFrameIntervalSeconds = Float.fromBits(key.iFrameIntervalBits),
-            )
-            MediaCodecExactFormatEncoderProbeCodec(
-                MediaCodec.createByCodecName(key.codecName),
-                AndroidVideoEncoderFormatFactory.create(request),
-            )
-        }
 
     private fun decision(result: ExactVideoEncoderCapabilityProbeResult) = CbrCapabilityDecision(
         supported = result == ExactVideoEncoderCapabilityProbeResult.Supported,
@@ -199,7 +214,27 @@ internal class AndroidExactVideoEncoderCapabilityProbe(
     )
 }
 
-private class MediaCodecExactFormatEncoderProbeCodec(
+/** Shared exact production-format lifecycle used by the disposable app-UID probe process. */
+internal fun runExactProbe(key: ExactVideoEncoderCapabilityKey): ExactVideoEncoderCapabilityProbeResult {
+    if (key.mimeType != VideoCodec.Avc.mimeType || key.bitrateMode != VideoBitrateMode.Cbr.name) {
+        return ExactVideoEncoderCapabilityProbeResult.ConfigureFailed
+    }
+    val request = VideoEncoderRequest(
+        width = key.width,
+        height = key.height,
+        frameRate = key.frameRate,
+        bitrateBps = key.bitrateBps,
+        iFrameIntervalSeconds = Float.fromBits(key.iFrameIntervalBits),
+    )
+    return ExactFormatEncoderProbeRunner.run {
+        MediaCodecExactFormatEncoderProbeCodec(
+            MediaCodec.createByCodecName(key.codecName),
+            AndroidVideoEncoderFormatFactory.create(request),
+        )
+    }
+}
+
+internal class MediaCodecExactFormatEncoderProbeCodec(
     private val codec: MediaCodec,
     private val format: android.media.MediaFormat,
 ) : ExactFormatEncoderProbeCodec {

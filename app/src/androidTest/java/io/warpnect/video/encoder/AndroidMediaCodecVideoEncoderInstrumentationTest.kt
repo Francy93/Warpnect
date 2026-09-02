@@ -9,6 +9,7 @@ import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.capture.CaptureRequest
 import io.warpnect.platform.capture.AndroidVideoCaptureController
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
+import io.warpnect.platform.video.encoder.safeCodecProbeDiscovery
 import java.nio.ByteBuffer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -35,7 +36,9 @@ class AndroidMediaCodecVideoEncoderInstrumentationTest {
     @Test
     fun syntheticSurfaceFramesProduceHardwareAvcAccessUnits() {
         val request = testRequest()
-        val encoderController = AndroidMediaCodecVideoEncoder()
+        val encoderController = AndroidMediaCodecVideoEncoder(
+            safeCodecProbeDiscovery(InstrumentationRegistry.getInstrumentation().targetContext),
+        )
         encoder = encoderController
         val capabilities = runBlocking { encoderController.queryCapabilities(request) }
         printEncoderDiagnostics("synthetic-query", capabilities)
@@ -86,7 +89,9 @@ class AndroidMediaCodecVideoEncoderInstrumentationTest {
         )
 
         val request = testRequest()
-        val encoderController = AndroidMediaCodecVideoEncoder()
+        val encoderController = AndroidMediaCodecVideoEncoder(
+            safeCodecProbeDiscovery(InstrumentationRegistry.getInstrumentation().targetContext),
+        )
         encoder = encoderController
         val encoderCapabilities = runBlocking { encoderController.queryCapabilities(request) }
         printEncoderDiagnostics("capture-query", encoderCapabilities)

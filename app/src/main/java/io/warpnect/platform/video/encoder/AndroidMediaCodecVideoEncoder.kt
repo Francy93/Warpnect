@@ -24,7 +24,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 class AndroidMediaCodecVideoEncoder(
-    private val discovery: VideoEncoderDiscovery = AndroidVideoEncoderDiscovery(),
+    private val discovery: VideoEncoderDiscovery,
     private val clockUs: () -> Long = VideoEncoderClock::monotonicUs,
     private val drainTimeoutMs: Long = DEFAULT_DRAIN_TIMEOUT_MS,
     private val telemetry: VideoEncoderTelemetry? = null,

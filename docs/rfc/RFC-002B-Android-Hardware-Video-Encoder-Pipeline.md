@@ -59,6 +59,28 @@ safe result per exact request for the process lifetime. A failed probe leaves th
 unavailable. This compatibility check never relaxes CBR to VBR or CBR_FD and introduces no
 Video Payload V1, SCL, Session-wire, or negotiated bitrate-mode semantic change.
 
+### Active-Probe Process Safety
+
+Exact-format qualification is a cold capability operation, not production encoder ownership. When
+CBR metadata alone rejects an otherwise eligible candidate, Warpnect runs the probe in the
+application-private `:codecProbe` Service process. That process uses the same application
+UID/permissions as Warpnect, is not isolated, and does not use Shizuku, shell, root, capture, a
+Session, network transport, or media output. Binder carries only the exact codec request and a
+typed result; no production Surface, frame, access unit, or media payload crosses the boundary.
+
+The normal Warpnect runtime continues to own the production `MediaCodec` encoder. A probe success,
+ordinary configuration failure, service unavailability, timeout, or disposable-process death is
+cached for the exact request during the caller process lifetime. Process death also quarantines
+further cold probes in that caller lifetime, so repeated capability collection cannot repeatedly
+trigger vendor-native aborts. The caller maps failures to strict CBR unavailability without
+exposing vendor exception text or terminating the main runtime. This remains a safety boundary,
+not a CBR fallback.
+
+Hardware evidence is device-specific: an API 36 Exynos AVC encoder accepted the exact strict-CBR
+format despite negative metadata, and tested API 30 Galaxy A41 hardware accepted the exact format
+in the normal app-UID disposable process using `OMX.MTK.VIDEO.ENCODER.AVC`. This does not claim
+strict-CBR support for all MediaTek devices or remove typed failure handling for future codecs.
+
 ## Encoder Request
 
 `VideoEncoderRequest` includes:

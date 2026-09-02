@@ -51,7 +51,11 @@ import io.warpnect.platform.telemetry.AndroidTelemetryClock
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
 import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
+import io.warpnect.platform.video.encoder.AndroidCodecProbeServiceCaller
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
+import io.warpnect.platform.video.encoder.CachedExactVideoEncoderCapabilityProbe
+import io.warpnect.platform.video.encoder.CbrCapabilityFallback
+import io.warpnect.platform.video.encoder.ServiceBackedExactVideoEncoderCapabilityProbe
 import io.warpnect.platform.video.encoder.VideoEncoderCbrCapabilityDebugObserver
 import io.warpnect.platform.video.encoder.VideoEncoderFrameDebugObserver
 import io.warpnect.platform.video.render.AndroidVideoRenderController
@@ -209,6 +213,24 @@ class AndroidSecureSessionComposition private constructor(
         private val crypto = JcaPairingCryptoProvider()
         private val routeLocalAddressResolver = AndroidRouteLocalAddressResolver()
         private val discoveryDebugLog = AndroidDiscoveryDebugLog(context)
+        private val videoEncoderDiscovery = AndroidVideoEncoderDiscovery(
+            CbrCapabilityFallback(
+                CachedExactVideoEncoderCapabilityProbe(
+                    ServiceBackedExactVideoEncoderCapabilityProbe(
+                        AndroidCodecProbeServiceCaller(context),
+                    ),
+                ),
+            ),
+            debugObserver = object : VideoEncoderCbrCapabilityDebugObserver {
+                override fun onDecision(decision: io.warpnect.platform.video.encoder.CbrCapabilityDecision) {
+                    discoveryDebugLog.encoderCbrCapability(decision)
+                }
+
+                override fun onActiveProbeStarted() {
+                    discoveryDebugLog.encoderCbrActiveProbeStarted()
+                }
+            },
+        )
         private val uiResources = AndroidSessionUiResources(discoveryDebugLog::clientRenderSurfaceAttached)
         private val hostRegistry = HostSessionRuntimeRegistry()
         private val clientDiscovery = AndroidLocalDiscoveryController(
@@ -257,6 +279,7 @@ class AndroidSecureSessionComposition private constructor(
         private val pipelineFactory = AndroidSessionPipelineFactory(
             DefaultAndroidSessionPipelineBindings(
                 context,
+                videoEncoderDiscovery,
                 AndroidSessionPipelineResources(
                     bindClientVideoRenderer = uiResources::bindClientVideoRenderer,
                     clientInputSurface = uiResources::inputCaptureSurface,
@@ -532,17 +555,7 @@ class AndroidSecureSessionComposition private constructor(
                 SessionRole.Client -> directRouteState.isUsable()
             }
             val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
-            val encoder = AndroidVideoEncoderDiscovery(
-                debugObserver = object : VideoEncoderCbrCapabilityDebugObserver {
-                    override fun onDecision(decision: io.warpnect.platform.video.encoder.CbrCapabilityDecision) {
-                        discoveryDebugLog.encoderCbrCapability(decision)
-                    }
-
-                    override fun onActiveProbeStarted() {
-                        discoveryDebugLog.encoderCbrActiveProbeStarted()
-                    }
-                },
-            ).query(
+            val encoder = videoEncoderDiscovery.query(
                 VideoEncoderRequest(
                     width = videoMode.width,
                     height = videoMode.height,
@@ -684,6 +697,7 @@ class AndroidSecureSessionComposition private constructor(
         }
 
         private fun exactValidator() = AndroidExactStreamConfigurationValidator(
+            videoEncoderDiscovery = videoEncoderDiscovery,
             systemAudioCapture = { request -> AndroidSystemAudioCaptureController(context).queryCapabilities(request) },
             microphoneCapture = { request ->
                 AndroidMicrophoneAudioCaptureController(

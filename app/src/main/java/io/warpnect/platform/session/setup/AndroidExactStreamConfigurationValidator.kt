@@ -19,7 +19,6 @@ import io.warpnect.input.reliability.InputReliabilityConfig
 import io.warpnect.input.reliability.InputReliabilityConfigurationError
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.decoder.VideoDecoderDiscovery
-import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.VideoEncoderDiscovery
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityBits
@@ -51,7 +50,7 @@ fun interface ExactInputBackendAvailability {
  * it captures no media and releases the temporary codec resources immediately.
  */
 class AndroidExactStreamConfigurationValidator(
-    private val videoEncoderDiscovery: VideoEncoderDiscovery = AndroidVideoEncoderDiscovery(),
+    private val videoEncoderDiscovery: VideoEncoderDiscovery,
     private val videoDecoderDiscovery: VideoDecoderDiscovery = AndroidVideoDecoderDiscovery(),
     private val systemAudioCapture: ExactAudioCaptureCapabilityQuery? = null,
     private val microphoneCapture: ExactAudioCaptureCapabilityQuery? = null,

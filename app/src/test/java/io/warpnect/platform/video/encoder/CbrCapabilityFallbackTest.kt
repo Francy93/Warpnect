@@ -110,6 +110,25 @@ class CbrCapabilityFallbackTest {
         assertEquals(1, rawProbe.calls)
     }
 
+    @Test
+    fun probeProcessDeathIsCachedAndQuarantinesFurtherColdProbes() {
+        val rawProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied)
+        val probe = CachedExactVideoEncoderCapabilityProbe(rawProbe)
+        val fallback = CbrCapabilityFallback(probe)
+        val otherKey = key.copy(codecName = "other.vendor.avc.encoder")
+
+        val first = fallback.resolve(false, true, key)
+        val same = fallback.resolve(false, true, key)
+        val other = fallback.resolve(false, true, otherKey)
+
+        assertFalse(first.supported)
+        assertEquals(ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied, first.probeResult)
+        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, same.source)
+        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, other.source)
+        assertEquals(ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied, other.probeResult)
+        assertEquals(1, rawProbe.calls)
+    }
+
     private class RecordingProbe(
         private val result: ExactVideoEncoderCapabilityProbeResult,
     ) : ExactVideoEncoderCapabilityProbe {

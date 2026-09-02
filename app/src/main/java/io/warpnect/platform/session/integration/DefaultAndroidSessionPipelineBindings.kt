@@ -41,6 +41,7 @@ import io.warpnect.platform.input.transport.NativeSclInputTransportController
 import io.warpnect.platform.video.decoder.AndroidMediaCodecVideoDecoder
 import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
+import io.warpnect.platform.video.encoder.VideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.VideoEncoderFrameDebugObserver
 import io.warpnect.platform.video.render.AndroidVideoRenderController
 import io.warpnect.platform.video.render.VideoRenderDebugObserver
@@ -98,6 +99,7 @@ data class AndroidSessionPipelineResources(
  */
 class DefaultAndroidSessionPipelineBindings(
     context: Context,
+    private val videoEncoderDiscovery: VideoEncoderDiscovery,
     private val resources: AndroidSessionPipelineResources = AndroidSessionPipelineResources(),
     private val videoEncoderFrameDebugObserver: VideoEncoderFrameDebugObserver = VideoEncoderFrameDebugObserver.None,
     private val videoDecoderDebugObserver: VideoDecoderDebugObserver = VideoDecoderDebugObserver.None,
@@ -115,6 +117,7 @@ class DefaultAndroidSessionPipelineBindings(
         val controller = DefaultVideoTransmitterSessionController(
             captureController = AndroidVideoCaptureController(appContext),
             encoderController = AndroidMediaCodecVideoEncoder(
+                discovery = videoEncoderDiscovery,
                 telemetry = telemetry,
                 frameDebugObserver = videoEncoderFrameDebugObserver,
             ),

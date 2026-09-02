@@ -4,9 +4,11 @@ import android.graphics.Color
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.warpnect.MainActivity
 import io.warpnect.platform.video.decoder.AndroidMediaCodecVideoDecoder
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
+import io.warpnect.platform.video.encoder.safeCodecProbeDiscovery
 import io.warpnect.platform.video.render.AndroidVideoRenderController
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
 import io.warpnect.platform.video.transport.NativeSclVideoReceiverController
@@ -62,7 +64,9 @@ class AndroidEndToEndVideoStreamingInstrumentationTest {
             bitrateBps = 1_000_000,
             iFrameIntervalSeconds = 1f,
         )
-        val encoderController = AndroidMediaCodecVideoEncoder()
+        val encoderController = AndroidMediaCodecVideoEncoder(
+            safeCodecProbeDiscovery(InstrumentationRegistry.getInstrumentation().targetContext),
+        )
         encoder = encoderController
         val encoderCapabilities = encoderController.queryCapabilities(request)
         assumeTrue("No supported hardware AVC encoder: ${encoderCapabilities.error}", encoderCapabilities.isSupported)

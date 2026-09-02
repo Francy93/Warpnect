@@ -7,8 +7,10 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.warpnect.platform.video.decoder.AndroidMediaCodecVideoDecoder
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
+import io.warpnect.platform.video.encoder.safeCodecProbeDiscovery
 import io.warpnect.video.encoder.EncodedVideoSink
 import io.warpnect.video.encoder.SyntheticEglSurfaceProducer
 import io.warpnect.video.encoder.VideoEncoderError
@@ -85,7 +87,9 @@ class AndroidMediaCodecVideoDecoderInstrumentationTest {
     }
 
     private fun produceEncodedAvc(request: VideoEncoderRequest): EncodedAvcFixture {
-        val encoderController = AndroidMediaCodecVideoEncoder()
+        val encoderController = AndroidMediaCodecVideoEncoder(
+            safeCodecProbeDiscovery(InstrumentationRegistry.getInstrumentation().targetContext),
+        )
         encoder = encoderController
         val capabilities = runBlocking { encoderController.queryCapabilities(request) }
         assumeTrue("No supported hardware AVC encoder: ${capabilities.error}", capabilities.isSupported)

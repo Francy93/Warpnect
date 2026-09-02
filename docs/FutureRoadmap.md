@@ -46,10 +46,11 @@ Implemented:
 - RFC-002H - Android Privileged Screen Capture Backend & Privilege Boundary [implemented]
 
 Phase 2 core history remains complete through RFC-002G. RFC-002H production capture has hardware
-validation on legacy API 30/API 31 and modern API 36 paths; H1 remains open for separate end-to-end
-streaming validation. Open hardware follow-up is kept separate: the RFC-002B exact strict-CBR
-active probe can abort tested MediaTek vendor codec code, and A41 `InputApiUnavailable` remains a
-Phase 4 privileged Input compatibility issue.
+validation on legacy API 30/API 31 and modern API 36 paths. H1 real-device media validation is
+complete. RFC-002B strict-CBR metadata qualification now uses a disposable same-UID app process,
+which contains vendor codec failure without terminating Warpnect; API 30 A41 strict-CBR
+qualification passed in that normal application context. A41 `InputApiUnavailable` remains a
+separate Phase 4 privileged Input compatibility issue.
 
 ## Phase 3 - Audio Pipeline
 

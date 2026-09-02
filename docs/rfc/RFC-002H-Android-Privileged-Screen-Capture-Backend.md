@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Implemented. Production hardware validation is complete; H1 remains open.
+Status: Implemented. Production hardware validation and H1 real-device media validation are complete.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
@@ -244,9 +244,8 @@ migration, reconnect behavior, helper persistence, or screen-off policy.
 
 ## Related Deferred Findings
 
-- On tested MediaTek A41 hardware, the RFC-002B exact strict-CBR active capability probe can abort
-  vendor codec code. This is a production-safety follow-up for RFC-002B capability handling, not a
-  capture-backend semantic change.
+- RFC-002B now contains vendor codec probe failure in a disposable normal-UID app process. This is
+  separate from capture-backend semantics; hardware evidence remains device-specific.
 - The tested A41 devices reported `InputApiUnavailable`. This is a privileged Input/Phase 4
   compatibility issue, independent of proven screen-capture capability.
 
@@ -273,5 +272,5 @@ contract and no wire change.
 
 The supporting experiments established the architecture. Production implementation and focused
 regression coverage are complete, with hardware validation of legacy SurfaceControl on API 30/API
-31 and modern DisplayManager mirroring on API 36. H1 remains open for its separate end-to-end
-streaming validation.
+31 and modern DisplayManager mirroring on API 36. H1 separately completed end-to-end real-device
+media validation.
