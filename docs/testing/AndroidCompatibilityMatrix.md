@@ -16,3 +16,23 @@ Test artifact: debug APK built from `99b83049671f43a026e8f446f005c944b996368c`, 
 The tablet was landscape during the trace. Its 16:9 render surface occupied the available height, so the Compose status label was not exposed to the UI-automation tree. The production decoder nevertheless emitted the first-rendered-frame event. This is recorded as a layout-observability limitation, not as a media failure or a latency measurement.
 
 All remote-frame results above used the production Session, protected UDP, decoder, and render surface. No screenshots, pixel readback, local loopback frames, or captured media were used as proof.
+
+## RFC-002I Decoder Investigation
+
+This is pre-implementation laboratory evidence, not a production Client eligibility change. On the
+tested Android 8.0 / API 26 Samsung SM-G935F, framework decoder hardware classification is
+unavailable, so current production Client capability remains unavailable with
+`HardwareClassificationUnavailable` before WNSN.
+
+The selected `OMX.Exynos.avc.dec` reports 1280x720 at 60 fps support and completed a test-only
+180-frame Surface-output AVC decode at that geometry and cadence. The simple fixture was
+configured with an 8 Mbps target but encoded at approximately 0.56 Mbps, so it does not establish
+the complete V1 bitrate envelope or change the production device classification. Draft RFC-002I
+defines the proposed full-envelope active qualification design.
+
+On the API 33 tablet, production S22-to-tablet traces rendered a real remote frame in portrait and
+landscape. A bounded rotation during streaming did not fail the Session, but existing observations
+did not force Surface destruction/recreation or establish a separate post-recreation presentation
+event. After a Shizuku permission update the tablet entered Host lifecycle readiness, but the
+tablet-to-S22 reverse-role trace was inconclusive because discovery could not resolve the tablet
+after the clean test reset. That result is independent of Client video.

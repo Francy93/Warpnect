@@ -24,7 +24,9 @@ param(
     [string]$DeviceB = $env:WARPNECT_DEVICE_B,
     [switch]$SkipBuild,
     [switch]$SkipInstall,
-    [switch]$CleanState
+    [switch]$CleanState,
+    [ValidateRange(0, 30)]
+    [int]$HoldMediaAfterFirstFrameSeconds = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -764,7 +766,11 @@ function Invoke-PairingScenario {
 }
 
 function Invoke-MediaStartupTrace {
-    param([pscustomobject]$HostDevice, [pscustomobject]$ClientDevice)
+    param(
+        [pscustomobject]$HostDevice,
+        [pscustomobject]$ClientDevice,
+        [int]$HoldMediaAfterFirstFrameSeconds = 0
+    )
     Ensure-WarpnectForeground $HostDevice
     Tap-UiText $HostDevice "Enable Host"
     if (-not (Wait-ForUiText $HostDevice "Waiting for clients")) {
@@ -829,6 +835,9 @@ function Invoke-MediaStartupTrace {
             $clientFirstFrameDecoded -and
             $clientFirstFrameRendered
         ) {
+            if ($HoldMediaAfterFirstFrameSeconds -gt 0) {
+                Start-Sleep -Seconds $HoldMediaAfterFirstFrameSeconds
+            }
             break
         }
         Start-Sleep -Milliseconds 250
@@ -902,7 +911,7 @@ try {
     Start-Warpnect $hostDevice -ClearState:$clearForScenario
     Start-Warpnect $clientDevice -ClearState:$clearForScenario
     if ($Scenario -eq "MediaStartupTrace") {
-        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice
+        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds
         $scenarioResult["sas_equal"] = $media.sas_equal
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated
