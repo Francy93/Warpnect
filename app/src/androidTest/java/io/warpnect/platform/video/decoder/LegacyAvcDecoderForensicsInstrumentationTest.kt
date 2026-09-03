@@ -9,6 +9,7 @@ import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLContext
 import android.opengl.EGLDisplay
+import android.opengl.EGLExt
 import android.opengl.EGLSurface
 import android.opengl.GLES20
 import android.os.Build
@@ -19,11 +20,15 @@ import android.os.SystemClock
 import android.view.Surface
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.warpnect.platform.video.encoder.AndroidVideoEncoderFormatFactory
 import io.warpnect.video.decoder.VideoDecoderConfig
-import io.warpnect.video.encoder.SyntheticEglSurfaceProducer
+import io.warpnect.video.encoder.VideoEncoderRequest
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -80,49 +85,39 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
             isNotSoftwareFamily(info.name) && supportsProfile(info)
         }
         assumeTrue("No non-software-family AVC decoder supports the test profile", decoderInfo != null)
-        val fixture = fixtureFromInstrumentationArgument() ?: run {
-            val encoderInfo = fixtureEncoder() ?: error("No surface AVC encoder can create the temporary test stream")
-            encodeTemporaryAvcFixture(encoderInfo)
-        }
+        val fixture = fixtureFromInstrumentationArgument()
+        assumeTrue("Provide a byte-identical RFC-002I fixture with rfc002iFixturePath", fixture != null)
         FixtureOutputSurface(WIDTH, HEIGHT).use { output ->
             val results = decodeToSurface(
                 decoderInfo = requireNotNull(decoderInfo),
-                fixture = fixture,
+                fixture = requireNotNull(fixture),
                 output = output,
             )
             assertTrue("Decoder did not release any output to its Surface", results.outputFrames > 0)
-            assertTrue("Decoder did not present a Surface frame", output.awaitFrame(FIRST_FRAME_TIMEOUT_MS))
-            val firstSurfaceMs = output.firstFrameMs.get().let { timestampMs ->
-                if (timestampMs >= 0L) timestampMs - results.startedAtMs else null
-            }
-            println(
-                "RFC002I_ACTIVE_DECODE decoder=${decoderInfo.name} " +
-                    "configured=true started=true inputs=${fixture.accessUnits.size} " +
-                    "outputs=${results.outputFrames} surface_frames=${output.frameCount.get()} " +
-                    "first_output_ms=${results.firstOutputMs} first_surface_ms=$firstSurfaceMs " +
-                    "input_stalls=${results.inputStalls} max_input_wait_ms=${results.maxInputWaitMs} " +
-                    "source_bytes=${fixture.byteCount} source_target_bps=$TARGET_BITRATE_BPS " +
-                    "source_actual_bps=${fixture.actualBitrateBps()} " +
-                    "eos=${results.endOfStream} elapsed_ms=${results.elapsedMs} " +
-                    "test_process_cpu_ms=${results.processCpuMs}",
-            )
+            assertTrue("Decoder did not present a Surface frame", output.awaitFrames(1, FIRST_FRAME_TIMEOUT_MS))
+            printDecodeResult(decoderInfo.name, fixture, results, output)
         }
     }
 
     @Test
-    fun createTemporaryAvcFixture() {
+    fun createFullEnvelopeAvcFixture() {
         val encoderInfo = fixtureEncoder()
         assumeTrue("No surface AVC encoder can create the temporary test stream", encoderInfo != null)
-        val fixture = encodeTemporaryAvcFixture(requireNotNull(encoderInfo))
+        val fixture = encodeFullEnvelopeAvcFixture(requireNotNull(encoderInfo))
         val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
         val destination = File(targetContext.externalCacheDir ?: targetContext.cacheDir, FIXTURE_FILE_NAME)
         destination.outputStream().buffered().use { stream ->
             DataOutputStream(stream).use { output -> writeFixture(output, fixture) }
         }
         println(
-            "RFC002I_FIXTURE_CREATED name=${destination.name} bytes=${destination.length()} " +
-                "source_bytes=${fixture.byteCount} source_target_bps=$TARGET_BITRATE_BPS",
+            "RFC002I_FULL_ENVELOPE_FIXTURE name=${destination.name} bytes=${destination.length()} " +
+                "sha256=${sha256(destination)} ${fixture.metricsLog()}",
         )
+    }
+
+    @Test
+    fun decodeFullEnvelopeFixtureToSurface() {
+        activeSurfaceDecodeReportsWarpnectProfilePacing()
     }
 
     private fun avcDecoders(): List<MediaCodecInfo> = MediaCodecList(MediaCodecList.REGULAR_CODECS)
@@ -163,17 +158,20 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         return supportsProfile(info)
     }
 
-    private fun encodeTemporaryAvcFixture(encoderInfo: MediaCodecInfo): EncodedFixture {
+    private fun encodeFullEnvelopeAvcFixture(encoderInfo: MediaCodecInfo): EncodedFixture {
         val codec = MediaCodec.createByCodecName(encoderInfo.name)
         var inputSurface: Surface? = null
         try {
             codec.configure(
-                MediaFormat.createVideoFormat(AVC_MIME, WIDTH, HEIGHT).apply {
-                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                    setInteger(MediaFormat.KEY_BIT_RATE, TARGET_BITRATE_BPS)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_SECONDS)
-                },
+                AndroidVideoEncoderFormatFactory.create(
+                    VideoEncoderRequest(
+                        width = WIDTH,
+                        height = HEIGHT,
+                        frameRate = FRAME_RATE,
+                        bitrateBps = TARGET_BITRATE_BPS,
+                        iFrameIntervalSeconds = I_FRAME_INTERVAL_SECONDS.toFloat(),
+                    ),
+                ),
                 null,
                 null,
                 MediaCodec.CONFIGURE_FLAG_ENCODE,
@@ -183,7 +181,7 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
 
             val accessUnits = mutableListOf<EncodedAccessUnit>()
             var format: MediaFormat? = null
-            SyntheticEglSurfaceProducer(requireNotNull(inputSurface), WIDTH, HEIGHT).use { producer ->
+            FullEnvelopeEglSurfaceProducer(requireNotNull(inputSurface), WIDTH, HEIGHT).use { producer ->
                 val startedAtMs = SystemClock.elapsedRealtime()
                 repeat(TEST_FRAME_COUNT) { frame ->
                     producer.drawFrame(frame, frame * FRAME_INTERVAL_US)
@@ -198,6 +196,7 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
                 codecSpecificData = codecSpecificData(outputFormat),
                 accessUnits = accessUnits,
                 byteCount = accessUnits.sumOf { it.bytes.size.toLong() },
+                profileLevel = parseAvcProfileLevel(codecSpecificData(outputFormat)),
             )
         } finally {
             inputSurface?.release()
@@ -375,6 +374,12 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
 
     private fun writeFixture(output: DataOutputStream, fixture: EncodedFixture) {
         output.writeInt(FIXTURE_MAGIC)
+        output.writeInt(FIXTURE_VERSION)
+        output.writeInt(WIDTH)
+        output.writeInt(HEIGHT)
+        output.writeInt(FRAME_RATE)
+        output.writeInt(fixture.profileLevel?.profileIdc ?: UNKNOWN_PROFILE_LEVEL)
+        output.writeInt(fixture.profileLevel?.levelIdc ?: UNKNOWN_PROFILE_LEVEL)
         output.writeInt(fixture.codecSpecificData.size)
         fixture.codecSpecificData.forEach { bytes ->
             output.writeInt(bytes.size)
@@ -391,6 +396,12 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
 
     private fun readFixture(input: DataInputStream): EncodedFixture {
         require(input.readInt() == FIXTURE_MAGIC) { "Unsupported temporary AVC fixture" }
+        require(input.readInt() == FIXTURE_VERSION) { "Unsupported RFC-002I fixture version" }
+        require(input.readInt() == WIDTH) { "Fixture width differs from the V1 profile" }
+        require(input.readInt() == HEIGHT) { "Fixture height differs from the V1 profile" }
+        require(input.readInt() == FRAME_RATE) { "Fixture frame rate differs from the V1 profile" }
+        val profile = input.readInt().takeUnless { it == UNKNOWN_PROFILE_LEVEL }
+        val level = input.readInt().takeUnless { it == UNKNOWN_PROFILE_LEVEL }
         val codecSpecificData = List(input.readInt()) {
             ByteArray(input.readInt()).also(input::readFully)
         }
@@ -410,8 +421,90 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
             codecSpecificData = codecSpecificData,
             accessUnits = accessUnits,
             byteCount = accessUnits.sumOf { it.bytes.size.toLong() },
+            profileLevel = if (profile != null && level != null) AvcProfileLevel(profile, level) else null,
         )
     }
+
+    private fun printDecodeResult(
+        decoderName: String,
+        fixture: EncodedFixture,
+        results: DecodeResults,
+        output: FixtureOutputSurface,
+    ) {
+        val firstSurfaceMs = output.firstFrameMs.get().let { timestampMs ->
+            if (timestampMs >= 0L) timestampMs - results.startedAtMs else null
+        }
+        println(
+            "RFC002I_FULL_ENVELOPE_DECODE decoder=$decoderName configured=true started=true " +
+                "inputs=${fixture.accessUnits.size} outputs=${results.outputFrames} " +
+                "surface_frames=${output.frameCount.get()} " +
+                "first_output_ms=${results.firstOutputMs} first_surface_ms=$firstSurfaceMs " +
+                "input_stalls=${results.inputStalls} max_input_wait_ms=${results.maxInputWaitMs} " +
+                "max_output_gap_ms=${results.maxOutputGapMs} " +
+                "max_surface_gap_ms=${output.maxFrameGapMs.get()} " +
+                "presentation_ratio=${output.frameCount.get().toDouble() / fixture.accessUnits.size} " +
+                "${fixture.metricsLog()} eos=${results.endOfStream} elapsed_ms=${results.elapsedMs} " +
+                "test_process_cpu_ms=${results.processCpuMs}",
+        )
+    }
+
+    private fun parseAvcProfileLevel(codecSpecificData: List<ByteArray>): AvcProfileLevel? {
+        codecSpecificData.firstOrNull { bytes -> bytes.size >= 4 && bytes[0] == 1.toByte() }?.let { avcc ->
+            return AvcProfileLevel(profileIdc = avcc[1].toInt() and 0xFF, levelIdc = avcc[3].toInt() and 0xFF)
+        }
+        val sps = codecSpecificData.asSequence()
+            .mapNotNull(::findAvcSps)
+            .firstOrNull()
+            ?: return null
+        if (sps.size < 4) return null
+        return AvcProfileLevel(profileIdc = sps[1].toInt() and 0xFF, levelIdc = sps[3].toInt() and 0xFF)
+    }
+
+    private fun findAvcSps(bytes: ByteArray): ByteArray? {
+        var offset = 0
+        while (offset + 4 <= bytes.size) {
+            val startCodeLength = when {
+                bytes[offset] == 0.toByte() && bytes[offset + 1] == 0.toByte() &&
+                    bytes[offset + 2] == 1.toByte() -> 3
+                offset + 4 <= bytes.size && bytes[offset] == 0.toByte() && bytes[offset + 1] == 0.toByte() &&
+                    bytes[offset + 2] == 0.toByte() && bytes[offset + 3] == 1.toByte() -> 4
+                else -> {
+                    offset += 1
+                    continue
+                }
+            }
+            val nalStart = offset + startCodeLength
+            val nalEnd = sequenceEnd(bytes, nalStart)
+            if (nalStart < nalEnd && (bytes[nalStart].toInt() and 0x1F) == 7) {
+                return bytes.copyOfRange(nalStart, nalEnd)
+            }
+            offset = nalEnd
+        }
+        return null
+    }
+
+    private fun sequenceEnd(bytes: ByteArray, start: Int): Int {
+        var offset = start
+        while (offset + 3 < bytes.size) {
+            val threeByteStartCode = bytes[offset] == 0.toByte() &&
+                bytes[offset + 1] == 0.toByte() &&
+                bytes[offset + 2] == 1.toByte()
+            val fourByteStartCode = offset + 3 < bytes.size &&
+                bytes[offset] == 0.toByte() &&
+                bytes[offset + 1] == 0.toByte() &&
+                bytes[offset + 2] == 0.toByte() &&
+                bytes[offset + 3] == 1.toByte()
+            if (threeByteStartCode || fourByteStartCode) {
+                return offset
+            }
+            offset += 1
+        }
+        return bytes.size
+    }
+
+    private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256")
+        .digest(file.readBytes())
+        .joinToString("") { byte -> "%02X".format(Locale.US, byte) }
 
     private fun waitForFramePacing(startedAtMs: Long, completedFrames: Int) {
         val targetMs = startedAtMs + completedFrames * 1_000L / FRAME_RATE
@@ -473,9 +566,36 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         val codecSpecificData: List<ByteArray>,
         val accessUnits: List<EncodedAccessUnit>,
         val byteCount: Long,
+        val profileLevel: AvcProfileLevel?,
     ) {
-        fun actualBitrateBps(): Long = byteCount * 8L * FRAME_RATE / accessUnits.size
+        fun actualBitrateBps(): Long = byteCount * 8L * 1_000_000L / durationUs()
+
+        fun durationUs(): Long = accessUnits.last().presentationTimeUs + FRAME_INTERVAL_US
+
+        fun metricsLog(): String {
+            val sizes = accessUnits.map { it.bytes.size }.sorted()
+            val keyframes = accessUnits.withIndex().filter {
+                it.value.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+            }
+            val maxGopFrames = keyframes.zipWithNext { current, next -> next.index - current.index }
+                .maxOrNull()
+                ?: accessUnits.size
+            val p95Index = ((sizes.size - 1) * 0.95).toInt()
+            return "source_bytes=$byteCount source_duration_ms=${durationUs() / 1_000L} " +
+                "source_actual_bps=${actualBitrateBps()} source_target_bps=$TARGET_BITRATE_BPS " +
+                "source_profile_idc=${profileLevel?.profileIdc ?: "unknown"} " +
+                "source_level_idc=${profileLevel?.levelIdc ?: "unknown"} " +
+                "source_aus=${accessUnits.size} source_keyframes=${keyframes.size} " +
+                "source_largest_au=${sizes.lastOrNull() ?: 0} " +
+                "source_p95_au=${sizes.getOrNull(p95Index) ?: 0} " +
+                "source_max_gop_frames=$maxGopFrames"
+        }
     }
+
+    private data class AvcProfileLevel(
+        val profileIdc: Int,
+        val levelIdc: Int,
+    )
 
     private data class EncodedAccessUnit(
         val bytes: ByteArray,
@@ -489,6 +609,7 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         val firstOutputMs: Long?,
         val inputStalls: Int,
         val maxInputWaitMs: Long,
+        val maxOutputGapMs: Long,
         val endOfStream: Boolean,
         val elapsedMs: Long,
         val processCpuMs: Long,
@@ -501,6 +622,8 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         private var firstOutputMs: Long? = null
         private var inputStalls = 0
         private var maxInputWaitMs = 0L
+        private var lastOutputAtMs: Long? = null
+        private var maxOutputGapMs = 0L
         var endOfStream = false
 
         fun recordInputWait(waitedMs: Long) {
@@ -509,6 +632,10 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         }
 
         fun recordOutput(nowMs: Long) {
+            lastOutputAtMs?.let { previous ->
+                maxOutputGapMs = maxOf(maxOutputGapMs, nowMs - previous)
+            }
+            lastOutputAtMs = nowMs
             outputFrames += 1
             if (firstOutputMs == null) firstOutputMs = nowMs - startedAtMs
         }
@@ -519,6 +646,7 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
             firstOutputMs = firstOutputMs,
             inputStalls = inputStalls,
             maxInputWaitMs = maxInputWaitMs,
+            maxOutputGapMs = maxOutputGapMs,
             endOfStream = endOfStream,
             elapsedMs = finishedAtMs - startedAtMs,
             processCpuMs = processCpuMs,
@@ -540,6 +668,8 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
             private set
         val frameCount = AtomicInteger(0)
         val firstFrameMs = AtomicLong(-1L)
+        val maxFrameGapMs = AtomicLong(0L)
+        private val lastFrameMs = AtomicLong(-1L)
 
         init {
             Handler(thread.looper).post {
@@ -569,7 +699,12 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
                         setDefaultBufferSize(width, height)
                         setOnFrameAvailableListener({
                             updateTexImage()
-                            if (firstFrameMs.compareAndSet(-1L, SystemClock.elapsedRealtime())) Unit
+                            val nowMs = SystemClock.elapsedRealtime()
+                            if (firstFrameMs.compareAndSet(-1L, nowMs)) Unit
+                            val previous = lastFrameMs.getAndSet(nowMs)
+                            if (previous >= 0L) {
+                                maxFrameGapMs.updateAndGet { current -> maxOf(current, nowMs - previous) }
+                            }
                             frameCount.incrementAndGet()
                         }, Handler(thread.looper))
                     }
@@ -585,13 +720,13 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
             check(initializationError.get() == 0L) { "Surface initialization failed" }
         }
 
-        fun awaitFrame(timeoutMs: Long): Boolean {
+        fun awaitFrames(expectedCount: Int, timeoutMs: Long): Boolean {
             val deadlineMs = SystemClock.elapsedRealtime() + timeoutMs
             while (SystemClock.elapsedRealtime() < deadlineMs) {
-                if (frameCount.get() > 0) return true
+                if (frameCount.get() >= expectedCount) return true
                 SystemClock.sleep(1)
             }
-            return false
+            return frameCount.get() >= expectedCount
         }
 
         override fun close() {
@@ -642,18 +777,194 @@ class LegacyAvcDecoderForensicsInstrumentationTest {
         }
     }
 
+    /**
+     * Deterministic screen-like stimulus for calibration. It combines a stable grid with moving
+     * diagnostic panels and bounded procedural detail so CBR cannot collapse to a solid-color
+     * stream, without treating unconstrained random noise as representative content.
+     */
+    private class FullEnvelopeEglSurfaceProducer(
+        private val targetSurface: Surface,
+        private val width: Int,
+        private val height: Int,
+    ) : AutoCloseable {
+        private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
+        private var context: EGLContext = EGL14.EGL_NO_CONTEXT
+        private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+        private var program = 0
+        private val vertices = ByteBuffer.allocateDirect(8 * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .apply {
+                put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
+                position(0)
+            }
+
+        init {
+            display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+            check(display != EGL14.EGL_NO_DISPLAY) { "EGL display unavailable" }
+            val version = IntArray(2)
+            check(EGL14.eglInitialize(display, version, 0, version, 1)) { "EGL initialize failed" }
+            val config = chooseConfig()
+            context = EGL14.eglCreateContext(
+                display,
+                config,
+                EGL14.EGL_NO_CONTEXT,
+                intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE),
+                0,
+            )
+            check(context != EGL14.EGL_NO_CONTEXT) { "EGL context creation failed" }
+            eglSurface = EGL14.eglCreateWindowSurface(
+                display,
+                config,
+                targetSurface,
+                intArrayOf(EGL14.EGL_NONE),
+                0,
+            )
+            check(eglSurface != EGL14.EGL_NO_SURFACE) { "EGL window surface creation failed" }
+            check(EGL14.eglMakeCurrent(display, eglSurface, eglSurface, context)) { "EGL make-current failed" }
+            program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+        }
+
+        fun drawFrame(frameIndex: Int, presentationTimeUs: Long) {
+            GLES20.glViewport(0, 0, width, height)
+            GLES20.glUseProgram(program)
+            val position = GLES20.glGetAttribLocation(program, "aPosition")
+            val resolution = GLES20.glGetUniformLocation(program, "uResolution")
+            val frame = GLES20.glGetUniformLocation(program, "uFrame")
+            check(position >= 0 && resolution >= 0 && frame >= 0) { "Full-envelope shader locations unavailable" }
+            GLES20.glUniform2f(resolution, width.toFloat(), height.toFloat())
+            GLES20.glUniform1f(frame, frameIndex.toFloat())
+            vertices.position(0)
+            GLES20.glEnableVertexAttribArray(position)
+            GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT, false, 0, vertices)
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            GLES20.glDisableVertexAttribArray(position)
+            check(GLES20.glGetError() == GLES20.GL_NO_ERROR) { "Full-envelope GLES draw failed" }
+            EGLExt.eglPresentationTimeANDROID(display, eglSurface, presentationTimeUs * 1_000L)
+            check(EGL14.eglSwapBuffers(display, eglSurface)) { "EGL swap failed" }
+        }
+
+        override fun close() {
+            if (display == EGL14.EGL_NO_DISPLAY) return
+            if (program != 0) GLES20.glDeleteProgram(program)
+            EGL14.eglMakeCurrent(
+                display,
+                EGL14.EGL_NO_SURFACE,
+                EGL14.EGL_NO_SURFACE,
+                EGL14.EGL_NO_CONTEXT,
+            )
+            if (eglSurface != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(display, eglSurface)
+            if (context != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(display, context)
+            EGL14.eglTerminate(display)
+            display = EGL14.EGL_NO_DISPLAY
+            context = EGL14.EGL_NO_CONTEXT
+            eglSurface = EGL14.EGL_NO_SURFACE
+            program = 0
+        }
+
+        private fun chooseConfig(): EGLConfig {
+            val configs = arrayOfNulls<EGLConfig>(1)
+            val count = IntArray(1)
+            check(
+                EGL14.eglChooseConfig(
+                    display,
+                    intArrayOf(
+                        EGL14.EGL_RED_SIZE, 8,
+                        EGL14.EGL_GREEN_SIZE, 8,
+                        EGL14.EGL_BLUE_SIZE, 8,
+                        EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                        EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT,
+                        EGL14.EGL_NONE,
+                    ),
+                    0,
+                    configs,
+                    0,
+                    1,
+                    count,
+                    0,
+                ),
+            ) { "EGL config selection failed" }
+            return requireNotNull(configs[0]) { "No EGL config selected" }
+        }
+
+        private fun createProgram(vertexSource: String, fragmentSource: String): Int {
+            val vertex = compileShader(GLES20.GL_VERTEX_SHADER, vertexSource)
+            val fragment = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentSource)
+            return GLES20.glCreateProgram().also { result ->
+                check(result != 0) { "Full-envelope shader program creation failed" }
+                GLES20.glAttachShader(result, vertex)
+                GLES20.glAttachShader(result, fragment)
+                GLES20.glLinkProgram(result)
+                val linked = IntArray(1)
+                GLES20.glGetProgramiv(result, GLES20.GL_LINK_STATUS, linked, 0)
+                GLES20.glDeleteShader(vertex)
+                GLES20.glDeleteShader(fragment)
+                check(linked[0] == GLES20.GL_TRUE) { "Full-envelope shader program link failed" }
+            }
+        }
+
+        private fun compileShader(type: Int, source: String): Int = GLES20.glCreateShader(type).also { shader ->
+            check(shader != 0) { "Full-envelope shader creation failed" }
+            GLES20.glShaderSource(shader, source)
+            GLES20.glCompileShader(shader)
+            val compiled = IntArray(1)
+            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
+            check(compiled[0] == GLES20.GL_TRUE) { "Full-envelope shader compilation failed" }
+        }
+
+        private companion object {
+            const val VERTEX_SHADER = """
+                attribute vec2 aPosition;
+                void main() {
+                    gl_Position = vec4(aPosition, 0.0, 1.0);
+                }
+            """
+
+            const val FRAGMENT_SHADER = """
+                precision highp float;
+                uniform vec2 uResolution;
+                uniform float uFrame;
+
+                float cellHash(vec2 value) {
+                    return fract(sin(dot(value, vec2(12.9898, 78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec2 uv = gl_FragCoord.xy / uResolution;
+                    vec2 grid = floor(uv * vec2(160.0, 90.0));
+                    float checker = mod(grid.x + grid.y, 2.0);
+                    vec2 scrollingGrid = floor((uv + vec2(uFrame * 0.004, -uFrame * 0.002)) * vec2(320.0, 180.0));
+                    float diagnosticDetail = cellHash(scrollingGrid + vec2(floor(uFrame), floor(uFrame * 0.37)));
+                    vec2 movingPanel = fract(uv + vec2(uFrame * 0.002, uFrame * -0.003));
+                    float panel = step(0.30, movingPanel.x) * step(movingPanel.x, 0.70) *
+                        step(0.4875, movingPanel.y) * step(movingPanel.y, 0.5125);
+                    float signal = mix(checker, diagnosticDetail, panel);
+                    float timeline = step(0.5, fract((uv.x + uFrame * 0.011) * 18.0));
+                    gl_FragColor = vec4(
+                        signal,
+                        mix(checker, timeline, panel),
+                        mix(diagnosticDetail, checker, 0.35),
+                        1.0
+                    );
+                }
+            """
+        }
+    }
+
     private companion object {
         const val AVC_MIME = "video/avc"
         const val DECODER_NAME_ARGUMENT = "rfc002iDecoderName"
         const val FIXTURE_PATH_ARGUMENT = "rfc002iFixturePath"
-        const val FIXTURE_FILE_NAME = "rfc002i-avc-720p60.fixture"
-        const val FIXTURE_MAGIC = 0x574E4931
+        const val FIXTURE_FILE_NAME = "rfc002i-avc-720p60-full-v2.fixture"
+        const val FIXTURE_MAGIC = 0x574E4932
+        const val FIXTURE_VERSION = 2
+        const val UNKNOWN_PROFILE_LEVEL = -1
         const val WIDTH = 1280
         const val HEIGHT = 720
         const val FRAME_RATE = 60
         const val TARGET_BITRATE_BPS = 8_000_000
         const val I_FRAME_INTERVAL_SECONDS = 1
-        const val TEST_FRAME_COUNT = 180
+        const val TEST_FRAME_COUNT = 360
         const val FRAME_INTERVAL_US = 16_667L
         const val FRAME_BUDGET_MS = 17L
         const val OUTPUT_WAIT_US = 10_000L

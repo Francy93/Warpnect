@@ -24,15 +24,17 @@ tested Android 8.0 / API 26 Samsung SM-G935F, framework decoder hardware classif
 unavailable, so current production Client capability remains unavailable with
 `HardwareClassificationUnavailable` before WNSN.
 
-The selected `OMX.Exynos.avc.dec` reports 1280x720 at 60 fps support and completed a test-only
-180-frame Surface-output AVC decode at that geometry and cadence. The simple fixture was
-configured with an 8 Mbps target but encoded at approximately 0.56 Mbps, so it does not establish
-the complete V1 bitrate envelope or change the production device classification. Draft RFC-002I
-defines the proposed full-envelope active qualification design.
+The selected `OMX.Exynos.avc.dec` reports 1280x720 at 60 fps support. Follow-up RFC-002I
+calibration replayed a byte-identical six-second 1280x720/60 AVC fixture with an actual 8.60 Mbps
+average envelope on the S22, S9, and S7 Exynos decoders. Each S7 Exynos run produced all 360
+decoder outputs and 359-360 Surface callbacks without a codec error. This is pre-implementation
+qualification evidence only: the unchanged production S7 Client remains blocked by
+`HardwareClassificationUnavailable` until RFC-002I implementation and final remote-render
+validation.
 
 On the API 33 tablet, production S22-to-tablet traces rendered a real remote frame in portrait and
 landscape. A bounded rotation during streaming did not fail the Session, but existing observations
 did not force Surface destruction/recreation or establish a separate post-recreation presentation
-event. After a Shizuku permission update the tablet entered Host lifecycle readiness, but the
-tablet-to-S22 reverse-role trace was inconclusive because discovery could not resolve the tablet
-after the clean test reset. That result is independent of Client video.
+event. A later tablet-Host attempt still reported `ShizukuPermissionRequired` during local Host
+capability collection despite a Shizuku permission update; that Input/privilege-provider boundary
+is separate from Client decoder qualification and leaves the reverse-role trace inconclusive.

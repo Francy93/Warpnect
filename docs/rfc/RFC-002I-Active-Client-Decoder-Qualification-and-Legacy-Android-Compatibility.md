@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Draft. This document records evidence and proposes a production design. It does not change current Client eligibility, reopen H1, or modify RFC-002B.
+Status: Proposed. This is acceptance-ready design backed by calibration evidence. It does not change current Client eligibility, reopen H1, or modify RFC-002B.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
@@ -56,24 +56,75 @@ Hardware observations apply only to the tested device/build combination. They ar
 
 | Device class | Android/API | Selected AVC decoder | Classification | Evidence |
 | --- | --- | --- | --- | --- |
-| Samsung SM-S901B | Android 16 / API 36 | Production decoder | Framework metadata available | Reference Host; H1 real rendered-frame validation complete |
+| Samsung SM-S901B | Android 16 / API 36 | `c2.exynos.h264.decoder` | `hardware=true`, `software=false`, `vendor=true` | Reference Host; H1 real rendered-frame validation complete |
 | Samsung SM-G960F | Android 10 / API 29 | `OMX.Exynos.avc.dec` | `hardware=true`, `software=false`, `vendor=true` | S22 Host to S9 Client reached first real rendered frame |
 | Samsung SM-G935F | Android 8.0 / API 26 | `OMX.Exynos.avc.dec` | Framework metadata unavailable | Current Client policy rejects before WNSN with `HardwareClassificationUnavailable` |
 | Aocwei X700_EEA | Android 13 / API 33 | Production Client decoder | Framework metadata available | S22 Host to tablet Client reached first real rendered frame |
 
 The physical S7 reports `OMX.Exynos.avc.dec`, `OMX.google.h264.decoder`, and `OMX.SEC.avc.sw.dec`. The Exynos candidate reports 32..3840 by 32..2160, 2x2 alignment, and 1280x720 at 60 fps support. The Google and SEC software candidates match known software-style naming families. That name evidence is only a conservative filter for a future active probe; it does not prove hardware identity.
 
-### S7 Active Laboratory Evidence
+### Full-Envelope Decoder Calibration
 
-A test-only deterministic fixture was decoded by `OMX.Exynos.avc.dec` with Surface output. It paced 180 AVC access units at 1280x720 and 60 fps over approximately three seconds. The decoder produced 180 outputs and 180 Surface-frame callbacks. First decoder output was approximately 75 ms, first Surface frame approximately 80 ms, and no codec error occurred.
+The earlier 180-frame fixture remains preliminary geometry and pacing evidence only. Although its
+encoder was configured for 8 Mbps, it produced approximately 0.56 Mbps. It is not a V1
+qualification fixture.
 
-The fixture encoder had an 8 Mbps target but generated approximately 0.56 Mbps of simple synthetic content. Therefore this is geometry, cadence, Surface-output, and basic pacing evidence only; it does not prove the V1 8 Mbps content envelope. The same simple fixture also ran through the Google software decoder, reinforcing that neither a codec name nor an idle-device microbenchmark may authorize a software fallback. The observed instrumentation-process CPU time is not direct hardware-offload evidence. Readable S7 codec configuration provides strong indirect support; no decoder-block power or clock transition was safely observable.
+Calibration used the byte-identical `rfc002i-avc-720p60-full-v2` fixture generated once on the
+API 36 S22 using the current production `AndroidVideoEncoderFormatFactory` request. Its
+deterministic screen-like grid, moving diagnostic panel, and controlled transitions prevent CBR
+from collapsing to a solid-color stream without treating unconstrained random noise as
+representative content. It uses no capture, network, or pixel readback. The fixture is an
+experimental calibration artifact, not a tracked production asset.
+
+| Property | Measured value |
+| --- | --- |
+| SHA-256 | `554F1E7AD82F5DFDE40BF4D276F8F76C0170D41908C3B8554C652F55B17D86E0` |
+| Duration / access units | 6,000 ms / 360 |
+| Geometry / cadence | 1280x720 / 60 fps |
+| Encoder request | AVC Surface input, strict CBR target 8,000,000 bps, one-second I-frame interval |
+| Observed AVC SPS | profile IDC 100 (High), level IDC 32 (Level 3.2) |
+| Actual payload | 6,450,442 bytes, 8,600,417 bps average |
+| GOP / keyframes | six keyframes, maximum 60 frames per GOP |
+| AU distribution | 100,796-byte largest AU; 20,875-byte p95 AU |
+
+The production factory does not freeze `KEY_PROFILE` or `KEY_LEVEL` as a cross-device wire
+contract. High@3.2 is evidence for this versioned reference fixture, not a new SCL, WNSN, or
+peer-negotiated profile requirement. A material encoder-format or fixture change must increment
+the fixture/qualification version.
+
+The same bytes were paced to Surface decoders three times on each hardware candidate:
+
+| Decoder | Outputs | Surface callbacks | First output | First Surface callback | Maximum output gap | Maximum Surface gap | EOS wall time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| S22 `c2.exynos.h264.decoder` | 360/360 each run | 348, 347, 346 | 56, 54, 53 ms | 84, 65, 60 ms | 77, 87, 80 ms | 86, 93, 87 ms | 6,009, 6,012, 6,011 ms |
+| S9 `OMX.Exynos.avc.dec` | 360/360 each run | 359, 356, 358 | 52, 52, 51 ms | 55, 55, 55 ms | 33, 31, 34 ms | 38, 37, 41 ms | 6,011, 6,009, 6,010 ms |
+| S7 `OMX.Exynos.avc.dec` | 360/360 each run | 360, 359, 360 | 74, 69, 86 ms | 81, 73, 93 ms | 34, 31, 29 ms | 35, 33, 29 ms | 6,013, 6,011, 6,012 ms |
+
+All runs configured and started successfully, reached EOS, and reported no fatal codec error. The
+S7 had one 19 ms input wait in the first run and no unrecovered input starvation. The S22 callback
+counts show why qualification cannot demand one SurfaceTexture callback per submitted AU even for a
+known-good production decoder.
+
+One diagnostic-only S7 run selected `OMX.google.h264.decoder`. It also completed 360 outputs and
+360 Surface callbacks, with first output/presentation at 137/164 ms and maximum output/Surface gaps
+of 50/49 ms. This reinforces the software rule: an idle-device fixture result does not authorize an
+explicitly known software-family decoder as a production fallback. Instrumentation-process CPU time
+is not reliable hardware-offload evidence; no decoder-block power or clock transition was exposed
+safely on the S7.
 
 ### Tablet Display and Role Evidence
 
-The API 33 tablet rendered a real remote S22 stream in portrait and landscape. Both traces reached the production first-rendered-frame event. A bounded rotation during streaming did not fail the Session, but existing diagnostics did not force a render-Surface recreation or observe a post-recreation presentation event.
+The API 33 tablet rendered a real remote S22 stream in portrait and landscape. Both traces reached the production first-rendered-frame event. A bounded rotation during streaming did not fail the Session. The tablet now also has Shizuku Input permission, but that is unrelated to Client decoder qualification and does not change this evidence.
 
-After the tablet received Shizuku permission, it entered Host lifecycle readiness. Tablet-to-S22 reverse-role validation remains inconclusive because the S22 could not resolve the tablet as a host after the clean test reset. This is a discovery-environment boundary, not decoder, capture, or renderer evidence. It must be repeated independently.
+`AndroidVideoRenderController` already increments a local `surfaceGeneration`, stops the decoder on
+target destruction, awaits a keyframe, and re-prepares it for the new target. `MediaCodec` provides
+an `OnFrameRenderedListener`. Existing DEBUG events, however, report only the first renderer target
+and first rendered frame, without carrying a surface generation. They cannot prove that a frame was
+presented after recreation. RFC-002I-F must add a local-only test observer which correlates
+`destroyed generation N -> available generation N+1 -> decoder frame-rendered after rebinding`;
+this changes neither wire data nor renderer ownership.
+
+The tablet's newly granted Shizuku Input permission is not Client-decoder evidence. A later bounded tablet-Host attempt still reported `ShizukuPermissionRequired` during local Host capability collection, before media startup. Tablet-to-S22 reverse-role validation therefore remains inconclusive and outside this RFC: the result is an Input/privilege-provider environment boundary, not decoder, capture, or renderer evidence.
 
 ## Role Separation
 
@@ -105,13 +156,47 @@ The active decoder qualifier is cold-path work, not part of a Session or a media
 5. Avoid pixel readback, Bitmaps, screen capture, Session traffic, networking, and persistent media output.
 6. Run off Main and outside the live decoder owner.
 
-Before implementation, the algorithm must define versioned pass thresholds. They must require successful configure/start, valid Surface presentation, full-profile pacing, no fatal codec error, no unrecovered output stall, and a bounded minimum presentation ratio. Duration, minimum ratio, and maximum presentation gap must be calibrated against S22 and S9 baselines using an actual 8 Mbps fixture. The current S7 result does not set those thresholds.
+The production fixture is a versioned, read-only application asset derived from the calibrated
+reference envelope. It is decoded only by the qualifier; it is not persisted as output and is not
+sent to a peer. This version requires 360 access units paced at 60 fps over six seconds, and records
+the fixture digest before use.
+
+The following pass criteria are calibration-derived, not a latency benchmark:
+
+| Requirement | Threshold | Calibration basis |
+| --- | --- | --- |
+| Codec lifecycle | configure and start succeed; zero fatal codec errors; EOS observed | every S22/S9/S7 Exynos reference run |
+| Accepted and decoded AUs | 360 submitted and 360 decoder outputs | every reference run |
+| Surface presentation | at least 342 of 360 callbacks (95%) | the lowest known-good S22 result was 346/360; the threshold permits four additional coalesced callbacks, not a quality downgrade |
+| Output / Surface continuity | neither maximum gap exceeds 125 ms | worst reference Surface gap was 93 ms; the 32 ms margin is approximately two 60 fps periods |
+| Completion | EOS within 6,500 ms of paced input start | worst reference completion was 6,013 ms; the remaining 487 ms is bounded drain/scheduler margin, while the gap rules detect sustained starvation |
+| Input starvation | no input wait reaches the existing one-second bounded acquisition limit | the S7's one 19 ms wait recovered; a bounded wait is diagnostic until it becomes unrecovered starvation |
+
+First-output and first-presentation timing remain diagnostics. They vary with cold codec startup and
+are not used as a Phase-7-style latency threshold.
 
 ### Containment and Failure Semantics
 
-RFC-002B already provides a disposable same-UID `:codecProbe` process for encoder qualification. RFC-002I may reuse that process only if its IPC protocol keeps encoder and decoder operations, caches, timeouts, and diagnostics independent. Otherwise it must use an equally narrow normal-app-UID qualifier. It MUST NOT use Shizuku, shell, root, or an isolated UID.
+RFC-002I selects a dedicated normal-app-UID `:decoderProbe` Service process rather than extending
+RFC-002B's `:codecProbe`. The existing service, AIDL contract, request key, timeout, and quarantine
+are explicitly encoder/CBR-specific. A sibling process keeps decoder fixture lifetime, Binder
+operation, timeout, cache, quarantine, and diagnostics independently typed, so an encoder probe
+cannot poison an unrelated decoder qualification state. Both probe processes remain application-
+private, non-isolated, same-UID processes. Neither uses Shizuku, shell, root, capture, a Session,
+network, or production media ownership.
 
-Process death, Binder death, timeout, configuration failure, and insufficient performance become typed local results. They must not terminate the main application, block the UI, trigger hidden retries, or become an optimistic Client capability. There is no active-Session decoder switch.
+The decoder probe has a bounded 6,500 ms execution deadline plus a bounded bind allowance. Its
+Binder result is exactly one local state:
+
+| Result | Local capability mapping |
+| --- | --- |
+| `PASS` | qualified candidate may supply Client video |
+| `FAIL` (`NORMAL_REJECTION`, configure/start failure, or insufficient performance) | Client video unavailable for this candidate/environment |
+| `INCONCLUSIVE` (timeout, Binder death, process death, or service unavailable) | Client video unavailable; no optimistic retry |
+
+All terminal outcomes leave the main process alive and responsive. Timeout/process/Binder death also
+sets current-main-process quarantine for the exact key. There is no hidden retry loop, no live
+Session decoder switch, and no software fallback.
 
 ## Qualification State Machine
 
@@ -133,9 +218,16 @@ Detailed qualification reasons remain local diagnostics and future local UI stat
 
 ## Cache and Invalidation
 
-Active results require a bounded persistent cache. Its key MUST include qualification algorithm and fixture version, Warpnect video-profile/runtime compatibility version, selected codec identity, Android build identity sufficient to invalidate firmware/codec changes, result type, and qualification time. A changed key invalidates the entry.
+Active results use a bounded persistent cache keyed by: qualification algorithm version, fixture
+identifier and SHA-256, Warpnect V1 video-profile compatibility version, selected codec component
+identity, Android `Build.FINGERPRINT`, and a media-runtime compatibility version. The key contains
+no model allowlist, peer identity, screen data, or network data. Any relevant encoder/fixture,
+decoder, firmware, or algorithm change produces a new key.
 
-Process death or timeout also requires current-main-process quarantine so WNCP/capability collection cannot repeatedly launch destructive probes. Persistent negative results are scoped to that exact key, never a vendor or model blacklist.
+`PASS`, `FAIL`, and `INCONCLUSIVE` are cached only for their exact key. Timeout, Binder death, and
+process death additionally quarantine that key for the rest of the current main-process lifetime.
+A restart may reuse the persistent exact-key result; an environment-key change is the explicit way
+to requalify. Persistent negative or inconclusive results never form a vendor/model blacklist.
 
 ## Security, Privacy, and UI
 
@@ -162,18 +254,23 @@ Hardware validation must include the S22 reference, API 29 S9, API 26 S7, and an
 
 This design uses the existing local video-available result and WNCP capability representation. It changes no Architecture Version, SCL Protocol Version, Native Bridge ABI, PacketHeader, PayloadType, WNSH, WNSD, Video Payload V1, security framing, JNI contract, MetricId, or EventTypeId. Any need to change a frozen contract blocks implementation for architecture review.
 
-## Open Questions
+## Resolved Design Questions
 
-1. What exact profile/level, access-unit structure, and actual 8 Mbps envelope should the qualification fixture represent?
-2. Which output-ratio and maximum-gap thresholds are validated by S22/S9 baselines without becoming a Phase 7 latency benchmark?
-3. Can `:codecProbe` safely host independent decoder operations, or should decoder work use a sibling qualifier service?
-4. Which renderer callback provides portable post-Surface-recreation presentation evidence?
+- The version-2 reference fixture, its actual AVC High@3.2 envelope, hash, GOP, and AU distribution
+  are defined above. A material fixture or encoder-format change requires an incremented
+  fixture/qualification version.
+- Presentation-ratio, continuity, lifecycle, and completion thresholds are defined above from S22
+  and S9 references. They are qualification guards, not one-way or end-to-end latency claims.
+- Decoder qualification uses the dedicated same-UID `:decoderProbe` process.
+- Post-Surface-recreation proof is a local surface-generation correlation ending in a new decoder
+  frame-rendered callback. Its observer is RFC-002I-F implementation/validation work, not a protocol
+  change.
 
 ## Proposed Implementation Sequence
 
 1. **002I-A:** local typed qualification state model and preserved role mapping.
 2. **002I-B:** conservative legacy inspection and exact decoder profile checks.
-3. **002I-C:** crash-contained same-UID active decoder qualifier with full-envelope fixture.
+3. **002I-C:** crash-contained same-UID `:decoderProbe` active decoder qualifier with full-envelope fixture.
 4. **002I-D:** scoped persistent cache and current-process quarantine.
 5. **002I-E:** role-aware Client eligibility and local UI semantics.
 6. **002I-F:** focused and hardware validation, including real remote S7 rendering.
