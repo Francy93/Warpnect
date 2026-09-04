@@ -39,6 +39,7 @@ import io.warpnect.platform.input.mapping.AndroidTargetInputMappingConfig
 import io.warpnect.platform.input.transport.NativeSclInputReceiverController
 import io.warpnect.platform.input.transport.NativeSclInputTransportController
 import io.warpnect.platform.video.decoder.AndroidMediaCodecVideoDecoder
+import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
 import io.warpnect.platform.video.encoder.VideoEncoderDiscovery
@@ -167,11 +168,13 @@ class DefaultAndroidSessionPipelineBindings(
         controller = DefaultVideoReceiverSessionController(
             receiverRuntimeController = receiver,
             decoderController = AndroidMediaCodecVideoDecoder(
+                discovery = AndroidVideoDecoderDiscovery(appContext),
                 telemetry = telemetry,
                 debugObserver = videoDecoderDebugObserver,
             ),
             renderController = renderer,
             telemetry = telemetry,
+            onDecoderPreparedForSurfaceGeneration = renderer::onDecoderPreparedForSurfaceGeneration,
         )
         val rendererBinding = resources.bindClientVideoRenderer(renderer) ?: run {
             controller.close()

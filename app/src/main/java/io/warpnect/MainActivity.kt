@@ -118,6 +118,8 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
             } else {
                 val clientVideoRendererBound by composition.uiResources.clientVideoRendererBound.collectAsState()
                 val clientVideoStreaming by composition.uiResources.clientVideoStreaming.collectAsState()
+                val clientCapability by composition.uiResources.clientCapability.collectAsState()
+                val hostCapability by composition.uiResources.hostCapability.collectAsState()
                 SecureSessionScreen(
                     controller = composition.applicationController,
                     onEnableHost = { requestDiscoveryStart(SessionRole.Host) },
@@ -125,6 +127,8 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                     discoveryPermissionNotice = discoveryPermissionNotice,
                     clientVideoRendererBound = clientVideoRendererBound,
                     clientVideoStreaming = clientVideoStreaming,
+                    clientCapability = clientCapability,
+                    hostCapability = hostCapability,
                     onClientRenderSurfaceAttached = composition.uiResources::attachClientRenderSurface,
                     onClientRenderSurfaceDetached = composition.uiResources::clearClientRenderSurface,
                     onClientInputSurfaceAttached = composition.uiResources::attachClientInputSurface,

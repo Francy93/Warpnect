@@ -30,7 +30,6 @@ import io.warpnect.session.setup.SessionSetupError
 import io.warpnect.session.setup.SetupConfiguration
 import io.warpnect.session.setup.VideoStreamMode
 import io.warpnect.video.decoder.VideoDecoderConfig
-import io.warpnect.video.decoder.VideoDecoderHardwareAcceleration
 import io.warpnect.video.encoder.VideoEncoderHardwareAcceleration
 import io.warpnect.video.encoder.VideoEncoderRequest
 
@@ -126,8 +125,7 @@ class AndroidExactStreamConfigurationValidator(
                 val lowLatencyRequired = mode.flags and CapabilityBits.VIDEO_LOW_LATENCY_DECODE != 0
                 val lowLatencyAvailable = capabilities.support?.lowLatencyFeatureSupported == true ||
                     capabilities.selectedCodec?.lowLatencyFeatureSupported == true
-                if (capabilities.isSupported &&
-                    capabilities.selectedCodec?.hardwareAcceleration == VideoDecoderHardwareAcceleration.Hardware &&
+                if (capabilities.isQualifiedForClientVideo &&
                     (!lowLatencyRequired || lowLatencyAvailable)
                 ) {
                     SessionSetupError.None

@@ -7,7 +7,10 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.warpnect.MainActivity
 import io.warpnect.platform.video.render.AndroidVideoRenderController
+import io.warpnect.platform.video.render.VideoRenderDebugObserver
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
+import io.warpnect.video.decoder.VideoDecoderFrameRenderedEvent
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.After
@@ -129,5 +132,88 @@ class AndroidVideoRenderControllerInstrumentationTest {
         launched.onActivity { renderSurface.attachController(renderController) }
         assertTrue("Existing SurfaceView target was not published", availableLatch.await(5, TimeUnit.SECONDS))
         assertNotNull(renderController.currentTarget())
+    }
+
+    @Test
+    fun debugObserverCorrelatesRecreatedTargetWithItsReboundDecoderFrame() {
+        val firstAvailable = CountDownLatch(1)
+        val secondAvailable = CountDownLatch(1)
+        val secondFrame = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+        val renderController = AndroidVideoRenderController(
+            debugObserver = object : VideoRenderDebugObserver {
+                override fun onRenderTargetAvailable(surfaceGeneration: Long) {
+                    events += "available:$surfaceGeneration"
+                    if (surfaceGeneration == 1L) firstAvailable.countDown()
+                    if (surfaceGeneration == 2L) secondAvailable.countDown()
+                }
+
+                override fun onRenderTargetDestroyed(surfaceGeneration: Long) {
+                    events += "destroyed:$surfaceGeneration"
+                }
+
+                override fun onDecoderPrepared(surfaceGeneration: Long) {
+                    events += "prepared:$surfaceGeneration"
+                }
+
+                override fun onRemoteFrameRendered(surfaceGeneration: Long) {
+                    events += "rendered:$surfaceGeneration"
+                    if (surfaceGeneration == 2L) secondFrame.countDown()
+                }
+            },
+        )
+        controller = renderController
+        lateinit var container: FrameLayout
+        lateinit var firstSurface: WarpnectVideoSurfaceView
+
+        val launched = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launched
+        launched.onActivity { activity ->
+            container = FrameLayout(activity)
+            firstSurface = WarpnectVideoSurfaceView(activity).apply { attachController(renderController) }
+            container.addView(
+                firstSurface,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+            activity.setContentView(container)
+        }
+
+        assertTrue("First target was not published", firstAvailable.await(5, TimeUnit.SECONDS))
+        launched.onActivity {
+            renderController.onDecoderPreparedForSurfaceGeneration(1L)
+            renderController.decodedVideoSink.onFrameRendered(VideoDecoderFrameRenderedEvent(0L, 0L))
+            renderController.detach(firstSurface)
+            container.removeView(firstSurface)
+            val secondSurface = WarpnectVideoSurfaceView(container.context).apply { attachController(renderController) }
+            container.addView(
+                secondSurface,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+
+        assertTrue("Recreated target was not published", secondAvailable.await(5, TimeUnit.SECONDS))
+        launched.onActivity {
+            renderController.onDecoderPreparedForSurfaceGeneration(2L)
+            renderController.decodedVideoSink.onFrameRendered(VideoDecoderFrameRenderedEvent(1L, 1L))
+        }
+        assertTrue("Second-generation rendered frame was not observed", secondFrame.await(5, TimeUnit.SECONDS))
+        assertEquals(
+            listOf(
+                "available:1",
+                "prepared:1",
+                "rendered:1",
+                "destroyed:1",
+                "available:2",
+                "prepared:2",
+                "rendered:2",
+            ),
+            events.toList(),
+        )
     }
 }

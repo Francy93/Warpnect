@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
+import io.warpnect.platform.session.integration.DeviceRoleCapability
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
 import io.warpnect.session.SessionRole
 import io.warpnect.session.discovery.DiscoveredPresence
@@ -50,6 +51,8 @@ fun SecureSessionScreen(
     discoveryPermissionNotice: String?,
     clientVideoRendererBound: Boolean,
     clientVideoStreaming: Boolean,
+    clientCapability: DeviceRoleCapability,
+    hostCapability: DeviceRoleCapability,
     onClientRenderSurfaceAttached: (WarpnectVideoSurfaceView) -> Unit,
     onClientRenderSurfaceDetached: (WarpnectVideoSurfaceView) -> Unit,
     onClientInputSurfaceAttached: (WarpnectInputCaptureView) -> Unit,
@@ -100,6 +103,8 @@ fun SecureSessionScreen(
                 ),
                 fontSize = 20.sp,
             )
+            Text("Client: ${roleCapabilityText(clientCapability)}")
+            Text("Host: ${roleCapabilityText(hostCapability)}")
             discoveryDetail(active?.discovery, discoveryPermissionNotice)?.let { detail -> Text(detail) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (uiModel.activeRole == SessionRole.Host) {
@@ -154,6 +159,14 @@ fun SecureSessionScreen(
             }
         }
     }
+}
+
+internal fun roleCapabilityText(capability: DeviceRoleCapability): String = when (capability) {
+    DeviceRoleCapability.NotChecked -> "Not checked"
+    DeviceRoleCapability.Checking -> "Checking compatibility"
+    DeviceRoleCapability.Available -> "Available"
+    is DeviceRoleCapability.SetupRequired -> capability.message
+    is DeviceRoleCapability.Unavailable -> capability.message
 }
 
 /*

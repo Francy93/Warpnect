@@ -17,7 +17,15 @@ interface VideoDecoderDiscovery {
     fun query(config: VideoDecoderConfig): VideoDecoderCapabilities
 }
 
-class AndroidVideoDecoderDiscovery : VideoDecoderDiscovery {
+internal class AndroidVideoDecoderDiscovery(
+    private val legacyQualifier: LegacyVideoDecoderQualifier? = null,
+    private val debugObserver: LegacyDecoderQualificationDebugObserver = LegacyDecoderQualificationDebugObserver.None,
+) : VideoDecoderDiscovery {
+    constructor(
+        context: android.content.Context,
+        debugObserver: LegacyDecoderQualificationDebugObserver = LegacyDecoderQualificationDebugObserver.None,
+    ) : this(AndroidLegacyVideoDecoderQualifier(context), debugObserver)
+
     override fun query(config: VideoDecoderConfig): VideoDecoderCapabilities {
         val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS)
             .codecInfos
@@ -25,7 +33,32 @@ class AndroidVideoDecoderDiscovery : VideoDecoderDiscovery {
             .filter { !it.isEncoder }
             .mapNotNull { info -> info.toCandidate(config) }
             .toList()
-        return VideoDecoderSelector.select(config, candidates)
+        val staticCapabilities = VideoDecoderSelector.select(config, candidates)
+        if (staticCapabilities.error != io.warpnect.video.decoder.VideoDecoderError.LegacyQualificationRequired) {
+            return staticCapabilities
+        }
+        val codecName = staticCapabilities.selectedCodec?.codecName ?: return staticCapabilities
+        if (legacyQualifier != null) debugObserver.onProbeStarted()
+        val decision = legacyQualifier?.qualify(config, codecName) ?: LegacyDecoderQualificationDecision(
+            outcome = LegacyDecoderQualificationOutcome.Inconclusive,
+            source = LegacyDecoderQualificationSource.ActiveProbe,
+            result = LegacyDecoderProbeResult.ProbeServiceUnavailable,
+        )
+        debugObserver.onDecision(decision)
+        return when (decision.outcome) {
+            LegacyDecoderQualificationOutcome.Pass -> staticCapabilities.copy(
+                error = io.warpnect.video.decoder.VideoDecoderError.None,
+                qualification = decision.qualificationState(),
+            )
+            LegacyDecoderQualificationOutcome.Fail -> staticCapabilities.copy(
+                error = io.warpnect.video.decoder.VideoDecoderError.LegacyQualificationFailed,
+                qualification = decision.qualificationState(),
+            )
+            LegacyDecoderQualificationOutcome.Inconclusive -> staticCapabilities.copy(
+                error = io.warpnect.video.decoder.VideoDecoderError.LegacyQualificationInconclusive,
+                qualification = decision.qualificationState(),
+            )
+        }
     }
 
     @SuppressLint("InlinedApi")

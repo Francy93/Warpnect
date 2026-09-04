@@ -1,5 +1,6 @@
 package io.warpnect.ui
 
+import io.warpnect.platform.session.integration.DeviceRoleCapability
 import io.warpnect.session.DeviceId
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityBits
@@ -48,6 +49,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SecureSessionScreenStateTest {
+    @Test
+    fun roleCapabilityTextKeepsClientAndHostTruthSeparate() {
+        assertEquals("Checking compatibility", roleCapabilityText(DeviceRoleCapability.Checking))
+        assertEquals("Available", roleCapabilityText(DeviceRoleCapability.Available))
+        assertEquals(
+            "Host input setup required",
+            roleCapabilityText(DeviceRoleCapability.SetupRequired("Host input setup required")),
+        )
+        assertEquals(
+            "Client video unavailable",
+            roleCapabilityText(DeviceRoleCapability.Unavailable("Client video unavailable")),
+        )
+    }
+
     @Test
     fun rendererIsAbsentForReadyAndSearchingAndAppearsOnlyForAnActualReceiverPipeline() {
         assertFalse(shouldComposeClientVideoSurface(null, clientVideoRendererBound = false))

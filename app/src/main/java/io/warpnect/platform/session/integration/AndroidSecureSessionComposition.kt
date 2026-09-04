@@ -49,6 +49,7 @@ import io.warpnect.platform.session.security.NativeSessionProtectionRuntimeFacto
 import io.warpnect.platform.session.setup.AndroidExactStreamConfigurationValidator
 import io.warpnect.platform.telemetry.AndroidTelemetryClock
 import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
+import io.warpnect.platform.video.decoder.LegacyDecoderQualificationDebugObserver
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
 import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
 import io.warpnect.platform.video.encoder.AndroidCodecProbeServiceCaller
@@ -252,6 +253,20 @@ class AndroidSecureSessionComposition private constructor(
         )
         private val directRouteState = DirectClientRouteState(clientDiscovery)
         private val directPathBackend = AndroidDirectPathBackend.create(context)
+        private val videoDecoderDiscovery = AndroidVideoDecoderDiscovery(
+            context,
+            object : LegacyDecoderQualificationDebugObserver {
+                override fun onProbeStarted() {
+                    discoveryDebugLog.decoderQualificationProbeStarted()
+                }
+
+                override fun onDecision(
+                    decision: io.warpnect.platform.video.decoder.LegacyDecoderQualificationDecision,
+                ) {
+                    discoveryDebugLog.decoderQualification(decision)
+                }
+            },
+        )
         private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         private val networkCallbackHandler = Handler(Looper.getMainLooper())
         private val clientIo = AtomicReference<SecureSessionControlDatagramIo?>()
@@ -292,12 +307,24 @@ class AndroidSecureSessionComposition private constructor(
                     }
                 },
                 object : VideoRenderDebugObserver {
-                    override fun onRenderTargetAvailable() {
-                        discoveryDebugLog.clientRenderTargetAvailable()
+                    override fun onRenderTargetAvailable(surfaceGeneration: Long) {
+                        discoveryDebugLog.clientRenderTargetAvailable(surfaceGeneration)
                     }
 
                     override fun onControllerAttached(surfaceWasValid: Boolean) {
                         discoveryDebugLog.clientRenderControllerAttached(surfaceWasValid)
+                    }
+
+                    override fun onRenderTargetDestroyed(surfaceGeneration: Long) {
+                        discoveryDebugLog.clientRenderTargetDestroyed(surfaceGeneration)
+                    }
+
+                    override fun onDecoderPrepared(surfaceGeneration: Long) {
+                        discoveryDebugLog.clientDecoderPreparedForRenderTarget(surfaceGeneration)
+                    }
+
+                    override fun onRemoteFrameRendered(surfaceGeneration: Long) {
+                        discoveryDebugLog.clientRemoteFrameRendered(surfaceGeneration)
                     }
                 },
             ),
@@ -549,22 +576,27 @@ class AndroidSecureSessionComposition private constructor(
         )
 
         private fun capabilitySnapshot(role: SessionRole): AndroidCapabilityProbeSnapshot {
+            uiResources.markRoleCapabilityChecking(role)
             val directImplemented = directPathBackend?.isImplemented() == true
             val directAvailable = directPathBackend?.isPlatformAvailable() == true && when (role) {
                 SessionRole.Host -> true
                 SessionRole.Client -> directRouteState.isUsable()
             }
             val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
-            val encoder = videoEncoderDiscovery.query(
-                VideoEncoderRequest(
-                    width = videoMode.width,
-                    height = videoMode.height,
-                    frameRate = videoMode.fps,
-                    bitrateBps = videoMode.bitrateBps.toInt(),
-                    iFrameIntervalSeconds = 1f,
-                ),
-            )
-            val decoder = AndroidVideoDecoderDiscovery().query(
+            val encoder = if (role == SessionRole.Host) {
+                videoEncoderDiscovery.query(
+                    VideoEncoderRequest(
+                        width = videoMode.width,
+                        height = videoMode.height,
+                        frameRate = videoMode.fps,
+                        bitrateBps = videoMode.bitrateBps.toInt(),
+                        iFrameIntervalSeconds = 1f,
+                    ),
+                )
+            } else {
+                null
+            }
+            val decoder = videoDecoderDiscovery.query(
                 VideoDecoderConfig(
                     width = videoMode.width,
                     height = videoMode.height,
@@ -628,11 +660,16 @@ class AndroidSecureSessionComposition private constructor(
             )
             val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
             val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
+            val inputAvailable = local.input.injectionKinds != 0
+            uiResources.publishRoleCapability(role, videoAvailable, inputAvailable)
             discoveryDebugLog.localCapabilityProbe(
                 role = role.name,
                 videoAvailable = videoAvailable,
-                videoError = encoder.error.name,
-                inputAvailable = local.input.injectionKinds != 0,
+                videoError = when (role) {
+                    SessionRole.Host -> encoder?.error?.name ?: "NotApplicable"
+                    SessionRole.Client -> decoder.error.name
+                },
+                inputAvailable = inputAvailable,
                 inputError = injection?.lastError?.name ?: "NotApplicable",
             )
             return snapshot
@@ -698,6 +735,7 @@ class AndroidSecureSessionComposition private constructor(
 
         private fun exactValidator() = AndroidExactStreamConfigurationValidator(
             videoEncoderDiscovery = videoEncoderDiscovery,
+            videoDecoderDiscovery = videoDecoderDiscovery,
             systemAudioCapture = { request -> AndroidSystemAudioCaptureController(context).queryCapabilities(request) },
             microphoneCapture = { request ->
                 AndroidMicrophoneAudioCaptureController(
@@ -964,6 +1002,36 @@ class AndroidSessionUiResources(
     val clientVideoRendererBound: StateFlow<Boolean> = _clientVideoRendererBound.asStateFlow()
     private val _clientVideoStreaming = MutableStateFlow(false)
     val clientVideoStreaming: StateFlow<Boolean> = _clientVideoStreaming.asStateFlow()
+    private val _clientCapability = MutableStateFlow<DeviceRoleCapability>(DeviceRoleCapability.NotChecked)
+    val clientCapability: StateFlow<DeviceRoleCapability> = _clientCapability.asStateFlow()
+    private val _hostCapability = MutableStateFlow<DeviceRoleCapability>(DeviceRoleCapability.NotChecked)
+    val hostCapability: StateFlow<DeviceRoleCapability> = _hostCapability.asStateFlow()
+
+    fun markRoleCapabilityChecking(role: SessionRole) {
+        when (role) {
+            SessionRole.Client -> _clientCapability.value = DeviceRoleCapability.Checking
+            SessionRole.Host -> _hostCapability.value = DeviceRoleCapability.Checking
+        }
+    }
+
+    fun publishRoleCapability(role: SessionRole, videoAvailable: Boolean, inputAvailable: Boolean) {
+        when (role) {
+            SessionRole.Client -> {
+                _clientCapability.value = if (videoAvailable) {
+                    DeviceRoleCapability.Available
+                } else {
+                    DeviceRoleCapability.Unavailable("Client video unavailable")
+                }
+            }
+            SessionRole.Host -> {
+                _hostCapability.value = when {
+                    !videoAvailable -> DeviceRoleCapability.Unavailable("Host video unavailable")
+                    !inputAvailable -> DeviceRoleCapability.SetupRequired("Host input setup required")
+                    else -> DeviceRoleCapability.Available
+                }
+            }
+        }
+    }
 
     fun attachClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
         render.set(renderSurface)
@@ -1017,6 +1085,14 @@ class AndroidSessionUiResources(
     }
 
     fun inputCaptureSurface(): WarpnectInputCaptureView? = input.get()
+}
+
+sealed interface DeviceRoleCapability {
+    data object NotChecked : DeviceRoleCapability
+    data object Checking : DeviceRoleCapability
+    data object Available : DeviceRoleCapability
+    data class SetupRequired(val message: String) : DeviceRoleCapability
+    data class Unavailable(val message: String) : DeviceRoleCapability
 }
 
 /** Keeps only the selected ephemeral RFC-005B Direct locator for the current Client attempt. */

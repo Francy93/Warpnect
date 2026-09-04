@@ -36,6 +36,7 @@ class DefaultVideoReceiverSessionController(
     private val decoderController: VideoDecoderController,
     private val renderController: VideoRenderController,
     private val telemetry: VideoDecoderTelemetry? = null,
+    private val onDecoderPreparedForSurfaceGeneration: (Long) -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : VideoReceiverSessionController {
     private val lock = Any()
@@ -252,6 +253,7 @@ class DefaultVideoReceiverSessionController(
             return
         }
         val start = decoderController.start()
+        var preparedSurfaceGeneration: Long? = null
         synchronized(lock) {
             if (start.isSuccess) {
                 core.onDecoderPrepared()
@@ -264,6 +266,9 @@ class DefaultVideoReceiverSessionController(
                 }
                 requestResyncLocked(reason)
                 scheduleKeyFrameResyncIfNeeded(config)
+                if (currentRenderTarget?.surfaceGeneration == target.surfaceGeneration) {
+                    preparedSurfaceGeneration = target.surfaceGeneration
+                }
             } else {
                 core.onError()
                 rememberLocked(
@@ -275,6 +280,7 @@ class DefaultVideoReceiverSessionController(
                 )
             }
         }
+        preparedSurfaceGeneration?.let(onDecoderPreparedForSurfaceGeneration)
     }
 
     private val runtimeListener = object : VideoReceiverRuntimeListener {

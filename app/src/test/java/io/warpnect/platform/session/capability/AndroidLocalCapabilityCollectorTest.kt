@@ -6,6 +6,13 @@ import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.capability.LocalCapabilityAvailability
+import io.warpnect.video.decoder.VideoDecoderCapabilities
+import io.warpnect.video.decoder.VideoDecoderCodecInfo
+import io.warpnect.video.decoder.VideoDecoderConfig
+import io.warpnect.video.decoder.VideoDecoderError
+import io.warpnect.video.decoder.VideoDecoderHardwareAcceleration
+import io.warpnect.video.decoder.VideoDecoderQualification
+import io.warpnect.video.decoder.VideoDecoderSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,5 +76,51 @@ class AndroidLocalCapabilityCollectorTest {
 
         assertEquals(0, snapshot.audio.audioFlags and CapabilityBits.AUDIO_SYSTEM_CAPTURE)
         assertEquals(LocalCapabilityAvailability.SupportedButUnavailable, snapshot.localAvailability["systemAudio"])
+    }
+
+    @Test
+    fun activelyQualifiedLegacyDecoderMakesClientVideoAvailableWithoutHostCapabilities() {
+        val decoder = VideoDecoderCapabilities(
+            config = VideoDecoderConfig(
+                width = 1280,
+                height = 720,
+                expectedFrameRate = 60,
+                configGeneration = 1L,
+                codecSpecificData = listOf(byteArrayOf(1)),
+            ),
+            selectedCodec = VideoDecoderCodecInfo(
+                codecName = "legacy-avc",
+                canonicalName = null,
+                hardwareAcceleration = VideoDecoderHardwareAcceleration.Unknown,
+                softwareOnly = null,
+                vendor = null,
+                alias = null,
+                lowLatencyFeatureSupported = null,
+            ),
+            support = VideoDecoderSupport(
+                widthSupported = true,
+                heightSupported = true,
+                sizeSupported = true,
+                sizeAndRateSupported = true,
+                lowLatencyFeatureSupported = null,
+                widthAlignment = 2,
+                heightAlignment = 2,
+                minWidth = 16,
+                maxWidth = 1920,
+                minHeight = 16,
+                maxHeight = 1080,
+            ),
+            error = VideoDecoderError.None,
+            qualification = VideoDecoderQualification.ActivePass,
+        )
+
+        val snapshot = AndroidCapabilityProbeSnapshot(
+            lanSecurePathAvailable = true,
+            videoDecoder = decoder,
+        ).toLocalSnapshot(SessionRole.Client, 1)
+
+        assertEquals(LocalCapabilityAvailability.Available, snapshot.localAvailability["video"])
+        assertTrue(snapshot.video.videoFlags and CapabilityBits.VIDEO_HARDWARE_DECODE != 0)
+        assertTrue(snapshot.video.videoFlags and CapabilityBits.VIDEO_SURFACE_OUTPUT_DECODE != 0)
     }
 }

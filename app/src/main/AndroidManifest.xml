@@ -48,6 +48,11 @@
             android:name=".platform.video.encoder.ExactVideoEncoderProbeService"
             android:exported="false"
             android:process=":codecProbe" />
+
+        <service
+            android:name=".platform.video.decoder.LegacyVideoDecoderProbeService"
+            android:exported="false"
+            android:process=":decoderProbe" />
     </application>
 
 </manifest>

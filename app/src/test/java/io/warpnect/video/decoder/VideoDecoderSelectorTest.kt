@@ -18,6 +18,7 @@ class VideoDecoderSelectorTest {
 
         assertTrue(selected.isSupported)
         assertEquals("hardware-avc", selected.selectedCodec?.codecName)
+        assertEquals(VideoDecoderQualification.FrameworkHardware, selected.qualification)
     }
 
     @Test
@@ -37,7 +38,7 @@ class VideoDecoderSelectorTest {
     }
 
     @Test
-    fun unknownHardwareClassificationIsExplicit() {
+    fun legacyUnknownCandidateRequiresActiveQualification() {
         val selected = VideoDecoderSelector.select(
             config,
             listOf(
@@ -49,7 +50,60 @@ class VideoDecoderSelectorTest {
             ),
         )
 
-        assertEquals(VideoDecoderError.HardwareClassificationUnavailable, selected.error)
+        assertEquals(VideoDecoderError.LegacyQualificationRequired, selected.error)
+        assertEquals("legacy-avc", selected.selectedCodec?.codecName)
+        assertEquals(VideoDecoderQualification.LegacyCandidate, selected.qualification)
+    }
+
+    @Test
+    fun knownLegacySoftwareFamilyIsRejectedWithoutActiveQualification() {
+        val selected = VideoDecoderSelector.select(
+            config,
+            listOf(
+                candidate(
+                    name = "OMX.google.h264.decoder",
+                    hardwareAcceleration = VideoDecoderHardwareAcceleration.Unknown,
+                    softwareOnly = null,
+                ),
+            ),
+        )
+
+        assertEquals(VideoDecoderError.HardwareDecoderUnavailable, selected.error)
+        assertEquals(VideoDecoderQualification.LegacySoftwareFamilyRejected, selected.qualification)
+    }
+
+    @Test
+    fun legacySamsungSoftwareFamilyIsRejectedWithoutActiveQualification() {
+        val selected = VideoDecoderSelector.select(
+            config,
+            listOf(
+                candidate(
+                    name = "OMX.SEC.avc.sw.dec",
+                    hardwareAcceleration = VideoDecoderHardwareAcceleration.Unknown,
+                    softwareOnly = null,
+                ),
+            ),
+        )
+
+        assertEquals(VideoDecoderError.HardwareDecoderUnavailable, selected.error)
+        assertEquals(VideoDecoderQualification.LegacySoftwareFamilyRejected, selected.qualification)
+    }
+
+    @Test
+    fun legacyCandidateWithUnsupportedRateDoesNotAdvanceToActiveQualification() {
+        val selected = VideoDecoderSelector.select(
+            config,
+            listOf(
+                candidate(
+                    name = "legacy-avc",
+                    hardwareAcceleration = VideoDecoderHardwareAcceleration.Unknown,
+                    softwareOnly = null,
+                    sizeAndRateSupported = false,
+                ),
+            ),
+        )
+
+        assertEquals(VideoDecoderError.UnsupportedFrameRate, selected.error)
     }
 
     @Test

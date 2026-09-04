@@ -30,7 +30,15 @@ data class VideoDecoderCapabilities(
     val support: VideoDecoderSupport?,
     val candidates: List<VideoDecoderCodecInfo> = emptyList(),
     val error: VideoDecoderError = VideoDecoderError.None,
+    val qualification: VideoDecoderQualification = VideoDecoderQualification.NotApplicable,
 ) {
     val isSupported: Boolean
         get() = error == VideoDecoderError.None && selectedCodec != null
+
+    val isQualifiedForClientVideo: Boolean
+        get() = isSupported && (
+            selectedCodec?.hardwareAcceleration == VideoDecoderHardwareAcceleration.Hardware ||
+                qualification == VideoDecoderQualification.ActivePass ||
+                qualification == VideoDecoderQualification.CachedPass
+            )
 }

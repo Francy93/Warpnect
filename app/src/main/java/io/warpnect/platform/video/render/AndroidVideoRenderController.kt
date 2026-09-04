@@ -36,7 +36,11 @@ class AndroidVideoRenderController(
 
     @Volatile
     private var attachedView: SurfaceView? = null
-    private var renderTargetObserved = false
+    private var observedSurfaceGeneration = -1L
+
+    @Volatile
+    private var decoderBoundSurfaceGeneration = -1L
+    private var observedRenderedSurfaceGeneration = -1L
 
     override val decodedVideoSink: DecodedVideoSink = object : DecodedVideoSink {
         override fun onFrameAvailable(frame: DecodedVideoFrame): DecodedVideoOutputAction = decideOutput(frame)
@@ -49,7 +53,14 @@ class AndroidVideoRenderController(
             }
         }
 
-        override fun onFrameRendered(event: VideoDecoderFrameRenderedEvent) = Unit
+        override fun onFrameRendered(event: VideoDecoderFrameRenderedEvent) {
+            val generation = target?.surfaceGeneration ?: return
+            if (decoderBoundSurfaceGeneration != generation || observedRenderedSurfaceGeneration == generation) {
+                return
+            }
+            observedRenderedSurfaceGeneration = generation
+            runCatching { debugObserver.onRemoteFrameRendered(generation) }
+        }
     }
 
     fun attach(surfaceView: SurfaceView) {
@@ -83,8 +94,10 @@ class AndroidVideoRenderController(
         val generation = core.snapshot().surfaceGeneration
         if (target != null) {
             target = null
+            decoderBoundSurfaceGeneration = -1L
             core.surfaceDestroyed()
             targetListener.onRenderTargetDestroyed(generation)
+            runCatching { debugObserver.onRenderTargetDestroyed(generation) }
         }
     }
 
@@ -111,6 +124,13 @@ class AndroidVideoRenderController(
     }
 
     override fun currentTarget(): VideoRenderTarget? = target
+
+    /** Local lifecycle breadcrumb after the active decoder binds the current render target. */
+    internal fun onDecoderPreparedForSurfaceGeneration(surfaceGeneration: Long) {
+        if (target?.surfaceGeneration != surfaceGeneration) return
+        decoderBoundSurfaceGeneration = surfaceGeneration
+        runCatching { debugObserver.onDecoderPrepared(surfaceGeneration) }
+    }
 
     override fun snapshot(): VideoRenderSnapshot = core.snapshot()
 
@@ -141,6 +161,7 @@ class AndroidVideoRenderController(
             height = frame.height(),
         )
         target = renderTarget
+        decoderBoundSurfaceGeneration = -1L
         applyCurrentFrameRateHint()
         targetListener.onRenderTargetAvailable(renderTarget)
         emitRenderTargetAvailable()
@@ -169,8 +190,10 @@ class AndroidVideoRenderController(
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         val generation = core.snapshot().surfaceGeneration
         target = null
+        decoderBoundSurfaceGeneration = -1L
         core.surfaceDestroyed()
         targetListener.onRenderTargetDestroyed(generation)
+        runCatching { debugObserver.onRenderTargetDestroyed(generation) }
     }
 
     private fun decideOutput(frame: DecodedVideoFrame): DecodedVideoOutputAction {
@@ -199,9 +222,10 @@ class AndroidVideoRenderController(
     }
 
     private fun emitRenderTargetAvailable() {
-        if (renderTargetObserved) return
-        renderTargetObserved = true
-        runCatching { debugObserver.onRenderTargetAvailable() }
+        val generation = target?.surfaceGeneration ?: return
+        if (observedSurfaceGeneration == generation) return
+        observedSurfaceGeneration = generation
+        runCatching { debugObserver.onRenderTargetAvailable(generation) }
     }
 
     private fun applyCurrentFrameRateHint() {

@@ -20,7 +20,6 @@ import io.warpnect.session.capability.PathCapabilities
 import io.warpnect.session.capability.VideoCapabilities
 import io.warpnect.session.security.SessionProtectionProtocol
 import io.warpnect.video.decoder.VideoDecoderCapabilities
-import io.warpnect.video.decoder.VideoDecoderHardwareAcceleration
 import io.warpnect.video.encoder.VideoEncoderCapabilities
 import io.warpnect.video.encoder.VideoEncoderHardwareAcceleration
 
@@ -72,9 +71,10 @@ data class AndroidCapabilityProbeSnapshot(
         val encoder = videoEncoder?.takeIf {
             it.isSupported && it.selectedCodec?.hardwareAcceleration == VideoEncoderHardwareAcceleration.Hardware
         }
-        val decoder = videoDecoder?.takeIf {
-            it.isSupported && it.selectedCodec?.hardwareAcceleration == VideoDecoderHardwareAcceleration.Hardware
-        }
+        // The frozen V1 flag expresses usable Client decode capability. It is emitted only after
+        // framework hardware classification or RFC-002I's exact local qualification; no codec
+        // identity or local qualification reason crosses WNCP.
+        val decoder = videoDecoder?.takeIf { it.isQualifiedForClientVideo }
         val videoFlags = (if (encoder != null) CapabilityBits.VIDEO_HARDWARE_ENCODE else 0) or
             (if (encoder?.support?.surfaceInputSupported == true) CapabilityBits.VIDEO_SURFACE_INPUT_ENCODE else 0) or
             (if (decoder != null) CapabilityBits.VIDEO_HARDWARE_DECODE else 0) or

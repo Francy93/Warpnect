@@ -2,6 +2,7 @@ package io.warpnect.platform.discovery
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Process
 import android.util.Log
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
@@ -215,9 +216,24 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         Log.d(TAG, "event=${event.logName}")
     }
 
-    fun clientRenderTargetAvailable() {
+    fun clientRenderTargetAvailable(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.d(TAG, "event=client_render_target_available")
+        Log.d(TAG, "event=client_render_target_available generation=$surfaceGeneration")
+    }
+
+    fun clientRenderTargetDestroyed(surfaceGeneration: Long) {
+        if (!enabled) return
+        Log.d(TAG, "event=client_render_target_destroyed generation=$surfaceGeneration")
+    }
+
+    fun clientDecoderPreparedForRenderTarget(surfaceGeneration: Long) {
+        if (!enabled) return
+        Log.d(TAG, "event=client_decoder_prepared_for_render_target generation=$surfaceGeneration")
+    }
+
+    fun clientRemoteFrameRendered(surfaceGeneration: Long) {
+        if (!enabled) return
+        Log.d(TAG, "event=client_remote_frame_rendered generation=$surfaceGeneration")
     }
 
     fun clientRenderSurfaceAttached(rendererAvailable: Boolean) {
@@ -326,6 +342,28 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
 
     fun encoderCbrActiveProbeStarted() {
         if (enabled) Log.d(TAG, "event=encoder_cbr_active_probe_started")
+    }
+
+    fun decoderQualificationProbeStarted() {
+        if (enabled) {
+            Log.d(
+                TAG,
+                "event=decoder_qualification_probe_started main_pid=${Process.myPid()} main_uid=${Process.myUid()}",
+            )
+        }
+    }
+
+    fun decoderQualification(decision: io.warpnect.platform.video.decoder.LegacyDecoderQualificationDecision) {
+        if (!enabled) return
+        val event = when (decision.source) {
+            io.warpnect.platform.video.decoder.LegacyDecoderQualificationSource.ActiveProbe ->
+                "decoder_qualification_probe_completed"
+            io.warpnect.platform.video.decoder.LegacyDecoderQualificationSource.PersistentCache ->
+                "decoder_qualification_cache_hit"
+            io.warpnect.platform.video.decoder.LegacyDecoderQualificationSource.CurrentProcessQuarantine ->
+                "decoder_qualification_quarantined"
+        }
+        Log.d(TAG, "event=$event result=${decision.result.name} outcome=${decision.outcome.name}")
     }
 
     private companion object {

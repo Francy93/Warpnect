@@ -6,6 +6,9 @@ enum class VideoDecoderError {
     UnsupportedCodec,
     HardwareDecoderUnavailable,
     HardwareClassificationUnavailable,
+    LegacyQualificationRequired,
+    LegacyQualificationFailed,
+    LegacyQualificationInconclusive,
 
     UnsupportedDimensions,
     UnsupportedFrameRate,
