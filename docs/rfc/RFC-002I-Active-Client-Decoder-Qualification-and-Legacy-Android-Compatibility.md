@@ -2,7 +2,7 @@
 
 Project: Warpnect
 
-Status: Proposed. This is acceptance-ready design backed by calibration evidence. It does not change current Client eligibility, reopen H1, or modify RFC-002B.
+Status: Accepted. Implementation must preserve the calibrated qualification semantics without changing current protocol contracts, reopening H1, or modifying RFC-002B.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
