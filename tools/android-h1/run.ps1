@@ -25,7 +25,7 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$CleanState,
-    [ValidateRange(0, 30)]
+    [ValidateRange(0, 60)]
     [int]$HoldMediaAfterFirstFrameSeconds = 0
 )
 
@@ -319,6 +319,9 @@ function Start-Warpnect {
     Invoke-Adb $serial @("shell", "am", "start", "-n", $script:ActivityName)
     if (-not (Wait-ForWarpnectForeground $Device)) {
         throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial) [foreground_check=$script:LastForegroundFailure]. Unlock the device and relaunch Warpnect; the harness will not bypass device security."
+    }
+    if (-not (Wait-ForUiText $Device "Ready")) {
+        throw "WARPNNECT_UI_NOT_READY on $($Device.Serial)."
     }
 }
 
@@ -812,9 +815,9 @@ function Invoke-MediaStartupTrace {
     if (-not $hostAuthenticated -or -not $clientAuthenticated) {
         throw "Secure Session did not authenticate on both peers."
     }
-    # Legacy decoder/Surface combinations can publish the first real presentation callback after
-    # the normal 20-second media-start window; this remains a bounded compatibility trace.
-    $firstFrameDeadline = [DateTime]::UtcNow.AddSeconds(45)
+    # Legacy decoder/Surface combinations can publish the first real presentation callback well
+    # after decode output becomes available; keep the compatibility trace bounded.
+    $firstFrameDeadline = [DateTime]::UtcNow.AddSeconds(60)
     do {
         $hostFirstFrameEncoded = Test-DiscoveryBreadcrumb $HostDevice "first_frame_encoded"
         $hostFirstVideoDatagramSent = Test-DiscoveryBreadcrumb $HostDevice "first_video_datagram_sent"
