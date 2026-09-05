@@ -49,8 +49,12 @@ Phase 2 core history remains complete through RFC-002G. RFC-002H production capt
 validation on legacy API 30/API 31 and modern API 36 paths. H1 real-device media validation is
 complete. RFC-002B strict-CBR metadata qualification now uses a disposable same-UID app process,
 which contains vendor codec failure without terminating Warpnect. Final same-UID qualification
-passed on two API 36 S22 devices plus tested API 30 and API 31 A41 devices. A41
-`InputApiUnavailable` remains a separate Phase 4 privileged Input compatibility issue.
+passed on two API 36 S22 devices plus tested API 30 and API 31 A41 devices. The A41
+`InputApiUnavailable` investigation established a narrow Phase 4 Android platform-adapter defect:
+the current resolver assumes `InputManagerGlobal`, which is absent on tested API 30, API 31, and API
+33 hardware. Test-only local injection through the legacy `InputManager` path passed under the normal
+Shizuku shell UserService. Production adapter integration and end-to-end reverse-input validation remain
+separate work.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
