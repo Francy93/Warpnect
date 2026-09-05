@@ -68,8 +68,8 @@ ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
 
 | Device class | Android/API | Production backend result | Local production validation | End-to-end reverse input | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Session reached authenticated media startup, then stopped at `SystemAudioStartFailed` before an Input Payload could be sent | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E pending |
-| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run while a physical Client operator was unavailable | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E pending |
+| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Authentication, capability negotiation, WNSN, protected video receive and first S7 decode observed; Host startup stopped at `SystemAudioStartFailed` | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E blocked before human input |
+| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | S7 and tablet Client attempts reached WNSN/media startup; Host returned `SystemAudioStartFailed`; first S7 decode was observed in one attempt | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E blocked before human input |
 | Aocwei X700_EEA tablet | Android 13 / API 33 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS` |
 | Samsung SM-G935F | Android 8.0 / API 26 | Not resolved because Shizuku was not running | Not run | Not run | `API26_LEGACY_INPUT_INCONCLUSIVE_SHIZUKU_UNAVAILABLE` |
 | Samsung SM-S901B | Android 16 / API 36 | Historical `InputManagerGlobal` success | New resolver physical regression not yet run | Deferred while the S22 is unavailable | `DEFERRED_S22_API36_INPUT_REGRESSION` |
@@ -77,6 +77,29 @@ ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
 These results do not close Phase-4 privileged-input compatibility. Completing the evidence requires a
 real Client-originated Input Payload V1 event to each A41 Host and a physical API 36 regression of the
 new modern-preferred resolver.
+
+The 2026-09-05 completion pass reused the exact APK above, including verification of installed
+`base.apk` digests on all four attached devices. A bounded cleanup of residual Warpnect-owned shell
+helpers left both Shizuku servers running; both A41 local production targets then observed key=1,
+touch=1, pointer=2, joystick=1, with `SubmittedAsync` results and helper UID 2000. This did not remove
+the Session audio-start failure. Both tablet fallback attempts also produced Host-side committed
+setup followed by `SystemAudioStartFailed`; the harness did not establish both authentication
+breadcrumbs on those tablet runs, so they are not complete two-peer Session proofs. The S7 runs
+did establish both authentication and setup progression. The current first blocker is
+`A41_INPUT_E2E_BLOCKED_BY_SYSTEM_AUDIO_STARTUP`. No human reverse-input event was requested or
+substituted by local injection. The resolver and audio runtime were not modified.
+
+Earlier startup retries included one clean-state pairing attempt on the API 30 Host and S7 Client;
+pairing was re-established normally and the API 30 recording permission was restored. The final
+post-helper-reset comparisons did not clear application data. Test applications were stopped after
+the bounded campaign; Shizuku servers were not restarted.
+
+An initial `InputSessionHold` harness result incorrectly treated early Client decode as readiness
+after Host startup had failed. That result is invalid as Input readiness or E2E evidence. The harness
+now requires both media-start acceptances, preserves the terminal startup reason, and explicitly
+labels readiness as NOT proving reverse-input E2E. Thirteen deterministic outcome assertions cover
+this distinction. Existing 576 JVM tests (zero failures/errors/skips), lint/build gates and unchanged
+native Debug/Release CTest 22/22 remain carried evidence for the unchanged application artifact.
 
 ## RFC-002I Decoder Investigation (Historical)
 
