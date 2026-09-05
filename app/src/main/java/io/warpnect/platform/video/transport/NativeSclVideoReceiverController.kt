@@ -1,5 +1,6 @@
 package io.warpnect.platform.video.transport
 
+import android.os.SystemClock
 import io.warpnect.NativeBridge
 import io.warpnect.platform.session.channel.markNativeEndpointAdopted
 import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
@@ -40,6 +41,7 @@ class NativeSclVideoReceiverController(
     private var firstVideoDatagramReceivedObserved = false
     private var firstStreamConfigAvailableObserved = false
     private var firstVideoAccessUnitReceivedObserved = false
+    private var accessUnitReadyObservations = 0
 
     /** RFC-005I adopts the stopped RFC-005G protected receiver instead of opening a UDP port. */
     internal fun adoptPreparedTransport(handle: Long): VideoTransportError {
@@ -141,6 +143,7 @@ class NativeSclVideoReceiverController(
             return VideoReceiverRuntimeResult(VideoTransportError.None, snapshot())
         }
         running = true
+        accessUnitReadyObservations = 0
         worker = Thread({
             while (running) {
                 val event = pumpOnce(pumpTimeoutUs)
@@ -155,6 +158,7 @@ class NativeSclVideoReceiverController(
                     }
                     VideoReceiverRuntimeEventType.AccessUnitReady -> {
                         emitFirstVideoAccessUnitReceived()
+                        observeAccessUnitReady(event)
                         listener.onAccessUnitReady(
                             VideoReceiverAccessUnitReady(
                                 configGeneration = event.configGeneration,
@@ -321,6 +325,18 @@ class NativeSclVideoReceiverController(
         }
     }
 
+    private fun observeAccessUnitReady(event: VideoReceiverRuntimeEvent) {
+        if (accessUnitReadyObservations >= MAX_ACCESS_UNIT_READY_OBSERVATIONS) return
+        accessUnitReadyObservations += 1
+        runCatching {
+            debugObserver.onAccessUnitReady(
+                presentationTimeUs = event.presentationTimeUs,
+                keyframe = event.keyframe,
+                localMonotonicNs = SystemClock.elapsedRealtimeNanos(),
+            )
+        }
+    }
+
     private fun emitFirstStreamConfigAvailable() {
         if (firstStreamConfigAvailableObserved) return
         firstStreamConfigAvailableObserved = true
@@ -430,6 +446,7 @@ class NativeSclVideoReceiverController(
         const val THREAD_NAME = "WarpnectVideoReceiver"
         const val DEFAULT_PUMP_TIMEOUT_US = 20_000L
         const val STOP_JOIN_TIMEOUT_MS = 250L
+        const val MAX_ACCESS_UNIT_READY_OBSERVATIONS = 3
         const val NANOS_PER_MICRO = 1_000L
         const val U16_MAX = 65_535
         const val UINT32_MAX = 0xFFFF_FFFFL

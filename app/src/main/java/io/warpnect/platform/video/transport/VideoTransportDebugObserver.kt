@@ -4,6 +4,9 @@ package io.warpnect.platform.video.transport
 fun interface VideoTransportDebugObserver {
     fun onEvent(event: VideoTransportDebugEvent)
 
+    /** Bounded DEBUG-only local observation after an AU has been reconstructed for the decoder. */
+    fun onAccessUnitReady(presentationTimeUs: Long, keyframe: Boolean, localMonotonicNs: Long) = Unit
+
     companion object {
         val None = VideoTransportDebugObserver {}
     }

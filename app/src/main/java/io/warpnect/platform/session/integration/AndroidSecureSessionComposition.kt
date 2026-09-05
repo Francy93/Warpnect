@@ -300,10 +300,18 @@ class AndroidSecureSessionComposition private constructor(
                     clientInputSurface = uiResources::inputCaptureSurface,
                 ),
                 VideoEncoderFrameDebugObserver(discoveryDebugLog::firstVideoFrameEncoded),
-                VideoDecoderDebugObserver { event ->
-                    discoveryDebugLog.videoDecoder(event)
-                    if (event == VideoDecoderDebugEvent.FirstFrameRendered) {
-                        uiResources.markClientVideoStreaming()
+                object : VideoDecoderDebugObserver {
+                    override fun onEvent(event: VideoDecoderDebugEvent) {
+                        discoveryDebugLog.videoDecoder(event)
+                        if (event == VideoDecoderDebugEvent.FirstFrameRendered) {
+                            uiResources.markClientVideoStreaming()
+                        }
+                    }
+
+                    override fun onPresentationObservation(
+                        observation: io.warpnect.platform.video.decoder.VideoDecoderPresentationObservation,
+                    ) {
+                        discoveryDebugLog.videoDecoderPresentation(observation)
                     }
                 },
                 object : VideoRenderDebugObserver {
@@ -331,7 +339,15 @@ class AndroidSecureSessionComposition private constructor(
             telemetryHub,
             diagnosticEventHub,
             VideoPipelineStartDebugObserver(discoveryDebugLog::videoPipelineStart),
-            VideoTransportDebugObserver(discoveryDebugLog::videoTransport),
+            object : VideoTransportDebugObserver {
+                override fun onEvent(event: io.warpnect.platform.video.transport.VideoTransportDebugEvent) {
+                    discoveryDebugLog.videoTransport(event)
+                }
+
+                override fun onAccessUnitReady(presentationTimeUs: Long, keyframe: Boolean, localMonotonicNs: Long) {
+                    discoveryDebugLog.videoAccessUnitReady(presentationTimeUs, keyframe, localMonotonicNs)
+                }
+            },
         )
 
         fun create(): AndroidSecureSessionComposition {

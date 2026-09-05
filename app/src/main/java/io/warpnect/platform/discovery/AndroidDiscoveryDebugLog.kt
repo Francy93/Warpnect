@@ -7,6 +7,7 @@ import android.util.Log
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
+import io.warpnect.platform.video.decoder.VideoDecoderPresentationObservation
 import io.warpnect.platform.video.encoder.CbrCapabilityDecision
 import io.warpnect.platform.video.encoder.CbrCapabilityDecisionSource
 import io.warpnect.platform.video.transport.VideoTransportDebugEvent
@@ -214,6 +215,42 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
     fun videoDecoder(event: VideoDecoderDebugEvent) {
         if (!enabled) return
         Log.d(TAG, "event=${event.logName}")
+    }
+
+    fun videoDecoderPresentation(observation: VideoDecoderPresentationObservation) {
+        if (!enabled) return
+        val message = buildString {
+            append("event=decoder_presentation stage=")
+            append(observation.stage.name)
+            append(" local_monotonic_ns=")
+            append(observation.localMonotonicNs)
+            append(" pts_us=")
+            append(observation.presentationTimeUs)
+            observation.renderedToSurface?.let {
+                append(" render_to_surface=")
+                append(it)
+            }
+            observation.scheduledRenderTimestampNs?.let {
+                append(" scheduled_render_ns=")
+                append(it)
+                append(" scheduled_minus_now_ns=")
+                append(it - observation.localMonotonicNs)
+            }
+            observation.codecCallbackNanoTime?.let {
+                append(" codec_callback_ns=")
+                append(it)
+            }
+        }
+        Log.d(TAG, message)
+    }
+
+    fun videoAccessUnitReady(presentationTimeUs: Long, keyframe: Boolean, localMonotonicNs: Long) {
+        if (!enabled) return
+        Log.d(
+            TAG,
+            "event=client_remote_access_unit_ready local_monotonic_ns=$localMonotonicNs " +
+                "pts_us=$presentationTimeUs keyframe=$keyframe",
+        )
     }
 
     fun clientRenderTargetAvailable(surfaceGeneration: Long) {

@@ -25,6 +25,7 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$CleanState,
+    [switch]$PulseHostDisplayAfterClientDecode,
     [ValidateRange(0, 60)]
     [int]$HoldMediaAfterFirstFrameSeconds = 0
 )
@@ -126,6 +127,15 @@ function Invoke-AdbTextBounded {
     return $output
 }
 
+function Invoke-AdbTextOptional {
+    param([string]$Serial, [string[]]$Arguments, [int]$TimeoutMilliseconds = 5000)
+    try {
+        return Invoke-AdbTextBounded -Serial $Serial -Arguments $Arguments -TimeoutMilliseconds $TimeoutMilliseconds
+    } catch {
+        return ""
+    }
+}
+
 function Get-UsableDeviceRecords {
     $lines = & $script:Adb devices -l
     if ($LASTEXITCODE -ne 0) { throw "adb devices -l failed" }
@@ -178,7 +188,10 @@ function Get-DeviceInfo {
         param([string]$name)
         Invoke-AdbText $serial @("shell", "getprop", $name)
     }
-    $wifi = Invoke-AdbText $serial @("shell", "cmd", "wifi", "status")
+    # `cmd wifi` is not implemented on several pre-Android-10 devices. Wi-Fi is
+    # inventory-only for this harness, so an unavailable optional diagnostic must
+    # not prevent an otherwise viable legacy Client run.
+    $wifi = Invoke-AdbTextOptional $serial @("shell", "cmd", "wifi", "status")
     $sdkText = & $property "ro.build.version.sdk"
     $sdk = 0
     [void][int]::TryParse($sdkText, [ref]$sdk)
@@ -772,7 +785,8 @@ function Invoke-MediaStartupTrace {
     param(
         [pscustomobject]$HostDevice,
         [pscustomobject]$ClientDevice,
-        [int]$HoldMediaAfterFirstFrameSeconds = 0
+        [int]$HoldMediaAfterFirstFrameSeconds = 0,
+        [bool]$PulseHostDisplayAfterClientDecode = $false
     )
     Ensure-WarpnectForeground $HostDevice
     Tap-UiText $HostDevice "Enable Host"
@@ -818,6 +832,7 @@ function Invoke-MediaStartupTrace {
     # Legacy decoder/Surface combinations can publish the first real presentation callback well
     # after decode output becomes available; keep the compatibility trace bounded.
     $firstFrameDeadline = [DateTime]::UtcNow.AddSeconds(60)
+    $hostDisplayPulseApplied = $false
     do {
         $hostFirstFrameEncoded = Test-DiscoveryBreadcrumb $HostDevice "first_frame_encoded"
         $hostFirstVideoDatagramSent = Test-DiscoveryBreadcrumb $HostDevice "first_video_datagram_sent"
@@ -828,6 +843,13 @@ function Invoke-MediaStartupTrace {
         $clientFirstFrameDecoded = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_decoded"
         $clientFirstFrameRendered = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_rendered"
         $clientStreaming = (Find-UiNode $ClientDevice "Streaming") -ne $null
+        if ($PulseHostDisplayAfterClientDecode -and $clientFirstFrameDecoded -and -not $hostDisplayPulseApplied) {
+            # A reversible real display update distinguishes a static capture source from a stalled renderer.
+            Invoke-Adb $HostDevice.Serial @("shell", "input", "keyevent", "24")
+            Start-Sleep -Milliseconds 250
+            Invoke-Adb $HostDevice.Serial @("shell", "input", "keyevent", "25")
+            $hostDisplayPulseApplied = $true
+        }
         if (
             $hostFirstFrameEncoded -and
             $hostFirstVideoDatagramSent -and
@@ -870,6 +892,7 @@ function Invoke-MediaStartupTrace {
         client_first_frame_decoded = $clientFirstFrameDecoded
         client_first_frame_rendered = $clientFirstFrameRendered
         client_streaming_ui = $clientStreaming
+        host_display_pulse_applied = $hostDisplayPulseApplied
     }
 }
 
@@ -914,7 +937,7 @@ try {
     Start-Warpnect $hostDevice -ClearState:$clearForScenario
     Start-Warpnect $clientDevice -ClearState:$clearForScenario
     if ($Scenario -eq "MediaStartupTrace") {
-        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds
+        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds $PulseHostDisplayAfterClientDecode.IsPresent
         $scenarioResult["sas_equal"] = $media.sas_equal
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated
