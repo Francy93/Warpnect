@@ -54,8 +54,29 @@ a foreground Warpnect-owned debug Activity. They do not exercise a Session, peer
 
 Every tested UserService ran under shell UID 2000 after a successful Warpnect-side Shizuku permission
 check. The framework classes resolved from the boot class loader; this is an API-surface compatibility
-finding, not a Shizuku permission, Binder-service, SELinux, or device-model finding. No production
-compatibility adapter or reverse-input Session validation is represented by this section.
+finding, not a Shizuku permission, Binder-service, SELinux, or device-model finding.
+
+## Privileged Input Legacy Android Implementation (Pending E2E)
+
+The production resolver now selects `InputManagerGlobal` when its complete modern API is available and
+otherwise qualifies the legacy `InputManager.getInstance().injectInputEvent(InputEvent, int)` adapter.
+The resolver remains capability-driven, caches its selected adapter for the UserService lifetime, and
+keeps explicit target-UID injection unavailable on the legacy two-argument API. The final validation APK
+was built from `f1cdd426909104d6d0a9e753534e12cfd3bf69cf`, SHA-256
+`2E3F9988A3CCEBC5D7CEF83540954BBBBAF241D8B5C4C7AC2758FBF1B17C9D8A`, 28,920,819 bytes, with
+ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
+
+| Device class | Android/API | Production backend result | Local production validation | End-to-end reverse input | Current status |
+| --- | --- | --- | --- | --- | --- |
+| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Session reached authenticated media startup, then stopped at `SystemAudioStartFailed` before an Input Payload could be sent | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E pending |
+| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run while a physical Client operator was unavailable | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E pending |
+| Aocwei X700_EEA tablet | Android 13 / API 33 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS` |
+| Samsung SM-G935F | Android 8.0 / API 26 | Not resolved because Shizuku was not running | Not run | Not run | `API26_LEGACY_INPUT_INCONCLUSIVE_SHIZUKU_UNAVAILABLE` |
+| Samsung SM-S901B | Android 16 / API 36 | Historical `InputManagerGlobal` success | New resolver physical regression not yet run | Deferred while the S22 is unavailable | `DEFERRED_S22_API36_INPUT_REGRESSION` |
+
+These results do not close Phase-4 privileged-input compatibility. Completing the evidence requires a
+real Client-originated Input Payload V1 event to each A41 Host and a physical API 36 regression of the
+new modern-preferred resolver.
 
 ## RFC-002I Decoder Investigation (Historical)
 

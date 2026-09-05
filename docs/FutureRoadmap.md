@@ -51,10 +51,13 @@ complete. RFC-002B strict-CBR metadata qualification now uses a disposable same-
 which contains vendor codec failure without terminating Warpnect. Final same-UID qualification
 passed on two API 36 S22 devices plus tested API 30 and API 31 A41 devices. The A41
 `InputApiUnavailable` investigation established a narrow Phase 4 Android platform-adapter defect:
-the current resolver assumes `InputManagerGlobal`, which is absent on tested API 30, API 31, and API
-33 hardware. Test-only local injection through the legacy `InputManager` path passed under the normal
-Shizuku shell UserService. Production adapter integration and end-to-end reverse-input validation remain
-separate work.
+the previous resolver assumed `InputManagerGlobal`, which is absent on tested API 30, API 31, and API
+33 hardware. The production resolver now retains the modern adapter and falls back through capability
+qualification to the legacy `InputManager` adapter. Local production injection of key, touch, pointer,
+and joystick events passed on API 30, API 31, and API 33 under the Shizuku shell UserService.
+End-to-end A41 reverse-input evidence remains incomplete: the API 30 Session stopped at the independent
+`SystemAudioStartFailed` boundary before input delivery, and API 31 awaits a physical Client operator.
+The new resolver's physical API 36 regression is recorded as `DEFERRED_S22_API36_INPUT_REGRESSION`.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
