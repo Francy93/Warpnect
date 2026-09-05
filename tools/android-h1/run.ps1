@@ -16,7 +16,8 @@ param(
         "KillClientDuringSas",
         "KillHostDuringSas",
         "RoleReversal",
-        "MediaStartupTrace"
+        "MediaStartupTrace",
+        "InputSessionHold"
         ,"PairAcceptCleanState"
     )]
     [string]$Scenario = "PairAccept",
@@ -27,7 +28,9 @@ param(
     [switch]$CleanState,
     [switch]$PulseHostDisplayAfterClientDecode,
     [ValidateRange(0, 60)]
-    [int]$HoldMediaAfterFirstFrameSeconds = 0
+    [int]$HoldMediaAfterFirstFrameSeconds = 0,
+    [ValidateRange(0, 120)]
+    [int]$HoldMediaAfterFirstDecodeSeconds = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -786,6 +789,7 @@ function Invoke-MediaStartupTrace {
         [pscustomobject]$HostDevice,
         [pscustomobject]$ClientDevice,
         [int]$HoldMediaAfterFirstFrameSeconds = 0,
+        [int]$HoldMediaAfterFirstDecodeSeconds = 0,
         [bool]$PulseHostDisplayAfterClientDecode = $false
     )
     Ensure-WarpnectForeground $HostDevice
@@ -850,16 +854,19 @@ function Invoke-MediaStartupTrace {
             Invoke-Adb $HostDevice.Serial @("shell", "input", "keyevent", "25")
             $hostDisplayPulseApplied = $true
         }
-        if (
+        $decodedMediaReady =
             $hostFirstFrameEncoded -and
             $hostFirstVideoDatagramSent -and
             $clientFirstVideoDatagramReceived -and
             $clientStreamConfigAvailable -and
             $clientDecoderStarted -and
             $clientFirstAccessUnitSubmitted -and
-            $clientFirstFrameDecoded -and
-            $clientFirstFrameRendered
-        ) {
+            $clientFirstFrameDecoded
+        if ($decodedMediaReady -and $HoldMediaAfterFirstDecodeSeconds -gt 0) {
+            Start-Sleep -Seconds $HoldMediaAfterFirstDecodeSeconds
+            break
+        }
+        if ($decodedMediaReady -and $clientFirstFrameRendered) {
             if ($HoldMediaAfterFirstFrameSeconds -gt 0) {
                 Start-Sleep -Seconds $HoldMediaAfterFirstFrameSeconds
             }
@@ -936,13 +943,17 @@ try {
     $clearForScenario = $CleanState -or $Scenario -eq "PairAcceptCleanState"
     Start-Warpnect $hostDevice -ClearState:$clearForScenario
     Start-Warpnect $clientDevice -ClearState:$clearForScenario
-    if ($Scenario -eq "MediaStartupTrace") {
-        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds $PulseHostDisplayAfterClientDecode.IsPresent
+    if ($Scenario -in @("MediaStartupTrace", "InputSessionHold")) {
+        $decodeHold = if ($Scenario -eq "InputSessionHold") { $HoldMediaAfterFirstDecodeSeconds } else { 0 }
+        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds $decodeHold $PulseHostDisplayAfterClientDecode.IsPresent
         $scenarioResult["sas_equal"] = $media.sas_equal
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated
         $scenarioResult["media"] = $media
-        if ($media.client_first_frame_rendered) {
+        if ($Scenario -eq "InputSessionHold" -and $media.client_first_frame_decoded) {
+            $scenarioResult.result = "PASS"
+            $scenarioResult.reason = "first real remote frame decoded; Session held for reverse input"
+        } elseif ($media.client_first_frame_rendered) {
             $scenarioResult.result = "PASS"
             $scenarioResult.reason = "first real remote frame rendered on Client"
         } else {
@@ -957,7 +968,7 @@ try {
     }
     $clientFailed = (Find-UiNode $clientDevice "Failed") -ne $null
     $hostFailed = (Find-UiNode $hostDevice "Failed") -ne $null
-    if ($Scenario -eq "MediaStartupTrace") {
+    if ($Scenario -in @("MediaStartupTrace", "InputSessionHold")) {
         if ($clientFailed -or $hostFailed) {
             $scenarioResult.result = "FAIL"
             $scenarioResult.reason = "secure Session trace reached Failed"
@@ -966,7 +977,7 @@ try {
         $scenarioResult["host_authenticated"] = Test-DiscoveryBreadcrumb $hostDevice "handshake_authenticated"
         $scenarioResult["client_authenticated"] = Test-DiscoveryBreadcrumb $clientDevice "handshake_authenticated"
     }
-    if ($Scenario -ne "MediaStartupTrace" -and $pairing.expected_terminal -eq "client_reject") {
+    if ($Scenario -notin @("MediaStartupTrace", "InputSessionHold") -and $pairing.expected_terminal -eq "client_reject") {
         if (
             (Test-DiscoveryBreadcrumb $clientDevice "pairing_local_reject") -and
             (Test-DiscoveryBreadcrumb $hostDevice "pairing_remote_reject_received")
@@ -976,7 +987,7 @@ try {
         } else {
             $scenarioResult.reason = "client rejection was not observed by both peers"
         }
-    } elseif ($Scenario -ne "MediaStartupTrace" -and $pairing.expected_terminal -eq "host_reject") {
+    } elseif ($Scenario -notin @("MediaStartupTrace", "InputSessionHold") -and $pairing.expected_terminal -eq "host_reject") {
         if (
             (Test-DiscoveryBreadcrumb $hostDevice "pairing_local_reject") -and
             (Test-DiscoveryBreadcrumb $clientDevice "pairing_remote_reject_received")
@@ -986,22 +997,22 @@ try {
         } else {
             $scenarioResult.reason = "host rejection was not observed by both peers"
         }
-    } elseif ($Scenario -ne "MediaStartupTrace" -and $pairing.expected_terminal -like "retry_after_*") {
+    } elseif ($Scenario -notin @("MediaStartupTrace", "InputSessionHold") -and $pairing.expected_terminal -like "retry_after_*") {
         if ($pairing.retry_sas_equal -and $pairing.retry_sas_fresh) {
             $scenarioResult.result = "PASS"
             $scenarioResult.reason = "new matching SAS appeared after in-process recovery"
         } else {
             $scenarioResult.reason = "retry did not prove a fresh matching SAS"
         }
-    } elseif ($Scenario -ne "MediaStartupTrace" -and ($clientFailed -or $hostFailed)) {
+    } elseif ($Scenario -notin @("MediaStartupTrace", "InputSessionHold") -and ($clientFailed -or $hostFailed)) {
         $scenarioResult.reason = "pairing reached Failed"
     } elseif (
-        $Scenario -ne "MediaStartupTrace" -and
+        $Scenario -notin @("MediaStartupTrace", "InputSessionHold") -and
         $Scenario -in @("PairAccept", "PairAcceptCleanState", "ConfirmClientThenHost", "ConfirmHostThenClient", "ConfirmNearSimultaneous", "RoleReversal") -and
         (-not $scenarioResult.host_authenticated -or -not $scenarioResult.client_authenticated)
     ) {
         $scenarioResult.reason = "post-pair handshake did not authenticate both peers"
-    } elseif ($Scenario -ne "MediaStartupTrace") {
+    } elseif ($Scenario -notin @("MediaStartupTrace", "InputSessionHold")) {
         $scenarioResult.result = "PASS"
         $scenarioResult.reason = "no immediate failure"
     }
