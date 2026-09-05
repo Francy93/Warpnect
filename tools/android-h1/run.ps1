@@ -26,6 +26,7 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$CleanState,
+    [switch]$LeaveSessionRunning,
     [switch]$PulseHostDisplayAfterClientDecode,
     [ValidateRange(0, 60)]
     [int]$HoldMediaAfterFirstFrameSeconds = 0,
@@ -590,8 +591,33 @@ function Capture-DeviceEvidence {
 
 function Test-DiscoveryBreadcrumb {
     param([pscustomobject]$Device, [string]$Event)
-    $lines = & $script:Adb -s $Device.Serial logcat -d -v brief 2>&1 | ForEach-Object { $_.ToString() }
+    $lines = & $script:Adb -s $Device.Serial logcat -d -v brief -s WarpnectDiscovery:D 2>&1 | ForEach-Object { $_.ToString() }
     return @($lines | Where-Object { $_ -match "WarpnectDiscovery.*event=$([regex]::Escape($Event))(\s|$)" }).Count -gt 0
+}
+
+function Get-SessionStartFailure {
+    param([string]$LogText)
+    $failures = [regex]::Matches($LogText, 'WarpnectDiscovery[^\r\n]*event=session_start_failed reason=([A-Za-z0-9_]+)')
+    if ($failures.Count -gt 0) { return $failures[-1].Groups[1].Value }
+    return $null
+}
+
+function Get-MediaTraceOutcome {
+    param([string]$Scenario, [pscustomobject]$Media)
+    foreach ($peer in @("host", "client")) {
+        $reason = $Media."${peer}_start_error"
+        if ($reason) { return @{ result = "FAIL"; reason = "${peer} Session startup failed: $reason" } }
+    }
+    if ($Scenario -eq "InputSessionHold") {
+        if ($Media.host_media_started -and $Media.client_media_started -and $Media.client_first_frame_decoded) {
+            return @{ result = "PASS"; reason = "media startup ready for human input; reverse-input E2E NOT proven" }
+        }
+        return @{ result = "FAIL"; reason = "Session did not reach media readiness for human input" }
+    }
+    if ($Media.client_first_frame_rendered) {
+        return @{ result = "PASS"; reason = "first real remote frame rendered on Client" }
+    }
+    return @{ result = "FAIL"; reason = "first real remote frame was not rendered on Client" }
 }
 
 function Save-RedactedScreenshot {
@@ -846,6 +872,10 @@ function Invoke-MediaStartupTrace {
         $clientFirstAccessUnitSubmitted = Test-DiscoveryBreadcrumb $ClientDevice "first_video_access_unit_submitted_to_decoder"
         $clientFirstFrameDecoded = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_decoded"
         $clientFirstFrameRendered = Test-DiscoveryBreadcrumb $ClientDevice "first_frame_rendered"
+        $hostStartError = Get-SessionStartFailure (Invoke-AdbText $HostDevice.Serial @("logcat", "-d", "-v", "brief", "-s", "WarpnectDiscovery:D"))
+        $clientStartError = Get-SessionStartFailure (Invoke-AdbText $ClientDevice.Serial @("logcat", "-d", "-v", "brief", "-s", "WarpnectDiscovery:D"))
+        $clientStreaming = $false
+        if ($hostStartError -or $clientStartError) { break }
         $clientStreaming = (Find-UiNode $ClientDevice "Streaming") -ne $null
         if ($PulseHostDisplayAfterClientDecode -and $clientFirstFrameDecoded -and -not $hostDisplayPulseApplied) {
             # A reversible real display update distinguishes a static capture source from a stalled renderer.
@@ -862,7 +892,10 @@ function Invoke-MediaStartupTrace {
             $clientDecoderStarted -and
             $clientFirstAccessUnitSubmitted -and
             $clientFirstFrameDecoded
-        if ($decodedMediaReady -and $HoldMediaAfterFirstDecodeSeconds -gt 0) {
+        $mediaStarted =
+            (Test-DiscoveryBreadcrumb $HostDevice "media_start_accepted") -and
+                (Test-DiscoveryBreadcrumb $ClientDevice "media_start_accepted")
+        if ($decodedMediaReady -and $mediaStarted -and $HoldMediaAfterFirstDecodeSeconds -gt 0) {
             Start-Sleep -Seconds $HoldMediaAfterFirstDecodeSeconds
             break
         }
@@ -890,6 +923,8 @@ function Invoke-MediaStartupTrace {
         client_video_channel_ready = Test-DiscoveryBreadcrumb $ClientDevice "video_channel_ready"
         host_media_started = Test-DiscoveryBreadcrumb $HostDevice "media_start_accepted"
         client_media_started = Test-DiscoveryBreadcrumb $ClientDevice "media_start_accepted"
+        host_start_error = Get-SessionStartFailure (Invoke-AdbText $HostDevice.Serial @("logcat", "-d", "-v", "brief", "-s", "WarpnectDiscovery:D"))
+        client_start_error = Get-SessionStartFailure (Invoke-AdbText $ClientDevice.Serial @("logcat", "-d", "-v", "brief", "-s", "WarpnectDiscovery:D"))
         host_first_frame_encoded = $hostFirstFrameEncoded
         host_first_video_datagram_sent = $hostFirstVideoDatagramSent
         client_first_video_datagram_received = $clientFirstVideoDatagramReceived
@@ -950,16 +985,9 @@ try {
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated
         $scenarioResult["media"] = $media
-        if ($Scenario -eq "InputSessionHold" -and $media.client_first_frame_decoded) {
-            $scenarioResult.result = "PASS"
-            $scenarioResult.reason = "first real remote frame decoded; Session held for reverse input"
-        } elseif ($media.client_first_frame_rendered) {
-            $scenarioResult.result = "PASS"
-            $scenarioResult.reason = "first real remote frame rendered on Client"
-        } else {
-            $scenarioResult.result = "FAIL"
-            $scenarioResult.reason = "first real remote frame was not rendered on Client"
-        }
+        $outcome = Get-MediaTraceOutcome $Scenario $media
+        $scenarioResult.result = $outcome.result
+        $scenarioResult.reason = $outcome.reason
     } else {
         $pairing = Invoke-PairingScenario $hostDevice $clientDevice
         $scenarioResult["sas_equal"] = $pairing.sas_equal
@@ -969,7 +997,7 @@ try {
     $clientFailed = (Find-UiNode $clientDevice "Failed") -ne $null
     $hostFailed = (Find-UiNode $hostDevice "Failed") -ne $null
     if ($Scenario -in @("MediaStartupTrace", "InputSessionHold")) {
-        if ($clientFailed -or $hostFailed) {
+        if (($clientFailed -or $hostFailed) -and -not $media.host_start_error -and -not $media.client_start_error) {
             $scenarioResult.result = "FAIL"
             $scenarioResult.reason = "secure Session trace reached Failed"
         }
@@ -1023,7 +1051,9 @@ try {
     Capture-DeviceEvidence $hostDevice $scenarioDirectory
     Capture-DeviceEvidence $clientDevice $scenarioDirectory
     Write-RunText (Join-Path $scenarioDirectory "result.json") ($scenarioResult | ConvertTo-Json)
-    Stop-ScenarioSemantically $hostDevice $clientDevice
+    if (-not $LeaveSessionRunning) {
+        Stop-ScenarioSemantically $hostDevice $clientDevice
+    }
 }
 
 $scenarioResult | ConvertTo-Json

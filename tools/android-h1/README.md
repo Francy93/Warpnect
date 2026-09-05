@@ -40,3 +40,22 @@ For example:
 
 The device must already be awake and unlocked. The harness reports
 `DEVICE_LOCKED_OR_NOT_FOREGROUND` rather than attempting to bypass device security.
+
+## Human Reverse-Input Validation
+
+`InputSessionHold` checks media-start acceptance on both peers plus real Client decode, without
+requiring a timely legacy rendered-frame callback. `session_start_failed` overrides readiness even
+if a video frame was decoded before the failure. A scenario PASS means readiness only, never
+reverse-input E2E validation.
+
+```powershell
+.\tools\android-h1\run.ps1 -Scenario InputSessionHold -SkipBuild -SkipInstall `
+    -HoldMediaAfterFirstDecodeSeconds 120 -LeaveSessionRunning
+.\tools\android-h1\test-media-outcome.ps1
+```
+
+`-LeaveSessionRunning` explicitly skips final semantic teardown, including after failure, so the
+operator can inspect the state or prepare an owned target. The operator must subsequently stop or
+disconnect the intended pair. The normal default still tears down the scenario. The decode hold is
+bounded to 120 seconds; neither option generates a reverse-input event. The human touch and the
+complete protected delivery into the Host-owned target require separate evidence.
