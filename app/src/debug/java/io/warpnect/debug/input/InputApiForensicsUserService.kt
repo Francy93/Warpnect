@@ -23,8 +23,12 @@ class InputApiForensicsUserService : IInputApiForensicsService.Stub() {
 
     override fun inspect(): Bundle = api.inspect().apply {
         val production = productionResolver.resolve()
+        val diagnostics = productionResolver.resolutionDiagnostics()
         putBoolean("production_resolver_api_resolved", production.apiResolved)
         putString("production_resolver_last_error", production.lastError.name)
+        putString("production_resolver_backend", diagnostics.selectedBackend?.name ?: "NONE")
+        putString("production_resolver_modern_failure", diagnostics.modernFailure.name)
+        putString("production_resolver_legacy_failure", diagnostics.legacyFailure.name)
         putBoolean("production_resolver_async", production.asyncInjectionSupported)
         putBoolean("production_resolver_display_targeting", production.displayTargetingSupported)
         putInt(KEY_PID, Process.myPid())

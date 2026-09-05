@@ -7,6 +7,10 @@
             android:name=".debug.input.InputApiForensicsActivity"
             android:exported="true"
             android:noHistory="true" />
+        <activity
+            android:name=".debug.input.InputProductionValidationActivity"
+            android:exported="true"
+            android:noHistory="true" />
     </application>
 
 </manifest>

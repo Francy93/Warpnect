@@ -38,6 +38,7 @@ internal class ReflectivePrivilegedInputManagerApi(
 ) : PrivilegedInputManagerApi {
     private var resolved: ResolvedInputManagerApi? = null
     private var capabilities = PrivilegedInputManagerCapabilities()
+    private var diagnostics = InputManagerResolutionDiagnostics()
     private var resolutionAttempted = false
 
     override fun resolve(): PrivilegedInputManagerCapabilities {
@@ -48,7 +49,13 @@ internal class ReflectivePrivilegedInputManagerApi(
         val result = reflection.resolve()
         resolved = result.api
         capabilities = result.capabilities
+        diagnostics = result.diagnostics
         return capabilities
+    }
+
+    internal fun resolutionDiagnostics(): InputManagerResolutionDiagnostics {
+        resolve()
+        return diagnostics
     }
 
     override fun inject(
@@ -65,9 +72,7 @@ internal class ReflectivePrivilegedInputManagerApi(
         if (!api.displayTargetingSupported) {
             return InputInjectionServiceResult.DisplayTargetingUnsupported
         }
-        if (targetUid >= 0 && !api.targetUidInjectionSupported) {
-            return InputInjectionServiceResult.TargetUidUnsupported
-        }
+        targetUidUnsupportedResult(targetUid, api.targetUidInjectionSupported)?.let { return it }
         val modeValue = when (mode) {
             InputInjectionMode.AsyncLowLatency -> api.asyncMode
             InputInjectionMode.WaitForResultDiagnostics -> api.waitForResultMode
@@ -105,6 +110,13 @@ internal class ReflectivePrivilegedInputManagerApi(
     }
 }
 
+internal fun targetUidUnsupportedResult(
+    targetUid: Int,
+    targetUidInjectionSupported: Boolean,
+): InputInjectionServiceResult? = InputInjectionServiceResult.TargetUidUnsupported.takeIf {
+    targetUid >= 0 && !targetUidInjectionSupported
+}
+
 internal interface InputManagerReflection {
     fun resolve(): InputManagerReflectionResult
 }
@@ -112,9 +124,89 @@ internal interface InputManagerReflection {
 internal data class InputManagerReflectionResult(
     val api: ResolvedInputManagerApi?,
     val capabilities: PrivilegedInputManagerCapabilities,
+    val diagnostics: InputManagerResolutionDiagnostics = InputManagerResolutionDiagnostics(),
 )
 
+internal enum class PrivilegedInputManagerBackend {
+    ModernInputManagerGlobal,
+    LegacyInputManager,
+}
+
+internal enum class InputManagerResolutionFailure {
+    NotAttempted,
+    None,
+    ClassUnavailable,
+    MethodUnavailable,
+    InstanceUnavailable,
+    RequiredCapabilityUnavailable,
+    AccessDenied,
+    InvocationFailed,
+    Unknown,
+}
+
+internal data class InputManagerResolutionDiagnostics(
+    val selectedBackend: PrivilegedInputManagerBackend? = null,
+    val modernFailure: InputManagerResolutionFailure = InputManagerResolutionFailure.NotAttempted,
+    val legacyFailure: InputManagerResolutionFailure = InputManagerResolutionFailure.NotAttempted,
+)
+
+internal data class InputManagerBackendCandidate(
+    val backend: PrivilegedInputManagerBackend,
+    val api: ResolvedInputManagerApi?,
+    val capabilities: PrivilegedInputManagerCapabilities,
+    val failure: InputManagerResolutionFailure,
+)
+
+/** Selects one fully-qualified framework path during UserService cold-path setup. */
+internal class InputManagerBackendSelector {
+    fun resolve(
+        modern: InputManagerBackendCandidate,
+        legacy: () -> InputManagerBackendCandidate,
+    ): InputManagerReflectionResult {
+        if (modern.api != null && modern.capabilities.apiResolved) {
+            return selected(
+                candidate = modern,
+                modernFailure = InputManagerResolutionFailure.None,
+                legacyFailure = InputManagerResolutionFailure.NotAttempted,
+            )
+        }
+
+        val legacyCandidate = legacy()
+        if (legacyCandidate.api != null && legacyCandidate.capabilities.apiResolved) {
+            return selected(
+                candidate = legacyCandidate,
+                modernFailure = modern.failure,
+                legacyFailure = InputManagerResolutionFailure.None,
+            )
+        }
+
+        return InputManagerReflectionResult(
+            api = null,
+            capabilities = PrivilegedInputManagerCapabilities(),
+            diagnostics = InputManagerResolutionDiagnostics(
+                modernFailure = modern.failure,
+                legacyFailure = legacyCandidate.failure,
+            ),
+        )
+    }
+
+    private fun selected(
+        candidate: InputManagerBackendCandidate,
+        modernFailure: InputManagerResolutionFailure,
+        legacyFailure: InputManagerResolutionFailure,
+    ): InputManagerReflectionResult = InputManagerReflectionResult(
+        api = candidate.api,
+        capabilities = candidate.capabilities,
+        diagnostics = InputManagerResolutionDiagnostics(
+            selectedBackend = candidate.backend,
+            modernFailure = modernFailure,
+            legacyFailure = legacyFailure,
+        ),
+    )
+}
+
 internal data class ResolvedInputManagerApi(
+    val backend: PrivilegedInputManagerBackend,
     val instance: Any,
     val inject: Method,
     val injectWithTargetUid: Method?,
@@ -130,72 +222,115 @@ internal data class ResolvedInputManagerApi(
         get() = true
 }
 
+@Suppress("BlockedPrivateApi", "DiscouragedPrivateApi")
 internal class AndroidInputManagerReflection : InputManagerReflection {
+    private val selector = InputManagerBackendSelector()
+
     // The UserService resolves this hidden API under Shizuku/Sui identity during cold-path setup.
-    @Suppress("BlockedPrivateApi")
-    override fun resolve(): InputManagerReflectionResult = try {
-        val inputEventClass = Class.forName("android.view.InputEvent")
-        val globalClass = Class.forName("android.hardware.input.InputManagerGlobal")
-        val global = globalClass.getDeclaredMethod("getInstance").apply { isAccessible = true }
-            .invoke(null) ?: return unavailable()
-        val inject = globalClass.getDeclaredMethod(
-            "injectInputEvent",
-            inputEventClass,
-            Int::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
-        val injectWithTargetUid = runCatching {
-            globalClass.getDeclaredMethod(
+    override fun resolve(): InputManagerReflectionResult = selector.resolve(
+        modern = resolveCandidate(
+            backend = PrivilegedInputManagerBackend.ModernInputManagerGlobal,
+            providerClassName = "android.hardware.input.InputManagerGlobal",
+        ),
+        legacy = {
+            resolveCandidate(
+                backend = PrivilegedInputManagerBackend.LegacyInputManager,
+                providerClassName = "android.hardware.input.InputManager",
+            )
+        },
+    )
+
+    private fun resolveCandidate(
+        backend: PrivilegedInputManagerBackend,
+        providerClassName: String,
+    ): InputManagerBackendCandidate {
+        return try {
+            val inputEventClass = Class.forName("android.view.InputEvent")
+            val providerClass = Class.forName(providerClassName)
+            val instance = providerClass.getDeclaredMethod("getInstance").apply { isAccessible = true }
+                .invoke(null) ?: return unavailable(backend, InputManagerResolutionFailure.InstanceUnavailable)
+            val inject = providerClass.getDeclaredMethod(
                 "injectInputEvent",
                 inputEventClass,
                 Int::class.javaPrimitiveType,
+            ).apply { isAccessible = true }
+            val injectWithTargetUid = runCatching {
+                providerClass.getDeclaredMethod(
+                    "injectInputEvent",
+                    inputEventClass,
+                    Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+            }.getOrNull()
+            val displaySetter = inputEventClass.getDeclaredMethod(
+                "setDisplayId",
                 Int::class.javaPrimitiveType,
             ).apply { isAccessible = true }
-        }.getOrNull()
-        val displaySetter = inputEventClass.getDeclaredMethod(
-            "setDisplayId",
-            Int::class.javaPrimitiveType,
-        ).apply { isAccessible = true }
-        val actionButtonSetter = runCatching {
-            MotionEvent::class.java.getDeclaredMethod(
-                "setActionButton",
-                Int::class.javaPrimitiveType,
-            ).apply { isAccessible = true }
-        }.getOrNull()
-        val inputManagerClass = Class.forName("android.hardware.input.InputManager")
-        val asyncMode = staticInt(inputManagerClass, "INJECT_INPUT_EVENT_MODE_ASYNC")
-        val waitForResultMode = staticInt(inputManagerClass, "INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT")
-        val api = ResolvedInputManagerApi(
-            instance = global,
-            inject = inject,
-            injectWithTargetUid = injectWithTargetUid,
-            displayIdSetter = displaySetter,
-            motionActionButtonSetter = actionButtonSetter,
-            asyncMode = asyncMode,
-            waitForResultMode = waitForResultMode,
-        )
-        InputManagerReflectionResult(
-            api = api,
-            capabilities = PrivilegedInputManagerCapabilities(
-                apiResolved = true,
-                asyncInjectionSupported = asyncMode != null,
-                waitForResultSupported = waitForResultMode != null,
-                targetUidInjectionSupported = api.targetUidInjectionSupported,
-                displayTargetingSupported = api.displayTargetingSupported,
-                lastError = InputInjectionError.None,
-            ),
-        )
-    } catch (_: Throwable) {
-        unavailable()
+            val actionButtonSetter = runCatching {
+                MotionEvent::class.java.getDeclaredMethod(
+                    "setActionButton",
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+            }.getOrNull()
+            val inputManagerClass = Class.forName("android.hardware.input.InputManager")
+            val asyncMode = staticInt(inputManagerClass, "INJECT_INPUT_EVENT_MODE_ASYNC")
+            val waitForResultMode = staticInt(inputManagerClass, "INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT")
+            if (asyncMode == null || waitForResultMode == null || actionButtonSetter == null) {
+                return unavailable(backend, InputManagerResolutionFailure.RequiredCapabilityUnavailable)
+            }
+            val api = ResolvedInputManagerApi(
+                backend = backend,
+                instance = instance,
+                inject = inject,
+                injectWithTargetUid = injectWithTargetUid,
+                displayIdSetter = displaySetter,
+                motionActionButtonSetter = actionButtonSetter,
+                asyncMode = asyncMode,
+                waitForResultMode = waitForResultMode,
+            )
+            InputManagerBackendCandidate(
+                backend = backend,
+                api = api,
+                capabilities = PrivilegedInputManagerCapabilities(
+                    apiResolved = true,
+                    asyncInjectionSupported = true,
+                    waitForResultSupported = true,
+                    targetUidInjectionSupported = api.targetUidInjectionSupported,
+                    displayTargetingSupported = api.displayTargetingSupported,
+                    lastError = InputInjectionError.None,
+                ),
+                failure = InputManagerResolutionFailure.None,
+            )
+        } catch (throwable: Throwable) {
+            unavailable(backend, resolutionFailure(throwable))
+        }
     }
 
     private fun staticInt(type: Class<*>, fieldName: String): Int? = runCatching {
         type.getDeclaredField(fieldName).apply { isAccessible = true }.getInt(null)
     }.getOrNull()
 
-    private fun unavailable(): InputManagerReflectionResult = InputManagerReflectionResult(
+    private fun unavailable(
+        backend: PrivilegedInputManagerBackend,
+        failure: InputManagerResolutionFailure,
+    ): InputManagerBackendCandidate = InputManagerBackendCandidate(
+        backend = backend,
         api = null,
         capabilities = PrivilegedInputManagerCapabilities(),
+        failure = failure,
     )
+
+    private fun resolutionFailure(throwable: Throwable): InputManagerResolutionFailure = when (
+        unwrapInvocationFailure(throwable)
+    ) {
+        is ClassNotFoundException -> InputManagerResolutionFailure.ClassUnavailable
+        is NoSuchMethodException -> InputManagerResolutionFailure.MethodUnavailable
+        is IllegalAccessException,
+        is SecurityException,
+        -> InputManagerResolutionFailure.AccessDenied
+        is InvocationTargetException -> InputManagerResolutionFailure.InvocationFailed
+        else -> InputManagerResolutionFailure.Unknown
+    }
 }
 
 private fun unwrapInvocationFailure(throwable: Throwable): Throwable {

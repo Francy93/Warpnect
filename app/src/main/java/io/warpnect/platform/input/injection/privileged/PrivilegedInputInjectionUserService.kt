@@ -6,6 +6,8 @@ import android.os.SystemClock
 import android.system.ErrnoException
 import android.system.Os
 import android.system.OsConstants
+import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.input.injection.ANDROID_INVALID_UID
 import io.warpnect.input.injection.AndroidJoystickInjectionEvent
 import io.warpnect.input.injection.AndroidKeyInjectionEvent
@@ -36,6 +38,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
     private var tracker: InputInjectionStateTracker? = null
     private var state = InputInjectionState.Stopped
     private var lastError = InputInjectionError.None
+    private var backendDiagnosticLogged = false
 
     override fun getServiceVersion(): Int = PrivilegedInputInjectionContract.SERVICE_VERSION
 
@@ -266,6 +269,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
 
     private fun capabilitiesLocked(): InputInjectionCapabilities {
         val api = inputManager.resolve()
+        logResolvedBackendOnce()
         val usable = api.apiResolved && api.displayTargetingSupported
         val uhid = probeUhid()
         return InputInjectionCapabilities(
@@ -317,6 +321,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
 
     private fun snapshotLocked(): InputInjectionSnapshot {
         val api = inputManager.resolve()
+        logResolvedBackendOnce()
         val base = tracker?.snapshot(
             state = state,
             apiResolved = api.apiResolved,
@@ -337,7 +342,19 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
         return error.code
     }
 
+    private fun logResolvedBackendOnce() {
+        if (!BuildConfig.DEBUG || backendDiagnosticLogged) return
+        backendDiagnosticLogged = true
+        val diagnostics = inputManager.resolutionDiagnostics()
+        Log.d(
+            TAG,
+            "event=privileged_input_backend_resolved backend=${diagnostics.selectedBackend?.name ?: "NONE"} " +
+                "modern_failure=${diagnostics.modernFailure.name} legacy_failure=${diagnostics.legacyFailure.name}",
+        )
+    }
+
     private companion object {
+        const val TAG = "WarpnectPrivilegedInput"
         const val RESET_REASON_SESSION_STOP = 1
         const val MAX_RESET_REASON = 6
         const val UHID_DEVICE_PATH = "/dev/uhid"

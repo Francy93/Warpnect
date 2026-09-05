@@ -100,7 +100,7 @@ class InputApiForensicsActivity : Activity() {
         }
         val localPid = Process.myPid()
         val localUid = Process.myUid()
-        Log.i(TAG, "INPUT_FORENSICS_MAIN_READY pid=$localPid uid=$localUid display=${display?.displayId ?: 0}")
+        Log.i(TAG, "INPUT_FORENSICS_MAIN_READY pid=$localPid uid=$localUid display=${defaultDisplayId()}")
         val activeConnection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName, binder: IBinder) {
                 serviceConnected.set(true)
@@ -111,7 +111,7 @@ class InputApiForensicsActivity : Activity() {
                         Bundle().apply { putString("status", "INSPECT_REMOTE_FAILURE") }
                     }
                     logBundle("SERVICE_INSPECTION", inspection)
-                    val displayId = display?.displayId ?: 0
+                    val displayId = defaultDisplayId()
                     val key = runCatching { service.injectTestKey(displayId) }.getOrElse {
                         Bundle().apply { putString("status", "KEY_REMOTE_FAILURE") }
                     }
@@ -164,10 +164,14 @@ class InputApiForensicsActivity : Activity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun logBundle(name: String, bundle: Bundle) {
         val values = bundle.keySet().sorted().joinToString(" ") { key -> "$key=${bundle.get(key)}" }
         Log.i(TAG, "INPUT_FORENSICS_$name $values")
     }
+
+    @Suppress("DEPRECATION")
+    private fun defaultDisplayId(): Int = windowManager.defaultDisplay.displayId
 
     private companion object {
         const val SERVICE_VERSION = 1
