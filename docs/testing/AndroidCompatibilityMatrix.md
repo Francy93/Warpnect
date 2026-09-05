@@ -36,6 +36,27 @@ These are device/build observations, not support claims for all API 26, Exynos, 
 devices. The S7 was admitted because its own exact static and active qualification passed; the known
 software-family `OMX.google.h264.decoder` remains unavailable as a production fallback.
 
+## Privileged Input Compatibility Investigation
+
+Test-only investigation artifact: debug APK on branch `investigate/a41-privileged-input` from base
+`174b7047cd2725fd587601179991b624548c3b37` plus debug-only diagnostics, SHA-256
+`BABD7CC8C57020440065C6C3E2D9053F407B2E677EB95A30298E28031956A7C2`, 28,983,833 bytes, ABI
+set `arm64-v8a`, `armeabi-v7a`, `x86_64`, `minSdk 26`, `targetSdk 35`. The diagnostics bind a
+normal Shizuku UserService and inject only F1, touch, pointer-hover, and joystick-motion events into
+a foreground Warpnect-owned debug Activity. They do not exercise a Session, peer, or user application.
+
+| Device class | Android/API | Current production resolver | Legacy `InputManager` candidate | Local injection evidence | Investigation state |
+| --- | --- | --- | --- | --- | --- |
+| Samsung SM-S901B | Android 16 / API 36 | `InputManagerGlobal` resolved; current resolver available | Also resolved | Key, touch, pointer, and joystick accepted and observed | `INPUT_SUPPORTED_CURRENT_PATH` |
+| Aocwei X700_EEA tablet | Android 13 / API 33 | `InputManagerGlobal` class unavailable; current resolver reports `InputApiUnavailable` | Two- and three-argument injection overloads resolved | Key, touch, pointer, and joystick accepted and observed | `API_PATH_DISCOVERED`, `LOCAL_INJECTION_PROVEN` |
+| Samsung SM-A415F | Android 12 / API 31 | `InputManagerGlobal` class unavailable; current resolver reports `InputApiUnavailable` | Two-argument injection overload resolved; target-UID overload unavailable | Key, touch, pointer, and joystick accepted and observed | `API_PATH_DISCOVERED`, `LOCAL_INJECTION_PROVEN` |
+| Samsung SM-A415F | Android 11 / API 30 | `InputManagerGlobal` class unavailable; current resolver reports `InputApiUnavailable` | Two-argument injection overload resolved; target-UID overload unavailable | Key, touch, pointer, and joystick accepted and observed | `API_PATH_DISCOVERED`, `LOCAL_INJECTION_PROVEN` |
+
+Every tested UserService ran under shell UID 2000 after a successful Warpnect-side Shizuku permission
+check. The framework classes resolved from the boot class loader; this is an API-surface compatibility
+finding, not a Shizuku permission, Binder-service, SELinux, or device-model finding. No production
+compatibility adapter or reverse-input Session validation is represented by this section.
+
 ## RFC-002I Decoder Investigation (Historical)
 
 This is laboratory evidence retained from before RFC-002I implementation. At that time, the tested
