@@ -11,6 +11,10 @@
             android:name=".debug.input.InputProductionValidationActivity"
             android:exported="true"
             android:noHistory="true" />
+        <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
+        <activity
+            android:name=".debug.input.InputSessionTargetActivity"
+            android:exported="true" />
     </application>
 
 </manifest>

@@ -39,6 +39,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
     private var state = InputInjectionState.Stopped
     private var lastError = InputInjectionError.None
     private var backendDiagnosticLogged = false
+    private var injectionDiagnosticsRemaining = MAX_DEBUG_INJECTION_DIAGNOSTICS
 
     override fun getServiceVersion(): Int = PrivilegedInputInjectionContract.SERVICE_VERSION
 
@@ -134,7 +135,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
                 source, androidDeviceId, displayId,
             ),
         )
-    }
+    }.also { logInjectionResult("key", it) }
 
     override fun injectTouch(
         sourceEventTimeUs: Long,
@@ -177,7 +178,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
                 source, androidDeviceId, displayId,
             ),
         )
-    }
+    }.also { logInjectionResult("touch", it) }
 
     override fun injectPointer(
         sourceEventTimeUs: Long,
@@ -205,7 +206,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
                 androidDeviceId, displayId,
             ),
         )
-    }
+    }.also { logInjectionResult("pointer", it) }
 
     override fun injectJoystick(
         sourceEventTimeUs: Long,
@@ -229,7 +230,7 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
                 hatX, hatY, metaState, source, androidDeviceId, displayId,
             ),
         )
-    }
+    }.also { logInjectionResult("joystick", it) }
 
     override fun resetState(scope: Int, stateSlot: Int, reason: Int): Int = synchronized(lock) {
         if (state != InputInjectionState.Running) return@synchronized InputInjectionError.NotRunning.code
@@ -353,10 +354,21 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
         )
     }
 
+    private fun logInjectionResult(kind: String, resultCode: Int) {
+        if (!BuildConfig.DEBUG || injectionDiagnosticsRemaining <= 0) return
+        injectionDiagnosticsRemaining -= 1
+        val result = InputInjectionServiceResult.fromCode(resultCode).name
+        Log.d(
+            TAG,
+            "event=privileged_input_injected kind=$kind result=$result",
+        )
+    }
+
     private companion object {
         const val TAG = "WarpnectPrivilegedInput"
         const val RESET_REASON_SESSION_STOP = 1
         const val MAX_RESET_REASON = 6
+        const val MAX_DEBUG_INJECTION_DIAGNOSTICS = 12
         const val UHID_DEVICE_PATH = "/dev/uhid"
     }
 }
