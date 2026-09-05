@@ -52,10 +52,10 @@ which contains vendor codec failure without terminating Warpnect. Final same-UID
 passed on two API 36 S22 devices plus tested API 30 and API 31 A41 devices. A41
 `InputApiUnavailable` remains a separate Phase 4 privileged Input compatibility issue.
 
-RFC-002I is a proposed supplemental Client decoder-qualification design for legacy Android where
-framework hardware classification is unavailable. Its full-envelope calibration is complete, but it
-has no production eligibility change yet and does not alter RFC-002D, RFC-002B, or the completed H1
-validation.
+RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
+hardware classification is unavailable. It uses conservative static inspection plus a contained,
+same-UID active decoder qualification only for unknown legacy candidates. It does not alter RFC-002D,
+RFC-002B, or the completed H1 validation.
 
 ## Phase 3 - Audio Pipeline
 

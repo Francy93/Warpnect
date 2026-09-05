@@ -2,15 +2,15 @@
 
 Project: Warpnect
 
-Status: Accepted. Implementation must preserve the calibrated qualification semantics without changing current protocol contracts, reopening H1, or modifying RFC-002B.
+Status: Implemented. Production integration preserves the calibrated qualification semantics without changing current protocol contracts, reopening H1, or modifying RFC-002B.
 
 Baseline: Architecture Version 1.0, SCL Protocol Version 1, Native Bridge ABI Version 1.
 
 ## Context and Problem
 
-RFC-002D requires a hardware AVC decoder for Client video. Android API 29 and later exposes framework hardware/software classification through `MediaCodecInfo`; API 26-28 does not. The current `AndroidVideoDecoderDiscovery` therefore assigns every candidate on those releases `Unknown`. `VideoDecoderSelector` returns `HardwareClassificationUnavailable` before it evaluates hardware, size, and rate selection.
+RFC-002D requires a hardware AVC decoder for Client video. Android API 29 and later exposes framework hardware/software classification through `MediaCodecInfo`; API 26-28 does not. Before RFC-002I, `AndroidVideoDecoderDiscovery` assigned every API 26-28 candidate `Unknown`, and `VideoDecoderSelector` returned `HardwareClassificationUnavailable` before Client video could be advertised.
 
-That behavior is conservative, but the absence of framework metadata is not proof that a decoder is software-only or inadequate. Conversely, a vendor-style name and static format support do not prove real-time performance. Warpnect needs a device-agnostic way to admit an unknown legacy decoder only after it demonstrates the exact required Client workload.
+The absence of framework metadata is not proof that a decoder is software-only or inadequate. Conversely, a vendor-style name and static format support do not prove real-time performance. RFC-002I implements a device-agnostic way to admit an unknown legacy decoder only after it demonstrates the exact required Client workload.
 
 ## Goals
 
@@ -25,7 +25,7 @@ That behavior is conservative, but the absence of framework metadata is not proo
 
 - No device allowlist, Galaxy-S7 exception, or API-26 unconditional allow.
 - No silent software fallback, 60-to-30 fps downgrade, or reduced resolution.
-- No production implementation in this RFC.
+- No adaptive profile, performance-policy, or Host-compatibility expansion beyond the accepted Client qualification design.
 - No change to RFC-002B encoder semantics, capture, Shizuku, privileged Input, H1, MediaProjection, root, or Phase 7 latency work.
 - No online hardware database as runtime authority.
 
@@ -33,18 +33,19 @@ That behavior is conservative, but the absence of framework metadata is not proo
 
 ~~~text
 Client eligibility
-        -> AVC decoder discovery
-        -> framework hardware classification
-        -> VideoDecoderSelector
+        -> AVC decoder discovery and exact static checks
+        -> framework classification when available
+        -> legacy software-family exclusion when unavailable
+        -> bounded active qualification for an unknown legacy candidate
         -> local video capability
-        -> WNCP
+        -> existing WNCP video availability
 ~~~
 
 `AndroidVideoDecoderDiscovery` enumerates regular AVC decoders and checks dimensions plus `areSizeAndRateSupported(1280, 720, 60)`. `AndroidLocalCapabilityCollector` makes Client video ready only when decoder discovery succeeds. It does not use capture or Input injection to make that Client decision. Encoder discovery may appear in a Client diagnostic snapshot, but Host encoder availability is not the Client video-ready predicate. Shizuku and privileged capture are also outside the Client decoder decision.
 
 ## Legacy Classification Comparison
 
-Warpnect currently treats all API 26-28 AVC candidates as `Unknown` and rejects when no framework-classified candidate exists. Media3 treats API 29 framework classification as authoritative where it is available, and uses codec-name heuristics on earlier Android versions to identify well-known software families. Its legacy result is an approximation, not a platform guarantee.
+Before RFC-002I, Warpnect rejected API 26-28 AVC candidates when framework classification was unavailable. Media3 treats API 29 framework classification as authoritative where it is available, and uses codec-name heuristics on earlier Android versions to identify well-known software families. Its legacy result is an approximation, not a platform guarantee.
 
 RFC-002I adopts only the conservative part of that model: a known software-family result may prevent a candidate from consuming an active qualification attempt. A non-software-family name is not a positive hardware classification and can advance only to the exact static checks followed by active qualification. This avoids both assumptions that `Unknown` means software and that a vendor-style name proves real-time offload.
 
@@ -58,10 +59,10 @@ Hardware observations apply only to the tested device/build combination. They ar
 | --- | --- | --- | --- | --- |
 | Samsung SM-S901B | Android 16 / API 36 | `c2.exynos.h264.decoder` | `hardware=true`, `software=false`, `vendor=true` | Reference Host; H1 real rendered-frame validation complete |
 | Samsung SM-G960F | Android 10 / API 29 | `OMX.Exynos.avc.dec` | `hardware=true`, `software=false`, `vendor=true` | S22 Host to S9 Client reached first real rendered frame |
-| Samsung SM-G935F | Android 8.0 / API 26 | `OMX.Exynos.avc.dec` | Framework metadata unavailable | Current Client policy rejects before WNSN with `HardwareClassificationUnavailable` |
-| Aocwei X700_EEA | Android 13 / API 33 | Production Client decoder | Framework metadata available | S22 Host to tablet Client reached first real rendered frame |
+| Samsung SM-G935F | Android 8.0 / API 26 | `OMX.Exynos.avc.dec` | Framework metadata unavailable | Final same-UID active qualification PASS; S22 Host to S7 Client reached first real rendered frame |
+| Aocwei X700_EEA | Android 13 / API 33 | `c2.mtk.avc.decoder` | Framework metadata available | S22 Host to tablet Client reached first real rendered frame and a post-recreation remote frame on a new Surface generation |
 
-The physical S7 reports `OMX.Exynos.avc.dec`, `OMX.google.h264.decoder`, and `OMX.SEC.avc.sw.dec`. The Exynos candidate reports 32..3840 by 32..2160, 2x2 alignment, and 1280x720 at 60 fps support. The Google and SEC software candidates match known software-style naming families. That name evidence is only a conservative filter for a future active probe; it does not prove hardware identity.
+The physical S7 reports `OMX.Exynos.avc.dec`, `OMX.google.h264.decoder`, and `OMX.SEC.avc.sw.dec`. The Exynos candidate reports 32..3840 by 32..2160, 2x2 alignment, and 1280x720 at 60 fps support. The Google and SEC software candidates match known software-style naming families. That name evidence is only a conservative filter before active qualification; it does not prove hardware identity.
 
 ### Full-Envelope Decoder Calibration
 
@@ -73,8 +74,10 @@ Calibration used the byte-identical `rfc002i-avc-720p60-full-v2` fixture generat
 API 36 S22 using the current production `AndroidVideoEncoderFormatFactory` request. Its
 deterministic screen-like grid, moving diagnostic panel, and controlled transitions prevent CBR
 from collapsing to a solid-color stream without treating unconstrained random noise as
-representative content. It uses no capture, network, or pixel readback. The fixture is an
-experimental calibration artifact, not a tracked production asset.
+representative content. It uses no capture, network, or pixel readback. The fixture is a tracked,
+read-only production asset
+`app/src/main/assets/video/rfc002i-avc-720p60-full-v2.fixture`; the qualifier verifies its digest
+before decoding it.
 
 | Property | Measured value |
 | --- | --- |
@@ -116,13 +119,12 @@ safely on the S7.
 
 The API 33 tablet rendered a real remote S22 stream in portrait and landscape. Both traces reached the production first-rendered-frame event. A bounded rotation during streaming did not fail the Session. The tablet now also has Shizuku Input permission, but that is unrelated to Client decoder qualification and does not change this evidence.
 
-`AndroidVideoRenderController` already increments a local `surfaceGeneration`, stops the decoder on
-target destruction, awaits a keyframe, and re-prepares it for the new target. `MediaCodec` provides
-an `OnFrameRenderedListener`. Existing DEBUG events, however, report only the first renderer target
-and first rendered frame, without carrying a surface generation. They cannot prove that a frame was
-presented after recreation. RFC-002I-F must add a local-only test observer which correlates
-`destroyed generation N -> available generation N+1 -> decoder frame-rendered after rebinding`;
-this changes neither wire data nor renderer ownership.
+`AndroidVideoRenderController` increments a local `surfaceGeneration`, stops the decoder on target
+destruction, awaits a keyframe, and re-prepares it for the new target. RFC-002I-F added a local-only
+observer that correlates `destroyed generation N -> available generation N+1 -> decoder prepared ->
+remote frame rendered`. On the final build the tablet produced that sequence from generation 1 to
+generation 2 after a real background/foreground Surface lifecycle transition. This changed neither
+wire data nor renderer ownership.
 
 The tablet's newly granted Shizuku Input permission is not Client-decoder evidence. A later bounded tablet-Host attempt still reported `ShizukuPermissionRequired` during local Host capability collection, before media startup. Tablet-to-S22 reverse-role validation therefore remains inconclusive and outside this RFC: the result is an Input/privilege-provider environment boundary, not decoder, capture, or renderer evidence.
 
@@ -133,9 +135,9 @@ The tablet's newly granted Shizuku Input permission is not Client-decoder eviden
 | Client | Security/session support, protected receive, qualified AVC decoder, render Surface | Local capture, local encoder, privileged Input injection, Shizuku |
 | Host | Existing RFC-002B encoder policy, qualified capture backend, existing Session/feature requirements | Client decoder qualification alone |
 
-A future UI may expose Client and Host availability separately. A device that qualifies as a Client but lacks Host prerequisites must not be described as wholly unsupported.
+The local UI exposes Client and Host availability separately. A device that qualifies as a Client but lacks Host prerequisites is not described as wholly unsupported.
 
-## Proposed Qualification Design
+## Implemented Qualification Design
 
 ### Modern Android
 
@@ -233,13 +235,19 @@ to requalify. Persistent negative or inconclusive results never form a vendor/mo
 
 The qualifier is local-only. It must not transmit or persist video, use a screen capture, collect screen content, record media, expose device identity to peers, alter pairing, or alter Session keys/SAS. It may emit only bounded structural diagnostics and typed results.
 
-The future UI should present Client and Host availability independently without raw codec exceptions or build identities.
+The local UI presents Client and Host availability independently without raw codec exceptions or build identities.
 
 ## Testing and Hardware Validation
 
-Implementation requires focused tests for modern positive classification, classified software rejection, legacy software-family rejection, active pass/fail/timeout/process-death containment, cache/quarantine, no Shizuku involvement, unchanged live decoder ownership, role separation, and no runtime silent decoder fallback.
+Focused tests cover modern positive classification, classified software rejection, legacy software-family rejection, active pass/fail/timeout/process-death containment, cache/quarantine, no Shizuku involvement, unchanged live decoder ownership, role separation, and no runtime silent decoder fallback.
 
-Hardware validation must include the S22 reference, API 29 S9, API 26 S7, and another legacy/non-Samsung device where available. A future S7 production admission must demonstrate a real remote rendered frame using the same final APK. Tablet validation must include explicit post-Surface-recreation presentation evidence.
+Hardware validation used the final APK `E49F01173420238D4C0B49236A45EE539D98CF12B7A245C9E374AF3E3231B31C` from implementation commit `3dce8cca8e9d9717386524d0d2a727485834635d`.
+
+- On the API 26 S7, a cold probe ran in a distinct same-UID `:decoderProbe` process and passed with 360 inputs, 360 outputs, 358 Surface presentations, 12 ms maximum input wait, 35 ms maximum output gap, 37 ms maximum Surface gap, and EOS in 6,016 ms. The main app remained alive. A same-main-process query and a post-restart query both used the exact-key PASS cache without another probe process.
+- The same S7 then completed the production S22 Host to S7 Client path through protected receive, decoder output, and `FIRST_REAL_RENDERED_FRAME_ON_CLIENT`. It used no software fallback or profile reduction.
+- The API 29 S9 completed the same final-APK S22 Host Client trace through real remote rendering. Its framework hardware path did not launch `:decoderProbe`.
+- The API 36 S22 physical codec inventory completed against the V1 Client profile without launching `:decoderProbe`; it retains framework hardware classification.
+- The API 33 tablet completed real remote rendering and then, after an actual Surface lifecycle transition, recorded generation 1 destroyed, generation 2 available and decoder-prepared, followed by a remote access unit, decode output, and remote frame presentation on generation 2.
 
 ## Rejected Approaches
 
@@ -263,10 +271,10 @@ This design uses the existing local video-available result and WNCP capability r
   and S9 references. They are qualification guards, not one-way or end-to-end latency claims.
 - Decoder qualification uses the dedicated same-UID `:decoderProbe` process.
 - Post-Surface-recreation proof is a local surface-generation correlation ending in a new decoder
-  frame-rendered callback. Its observer is RFC-002I-F implementation/validation work, not a protocol
-  change.
+  frame-rendered callback. RFC-002I-F implemented and hardware-validated that observer without a
+  protocol change.
 
-## Proposed Implementation Sequence
+## Implemented Sequence
 
 1. **002I-A:** local typed qualification state model and preserved role mapping.
 2. **002I-B:** conservative legacy inspection and exact decoder profile checks.
@@ -275,6 +283,6 @@ This design uses the existing local video-available result and WNCP capability r
 5. **002I-E:** role-aware Client eligibility and local UI semantics.
 6. **002I-F:** focused and hardware validation, including real remote S7 rendering.
 
-## Acceptance Criteria
+## Completion Criteria
 
-RFC-002I may be accepted only after its full-envelope fixture, objective qualification thresholds, and same-UID containment boundary are defined from representative baseline evidence. It may be implemented only after focused tests and hardware validation demonstrate a real remote rendered frame on a qualified legacy Client, without a software fallback or quality reduction.
+The full-envelope fixture, objective qualification thresholds, and same-UID containment boundary were calibrated before acceptance. Focused tests and final exact-artifact hardware validation then demonstrated a real remote rendered frame on the qualified legacy Client, no software fallback, no quality reduction, modern-path preservation, and post-Surface-recreation presentation. RFC-002I is implemented for the tested device/build environments.
