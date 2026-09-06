@@ -57,6 +57,22 @@ The local fixture is a bounded debug-only composition control and is not substit
 remote Session result. Android screenshots were used only for layout/composition inspection; the S7
 remote result above includes explicit human visual confirmation.
 
+## Host Full-Display Capture Scope
+
+On A41 Android 12/API 31, the legacy privileged capture backend selected the physical logical display
+with `source_display_id=0` and `layer_stack=0`, mirrored it into the app-owned encoder Surface, and
+remained active after the Warpnect Activity left foreground. In one protected A41 Host-to-S7 Client
+Session, the Client visibly followed the Host through Warpnect, Android Home, Settings, and the
+notification shade. The user directly confirmed the Settings presentation on the S7.
+
+| Host | Client | Capture backend | Verified display states | Current classification |
+| --- | --- | --- | --- | --- |
+| Samsung SM-A415F, Android 12 / API 31 | Samsung SM-G935F, Android 8.0 / API 26 | `SurfaceControlDisplayCaptureApi`, legacy privileged display mirror | Warpnect, Home, Settings, notification shade | `HOST_FULL_DISPLAY_CAPTURE_VALIDATED` |
+
+This is display-scope evidence for the tested device/runtime, not a claim that secure or protected Android
+content is capturable. The separate observations about growing streaming latency and remote traces blocked
+before video on the S9/tablet remain open.
+
 ## Privileged Input Compatibility Investigation
 
 Test-only investigation artifact: debug APK on branch `investigate/a41-privileged-input` from base

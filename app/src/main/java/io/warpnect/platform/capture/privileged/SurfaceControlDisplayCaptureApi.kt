@@ -61,6 +61,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         val secure = qualified.secure ?: return remember(qualified.error)
         val displayInfo = api.queryDisplayInfo(request.sourceDisplayId)
             ?: return remember(CaptureError.SourceDisplayNotFound)
+        CaptureBridgeDebugLog.legacyDisplayTarget(displayInfo, request)
 
         val token = try {
             api.createDisplay.invoke(null, DISPLAY_NAME, secure) as? IBinder
@@ -80,6 +81,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
             stopCapture()
             return remember(configured)
         }
+        CaptureBridgeDebugLog.legacyDisplayConfigured()
         return remember(CaptureError.None)
     }
 
@@ -115,6 +117,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         activeRequest = null
         activeDisplayInfo = null
         startedAtMonotonicUs = null
+        CaptureBridgeDebugLog.legacyDisplayStopping()
         return if (api == null) {
             remember(CaptureError.None)
         } else {
@@ -553,6 +556,17 @@ private object CaptureBridgeDebugLog {
         log("event=capture_hidden_api_missing component=$component reason=$reason")
 
     fun legacySecureModeQualified(secure: Boolean) = log("event=capture_legacy_secure_mode_qualified secure=$secure")
+
+    fun legacyDisplayTarget(displayInfo: CaptureDisplayInfo, request: CaptureRequest) = log(
+        "event=capture_legacy_display_target source_display_id=${displayInfo.displayId} " +
+            "layer_stack=${displayInfo.layerStack} source=${displayInfo.logicalWidth}x${displayInfo.logicalHeight} " +
+            "rotation=${displayInfo.rotation} target=${request.outputWidth}x${request.outputHeight} " +
+            "follow_rotation=${request.followSourceRotation}",
+    )
+
+    fun legacyDisplayConfigured() = log("event=capture_legacy_display_configured")
+
+    fun legacyDisplayStopping() = log("event=capture_legacy_display_stopping")
 
     fun startFailed(reason: CaptureError, detail: CaptureBridgeResolutionFailure?) {
         val message = buildString {

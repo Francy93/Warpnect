@@ -79,9 +79,12 @@ Samsung Clients, decoded buffers were behind the opaque Compose window buffer. T
 uses `setZOrderOnTop(true)`. A real A41 API 31 Host-to-S7 API 26 Client Session is human-confirmed
 visible after the fix. S9 API 29 and tablet API 33 both visibly present the same local MediaCodec
 fixture, but their current A41-hosted remote traces remain separately blocked before video by capability
-negotiation and authentication respectively. The following separate observations remain unclassified
-and require focused evidence before any design change: Host capture appeared limited to Warpnect while
-foreground (with the notification shade also visible), and user-observed session latency grew over time.
+negotiation and authentication respectively. A follow-up A41 API 31-to-S7 capture-scope trace selected
+the physical logical display (`source_display_id=0`, `layer_stack=0`) and remained active while the Host
+left Warpnect. Home, Settings, and the notification shade were each visible on the S7; the user confirmed
+the Settings view directly. `HOST FULL-DISPLAY CAPTURE VALIDATED` therefore closes the app-window capture
+concern. Growing streaming latency remains a separate observation requiring focused evidence before any
+design change.
 
 ## Phase 3 - Audio Pipeline
 
