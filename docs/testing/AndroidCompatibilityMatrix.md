@@ -101,6 +101,11 @@ channel readiness, and media start without `SystemAudioStartFailed`. This remove
 proof must correlate a human Client touch with Input Payload receipt, legacy adapter injection, and an
 event observed by the Warpnect-owned Host target.
 
+The API 33 tablet control did not reproduce the A41 permission boundary: final capability publication
+remained available and AudioPolicy preparation reached `createAudioRecordSink`, which then returned
+`AudioRecordCreationFailed`. That independent source-start condition was not negotiated into a tablet
+Session and is outside the A41 Input compatibility correction.
+
 Earlier startup retries included one clean-state pairing attempt on the API 30 Host and S7 Client;
 pairing was re-established normally and the API 30 recording permission was restored. The final
 post-helper-reset comparisons did not clear application data. Test applications were stopped after
