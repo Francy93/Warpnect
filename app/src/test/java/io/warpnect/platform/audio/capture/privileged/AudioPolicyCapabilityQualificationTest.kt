@@ -8,7 +8,7 @@ import org.junit.Test
 
 class AudioPolicyCapabilityQualificationTest {
     @Test
-    fun requiresRoutingPermissionWhenNoProjectionAuthorizationExists() {
+    fun requiresTheAudioPolicyCallersRoutingPermissionWhenNoProjectionAuthorizationExists() {
         val qualification = AudioPolicyCapabilityQualification(
             contextAvailable = true,
             hiddenApiAvailable = true,

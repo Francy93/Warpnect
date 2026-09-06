@@ -31,7 +31,7 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
         val qualification = AudioPolicyCapabilityQualification(
             contextAvailable = context != null,
             hiddenApiAvailable = hiddenAudioPolicyClassesAvailable(),
-            routingPermissionGranted = context?.hasModifyAudioRoutingPermission() == true,
+            routingPermissionGranted = context?.hasSelfModifyAudioRoutingPermission() == true,
         )
         val available = qualification.isAvailable
         return AudioCaptureCapabilities(
@@ -262,9 +262,12 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
         null
     }
 
-    private fun Context.hasModifyAudioRoutingPermission(): Boolean =
-        packageManager.checkPermission(MODIFY_AUDIO_ROUTING_PERMISSION, packageName) ==
-            PackageManager.PERMISSION_GRANTED
+    /**
+     * AudioService authorizes registerAudioPolicy against the Binder caller, not the package
+     * attributed by this context. The Shizuku UserService must therefore check its own UID.
+     */
+    private fun Context.hasSelfModifyAudioRoutingPermission(): Boolean =
+        checkSelfPermission(MODIFY_AUDIO_ROUTING_PERMISSION) == PackageManager.PERMISSION_GRANTED
 
     private fun outputChannelMask(channelCount: Int): Int = when (channelCount) {
         1 -> AudioFormat.CHANNEL_OUT_MONO
