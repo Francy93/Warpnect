@@ -55,11 +55,14 @@ the previous resolver assumed `InputManagerGlobal`, which is absent on tested AP
 33 hardware. The production resolver now retains the modern adapter and falls back through capability
 qualification to the legacy `InputManager` adapter. Local production injection of key, touch, pointer,
 and joystick events passed on API 30, API 31, and API 33 under the Shizuku shell UserService.
-End-to-end A41 reverse-input evidence remains incomplete: the completion pass reproduced
-`SystemAudioStartFailed` on both API 30 and API 31 Hosts before a human Input event could be validated.
-Both local production Input paths were reconfirmed after a bounded helper reset. Early Client video
-decode does not establish Input readiness after Host startup has failed. The audio boundary requires
-a separate investigation; it was not changed to force Input validation.
+The SystemAudio startup investigation found a capability false positive rather than an Input defect.
+`AudioService` authorizes AudioPolicy registration against the Shizuku UserService Binder caller (shell
+UID 2000), which does not hold `MODIFY_AUDIO_ROUTING`; the prior package-attributed check advertised a
+channel that could not start. Capability qualification now checks the UserService's own permission, so
+SystemAudio is omitted before setup when that caller cannot register its AudioPolicy. Post-correction
+API 30 and API 31 A41 Host-to-S7 Sessions authenticated, committed setup, and started media without
+`SystemAudioStartFailed`. Reverse-input E2E remains unproven: no Client-originated Input event has yet
+been correlated through the protected Session to a Host target.
 The new resolver's physical API 36 regression is recorded as `DEFERRED_S22_API36_INPUT_REGRESSION`.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework

@@ -68,8 +68,8 @@ ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
 
 | Device class | Android/API | Production backend result | Local production validation | End-to-end reverse input | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Authentication, capability negotiation, WNSN, protected video receive and first S7 decode observed; Host startup stopped at `SystemAudioStartFailed` | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E blocked before human input |
-| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | S7 and tablet Client attempts reached WNSN/media startup; Host returned `SystemAudioStartFailed`; first S7 decode was observed in one attempt | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E blocked before human input |
+| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Post-audio-correction S7 Client Session authenticated, completed setup, and started media with SystemAudio unadvertised/unselected; no correlated Client-originated Input event | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E unproven |
+| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Post-audio-correction S7 Client Session authenticated, completed setup, and started media with SystemAudio unadvertised/unselected; no correlated Client-originated Input event | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E unproven |
 | Aocwei X700_EEA tablet | Android 13 / API 33 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS` |
 | Samsung SM-G935F | Android 8.0 / API 26 | Not resolved because Shizuku was not running | Not run | Not run | `API26_LEGACY_INPUT_INCONCLUSIVE_SHIZUKU_UNAVAILABLE` |
 | Samsung SM-S901B | Android 16 / API 36 | Historical `InputManagerGlobal` success | New resolver physical regression not yet run | Deferred while the S22 is unavailable | `DEFERRED_S22_API36_INPUT_REGRESSION` |
@@ -81,13 +81,25 @@ new modern-preferred resolver.
 The 2026-09-05 completion pass reused the exact APK above, including verification of installed
 `base.apk` digests on all four attached devices. A bounded cleanup of residual Warpnect-owned shell
 helpers left both Shizuku servers running; both A41 local production targets then observed key=1,
-touch=1, pointer=2, joystick=1, with `SubmittedAsync` results and helper UID 2000. This did not remove
-the Session audio-start failure. Both tablet fallback attempts also produced Host-side committed
-setup followed by `SystemAudioStartFailed`; the harness did not establish both authentication
-breadcrumbs on those tablet runs, so they are not complete two-peer Session proofs. The S7 runs
-did establish both authentication and setup progression. The current first blocker is
-`A41_INPUT_E2E_BLOCKED_BY_SYSTEM_AUDIO_STARTUP`. No human reverse-input event was requested or
-substituted by local injection. The resolver and audio runtime were not modified.
+touch=1, pointer=2, joystick=1, with `SubmittedAsync` results and helper UID 2000.
+
+### SystemAudio Startup Correction
+
+The SystemAudio production capability probe previously checked `MODIFY_AUDIO_ROUTING` against the
+package attribution of the current context. On both tested A41s, the actual AudioPolicy registration
+was made by the Shizuku UserService as shell UID 2000 and AudioService rejected it before AudioRecord
+creation. The production capability check now uses the UserService's own permission (`checkSelfPermission`),
+which conservatively reports SystemAudio unavailable when registration would be denied. It does not
+change Audio payload, channel, Session, or Input semantics; a committed SystemAudio channel still fails
+the Session if its source later cannot start.
+
+Debug APK built from `fa466f0b510e782ad80a33b666e0eba579e1bf30`, SHA-256
+`9EE0A01950C7EA30AB8B44635E88762C875AEFAC473448AC74613343D6ACB4EF`, 28,920,859 bytes, was installed
+on both A41s. Each A41 Host-to-S7 Client Session then reached authentication, committed setup, video
+channel readiness, and media start without `SystemAudioStartFailed`. This removes
+`A41_INPUT_E2E_BLOCKED_BY_SYSTEM_AUDIO_STARTUP`; it does not prove remote reverse input. The next Input
+proof must correlate a human Client touch with Input Payload receipt, legacy adapter injection, and an
+event observed by the Warpnect-owned Host target.
 
 Earlier startup retries included one clean-state pairing attempt on the API 30 Host and S7 Client;
 pairing was re-established normally and the API 30 recording permission was restored. The final
