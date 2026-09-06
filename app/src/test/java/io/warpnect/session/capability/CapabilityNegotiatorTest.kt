@@ -50,6 +50,34 @@ class CapabilityNegotiatorTest {
     }
 
     @Test
+    fun productionPolicySelectsTouchscreenOnlyWhenBothPeersSupportIt() {
+        val request = request(preferredInput = CapabilityBits.INPUT_TOUCHSCREEN)
+        val policy = HostCapabilityPolicy(
+            allowedInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
+                CapabilityBits.INPUT_TOUCHSCREEN,
+        )
+
+        val selected = CapabilityNegotiator.negotiate(client(), request, host(), policy)
+        assertTrue(selected.isSuccess)
+        assertEquals(
+            CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or CapabilityBits.INPUT_TOUCHSCREEN,
+            requireNotNull(selected.profile).inputKinds,
+        )
+
+        val hostWithoutTouch = host().copy(
+            input = host().input.copy(
+                injectionKinds = host().input.injectionKinds and CapabilityBits.INPUT_TOUCHSCREEN.inv(),
+            ),
+        )
+        val omitted = CapabilityNegotiator.negotiate(client(), request, hostWithoutTouch, policy)
+        assertTrue(omitted.isSuccess)
+        assertEquals(
+            CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
+            requireNotNull(omitted.profile).inputKinds,
+        )
+    }
+
+    @Test
     fun directDiscoveryCannotOverclaimADataPath() {
         val host = host().copy(paths = PathCapabilities(CapabilityBits.PATH_LAN, CapabilityBits.PATH_LAN, 1, 0))
         val client = client().copy(
@@ -225,10 +253,11 @@ class CapabilityNegotiatorTest {
         microphoneFallback: MicrophoneRoutingSelection = MicrophoneRoutingSelection.NotApplicable,
         videoLowLatency: FeatureRequirement = FeatureRequirement.Preferred,
         requiredInput: Int = CapabilityBits.INPUT_KEYBOARD,
+        preferredInput: Int = CapabilityBits.INPUT_MOUSE,
         stableRequired: Int = 0,
         distinctGamepad: FeatureRequirement = FeatureRequirement.Disabled,
     ) = CapabilityNegotiationCodecTest.request(
         required, preferred, disabled, microphonePrimary, microphoneFallback, requiredInput,
-        CapabilityBits.INPUT_MOUSE, stableRequired, 0, videoLowLatency, distinctGamepad,
+        preferredInput, stableRequired, 0, videoLowLatency, distinctGamepad,
     )
 }

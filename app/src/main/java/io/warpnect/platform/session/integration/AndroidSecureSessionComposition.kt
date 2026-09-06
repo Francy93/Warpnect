@@ -936,7 +936,7 @@ class AndroidSecureSessionComposition private constructor(
             preferredChannels = CapabilityBits.CHANNEL_SYSTEM_AUDIO,
             disabledChannels = CapabilityBits.CHANNEL_MICROPHONE_AUDIO or CapabilityBits.CHANNEL_TELEMETRY,
             requiredInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
-            preferredInputKinds = 0,
+            preferredInputKinds = CapabilityBits.INPUT_TOUCHSCREEN,
             microphonePolicyPrimary = MicrophoneRoutingSelection.NotApplicable,
             microphonePolicyFallback = MicrophoneRoutingSelection.NotApplicable,
             stablePresenceRequiredKinds = 0,
@@ -954,7 +954,8 @@ class AndroidSecureSessionComposition private constructor(
             // production RFC-005G backend when Android currently makes it usable.
             allowedPathKinds = CapabilityBits.PATH_LAN or CapabilityBits.PATH_DIRECT,
             allowedRecoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,
-            allowedInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
+            allowedInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
+                CapabilityBits.INPUT_TOUCHSCREEN,
             allowedMicrophoneRoutingMask = 0,
             allowDistinctGamepadIdentity = false,
             allowedStablePresenceKinds = 0,
