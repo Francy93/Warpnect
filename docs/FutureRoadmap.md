@@ -64,7 +64,10 @@ API 30 and API 31 A41 Host-to-S7 Sessions authenticated, committed setup, and st
 `SystemAudioStartFailed`. A new human touch on the S7 Client was correlated through the protected Session,
 legacy InputManager injection, and a Warpnect-owned target on each A41 Host, closing the two A41 reverse-input
 validation targets.
-The new resolver's physical API 36 regression is recorded as `DEFERRED_S22_API36_INPUT_REGRESSION`.
+The final APK's physical API 36 modern-input regression passed locally on the S22: `ModernInputManagerGlobal`
+was selected and key, touch, pointer, and joystick events were accepted and observed. A separate S22 Host
+Session attempt stopped at `SystemAudioStartFailed` before media/Input, so no S22 reverse-input E2E event
+was counted; that audio condition remains separate from the resolver result.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,

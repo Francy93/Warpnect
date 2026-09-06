@@ -72,12 +72,13 @@ ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
 | Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Human touch on S7 Client captured, sent as Input Payload V1, received by Host, forwarded to legacy injection, accepted by Android, and observed by the Host target; SystemAudio unadvertised/unselected | `PRODUCTION_PRIVILEGED_INPUT_SUPPORTED_LEGACY_BACKEND`; `REAL_REVERSE_INPUT_E2E_VALIDATED` |
 | Aocwei X700_EEA tablet | Android 13 / API 33 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS` |
 | Samsung SM-G935F | Android 8.0 / API 26 | Not resolved because Shizuku was not running | Not run | Not run | `API26_LEGACY_INPUT_INCONCLUSIVE_SHIZUKU_UNAVAILABLE` |
-| Samsung SM-S901B | Android 16 / API 36 | Historical `InputManagerGlobal` success | New resolver physical regression not yet run | Deferred while the S22 is unavailable | `DEFERRED_S22_API36_INPUT_REGRESSION` |
+| Samsung SM-S901B | Android 16 / API 36 | `ModernInputManagerGlobal`; `input_available=true` | Final APK selected the modern backend; key, touch, pointer, and joystick returned `SubmittedAsync` and were observed by the Warpnect target | Real S22 Host Session reached setup but stopped at `SystemAudioStartFailed` before media/Input; no reverse-input event counted | `MODERN_PATH_PHYSICAL_LOCAL_REGRESSION_PASS`; Session E2E blocked by SystemAudio |
 
 The API 30 and API 31 A41 targets are now validated through real reverse-input Sessions. The S7 Client
 was the human-input source in both runs; no Host-side touch, ADB input, UI automation, or local injection
-was used as E2E evidence. Complete modern-path closure still requires a physical API 36 regression of
-the new modern-preferred resolver.
+was used as E2E evidence. The physical API 36 modern-backend regression is now locally validated on the
+S22 with the final APK. A separate S22 Host Session attempt remains blocked before media/Input by
+`SystemAudioStartFailed` and is not counted as reverse-input evidence.
 
 The final API 30 and API 31 traces reached `setup_committed`, media startup, Input Payload V1 capture and
 transport, Host payload receipt, `LegacyInputManager` `SubmittedAsync` injection, and
