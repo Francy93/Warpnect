@@ -1,5 +1,7 @@
 package io.warpnect.input.session
 
+import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.input.injection.InputInjectionController
 import io.warpnect.input.injection.InputInjectionError
 import io.warpnect.input.model.InputResetState
@@ -37,6 +39,7 @@ class ReverseInputReceiverSessionController(
     private val convergenceAndDispatchTiming = BoundedInputTimingHistogram()
     private val mapperAndInjectionTiming = BoundedInputTimingHistogram()
     private var closed = false
+    private var debugBreadcrumbsRemaining = MAX_DEBUG_BREADCRUMBS
 
     suspend fun start(config: ReverseInputReceiverSessionConfig): ReverseInputReceiverSessionResult {
         if (closed) return result(ReverseInputSessionError.Closed)
@@ -157,6 +160,10 @@ class ReverseInputReceiverSessionController(
             }
             when (received) {
                 is InputReceiverWaitResult.EventReady -> {
+                    logInputFlowBreadcrumb(
+                        "event=input_payload_received kind=${received.event.messageType.name} " +
+                            "sequence=${received.event.sequenceNumber}",
+                    )
                     var mapped: AndroidTargetInputMappingResult? = null
                     val startedAtNs = System.nanoTime()
                     val convergenceResult = try {
@@ -212,6 +219,10 @@ class ReverseInputReceiverSessionController(
                             acceptingEvents.set(false)
                             snapshot = snapshot.copy(state = ReverseInputSessionState.Error)
                         }
+                        logInputFlowBreadcrumb(
+                            "event=input_payload_mapped result=FAILED " +
+                                "outcome=${mappingOutcome?.name ?: "NONE"}",
+                        )
                     } else {
                         when (convergenceResult.outcome) {
                             InputConvergenceOutcome.SemanticDuplicateDropped ->
@@ -229,6 +240,9 @@ class ReverseInputReceiverSessionController(
                         snapshot = snapshot.copy(
                             receivedEvents = snapshot.receivedEvents + 1L,
                             lastError = ReverseInputSessionError.None,
+                        )
+                        logInputFlowBreadcrumb(
+                            "event=input_payload_mapped result=${convergenceResult.outcome.name}",
                         )
                     }
                 }
@@ -274,4 +288,15 @@ class ReverseInputReceiverSessionController(
 
     private fun result(error: ReverseInputSessionError): ReverseInputReceiverSessionResult =
         ReverseInputReceiverSessionResult(error, snapshot())
+
+    private fun logInputFlowBreadcrumb(message: String) {
+        if (!BuildConfig.DEBUG || debugBreadcrumbsRemaining <= 0) return
+        debugBreadcrumbsRemaining -= 1
+        runCatching { Log.d(INPUT_FLOW_TAG, message) }
+    }
+
+    private companion object {
+        const val INPUT_FLOW_TAG = "WarpnectInputFlow"
+        const val MAX_DEBUG_BREADCRUMBS = 12
+    }
 }

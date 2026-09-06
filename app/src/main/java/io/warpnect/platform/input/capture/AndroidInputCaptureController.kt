@@ -5,10 +5,12 @@ import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import io.warpnect.BuildConfig
 import io.warpnect.input.capture.InputCaptureCapabilities
 import io.warpnect.input.capture.InputCaptureConfig
 import io.warpnect.input.capture.InputCaptureController
@@ -60,6 +62,7 @@ class AndroidInputCaptureController(
     private var capturedMouseSlot: Int? = null
     private var listenerRegistered = false
     private var snapshot = InputCaptureSnapshot()
+    private var debugBreadcrumbsRemaining = MAX_DEBUG_BREADCRUMBS
 
     override fun queryCapabilities(): InputCaptureCapabilities {
         val devices = inputManager.inputDeviceIds.toList().mapNotNull { inputManager.getInputDevice(it) }
@@ -699,6 +702,10 @@ class AndroidInputCaptureController(
         }
         val callbackDelayUs = max(0L, AndroidInputEventClock.callbackUptimeUs() - eventTimeUs)
         val result = sink?.onInputEvent(eventTimeUs, event) ?: InputSinkResult.Rejected("No input sink")
+        logInputFlowBreadcrumb(
+            "event=input_capture kind=${event.javaClass.simpleName} " +
+                "result=${if (result is InputSinkResult.Rejected) "REJECTED" else "ACCEPTED"}",
+        )
         if (result !is InputSinkResult.Rejected) {
             telemetry?.capturedEvents?.increment()
             telemetry?.recordCaptureToSender(eventTimeUs, AndroidInputEventClock.callbackUptimeUs())
@@ -825,6 +832,12 @@ class AndroidInputCaptureController(
         snapshot = block(snapshot)
     }
 
+    private fun logInputFlowBreadcrumb(message: String) {
+        if (!BuildConfig.DEBUG || debugBreadcrumbsRemaining <= 0) return
+        debugBreadcrumbsRemaining -= 1
+        runCatching { Log.d(INPUT_FLOW_TAG, message) }
+    }
+
     private fun isGamepadSource(source: Int): Boolean = source.containsInputSource(InputDevice.SOURCE_GAMEPAD) ||
         source.containsInputSource(InputDevice.SOURCE_JOYSTICK)
 
@@ -859,5 +872,7 @@ class AndroidInputCaptureController(
 
     private companion object {
         const val DEFAULT_MAX_TRACKED_DEVICES = 32
+        const val INPUT_FLOW_TAG = "WarpnectInputFlow"
+        const val MAX_DEBUG_BREADCRUMBS = 12
     }
 }

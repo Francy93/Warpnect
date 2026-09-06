@@ -1,5 +1,7 @@
 package io.warpnect.input.transport
 
+import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.input.capture.InputEventSink
 import io.warpnect.input.capture.InputSinkResult
 import io.warpnect.input.model.InputResetState
@@ -37,6 +39,7 @@ class SclInputEventSink(
     private val classifier = InputReliabilityClassifier(reliabilityConfig)
     private val submissionTiming = BoundedInputTimingHistogram()
     private var snapshot = InputSenderReliabilitySnapshot(profile = reliabilityConfig.profile)
+    private var debugBreadcrumbsRemaining = MAX_DEBUG_BREADCRUMBS
 
     override fun onInputEvent(eventTimeUs: Long, event: WarpnectInputEvent): InputSinkResult {
         val startedAtNs = System.nanoTime()
@@ -49,6 +52,10 @@ class SclInputEventSink(
                     classifier = classifier.snapshot(),
                     submissionTiming = submissionTiming.snapshot(),
                     lastTransportError = InputTransportError.InvalidConfiguration,
+                )
+                logInputFlowBreadcrumb(
+                    "event=input_transport_submission kind=${event.javaClass.simpleName} " +
+                        "result=REJECTED_CAPACITY",
                 )
                 return InputSinkResult.Rejected("Input reliability state capacity exhausted")
             }
@@ -84,6 +91,10 @@ class SclInputEventSink(
                 submissionTiming = submissionTiming.snapshot(),
                 lastTransportError = if (successes == 0) lastError else InputTransportError.None,
             )
+            logInputFlowBreadcrumb(
+                "event=input_transport_submission kind=${event.javaClass.simpleName} copies=$copies " +
+                    "successes=$successes result=${if (successes > 0) "SENT" else "REJECTED"}",
+            )
             return if (successes > 0) {
                 telemetry?.acceptedEvents?.increment()
                 if (event is InputResetState) telemetry?.resetsEmitted?.increment()
@@ -97,4 +108,15 @@ class SclInputEventSink(
     }
 
     fun snapshot(): InputSenderReliabilitySnapshot = snapshot.copy(submissionTiming = submissionTiming.snapshot())
+
+    private fun logInputFlowBreadcrumb(message: String) {
+        if (!BuildConfig.DEBUG || debugBreadcrumbsRemaining <= 0) return
+        debugBreadcrumbsRemaining -= 1
+        runCatching { Log.d(INPUT_FLOW_TAG, message) }
+    }
+
+    private companion object {
+        const val INPUT_FLOW_TAG = "WarpnectInputFlow"
+        const val MAX_DEBUG_BREADCRUMBS = 12
+    }
 }
