@@ -19,6 +19,10 @@
         <activity
             android:name=".debug.input.InputSessionTargetActivity"
             android:exported="true" />
+        <!-- Debug-only presentation sanity check for the immutable RFC-002I AVC fixture. -->
+        <activity
+            android:name=".debug.video.ClientFixturePresentationActivity"
+            android:exported="true" />
     </application>
 
 </manifest>

@@ -26,6 +26,7 @@ class WarpnectVideoSurfaceView @JvmOverloads constructor(
 
     init {
         setBackgroundColor(Color.BLACK)
+        setZOrderOnTop(true)
     }
 
     fun attachController(controller: AndroidVideoRenderController) {
