@@ -159,6 +159,8 @@ import io.warpnect.telemetry.TelemetryHub
 import io.warpnect.telemetry.TelemetryScope
 import io.warpnect.video.decoder.VideoDecoderConfig
 import io.warpnect.video.encoder.VideoEncoderRequest
+import io.warpnect.video.render.VideoViewportGeometry
+import io.warpnect.video.render.VideoViewportGeometryProvider
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -298,6 +300,7 @@ class AndroidSecureSessionComposition private constructor(
                 AndroidSessionPipelineResources(
                     bindClientVideoRenderer = uiResources::bindClientVideoRenderer,
                     clientInputSurface = uiResources::inputCaptureSurface,
+                    clientViewportGeometry = VideoViewportGeometryProvider(uiResources::clientViewportGeometry),
                 ),
                 VideoEncoderFrameDebugObserver(discoveryDebugLog::firstVideoFrameEncoded),
                 object : VideoDecoderDebugObserver {
@@ -1102,6 +1105,13 @@ class AndroidSessionUiResources(
     }
 
     fun inputCaptureSurface(): WarpnectInputCaptureView? = input.get()
+
+    /**
+     * Supplies the renderer's current aspect-fit viewport to the reverse-input mapper.
+     * The view publishes immutable, volatile snapshots, so this remains safe to read from the
+     * session control path without retaining any render buffers or adding a renderer callback.
+     */
+    fun clientViewportGeometry(): VideoViewportGeometry = render.get()?.viewportGeometry() ?: VideoViewportGeometry()
 }
 
 sealed interface DeviceRoleCapability {

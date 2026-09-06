@@ -704,7 +704,10 @@ class AndroidInputCaptureController(
         val result = sink?.onInputEvent(eventTimeUs, event) ?: InputSinkResult.Rejected("No input sink")
         logInputFlowBreadcrumb(
             "event=input_capture kind=${event.javaClass.simpleName} " +
-                "result=${if (result is InputSinkResult.Rejected) "REJECTED" else "ACCEPTED"}",
+                when (result) {
+                    is InputSinkResult.Rejected -> "result=REJECTED reason=${result.reason}"
+                    InputSinkResult.Accepted -> "result=ACCEPTED"
+                },
         )
         if (result !is InputSinkResult.Rejected) {
             telemetry?.capturedEvents?.increment()
