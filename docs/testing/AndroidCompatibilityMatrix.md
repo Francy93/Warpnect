@@ -56,27 +56,33 @@ Every tested UserService ran under shell UID 2000 after a successful Warpnect-si
 check. The framework classes resolved from the boot class loader; this is an API-surface compatibility
 finding, not a Shizuku permission, Binder-service, SELinux, or device-model finding.
 
-## Privileged Input Legacy Android Implementation (Pending E2E)
+## Privileged Input Legacy Android Implementation (A41 E2E Validated)
 
 The production resolver now selects `InputManagerGlobal` when its complete modern API is available and
 otherwise qualifies the legacy `InputManager.getInstance().injectInputEvent(InputEvent, int)` adapter.
 The resolver remains capability-driven, caches its selected adapter for the UserService lifetime, and
 keeps explicit target-UID injection unavailable on the legacy two-argument API. The final validation APK
-was built from `f1cdd426909104d6d0a9e753534e12cfd3bf69cf`, SHA-256
-`2E3F9988A3CCEBC5D7CEF83540954BBBBAF241D8B5C4C7AC2758FBF1B17C9D8A`, 28,920,819 bytes, with
+was built from `b609f4af14fbcd9fd4293e3ea67788f5819ad04f`, SHA-256
+`7E48686B4A5D6542286FB2B081B441993254331F28DB275433524CD6C645C1DB`, 28,937,243 bytes, with
 ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`).
 
 | Device class | Android/API | Production backend result | Local production validation | End-to-end reverse input | Current status |
 | --- | --- | --- | --- | --- | --- |
-| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Post-audio-correction S7 Client Session authenticated, completed setup, and started media with SystemAudio unadvertised/unselected; no correlated Client-originated Input event | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E unproven |
-| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Post-audio-correction S7 Client Session authenticated, completed setup, and started media with SystemAudio unadvertised/unselected; no correlated Client-originated Input event | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS`; E2E unproven |
+| Samsung SM-A415F | Android 11 / API 30 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Human touch on S7 Client captured, sent as Input Payload V1, received by Host, forwarded to legacy injection, accepted by Android, and observed by the Host target; SystemAudio unadvertised/unselected | `PRODUCTION_PRIVILEGED_INPUT_SUPPORTED_LEGACY_BACKEND`; `REAL_REVERSE_INPUT_E2E_VALIDATED` |
+| Samsung SM-A415F | Android 12 / API 31 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target; reconfirmed after helper reset | Human touch on S7 Client captured, sent as Input Payload V1, received by Host, forwarded to legacy injection, accepted by Android, and observed by the Host target; SystemAudio unadvertised/unselected | `PRODUCTION_PRIVILEGED_INPUT_SUPPORTED_LEGACY_BACKEND`; `REAL_REVERSE_INPUT_E2E_VALIDATED` |
 | Aocwei X700_EEA tablet | Android 13 / API 33 | `LegacyInputManager`; `input_available=true` | Key, touch, pointer, and joystick accepted and observed in a Warpnect-owned target | Not run | `LOCAL_PRODUCTION_LEGACY_INPUT_PASS` |
 | Samsung SM-G935F | Android 8.0 / API 26 | Not resolved because Shizuku was not running | Not run | Not run | `API26_LEGACY_INPUT_INCONCLUSIVE_SHIZUKU_UNAVAILABLE` |
 | Samsung SM-S901B | Android 16 / API 36 | Historical `InputManagerGlobal` success | New resolver physical regression not yet run | Deferred while the S22 is unavailable | `DEFERRED_S22_API36_INPUT_REGRESSION` |
 
-These results do not close Phase-4 privileged-input compatibility. Completing the evidence requires a
-real Client-originated Input Payload V1 event to each A41 Host and a physical API 36 regression of the
-new modern-preferred resolver.
+The API 30 and API 31 A41 targets are now validated through real reverse-input Sessions. The S7 Client
+was the human-input source in both runs; no Host-side touch, ADB input, UI automation, or local injection
+was used as E2E evidence. Complete modern-path closure still requires a physical API 36 regression of
+the new modern-preferred resolver.
+
+The final API 30 and API 31 traces reached `setup_committed`, media startup, Input Payload V1 capture and
+transport, Host payload receipt, `LegacyInputManager` `SubmittedAsync` injection, and
+`INPUT_SESSION_MAIN_TARGET_TOUCH_OBSERVED` on the A41 Host. The runner's media-readiness result remains
+separate from this human-event correlation and was not used as a substitute for it.
 
 The 2026-09-05 completion pass reused the exact APK above, including verification of installed
 `base.apk` digests on all four attached devices. A bounded cleanup of residual Warpnect-owned shell

@@ -61,8 +61,9 @@ UID 2000), which does not hold `MODIFY_AUDIO_ROUTING`; the prior package-attribu
 channel that could not start. Capability qualification now checks the UserService's own permission, so
 SystemAudio is omitted before setup when that caller cannot register its AudioPolicy. Post-correction
 API 30 and API 31 A41 Host-to-S7 Sessions authenticated, committed setup, and started media without
-`SystemAudioStartFailed`. Reverse-input E2E remains unproven: no Client-originated Input event has yet
-been correlated through the protected Session to a Host target.
+`SystemAudioStartFailed`. A new human touch on the S7 Client was correlated through the protected Session,
+legacy InputManager injection, and a Warpnect-owned target on each A41 Host, closing the two A41 reverse-input
+validation targets.
 The new resolver's physical API 36 regression is recorded as `DEFERRED_S22_API36_INPUT_REGRESSION`.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
