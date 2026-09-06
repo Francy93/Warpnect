@@ -1,6 +1,8 @@
 package io.warpnect
 
 import android.os.Bundle
+import android.util.Log
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -29,6 +31,7 @@ import io.warpnect.ui.SecureSessionScreen
 class MainActivity : ComponentActivity() {
     private val composition: io.warpnect.platform.session.integration.AndroidSecureSessionComposition?
         get() = (application as WarpnectApplication).secureSessionComposition
+    private var debugInputTargetEventsRemaining = MAX_DEBUG_INPUT_TARGET_EVENTS
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,6 +39,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             WarpnectApp(composition = composition)
         }
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (BuildConfig.DEBUG && event.actionMasked == MotionEvent.ACTION_DOWN && debugInputTargetEventsRemaining > 0) {
+            debugInputTargetEventsRemaining -= 1
+            runCatching { Log.i(INPUT_TARGET_TAG, "INPUT_SESSION_MAIN_TARGET_TOUCH_OBSERVED") }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private companion object {
+        const val INPUT_TARGET_TAG = "WarpnectInputSessionTarget"
+        const val MAX_DEBUG_INPUT_TARGET_EVENTS = 12
     }
 }
 
