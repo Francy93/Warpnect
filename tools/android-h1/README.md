@@ -59,3 +59,11 @@ operator can inspect the state or prepare an owned target. The operator must sub
 disconnect the intended pair. The normal default still tears down the scenario. The decode hold is
 bounded to 120 seconds; neither option generates a reverse-input event. The human touch and the
 complete protected delivery into the Host-owned target require separate evidence.
+
+## Lifecycle Repetition
+
+`-ReuseRunningApps` keeps already foreground Warpnect instances running between scenario
+invocations. It is intended for lifecycle repetition only: it must not be combined with
+`-CleanState`, and it preserves the normal scenario teardown. This lets a test observe resource
+release across repeated Sessions without the harness force-stopping the application between every
+cycle.

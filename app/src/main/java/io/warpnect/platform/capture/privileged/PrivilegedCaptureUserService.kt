@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.view.Surface
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CaptureRequest
+import kotlin.system.exitProcess
 
 class PrivilegedCaptureUserService : IPrivilegedCaptureService.Stub() {
     private val captureApi: PrivilegedDisplayCaptureApi = QualifiedPrivilegedDisplayCaptureApi()
@@ -57,8 +58,11 @@ class PrivilegedCaptureUserService : IPrivilegedCaptureService.Stub() {
 
     override fun getState(): Bundle = captureApi.snapshot().toBundle()
 
-    @Suppress("unused")
-    fun destroy() {
-        captureApi.stopCapture()
+    override fun destroy() {
+        try {
+            captureApi.stopCapture()
+        } finally {
+            exitProcess(0)
+        }
     }
 }

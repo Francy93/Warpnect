@@ -3,7 +3,7 @@ package io.warpnect.platform.audio.capture.privileged;
 import android.os.Bundle;
 
 interface IPrivilegedAudioCaptureService {
-    Bundle querySystemAudioCapabilities();
+    Bundle querySystemAudioCapabilities() = 0;
 
     Bundle prepareSystemAudioCapture(
         int sampleRateHz,
@@ -12,11 +12,13 @@ interface IPrivilegedAudioCaptureService {
         long targetChunkDurationUs,
         int sharedRingSlotCount,
         int targetUid
-    );
+    ) = 1;
 
-    int startSystemAudioCapture();
+    int startSystemAudioCapture() = 2;
 
-    int stopSystemAudioCapture();
+    int stopSystemAudioCapture() = 3;
 
-    Bundle getSystemAudioState();
+    Bundle getSystemAudioState() = 4;
+
+    void destroy() = 16777114;
 }

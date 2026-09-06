@@ -28,6 +28,7 @@ import io.warpnect.input.injection.UhidCapability
 import io.warpnect.platform.input.injection.AndroidInjectedEventFactory
 import io.warpnect.platform.input.injection.InputInjectionStateTracker
 import io.warpnect.platform.input.injection.ReflectivePrivilegedInputManagerApi
+import kotlin.system.exitProcess
 
 /** Runs in the Shizuku/Sui UserService process. Binder calls are synchronous by design. */
 class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stub() {
@@ -245,13 +246,16 @@ class PrivilegedInputInjectionUserService : IPrivilegedInputInjectionService.Stu
 
     override fun getSnapshot(): Bundle = synchronized(lock) { snapshotLocked().toBundle() }
 
-    @Suppress("unused")
-    fun destroy() {
-        synchronized(lock) {
-            tracker?.reset(InputResetScope.AllSlots, 0, RESET_REASON_SESSION_STOP)
-            state = InputInjectionState.Closed
-            tracker = null
-            config = null
+    override fun destroy() {
+        try {
+            synchronized(lock) {
+                tracker?.reset(InputResetScope.AllSlots, 0, RESET_REASON_SESSION_STOP)
+                state = InputInjectionState.Closed
+                tracker = null
+                config = null
+            }
+        } finally {
+            exitProcess(0)
         }
     }
 

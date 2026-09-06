@@ -26,6 +26,7 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$CleanState,
+    [switch]$ReuseRunningApps,
     [switch]$LeaveSessionRunning,
     [switch]$PulseHostDisplayAfterClientDecode,
     [ValidateRange(0, 60)]
@@ -325,15 +326,22 @@ function Ensure-DiscoveryPermission {
 }
 
 function Start-Warpnect {
-    param([pscustomobject]$Device, [switch]$ClearState)
+    param([pscustomobject]$Device, [switch]$ClearState, [switch]$ReuseRunningApp)
     $serial = $Device.Serial
     Invoke-Adb $serial @("logcat", "-c")
+    if ($ClearState -and $ReuseRunningApp) {
+        throw "CleanState and ReuseRunningApps cannot be used together."
+    }
     if ($ClearState) {
         Invoke-Adb $serial @("shell", "pm", "clear", $script:PackageName)
     }
     Ensure-DiscoveryPermission $Device
-    Invoke-Adb $serial @("shell", "am", "force-stop", $script:PackageName)
-    Invoke-Adb $serial @("shell", "am", "start", "-n", $script:ActivityName)
+    if ($ReuseRunningApp) {
+        Ensure-WarpnectForeground $Device
+    } else {
+        Invoke-Adb $serial @("shell", "am", "force-stop", $script:PackageName)
+        Invoke-Adb $serial @("shell", "am", "start", "-n", $script:ActivityName)
+    }
     if (-not (Wait-ForWarpnectForeground $Device)) {
         throw "DEVICE_LOCKED_OR_NOT_FOREGROUND on $($Device.Serial) [foreground_check=$script:LastForegroundFailure]. Unlock the device and relaunch Warpnect; the harness will not bypass device security."
     }
@@ -976,8 +984,8 @@ $scenarioResult = [ordered]@{
 
 try {
     $clearForScenario = $CleanState -or $Scenario -eq "PairAcceptCleanState"
-    Start-Warpnect $hostDevice -ClearState:$clearForScenario
-    Start-Warpnect $clientDevice -ClearState:$clearForScenario
+    Start-Warpnect $hostDevice -ClearState:$clearForScenario -ReuseRunningApp:$ReuseRunningApps
+    Start-Warpnect $clientDevice -ClearState:$clearForScenario -ReuseRunningApp:$ReuseRunningApps
     if ($Scenario -in @("MediaStartupTrace", "InputSessionHold")) {
         $decodeHold = if ($Scenario -eq "InputSessionHold") { $HoldMediaAfterFirstDecodeSeconds } else { 0 }
         $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds $decodeHold $PulseHostDisplayAfterClientDecode.IsPresent

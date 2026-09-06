@@ -21,6 +21,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.system.exitProcess
 
 class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() {
     private val audioPolicyApi: PrivilegedAudioPolicyCaptureApi = ReflectivePrivilegedAudioPolicyCaptureApi()
@@ -193,9 +194,12 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
 
     override fun getSystemAudioState(): Bundle = core.snapshot().toBundle()
 
-    @Suppress("unused")
-    fun destroy() {
-        stopSystemAudioCapture()
+    override fun destroy() {
+        try {
+            stopSystemAudioCapture()
+        } finally {
+            exitProcess(0)
+        }
     }
 
     private fun captureLoop() {
