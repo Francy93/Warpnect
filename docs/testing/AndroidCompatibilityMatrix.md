@@ -36,6 +36,27 @@ These are device/build observations, not support claims for all API 26, Exynos, 
 devices. The S7 was admitted because its own exact static and active qualification passed; the known
 software-family `OMX.google.h264.decoder` remains unavailable as a production fallback.
 
+## Client Visual Presentation Investigation
+
+Debug APK from `2ffddbe`, SHA-256
+`F695FD9AD8E6E636DD5DCCC0B0FB45D5F96C6F9C93D3269A810DB4D41EB410ED`, 28,953,663 bytes,
+ABI set `arm64-v8a`, `armeabi-v7a`, `x86_64`, `minSdk 26`, `targetSdk 35`.
+
+The Client decoder released valid frames to the active Surface while the default `SurfaceView` media
+layer remained behind the opaque Compose window buffer on the affected Samsung UI composition. The
+production view now calls `setZOrderOnTop(true)`. This is a local Android presentation change; it
+does not alter video payloads, decoder qualification, capture, or Session/protocol semantics.
+
+| Device class | Android/API | Production remote result | Local composition control | Current classification |
+| --- | --- | --- | --- | --- |
+| Samsung SM-G935F | Android 8.0 / API 26 | A41 API 31 Host reached authenticated, committed media setup, decoder output, immediate release, and an active SurfaceFlinger buffer. A human then clearly saw the current A41 screen in the Client video surface. | Same `SurfaceView` and decoder path visibly presented the immutable AVC fixture. | `VISIBLE_REMOTE_VIDEO_PASS` |
+| Samsung SM-G960F | Android 10 / API 29 | A41 API 31 Host Session stopped at `CapabilityNegotiationFailed` before video startup. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `OMX.Exynos.avc.dec`. | `REMOTE_PRESENTATION_INCONCLUSIVE_CAPABILITY_NEGOTIATION` |
+| Aocwei X700_EEA tablet | Android 13 / API 33 | A41 API 31 Host Session did not authenticate. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `c2.mtk.avc.decoder`. | `REMOTE_PRESENTATION_INCONCLUSIVE_AUTHENTICATION` |
+
+The local fixture is a bounded debug-only composition control and is not substituted for a protected
+remote Session result. Android screenshots were used only for layout/composition inspection; the S7
+remote result above includes explicit human visual confirmation.
+
 ## Privileged Input Compatibility Investigation
 
 Test-only investigation artifact: debug APK on branch `investigate/a41-privileged-input` from base

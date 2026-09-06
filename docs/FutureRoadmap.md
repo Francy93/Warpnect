@@ -74,6 +74,15 @@ hardware classification is unavailable. It uses conservative static inspection p
 same-UID active decoder qualification only for unknown legacy candidates. It does not alter RFC-002D,
 RFC-002B, or the completed H1 validation.
 
+Client presentation investigation identified a local `SurfaceView` composition defect: on affected
+Samsung Clients, decoded buffers were behind the opaque Compose window buffer. The production view now
+uses `setZOrderOnTop(true)`. A real A41 API 31 Host-to-S7 API 26 Client Session is human-confirmed
+visible after the fix. S9 API 29 and tablet API 33 both visibly present the same local MediaCodec
+fixture, but their current A41-hosted remote traces remain separately blocked before video by capability
+negotiation and authentication respectively. The following separate observations remain unclassified
+and require focused evidence before any design change: Host capture appeared limited to Warpnect while
+foreground (with the notification shade also visible), and user-observed session latency grew over time.
+
 ## Phase 3 - Audio Pipeline
 
 Status: Complete.
