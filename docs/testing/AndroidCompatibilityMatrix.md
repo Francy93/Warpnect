@@ -118,11 +118,40 @@ The final validation APK was
 | --- | --- | --- | --- |
 | Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G935F, Android 8.0 / API 26 | Host strict-CBR cache miss; Client exact RFC-002I decoder cache miss | Host capability preflight completed before advertisement (4,613 ms total; video component 1,014 ms). Client active decoder qualification completed before its offer (6,602 ms). After the offer, Host selection took 13 ms in the Host local clock and arrived after 38 ms in the Client local clock. | First cold Session authenticated, completed setup, and started media without a retry: `COLD_CAPABILITY_NEGOTIATION_VALIDATED` |
 | Same pair | Host and Client exact qualification cache hits; Host app process retained and Client app process restarted | Host selection took 2 ms after the offer in the Host local clock; Client received it after 11 ms in its local clock. | Warm cache regression passed; legacy rendered-frame callback timing remains a separate observability concern. |
-| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G960F, Android 10 / API 29 | Host readiness preflight; Client framework decoder classification | WNCP completed and setup committed. | `S9_INDEPENDENT_VIDEO_PIPELINE_STARTUP`; the failure occurs after negotiation, at Client media start. |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G960F, Android 10 / API 29 | Host readiness preflight; Client framework decoder classification | WNCP, setup, decoder startup, first access-unit decode, and Surface release completed. The user physically confirmed the A41 Host screen, Home, and ordinary Host applications on the S9. | `S9_PRODUCTION_VIDEO_PIPELINE_VALIDATED` |
 
 The debug-only cold control invalidates only the exact RFC-002I decoder-qualification cache key; it does not
 clear pairing, trust, session security, or unrelated capability state. The primary cold/cold validation did
 not reboot either device, restart Shizuku, clear app data, or hide a warm retry.
+
+## Persistent Exact Encoder Qualification Cache
+
+RFC-002B active strict-CBR encoder qualification now persists only a typed `Supported` result in
+app-private storage. The persisted record is addressed by a SHA-256 of the complete compatibility
+key: qualification algorithm version, probe workload version, target profile version, codec name,
+MIME, width, height, frame rate, bitrate, bitrate mode, I-frame interval, Build fingerprint, and
+media-runtime compatibility version. An application version is intentionally not part of that key;
+an explicit qualification/profile version changes when qualification semantics change.
+
+`Unsupported`, timeouts, probe-process death, service failures, and other transient probe failures
+remain current-process results only. The existing current-process probe-death quarantine is unchanged.
+Malformed, missing, or incompatible persisted records are exact-key misses and run normal qualification;
+they are never interpreted as support.
+
+| A41 API 31 action | Exact-key cache result | Active `:codecProbe` work | Encoder capability collection |
+| --- | --- | --- | --- |
+| First normal Host enable with no record | miss | 2 eligible encoder probes, both `Supported` | 988 ms |
+| New process, normal Host enable | 2 persistent hits | 0 probes | 100 ms |
+| Second new process, normal Host enable | 2 persistent hits | 0 probes | 108 ms |
+| `am force-stop` then normal relaunch | 2 persistent hits | 0 probes | 107 ms |
+| `adb install -r` preserving data then normal Host enable | 2 persistent hits | 0 probes | 122 ms |
+
+The final APK for this validation was SHA-256
+`CBB4B4ED0589C02A4789192D35584FFC501D31301EE7223893C461B13BCFFCB5`, 28,953,707 bytes,
+with ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64`. A normal A41 API 31 Host-to-S9 API 29
+Session after a persistent hit completed authentication, WNCP, setup, decoder startup, first access
+unit, and first decoded frame. After normal teardown, no `capture`, `audio`, or `input-injection`
+Shizuku UserService remained.
 
 ## Privileged Input Compatibility Investigation
 

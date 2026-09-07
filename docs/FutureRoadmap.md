@@ -109,6 +109,15 @@ thresholds, payloads, and security semantics were unchanged. The S9 API 29 contr
 setup, receiver startup, AVC configuration, decoder startup, first access-unit decode, Surface release, and
 human-confirmed remote presentation. Its former `VideoPipelineStartFailed` lifecycle race is closed.
 
+RFC-002B strict-CBR qualification now retains a `Supported` result across application-process restarts,
+but only under a complete versioned exact key: algorithm, probe workload, target profile, codec identity,
+exact AVC request, Build fingerprint, and media-runtime compatibility version. The A41/API 31 first
+exact-key miss ran its two eligible strict-CBR probes and persisted their `Supported` results; later new
+processes, force-stop/relaunch, and data-preserving reinstall reused those records without spawning
+`:codecProbe`. Timeouts, probe death, and other transient failures remain process-local and the existing
+probe-death quarantine is unchanged. This removes repeated qualification work without treating
+compatibility as an install-lifetime or device-model judgment.
+
 ## Phase 3 - Audio Pipeline
 
 Status: Complete.

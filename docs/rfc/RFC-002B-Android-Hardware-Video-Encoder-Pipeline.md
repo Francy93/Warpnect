@@ -55,9 +55,12 @@ When every other mandatory hardware AVC predicate passes and CBR metadata alone 
 candidate, Warpnect may perform one bounded, cold exact-format probe using
 `AndroidVideoEncoderFormatFactory`. The probe runs outside Main, starts no capture or Session,
 produces and persists no media, releases its codec and Surface immediately, and caches the
-safe result per exact request for the process lifetime. A failed probe leaves the candidate
-unavailable. This compatibility check never relaxes CBR to VBR or CBR_FD and introduces no
-Video Payload V1, SCL, Session-wire, or negotiated bitrate-mode semantic change.
+safe result per exact request for the current process. A `Supported` result is also persisted in
+app-private storage and reused after process restart only when its complete versioned compatibility
+key matches: qualification algorithm, probe workload, target profile, codec identity, exact request,
+Build fingerprint, and media-runtime compatibility version. A failed probe leaves the candidate
+unavailable. This compatibility check never relaxes CBR to VBR or CBR_FD and introduces no Video
+Payload V1, SCL, Session-wire, or negotiated bitrate-mode semantic change.
 
 ### Active-Probe Process Safety
 
@@ -70,11 +73,12 @@ typed result; no production Surface, frame, access unit, or media payload crosse
 
 The normal Warpnect runtime continues to own the production `MediaCodec` encoder. A probe success,
 ordinary configuration failure, service unavailability, timeout, or disposable-process death is
-cached for the exact request during the caller process lifetime. Process death also quarantines
-further cold probes in that caller lifetime, so repeated capability collection cannot repeatedly
-trigger vendor-native aborts. The caller maps failures to strict CBR unavailability without
-exposing vendor exception text or terminating the main runtime. This remains a safety boundary,
-not a CBR fallback.
+cached for the exact request during the caller process lifetime. Only a `Supported` result is
+persisted across process restarts; transient failures are deliberately not made permanent hardware
+judgments. Process death also quarantines further cold probes in that caller lifetime, so repeated
+capability collection cannot repeatedly trigger vendor-native aborts. The caller maps failures to
+strict CBR unavailability without exposing vendor exception text or terminating the main runtime.
+This remains a safety boundary, not a CBR fallback.
 
 Final same-UID probe validation used one exact APK on four physical devices. Each selected codec
 reached the metadata-negative active-probe path and accepted the exact strict-CBR format:
@@ -87,9 +91,11 @@ reached the metadata-negative active-probe path and accepted the exact strict-CB
 
 On every tested device, the main application process and `:codecProbe` had distinct PIDs with the
 same application UID. The second exact capability query used the process-local cache and did not
-start another cold codec probe. The previously observed vendor abort was not reproduced in the
-disposable normal-app-UID probe on the tested A41 hardware. This does not claim strict-CBR support
-for all MediaTek devices or remove typed failure handling for future codecs.
+start another cold codec probe. On the tested A41/API 31, a later app-process restart reused the
+same persisted exact-key `Supported` result without starting `:codecProbe`; a changed key requires
+a new qualification. The previously observed vendor abort was not reproduced in the disposable
+normal-app-UID probe on the tested A41 hardware. This does not claim strict-CBR support for all
+MediaTek devices or remove typed failure handling for future codecs.
 
 ## Encoder Request
 
