@@ -570,6 +570,12 @@ function Tap-UiPoint {
 function Tap-IfPresent {
     param([pscustomobject]$Device, [string]$Text)
     if ($null -ne (Find-UiNode $Device $Text)) { Tap-UiText $Device $Text; return $true }
+    # Compose only exposes nodes inside the visible ScrollView viewport. A bounded
+    # upward swipe reaches teardown controls such as Disconnect without inventing
+    # a parallel lifecycle action.
+    Invoke-Adb $Device.Serial @("shell", "input", "swipe", "540", "1750", "540", "700", "250")
+    Start-Sleep -Milliseconds 250
+    if ($null -ne (Find-UiNode $Device $Text)) { Tap-UiText $Device $Text; return $true }
     return $false
 }
 
@@ -606,7 +612,7 @@ function Test-DiscoveryBreadcrumb {
 function Get-SessionStartFailure {
     param([string]$LogText)
     $failures = [regex]::Matches($LogText, 'WarpnectDiscovery[^\r\n]*event=session_start_failed reason=([A-Za-z0-9_]+)')
-    if ($failures.Count -gt 0) { return $failures[-1].Groups[1].Value }
+    if ($failures.Count -gt 0) { return $failures.Item($failures.Count - 1).Groups.Item(1).Value }
     return $null
 }
 
@@ -1054,6 +1060,8 @@ try {
     }
 } catch {
     $scenarioResult.reason = $_.Exception.Message
+    $scenarioResult["failure_line"] = $_.InvocationInfo.ScriptLineNumber
+    $scenarioResult["failure_command"] = $_.InvocationInfo.MyCommand.Name
 } finally {
     $scenarioResult.ended_utc = [DateTime]::UtcNow.ToString("o")
     Capture-DeviceEvidence $hostDevice $scenarioDirectory
