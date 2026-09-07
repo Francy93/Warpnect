@@ -86,6 +86,16 @@ the Settings view directly. `HOST FULL-DISPLAY CAPTURE VALIDATED` therefore clos
 concern. Growing streaming latency remains a separate observation requiring focused evidence before any
 design change.
 
+Privileged helper lifecycle validation then found a real Android ownership defect rather than an expected
+Shizuku retention policy: unbinding a non-daemon UserService disconnects it but does not terminate its
+process. The capture, audio, and input helpers now implement the reserved UserService destroy transaction,
+clean their local resource, and exit after their final gateway owner releases them; temporary SystemAudio
+capability controllers also close in `finally`. Four A41 API 31 Host-to-S7 API 26 Client media Sessions,
+including a Host Home/background/return interval, left no capture, audio, or input helper after normal
+teardown. A bounded harness correction now reaches the genuine off-screen `Disconnect` control before
+declaring it absent. Warm attempts that fail before authentication remain part of the separate cold
+capability/session-negotiation debt and did not acquire or accumulate helpers.
+
 ## Phase 3 - Audio Pipeline
 
 Status: Complete.

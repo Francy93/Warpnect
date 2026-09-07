@@ -73,6 +73,32 @@ This is display-scope evidence for the tested device/runtime, not a claim that s
 content is capturable. The separate observations about growing streaming latency and remote traces blocked
 before video on the S9/tablet remain open.
 
+## Privileged UserService Lifecycle and Cleanup
+
+The A41/API 31 Host uses three non-daemon, shell-UID Shizuku UserServices: `capture`, `audio`, and
+`input-injection`. They are `EXPECTED_BOUNDED`: a Session or cold capability query owns each connection,
+and no helper is retained after its final owner releases it. The main `io.warpnect` process and the
+external Shizuku server are independently `EXPECTED_PERSISTENT` while their respective application/runtime
+is alive. The same-UID `codecProbe` is an independent bounded qualification process, not a Shizuku helper.
+
+The prior accumulation was a production ownership defect. Shizuku unbind disconnects a UserService but does
+not itself terminate its process, so each Warpnect helper now exposes the reserved UserService destroy
+transaction, stops/resets its local resource, and exits after the gateway's final unbind. The SystemAudio
+capability query also now closes its temporary controller in `finally`. The final validation APK was
+`2AA9C9C0AC0B8A05BC286905846087CA873880868D96A08A0566DDD99B0FABEB`, 28,953,663 bytes, with ABIs
+`arm64-v8a`, `armeabi-v7a`, and `x86_64`.
+
+| Host / Client | Exercise | Helpers after normal teardown | Result |
+| --- | --- | --- | --- |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G935F, Android 8.0 / API 26 | Four protected media Sessions, including one Host Home/background/return interval | capture=0, audio=0, input=0 | `PRIVILEGED_USERSERVICE_CLEANUP_VALIDATED` |
+| Same pair | Session/UI/authentication attempts aborting before privileged acquisition | capture=0, audio=0, input=0 | No partial-acquisition retention observed |
+
+One repeated harness batch initially left the Client UI in `Streaming` because its real `Disconnect` control
+was below the visible `ScrollView` viewport and was not tapped. The harness now performs one bounded viewport
+search before declaring that action absent; this is a harness cleanup correction, not a change to Session or
+SAS semantics. Some warm retries still fail before authentication, under the separate cold
+capability/session-negotiation debt; they did not acquire privileged helpers or cause count growth.
+
 ## Privileged Input Compatibility Investigation
 
 Test-only investigation artifact: debug APK on branch `investigate/a41-privileged-input` from base
