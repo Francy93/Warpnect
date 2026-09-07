@@ -23,6 +23,11 @@
         <activity
             android:name=".debug.video.ClientFixturePresentationActivity"
             android:exported="true" />
+        <!-- Debug-only exact-key cache invalidation for cold qualification timing. -->
+        <activity
+            android:name=".debug.capability.CapabilityQualificationDebugActivity"
+            android:exported="true"
+            android:noHistory="true" />
     </application>
 
 </manifest>

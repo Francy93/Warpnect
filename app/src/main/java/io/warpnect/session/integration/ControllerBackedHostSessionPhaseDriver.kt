@@ -75,6 +75,7 @@ class ControllerBackedHostSessionPhaseDriver(
     private val capabilityPolicy: HostCapabilityPolicy,
     private val setupPolicy: HostSessionSetupPolicy,
     private val onPrepared: (PreparedSessionBootstrap) -> Unit,
+    private val prepareHostCapabilities: () -> Unit = {},
     private val pairingResponderFactory: HostPairingResponderFactory? = null,
     private val onFailure: (SecureSessionIntegrationStage, SecureSessionIntegrationError) -> Unit = { _, _ -> },
     private val onHostReadinessStarted: () -> Unit = {},
@@ -91,6 +92,10 @@ class ControllerBackedHostSessionPhaseDriver(
     fun start(): SecureSessionIntegrationError {
         if (synchronized(lock) { closed }) return SecureSessionIntegrationError.Closed
         if (synchronized(lock) { handshake != null }) return SecureSessionIntegrationError.None
+
+        // Run on the application control owner before the Host is visible to peers. The cached
+        // snapshot is reused by the responder-side WNCP controller after authentication.
+        prepareHostCapabilities()
 
         // RFC-005B owns the advertised bootstrap socket. Prepare/advertise it before borrowing
         // its one WNSH reader; otherwise a real Android responder can never attach.

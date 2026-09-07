@@ -65,7 +65,7 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
 
     val startDiscoveryNow: (SessionRole) -> Unit = { role ->
         when (role) {
-            SessionRole.Host -> composition?.applicationController?.startHost()
+            SessionRole.Host -> composition?.startHostFromUi()
             SessionRole.Client -> composition?.applicationController?.startClientDiscovery()
         }
     }

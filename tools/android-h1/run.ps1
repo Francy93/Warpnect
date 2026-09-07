@@ -683,6 +683,20 @@ function Stop-ScenarioSemantically {
     [void](Tap-IfPresent $HostDevice "Disable Host")
 }
 
+function Ensure-ClientSessionIdle {
+    param([pscustomobject]$ClientDevice)
+
+    if (-not (Tap-IfPresent $ClientDevice "Disconnect")) { return }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        if ($null -eq (Find-UiNode $ClientDevice "Disconnect")) { return }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    throw "Client did not finish its previous Session teardown."
+}
+
 function Start-PairingAttempt {
     param([pscustomobject]$HostDevice, [pscustomobject]$ClientDevice, [switch]$ReuseHost)
     Ensure-WarpnectForeground $HostDevice
@@ -838,6 +852,7 @@ function Invoke-MediaStartupTrace {
         throw "Host did not reach Waiting for clients."
     }
     Ensure-WarpnectForeground $ClientDevice
+    Ensure-ClientSessionIdle $ClientDevice
     Tap-UiText $ClientDevice "Find Hosts"
     if (-not (Wait-ForUiText $ClientDevice "Connect" 30)) {
         throw "Client did not discover a Connect action."

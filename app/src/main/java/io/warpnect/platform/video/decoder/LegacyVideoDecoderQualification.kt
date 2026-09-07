@@ -205,6 +205,10 @@ internal class SharedPreferencesLegacyDecoderQualificationStore(context: Context
     override fun write(key: LegacyDecoderQualificationKey, result: LegacyDecoderProbeResult) {
         preferences.edit().putInt(key.storageKey, result.code).apply()
     }
+
+    /** Debug tooling removes only the active exact key; normal qualification never calls this. */
+    internal fun removeForDebug(key: LegacyDecoderQualificationKey): Boolean =
+        preferences.edit().remove(key.storageKey).commit()
 }
 
 /** Application-private caller for the normal-UID `:decoderProbe` process. */

@@ -27,13 +27,7 @@ internal class AndroidVideoDecoderDiscovery(
     ) : this(AndroidLegacyVideoDecoderQualifier(context), debugObserver)
 
     override fun query(config: VideoDecoderConfig): VideoDecoderCapabilities {
-        val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-            .codecInfos
-            .asSequence()
-            .filter { !it.isEncoder }
-            .mapNotNull { info -> info.toCandidate(config) }
-            .toList()
-        val staticCapabilities = VideoDecoderSelector.select(config, candidates)
+        val staticCapabilities = staticCapabilities(config)
         if (staticCapabilities.error != io.warpnect.video.decoder.VideoDecoderError.LegacyQualificationRequired) {
             return staticCapabilities
         }
@@ -59,6 +53,24 @@ internal class AndroidVideoDecoderDiscovery(
                 qualification = decision.qualificationState(),
             )
         }
+    }
+
+    /** Debug-only cache control calls this static selection path without invoking a qualifier. */
+    internal fun legacyQualificationKeyForDebug(config: VideoDecoderConfig): LegacyDecoderQualificationKey? =
+        staticCapabilities(config)
+            .takeIf { it.error == io.warpnect.video.decoder.VideoDecoderError.LegacyQualificationRequired }
+            ?.selectedCodec
+            ?.codecName
+            ?.let(LegacyDecoderQualificationKey::forCandidate)
+
+    private fun staticCapabilities(config: VideoDecoderConfig): VideoDecoderCapabilities {
+        val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+            .codecInfos
+            .asSequence()
+            .filter { !it.isEncoder }
+            .mapNotNull { info -> info.toCandidate(config) }
+            .toList()
+        return VideoDecoderSelector.select(config, candidates)
     }
 
     @SuppressLint("InlinedApi")

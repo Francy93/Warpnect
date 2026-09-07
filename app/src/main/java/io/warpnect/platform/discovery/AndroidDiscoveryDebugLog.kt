@@ -3,6 +3,7 @@ package io.warpnect.platform.discovery
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
@@ -332,9 +333,32 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         val message = buildString {
             append("event=")
             append(event.kind.logName)
+            append(" local_monotonic_ms=")
+            append(SystemClock.elapsedRealtime())
             event.error?.let {
                 append(" reason=")
                 append(it.name)
+            }
+        }
+        Log.d(TAG, message)
+    }
+
+    /** Bounded DEBUG-only timing for local capability collection; values are device-local only. */
+    fun capabilityCollection(role: String, component: String, phase: String, durationMs: Long? = null) {
+        if (!enabled) return
+        val message = buildString {
+            append("event=capability_collection")
+            append(" local_monotonic_ms=")
+            append(SystemClock.elapsedRealtime())
+            append(" role=")
+            append(role)
+            append(" component=")
+            append(component)
+            append(" phase=")
+            append(phase)
+            durationMs?.let {
+                append(" duration_ms=")
+                append(it)
             }
         }
         Log.d(TAG, message)

@@ -80,6 +80,7 @@ import io.warpnect.session.capability.FeatureRequirement
 import io.warpnect.session.capability.HostCapabilityPolicy
 import io.warpnect.session.capability.LocalCapabilityAvailability
 import io.warpnect.session.capability.MicrophoneRoutingSelection
+import io.warpnect.session.capability.PreparedHostCapabilityCollector
 import io.warpnect.session.discovery.DiscoveryBackendPolicy
 import io.warpnect.session.discovery.DiscoveryConfig
 import io.warpnect.session.discovery.DiscoveryMode
@@ -184,6 +185,11 @@ class AndroidSecureSessionComposition private constructor(
     private val controlScheduler: AndroidSessionControlScheduler,
     private val directPathBackend: AndroidDirectPathBackend?,
 ) : AutoCloseable {
+    /** Starts bounded Host readiness on the existing non-Main Session control owner. */
+    fun startHostFromUi() {
+        controlScheduler.dispatch { applicationController.startHost() }
+    }
+
     override fun close() {
         reportExportController.close()
         controlScheduler.close()
@@ -373,6 +379,7 @@ class AndroidSecureSessionComposition private constructor(
             val controlScheduler = AndroidSessionControlScheduler {
                 applicationReference.get()?.advance()
             }
+            val localCapabilityCollector = PreparedHostCapabilityCollector(capabilityCollector())
 
             val clientDriver = ControllerBackedClientSessionPhaseDriver(
                 discovery = clientDiscovery,
@@ -416,7 +423,7 @@ class AndroidSecureSessionComposition private constructor(
                 secureControlFactory = clientSecureControlFactory(),
                 capabilityFactory = ClientCapabilityNegotiationControllerFactory { completed ->
                     CapabilityNegotiationController(
-                        capabilityCollector(),
+                        localCapabilityCollector,
                         monotonicCapabilityClock(),
                         onCompleted = completed,
                         debugObserver = CapabilityNegotiationDebugObserver(discoveryDebugLog::capability),
@@ -482,7 +489,7 @@ class AndroidSecureSessionComposition private constructor(
                 secureControlFactory = hostSecureControlFactory(),
                 capabilityFactory = HostCapabilityNegotiationControllerFactory { completed ->
                     CapabilityNegotiationController(
-                        capabilityCollector(),
+                        localCapabilityCollector,
                         monotonicCapabilityClock(),
                         onCompleted = completed,
                         debugObserver = CapabilityNegotiationDebugObserver(discoveryDebugLog::capability),
@@ -501,6 +508,11 @@ class AndroidSecureSessionComposition private constructor(
                 capabilityPolicy = productionHostCapabilityPolicy(),
                 setupPolicy = HostSessionSetupPolicy(productionSetupPreferences()),
                 onPrepared = { bootstrap -> host.acceptPreparedHostSession(bootstrap) },
+                prepareHostCapabilities = {
+                    discoveryDebugLog.capabilityCollection("Host", "snapshot", "preparing")
+                    localCapabilityCollector.prepareHost()
+                    discoveryDebugLog.capabilityCollection("Host", "snapshot", "prepared")
+                },
                 pairingResponderFactory = HostPairingResponderFactory {
                     AndroidHostPairingResponder.create(
                         hostDiscovery,
@@ -511,7 +523,10 @@ class AndroidSecureSessionComposition private constructor(
                     )
                 },
                 onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
-                onHostReadinessStopped = discoveryDebugLog::hostLifecycleStopped,
+                onHostReadinessStopped = {
+                    localCapabilityCollector.clearPreparedHost()
+                    discoveryDebugLog.hostLifecycleStopped()
+                },
             )
             host = SecureSessionCoordinator(
                 localRole = SessionRole.Host,
@@ -597,103 +612,141 @@ class AndroidSecureSessionComposition private constructor(
 
         private fun capabilitySnapshot(role: SessionRole): AndroidCapabilityProbeSnapshot {
             uiResources.markRoleCapabilityChecking(role)
-            val directImplemented = directPathBackend?.isImplemented() == true
-            val directAvailable = directPathBackend?.isPlatformAvailable() == true && when (role) {
-                SessionRole.Host -> true
-                SessionRole.Client -> directRouteState.isUsable()
-            }
-            val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
-            val encoder = if (role == SessionRole.Host) {
-                videoEncoderDiscovery.query(
-                    VideoEncoderRequest(
-                        width = videoMode.width,
-                        height = videoMode.height,
-                        frameRate = videoMode.fps,
-                        bitrateBps = videoMode.bitrateBps.toInt(),
-                        iFrameIntervalSeconds = 1f,
-                    ),
-                )
-            } else {
-                null
-            }
-            val decoder = videoDecoderDiscovery.query(
-                VideoDecoderConfig(
-                    width = videoMode.width,
-                    height = videoMode.height,
-                    expectedFrameRate = videoMode.fps,
-                    configGeneration = 1,
-                    codecSpecificData = listOf(byteArrayOf(1)),
-                ),
-            )
-            val system = queryCapabilitiesAndClose(
-                AndroidSystemAudioCaptureController(context),
-                AudioCaptureRequest(
-                    source = AudioCaptureSource.SystemAudio,
-                    preferredSampleRateHz = 48_000,
-                    channelCount = 2,
-                    targetChunkDurationUs = 5_000L,
-                ),
-            )
-            val microphone = AndroidMicrophoneAudioCaptureController(context).queryCapabilities(
-                AudioCaptureRequest(
-                    source = AudioCaptureSource.MicrophoneAudio,
-                    preferredSampleRateHz = 48_000,
-                    channelCount = 1,
-                    targetChunkDurationUs = 5_000L,
-                ),
-            )
-            val audioEncoder = NativeOpusAudioEncoderController().queryCapabilities(
-                AudioEncoderRequest(
-                    source = AudioCaptureSource.SystemAudio,
-                    sampleRateHz = 48_000,
-                    channelCount = 2,
-                    frameDurationUs = 5_000,
-                    bitrateBps = 128_000,
-                ),
-            )
-            val injection = if (role == SessionRole.Host) {
-                AndroidInputInjectionController(context).let { controller ->
-                    try {
-                        runBlocking { controller.queryCapabilities() }
-                    } finally {
-                        controller.close()
-                    }
+            discoveryDebugLog.capabilityCollection(role.name, "snapshot", "started")
+            val snapshotStartedAtMs = SystemClock.elapsedRealtime()
+            try {
+                val directImplemented = directPathBackend?.isImplemented() == true
+                val directAvailable = directPathBackend?.isPlatformAvailable() == true && when (role) {
+                    SessionRole.Host -> true
+                    SessionRole.Client -> directRouteState.isUsable()
                 }
-            } else {
-                null
+                val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
+                val encoder = if (role == SessionRole.Host) {
+                    measureCapabilityCollection(role, "video_encoder") {
+                        videoEncoderDiscovery.query(
+                            VideoEncoderRequest(
+                                width = videoMode.width,
+                                height = videoMode.height,
+                                frameRate = videoMode.fps,
+                                bitrateBps = videoMode.bitrateBps.toInt(),
+                                iFrameIntervalSeconds = 1f,
+                            ),
+                        )
+                    }
+                } else {
+                    null
+                }
+                val decoder = measureCapabilityCollection(role, "video_decoder") {
+                    videoDecoderDiscovery.query(
+                        VideoDecoderConfig(
+                            width = videoMode.width,
+                            height = videoMode.height,
+                            expectedFrameRate = videoMode.fps,
+                            configGeneration = 1,
+                            codecSpecificData = listOf(byteArrayOf(1)),
+                        ),
+                    )
+                }
+                val system = measureCapabilityCollection(role, "system_audio") {
+                    queryCapabilitiesAndClose(
+                        AndroidSystemAudioCaptureController(context),
+                        AudioCaptureRequest(
+                            source = AudioCaptureSource.SystemAudio,
+                            preferredSampleRateHz = 48_000,
+                            channelCount = 2,
+                            targetChunkDurationUs = 5_000L,
+                        ),
+                    )
+                }
+                val microphone = measureCapabilityCollection(role, "microphone") {
+                    AndroidMicrophoneAudioCaptureController(context).queryCapabilities(
+                        AudioCaptureRequest(
+                            source = AudioCaptureSource.MicrophoneAudio,
+                            preferredSampleRateHz = 48_000,
+                            channelCount = 1,
+                            targetChunkDurationUs = 5_000L,
+                        ),
+                    )
+                }
+                val audioEncoder = measureCapabilityCollection(role, "audio_encoder") {
+                    NativeOpusAudioEncoderController().queryCapabilities(
+                        AudioEncoderRequest(
+                            source = AudioCaptureSource.SystemAudio,
+                            sampleRateHz = 48_000,
+                            channelCount = 2,
+                            frameDurationUs = 5_000,
+                            bitrateBps = 128_000,
+                        ),
+                    )
+                }
+                val injection = if (role == SessionRole.Host) {
+                    measureCapabilityCollection(role, "input_injection") {
+                        AndroidInputInjectionController(context).let { controller ->
+                            try {
+                                runBlocking { controller.queryCapabilities() }
+                            } finally {
+                                controller.close()
+                            }
+                        }
+                    }
+                } else {
+                    null
+                }
+                val snapshot = AndroidCapabilityProbeSnapshot(
+                    lanSecurePathAvailable = true,
+                    directPathBackendImplemented = directImplemented,
+                    directPathAvailable = directAvailable,
+                    standbyPathSupported = directImplemented,
+                    videoEncoder = encoder,
+                    videoDecoder = decoder,
+                    systemAudioCapture = system,
+                    microphoneCapture = microphone,
+                    audioEncoder = audioEncoder,
+                    opusDecodeAvailable = true,
+                    lowLatencyPlaybackAvailable = true,
+                    inputInjection = injection,
+                    implementedCaptureKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
+                        CapabilityBits.INPUT_TOUCHSCREEN or CapabilityBits.INPUT_TOUCHPAD or CapabilityBits.INPUT_STYLUS,
+                    separateMicrophonePerPeerAvailable = false,
+                )
+                val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
+                val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
+                val inputAvailable = local.input.injectionKinds != 0
+                uiResources.publishRoleCapability(role, videoAvailable, inputAvailable)
+                discoveryDebugLog.localCapabilityProbe(
+                    role = role.name,
+                    videoAvailable = videoAvailable,
+                    videoError = when (role) {
+                        SessionRole.Host -> encoder?.error?.name ?: "NotApplicable"
+                        SessionRole.Client -> decoder.error.name
+                    },
+                    inputAvailable = inputAvailable,
+                    inputError = injection?.lastError?.name ?: "NotApplicable",
+                )
+                return snapshot
+            } finally {
+                discoveryDebugLog.capabilityCollection(
+                    role.name,
+                    "snapshot",
+                    "completed",
+                    (SystemClock.elapsedRealtime() - snapshotStartedAtMs).coerceAtLeast(0L),
+                )
             }
-            val snapshot = AndroidCapabilityProbeSnapshot(
-                lanSecurePathAvailable = true,
-                directPathBackendImplemented = directImplemented,
-                directPathAvailable = directAvailable,
-                standbyPathSupported = directImplemented,
-                videoEncoder = encoder,
-                videoDecoder = decoder,
-                systemAudioCapture = system,
-                microphoneCapture = microphone,
-                audioEncoder = audioEncoder,
-                opusDecodeAvailable = true,
-                lowLatencyPlaybackAvailable = true,
-                inputInjection = injection,
-                implementedCaptureKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
-                    CapabilityBits.INPUT_TOUCHSCREEN or CapabilityBits.INPUT_TOUCHPAD or CapabilityBits.INPUT_STYLUS,
-                separateMicrophonePerPeerAvailable = false,
-            )
-            val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
-            val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
-            val inputAvailable = local.input.injectionKinds != 0
-            uiResources.publishRoleCapability(role, videoAvailable, inputAvailable)
-            discoveryDebugLog.localCapabilityProbe(
-                role = role.name,
-                videoAvailable = videoAvailable,
-                videoError = when (role) {
-                    SessionRole.Host -> encoder?.error?.name ?: "NotApplicable"
-                    SessionRole.Client -> decoder.error.name
-                },
-                inputAvailable = inputAvailable,
-                inputError = injection?.lastError?.name ?: "NotApplicable",
-            )
-            return snapshot
+        }
+
+        private inline fun <T> measureCapabilityCollection(role: SessionRole, component: String, block: () -> T): T {
+            discoveryDebugLog.capabilityCollection(role.name, component, "started")
+            val startedAtMs = SystemClock.elapsedRealtime()
+            return try {
+                block()
+            } finally {
+                discoveryDebugLog.capabilityCollection(
+                    role.name,
+                    component,
+                    "completed",
+                    (SystemClock.elapsedRealtime() - startedAtMs).coerceAtLeast(0L),
+                )
+            }
         }
 
         private fun sessionSetupRuntime(

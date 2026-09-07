@@ -155,6 +155,26 @@ class HostDiscoveryStartupTest {
     }
 
     @Test
+    fun hostCapabilitiesPrepareBeforeDiscoveryAdvertisement() {
+        val backend = RecordingBackend()
+        val application = application(
+            discovery(backend, RecordingContactLease()),
+            CountingUnusedPipelineFactory(),
+            onPrepareHostCapabilities = {
+                assertFalse(backend.advertising)
+            },
+            pairingResponderFactory = { current ->
+                current.borrowPairingTransport()?.let(::RecordingResponder)
+            },
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, application.startHost().error)
+        assertTrue(backend.advertising)
+
+        application.close()
+    }
+
+    @Test
     fun unavailableAdvertisedContactEndpointReturnsTypedHostDiscoveryFailureWithoutStartingMedia() {
         val backend = RecordingBackend()
         val pipelineFactory = CountingUnusedPipelineFactory()
@@ -421,6 +441,7 @@ class HostDiscoveryStartupTest {
     private fun application(
         discovery: DefaultLocalDiscoveryController,
         pipelineFactory: CountingUnusedPipelineFactory,
+        onPrepareHostCapabilities: () -> Unit = {},
         onHostReadinessStarted: () -> Unit = {},
         onHostReadinessStopped: () -> Unit = {},
         pairingResponderFactory: (DefaultLocalDiscoveryController) -> HostPairingResponder? = { null },
@@ -473,6 +494,7 @@ class HostDiscoveryStartupTest {
             capabilityPolicy = HostCapabilityPolicy(),
             setupPolicy = HostSessionSetupPolicy(SessionSetupPreferences()),
             onPrepared = {},
+            prepareHostCapabilities = onPrepareHostCapabilities,
             pairingResponderFactory = HostPairingResponderFactory { pairingResponderFactory(discovery) },
             onHostReadinessStarted = onHostReadinessStarted,
             onHostReadinessStopped = onHostReadinessStopped,
