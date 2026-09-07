@@ -393,7 +393,9 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
             CbrCapabilityDecisionSource.ActiveProbe -> {
                 if (decision.supported) "encoder_cbr_active_probe_succeeded" else "encoder_cbr_active_probe_failed"
             }
-            CbrCapabilityDecisionSource.ActiveProbeCache -> "encoder_cbr_probe_cache_hit"
+            CbrCapabilityDecisionSource.CurrentProcessProbeCache -> "encoder_cbr_current_process_cache_hit"
+            CbrCapabilityDecisionSource.PersistentProbeCache -> "encoder_cbr_persistent_cache_hit"
+            CbrCapabilityDecisionSource.CurrentProcessQuarantine -> "encoder_cbr_current_process_quarantined"
         }
         val message = buildString {
             append("event=")

@@ -49,7 +49,7 @@ class SafeCodecProbeInstrumentationTest {
         assertEquals(first.error, second.error)
         assertTrue(
             "second exact query should use the process-local probe result",
-            decisions.any { it.source == CbrCapabilityDecisionSource.ActiveProbeCache },
+            decisions.any { it.source == CbrCapabilityDecisionSource.CurrentProcessProbeCache },
         )
         assertFalse(
             "second exact query must not launch another codec process",

@@ -1,10 +1,15 @@
 package io.warpnect.platform.video.encoder
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.media.MediaCodec
+import android.os.Build
 import android.os.Looper
 import io.warpnect.video.encoder.VideoBitrateMode
 import io.warpnect.video.encoder.VideoCodec
 import io.warpnect.video.encoder.VideoEncoderRequest
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.LinkedHashMap
 
 /**
@@ -34,7 +39,34 @@ internal data class ExactVideoEncoderCapabilityKey(
     val bitrateBps: Int,
     val bitrateMode: String,
     val iFrameIntervalBits: Int,
+    val qualificationAlgorithmVersion: Int = ExactVideoEncoderQualificationProfile.ALGORITHM_VERSION,
+    val probeWorkloadVersion: String = ExactVideoEncoderQualificationProfile.PROBE_WORKLOAD_VERSION,
+    val targetProfileVersion: String = ExactVideoEncoderQualificationProfile.TARGET_PROFILE_VERSION,
+    val buildFingerprint: String = "",
+    val mediaRuntimeCompatibilityVersion: String =
+        ExactVideoEncoderQualificationProfile.MEDIA_RUNTIME_COMPATIBILITY_VERSION,
 ) {
+    val storageKey: String
+        get() = MessageDigest.getInstance("SHA-256")
+            .digest(
+                listOf(
+                    qualificationAlgorithmVersion.toString(),
+                    probeWorkloadVersion,
+                    targetProfileVersion,
+                    codecName,
+                    mimeType,
+                    width.toString(),
+                    height.toString(),
+                    frameRate.toString(),
+                    bitrateBps.toString(),
+                    bitrateMode,
+                    iFrameIntervalBits.toString(),
+                    buildFingerprint,
+                    mediaRuntimeCompatibilityVersion,
+                ).joinToString("\u0000").toByteArray(StandardCharsets.UTF_8),
+            )
+            .joinToString("") { "%02x".format(it) }
+
     companion object {
         fun from(codecName: String, request: VideoEncoderRequest): ExactVideoEncoderCapabilityKey =
             ExactVideoEncoderCapabilityKey(
@@ -46,15 +78,26 @@ internal data class ExactVideoEncoderCapabilityKey(
                 bitrateBps = request.bitrateBps,
                 bitrateMode = request.bitrateMode.name,
                 iFrameIntervalBits = request.iFrameIntervalSeconds.toBits(),
+                buildFingerprint = Build.FINGERPRINT.orEmpty(),
             )
     }
+}
+
+/** Explicit cache invalidators for RFC-002B's exact normal-app codec workload. */
+internal object ExactVideoEncoderQualificationProfile {
+    const val ALGORITHM_VERSION = 1
+    const val PROBE_WORKLOAD_VERSION = "rfc002b-exact-lifecycle-v1"
+    const val TARGET_PROFILE_VERSION = "avc-1280x720-60-cbr-8mbps-iframe-1-v1"
+    const val MEDIA_RUNTIME_COMPATIBILITY_VERSION = "android-mediacodec-v1"
 }
 
 internal enum class CbrCapabilityDecisionSource {
     Metadata,
     NotEligible,
     ActiveProbe,
-    ActiveProbeCache,
+    CurrentProcessProbeCache,
+    PersistentProbeCache,
+    CurrentProcessQuarantine,
 }
 
 internal enum class ExactVideoEncoderCapabilityProbeResult(val code: Int) {
@@ -71,7 +114,10 @@ internal enum class ExactVideoEncoderCapabilityProbeResult(val code: Int) {
 
     companion object {
         fun fromCode(code: Int): ExactVideoEncoderCapabilityProbeResult =
-            entries.firstOrNull { it.code == code } ?: ProbeServiceUnavailable
+            fromPersistedCode(code) ?: ProbeServiceUnavailable
+
+        fun fromPersistedCode(code: Int): ExactVideoEncoderCapabilityProbeResult? =
+            entries.firstOrNull { it.code == code }
     }
 }
 
@@ -85,9 +131,59 @@ internal interface ExactVideoEncoderCapabilityProbe {
     fun probe(key: ExactVideoEncoderCapabilityKey): CbrCapabilityDecision
 }
 
-/** Process-local, fixed-size cache for exact MediaCodec configuration results. */
+internal interface ExactVideoEncoderQualificationStore {
+    fun read(key: ExactVideoEncoderCapabilityKey): ExactVideoEncoderCapabilityProbeResult?
+    fun write(key: ExactVideoEncoderCapabilityKey, result: ExactVideoEncoderCapabilityProbeResult)
+}
+
+internal object NoOpExactVideoEncoderQualificationStore : ExactVideoEncoderQualificationStore {
+    override fun read(key: ExactVideoEncoderCapabilityKey): ExactVideoEncoderCapabilityProbeResult? = null
+
+    override fun write(key: ExactVideoEncoderCapabilityKey, result: ExactVideoEncoderCapabilityProbeResult) = Unit
+}
+
+/**
+ * App-private exact-key storage for durable positive RFC-002B evidence. A synchronous cold-path
+ * commit makes the result available to the next app process before this caller returns.
+ */
+internal class SharedPreferencesExactVideoEncoderQualificationStore(
+    context: Context,
+) : ExactVideoEncoderQualificationStore {
+    private val preferences: SharedPreferences = context.applicationContext.getSharedPreferences(
+        "exact_video_encoder_qualification",
+        Context.MODE_PRIVATE,
+    )
+
+    override fun read(key: ExactVideoEncoderCapabilityKey): ExactVideoEncoderCapabilityProbeResult? {
+        if (!preferences.contains(key.storageKey)) return null
+        val result = runCatching {
+            ExactVideoEncoderCapabilityProbeResult.fromPersistedCode(
+                preferences.getInt(key.storageKey, Int.MIN_VALUE),
+            )
+        }.getOrNull()
+        if (result?.isPersistableQualificationResult() == true) return result
+        preferences.edit().remove(key.storageKey).apply()
+        return null
+    }
+
+    override fun write(key: ExactVideoEncoderCapabilityKey, result: ExactVideoEncoderCapabilityProbeResult) {
+        if (!result.isPersistableQualificationResult()) return
+        preferences.edit().putInt(key.storageKey, result.code).commit()
+    }
+
+    /** Debug/test tooling removes one hashed exact key without touching pairing or app state. */
+    internal fun removeForDebug(key: ExactVideoEncoderCapabilityKey): Boolean =
+        preferences.edit().remove(key.storageKey).commit()
+}
+
+/**
+ * Keeps transient execution outcomes and crash containment local to one caller process while
+ * reusing only exact persisted positive evidence across app process restarts.
+ */
 internal class CachedExactVideoEncoderCapabilityProbe(
     private val delegate: ExactVideoEncoderCapabilityProbe,
+    private val store: ExactVideoEncoderQualificationStore = NoOpExactVideoEncoderQualificationStore,
+    private val onActiveProbeStarted: () -> Unit = {},
     private val capacity: Int = DEFAULT_CACHE_CAPACITY,
 ) : ExactVideoEncoderCapabilityProbe {
     private val cache = object : LinkedHashMap<ExactVideoEncoderCapabilityKey, ExactVideoEncoderCapabilityProbeResult>(
@@ -107,24 +203,29 @@ internal class CachedExactVideoEncoderCapabilityProbe(
 
     override fun probe(key: ExactVideoEncoderCapabilityKey): CbrCapabilityDecision = synchronized(cache) {
         cache[key]?.let { result ->
-            return CbrCapabilityDecision(
-                supported = result == ExactVideoEncoderCapabilityProbeResult.Supported,
-                source = CbrCapabilityDecisionSource.ActiveProbeCache,
-                probeResult = result,
-            )
+            return cachedDecision(result, CbrCapabilityDecisionSource.CurrentProcessProbeCache)
+        }
+
+        runCatching { store.read(key) }.getOrNull()?.let { result ->
+            cache[key] = result
+            return cachedDecision(result, CbrCapabilityDecisionSource.PersistentProbeCache)
         }
 
         if (processDeathQuarantined) {
-            return cacheDecision(
-                key = key,
-                result = ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied,
+            return currentProcessQuarantineDecision(
+                key,
+                ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied,
             )
         }
 
+        onActiveProbeStarted()
         val decision = delegate.probe(key)
         val result = decision.probeResult
         if (result != null && result != ExactVideoEncoderCapabilityProbeResult.MainThreadRejected) {
             cache[key] = result
+            if (result.isPersistableQualificationResult()) {
+                runCatching { store.write(key, result) }
+            }
             if (result == ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied) {
                 processDeathQuarantined = true
             }
@@ -132,19 +233,30 @@ internal class CachedExactVideoEncoderCapabilityProbe(
         decision
     }
 
-    private fun cacheDecision(
+    private fun cachedDecision(
+        result: ExactVideoEncoderCapabilityProbeResult,
+        source: CbrCapabilityDecisionSource,
+    ): CbrCapabilityDecision = CbrCapabilityDecision(
+        supported = result == ExactVideoEncoderCapabilityProbeResult.Supported,
+        source = source,
+        probeResult = result,
+    )
+
+    private fun currentProcessQuarantineDecision(
         key: ExactVideoEncoderCapabilityKey,
         result: ExactVideoEncoderCapabilityProbeResult,
-    ): CbrCapabilityDecision = CbrCapabilityDecision(
-        supported = false,
-        source = CbrCapabilityDecisionSource.ActiveProbeCache,
-        probeResult = result,
+    ): CbrCapabilityDecision = cachedDecision(
+        result,
+        CbrCapabilityDecisionSource.CurrentProcessQuarantine,
     ).also { cache[key] = result }
 
     private companion object {
         const val DEFAULT_CACHE_CAPACITY = 32
     }
 }
+
+private fun ExactVideoEncoderCapabilityProbeResult.isPersistableQualificationResult(): Boolean =
+    this == ExactVideoEncoderCapabilityProbeResult.Supported
 
 /** Runs the exact cold codec lifecycle and guarantees best-effort cleanup at every failure stage. */
 internal object ExactFormatEncoderProbeRunner {

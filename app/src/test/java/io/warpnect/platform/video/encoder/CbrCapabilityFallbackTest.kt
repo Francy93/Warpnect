@@ -1,8 +1,13 @@
 package io.warpnect.platform.video.encoder
 
 import io.warpnect.video.encoder.VideoEncoderRequest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,7 +85,7 @@ class CbrCapabilityFallbackTest {
     }
 
     @Test
-    fun exactProbeResultIsCachedForTheProcessLifetimeBoundedCache() {
+    fun exactProbeResultIsCachedForTheCurrentProcessLifetime() {
         val rawProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.Supported)
         val probe = CachedExactVideoEncoderCapabilityProbe(rawProbe)
         val fallback = CbrCapabilityFallback(probe)
@@ -91,7 +96,7 @@ class CbrCapabilityFallbackTest {
         assertTrue(first.supported)
         assertTrue(second.supported)
         assertEquals(CbrCapabilityDecisionSource.ActiveProbe, first.source)
-        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, second.source)
+        assertEquals(CbrCapabilityDecisionSource.CurrentProcessProbeCache, second.source)
         assertEquals(1, rawProbe.calls)
     }
 
@@ -106,7 +111,7 @@ class CbrCapabilityFallbackTest {
 
         assertFalse(first.supported)
         assertFalse(second.supported)
-        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, second.source)
+        assertEquals(CbrCapabilityDecisionSource.CurrentProcessProbeCache, second.source)
         assertEquals(1, rawProbe.calls)
     }
 
@@ -123,10 +128,114 @@ class CbrCapabilityFallbackTest {
 
         assertFalse(first.supported)
         assertEquals(ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied, first.probeResult)
-        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, same.source)
-        assertEquals(CbrCapabilityDecisionSource.ActiveProbeCache, other.source)
+        assertEquals(CbrCapabilityDecisionSource.CurrentProcessProbeCache, same.source)
+        assertEquals(CbrCapabilityDecisionSource.CurrentProcessQuarantine, other.source)
         assertEquals(ExactVideoEncoderCapabilityProbeResult.ProbeProcessDied, other.probeResult)
         assertEquals(1, rawProbe.calls)
+    }
+
+    @Test
+    fun supportedExactResultIsReusedByANewProcessCacheWithoutAProbe() {
+        val store = RecordingStore()
+        val initialProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.Supported)
+        val initial = CachedExactVideoEncoderCapabilityProbe(initialProbe, store)
+
+        val first = initial.probe(key)
+
+        val restartedProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.ConfigureFailed)
+        val restarted = CachedExactVideoEncoderCapabilityProbe(restartedProbe, store)
+        val second = restarted.probe(key)
+
+        assertEquals(CbrCapabilityDecisionSource.ActiveProbe, first.source)
+        assertTrue(first.supported)
+        assertEquals(CbrCapabilityDecisionSource.PersistentProbeCache, second.source)
+        assertTrue(second.supported)
+        assertEquals(1, initialProbe.calls)
+        assertEquals(0, restartedProbe.calls)
+    }
+
+    @Test
+    fun exactKeyChangeDoesNotReusePersistedEvidence() {
+        val store = RecordingStore()
+        CachedExactVideoEncoderCapabilityProbe(
+            RecordingProbe(ExactVideoEncoderCapabilityProbeResult.Supported),
+            store,
+        ).probe(key)
+        val changed = key.copy(
+            qualificationAlgorithmVersion = key.qualificationAlgorithmVersion + 1,
+        )
+        val restartedProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.Supported)
+
+        val decision = CachedExactVideoEncoderCapabilityProbe(restartedProbe, store).probe(changed)
+
+        assertNotEquals(key.storageKey, changed.storageKey)
+        assertEquals(CbrCapabilityDecisionSource.ActiveProbe, decision.source)
+        assertEquals(1, restartedProbe.calls)
+    }
+
+    @Test
+    fun everyAuthoritativeEncoderCompatibilityInputChangesTheStorageKey() {
+        val changedKeys = listOf(
+            key.copy(probeWorkloadVersion = "other-workload"),
+            key.copy(targetProfileVersion = "other-profile"),
+            key.copy(codecName = "other.codec"),
+            key.copy(mimeType = "video/other"),
+            key.copy(width = key.width + 2),
+            key.copy(height = key.height + 2),
+            key.copy(frameRate = key.frameRate - 1),
+            key.copy(bitrateBps = key.bitrateBps - 1),
+            key.copy(bitrateMode = "Other"),
+            key.copy(iFrameIntervalBits = key.iFrameIntervalBits + 1),
+            key.copy(buildFingerprint = "other-fingerprint"),
+            key.copy(mediaRuntimeCompatibilityVersion = "other-media-runtime"),
+        )
+
+        changedKeys.forEach { changed -> assertNotEquals(key.storageKey, changed.storageKey) }
+    }
+
+    @Test
+    fun transientProbeFailureIsNotPersistedAcrossProcessRestart() {
+        val store = RecordingStore()
+        val initialProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.ProbeTimedOut)
+        val initial = CachedExactVideoEncoderCapabilityProbe(initialProbe, store)
+
+        initial.probe(key)
+
+        val restartedProbe = RecordingProbe(ExactVideoEncoderCapabilityProbeResult.Supported)
+        val restarted = CachedExactVideoEncoderCapabilityProbe(restartedProbe, store)
+        val decision = restarted.probe(key)
+
+        assertEquals(CbrCapabilityDecisionSource.ActiveProbe, decision.source)
+        assertTrue(decision.supported)
+        assertEquals(1, restartedProbe.calls)
+    }
+
+    @Test
+    fun malformedPersistedResultCodeIsACacheMiss() {
+        assertNull(ExactVideoEncoderCapabilityProbeResult.fromPersistedCode(Int.MAX_VALUE))
+    }
+
+    @Test
+    fun concurrentSameKeyRequestsStartOneActiveProbe() {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val delegate = BlockingProbe(started, release)
+        val cached = CachedExactVideoEncoderCapabilityProbe(delegate)
+        val executor = Executors.newFixedThreadPool(2)
+        try {
+            val first = executor.submit<CbrCapabilityDecision> { cached.probe(key) }
+            assertTrue(started.await(1, TimeUnit.SECONDS))
+            val second = executor.submit<CbrCapabilityDecision> { cached.probe(key) }
+            release.countDown()
+
+            val decisions = listOf(first.get(1, TimeUnit.SECONDS), second.get(1, TimeUnit.SECONDS))
+            assertEquals(1, decisions.count { it.source == CbrCapabilityDecisionSource.ActiveProbe })
+            assertEquals(1, decisions.count { it.source == CbrCapabilityDecisionSource.CurrentProcessProbeCache })
+            assertEquals(1, delegate.calls)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
     }
 
     private class RecordingProbe(
@@ -140,6 +249,34 @@ class CbrCapabilityFallbackTest {
                 supported = result == ExactVideoEncoderCapabilityProbeResult.Supported,
                 source = CbrCapabilityDecisionSource.ActiveProbe,
                 probeResult = result,
+            )
+        }
+    }
+
+    private class RecordingStore : ExactVideoEncoderQualificationStore {
+        private val values = mutableMapOf<ExactVideoEncoderCapabilityKey, ExactVideoEncoderCapabilityProbeResult>()
+
+        override fun read(key: ExactVideoEncoderCapabilityKey): ExactVideoEncoderCapabilityProbeResult? = values[key]
+
+        override fun write(key: ExactVideoEncoderCapabilityKey, result: ExactVideoEncoderCapabilityProbeResult) {
+            values[key] = result
+        }
+    }
+
+    private class BlockingProbe(
+        private val started: CountDownLatch,
+        private val release: CountDownLatch,
+    ) : ExactVideoEncoderCapabilityProbe {
+        var calls = 0
+
+        override fun probe(key: ExactVideoEncoderCapabilityKey): CbrCapabilityDecision {
+            calls += 1
+            started.countDown()
+            check(release.await(1, TimeUnit.SECONDS))
+            return CbrCapabilityDecision(
+                supported = true,
+                source = CbrCapabilityDecisionSource.ActiveProbe,
+                probeResult = ExactVideoEncoderCapabilityProbeResult.Supported,
             )
         }
     }

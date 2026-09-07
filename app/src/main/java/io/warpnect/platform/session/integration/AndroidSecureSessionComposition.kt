@@ -58,6 +58,7 @@ import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.CachedExactVideoEncoderCapabilityProbe
 import io.warpnect.platform.video.encoder.CbrCapabilityFallback
 import io.warpnect.platform.video.encoder.ServiceBackedExactVideoEncoderCapabilityProbe
+import io.warpnect.platform.video.encoder.SharedPreferencesExactVideoEncoderQualificationStore
 import io.warpnect.platform.video.encoder.VideoEncoderCbrCapabilityDebugObserver
 import io.warpnect.platform.video.encoder.VideoEncoderFrameDebugObserver
 import io.warpnect.platform.video.render.AndroidVideoRenderController
@@ -226,18 +227,16 @@ class AndroidSecureSessionComposition private constructor(
         private val videoEncoderDiscovery = AndroidVideoEncoderDiscovery(
             CbrCapabilityFallback(
                 CachedExactVideoEncoderCapabilityProbe(
-                    ServiceBackedExactVideoEncoderCapabilityProbe(
+                    delegate = ServiceBackedExactVideoEncoderCapabilityProbe(
                         AndroidCodecProbeServiceCaller(context),
                     ),
+                    store = SharedPreferencesExactVideoEncoderQualificationStore(context),
+                    onActiveProbeStarted = discoveryDebugLog::encoderCbrActiveProbeStarted,
                 ),
             ),
             debugObserver = object : VideoEncoderCbrCapabilityDebugObserver {
                 override fun onDecision(decision: io.warpnect.platform.video.encoder.CbrCapabilityDecision) {
                     discoveryDebugLog.encoderCbrCapability(decision)
-                }
-
-                override fun onActiveProbeStarted() {
-                    discoveryDebugLog.encoderCbrActiveProbeStarted()
                 }
             },
         )

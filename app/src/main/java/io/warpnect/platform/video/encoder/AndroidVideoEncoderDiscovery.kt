@@ -93,9 +93,6 @@ internal class AndroidVideoEncoderDiscovery(
 
     private fun resolveCbrSupport(candidate: VideoEncoderCandidate, request: VideoEncoderRequest): Boolean {
         val metadataSupported = candidate.bitrateModeSupported
-        if (!metadataSupported && candidate.isEligibleForCbrProbe()) {
-            debugObserver.onActiveProbeStarted()
-        }
         val decision = cbrFallback.resolve(
             metadataSupported = metadataSupported,
             allOtherRequirementsSupported = candidate.isEligibleForCbrProbe(),
@@ -131,8 +128,6 @@ internal class AndroidVideoEncoderDiscovery(
 
 internal interface VideoEncoderCbrCapabilityDebugObserver {
     fun onDecision(decision: CbrCapabilityDecision)
-
-    fun onActiveProbeStarted() = Unit
 
     companion object {
         val None = object : VideoEncoderCbrCapabilityDebugObserver {
