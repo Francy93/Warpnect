@@ -133,7 +133,7 @@ data class AndroidVideoReceiverPipeline(
     val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
-/** Development-only sender-start outcome. It retains fixed error enums and no media or Session data. */
+/** Development-only video-start outcome. It retains fixed error enums and no media or Session data. */
 fun interface VideoPipelineStartDebugObserver {
     fun onEvent(event: VideoPipelineStartDebugEvent)
 
@@ -151,6 +151,9 @@ enum class VideoPipelineStartDebugEventKind {
     SenderStartRequested,
     SenderStartSucceeded,
     SenderStartFailed,
+    ReceiverStartRequested,
+    ReceiverStartSucceeded,
+    ReceiverStartFailed,
 }
 
 data class AndroidAudioSenderPipeline(
@@ -306,6 +309,7 @@ class AndroidSessionPipelineFactory(
                         pipeline.copy(telemetrySources = telemetrySources),
                         networkTelemetry,
                         diagnosticWriter(bootstrap, channel),
+                        debugObserver,
                     )
                 }
             }
@@ -589,12 +593,25 @@ private class VideoReceiverComponent(
     private val pipeline: AndroidVideoReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
+    private val debugObserver: VideoPipelineStartDebugObserver,
 ) : SessionPipelineComponent {
     override val name = "video-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(SessionChannelKind.Video)
     override fun start(): SessionPipelineComponentResult {
-        val started = runBlocking { pipeline.controller.start(pipeline.config) }.isSuccess
+        debugObserver.onEvent(VideoPipelineStartDebugEvent(VideoPipelineStartDebugEventKind.ReceiverStartRequested))
+        val result = runBlocking { pipeline.controller.start(pipeline.config) }
+        val started = result.isSuccess
+        debugObserver.onEvent(
+            VideoPipelineStartDebugEvent(
+                if (started) {
+                    VideoPipelineStartDebugEventKind.ReceiverStartSucceeded
+                } else {
+                    VideoPipelineStartDebugEventKind.ReceiverStartFailed
+                },
+                result,
+            ),
+        )
         diagnostics?.emit(
             if (started) DiagnosticEventIds.VideoDecoderStarted else DiagnosticEventIds.VideoDecoderFailed,
             DiagnosticReason.CodecFailure.code,

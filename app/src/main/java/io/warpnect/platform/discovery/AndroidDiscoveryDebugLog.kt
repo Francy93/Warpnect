@@ -192,7 +192,12 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(failure.source.name)
                 append(" reason=")
                 append(failure.error.name)
-                val detail = listOfNotNull(failure.captureError, failure.encoderError, failure.transportError)
+                val detail = listOfNotNull(
+                    failure.captureError,
+                    failure.encoderError,
+                    failure.transportError,
+                    failure.decoderError,
+                )
                     .singleOrNull()
                 detail?.let {
                     append(" detail=")
@@ -493,6 +498,9 @@ private val VideoPipelineStartDebugEventKind.logName: String
         VideoPipelineStartDebugEventKind.SenderStartRequested -> "video_sender_start_requested"
         VideoPipelineStartDebugEventKind.SenderStartSucceeded -> "video_sender_start_succeeded"
         VideoPipelineStartDebugEventKind.SenderStartFailed -> "video_sender_start_failed"
+        VideoPipelineStartDebugEventKind.ReceiverStartRequested -> "video_receiver_start_requested"
+        VideoPipelineStartDebugEventKind.ReceiverStartSucceeded -> "video_receiver_start_succeeded"
+        VideoPipelineStartDebugEventKind.ReceiverStartFailed -> "video_receiver_start_failed"
     }
 
 private val VideoTransportDebugEvent.logName: String

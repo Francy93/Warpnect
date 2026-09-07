@@ -78,8 +78,11 @@ Client presentation investigation identified a local `SurfaceView` composition d
 Samsung Clients, decoded buffers were behind the opaque Compose window buffer. The production view now
 uses `setZOrderOnTop(true)`. A real A41 API 31 Host-to-S7 API 26 Client Session is human-confirmed
 visible after the fix. S9 API 29 and tablet API 33 both visibly present the same local MediaCodec
-fixture, but their current A41-hosted remote traces remain separately blocked before video by capability
-negotiation and authentication respectively. A follow-up A41 API 31-to-S7 capture-scope trace selected
+fixture. The S9 now also passes A41-hosted authentication, WNCP, setup, receiver startup, AVC
+configuration, decoder startup, first access-unit decode, and Surface release; an ADB screenshot showed
+the contemporary A41 screen in the S9 video region, while physical human-visible confirmation remains
+pending. The tablet remains separately blocked before video by authentication. A follow-up A41 API 31-to-S7
+capture-scope trace selected
 the physical logical display (`source_display_id=0`, `layer_stack=0`) and remained active while the Host
 left Warpnect. Home, Settings, and the notification shade were each visible on the S7; the user confirmed
 the Settings view directly. `HOST FULL-DISPLAY CAPTURE VALIDATED` therefore closes the app-window capture
@@ -101,8 +104,10 @@ receiving a Client WNCP offer, after the Client's negotiation window had started
 that exact snapshot before advertising discovery and reuses it when responding to WNCP. An A41 API 31 Host and
 S7 API 26 Client passed their first deliberately cold exact-qualification Session through authentication,
 setup, and media; a subsequent exact-cache-hit regression also passed. WNCP, qualification workloads and
-thresholds, payloads, and security semantics were unchanged. The S9 API 29 control now completes WNCP and
-setup but independently fails at Client `VideoPipelineStartFailed`; it remains a separate media-start debt.
+thresholds, payloads, and security semantics were unchanged. The S9 API 29 control now completes WNCP,
+setup, receiver startup, AVC configuration, decoder startup, first access-unit decode, and Surface release.
+Its former `VideoPipelineStartFailed` lifecycle race is fixed; only physical human-visible confirmation
+remains for the remote S9 presentation result.
 
 ## Phase 3 - Audio Pipeline
 

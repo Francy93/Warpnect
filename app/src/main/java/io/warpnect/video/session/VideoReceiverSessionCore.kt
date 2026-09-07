@@ -19,13 +19,15 @@ internal class VideoReceiverSessionCore {
 
     fun onSurfaceAvailable(): VideoSessionState {
         hasSurface = true
-        state = nextPrerequisiteState()
+        advanceForRenderTargetChange()
         return state
     }
 
     fun onSurfaceDestroyed(): VideoSessionState {
         hasSurface = false
-        state = VideoSessionState.WaitingForSurface
+        if (observesRenderTarget()) {
+            state = VideoSessionState.WaitingForSurface
+        }
         return state
     }
 
@@ -76,4 +78,14 @@ internal class VideoReceiverSessionCore {
         !hasConfig -> VideoSessionState.WaitingForConfig
         else -> VideoSessionState.PreparingDecoder
     }
+
+    private fun advanceForRenderTargetChange() {
+        if (observesRenderTarget()) {
+            state = nextPrerequisiteState()
+        }
+    }
+
+    private fun observesRenderTarget(): Boolean = state != VideoSessionState.Idle &&
+        state != VideoSessionState.Error &&
+        state != VideoSessionState.Closed
 }

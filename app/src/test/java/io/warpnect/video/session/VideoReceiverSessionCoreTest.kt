@@ -5,6 +5,24 @@ import org.junit.Test
 
 class VideoReceiverSessionCoreTest {
     @Test
+    fun surfaceCreatedBeforeSessionStartIsRememberedWithoutStartingTheSession() {
+        val core = VideoReceiverSessionCore()
+
+        assertEquals(VideoSessionState.Idle, core.onSurfaceAvailable())
+        assertEquals(VideoSessionState.WaitingForConfig, core.start(surfaceAvailable = true, configAvailable = false))
+    }
+
+    @Test
+    fun surfaceDestroyedBeforeSessionStartKeepsTheSessionIdle() {
+        val core = VideoReceiverSessionCore()
+
+        core.onSurfaceAvailable()
+
+        assertEquals(VideoSessionState.Idle, core.onSurfaceDestroyed())
+        assertEquals(VideoSessionState.WaitingForSurface, core.start(surfaceAvailable = false, configAvailable = false))
+    }
+
+    @Test
     fun surfaceFirstThenConfigPreparesDecoderAndWaitsForKeyframe() {
         val core = VideoReceiverSessionCore()
 
