@@ -93,8 +93,16 @@ clean their local resource, and exit after their final gateway owner releases th
 capability controllers also close in `finally`. Four A41 API 31 Host-to-S7 API 26 Client media Sessions,
 including a Host Home/background/return interval, left no capture, audio, or input helper after normal
 teardown. A bounded harness correction now reaches the genuine off-screen `Disconnect` control before
-declaring it absent. Warm attempts that fail before authentication remain part of the separate cold
-capability/session-negotiation debt and did not acquire or accumulate helpers.
+declaring it absent.
+
+Cold capability/session-negotiation validation identified a readiness-ordering defect, not an undersized
+protocol timeout. Previously, the Host synchronously collected its mandatory capability snapshot only after
+receiving a Client WNCP offer, after the Client's negotiation window had started. Host readiness now completes
+that exact snapshot before advertising discovery and reuses it when responding to WNCP. An A41 API 31 Host and
+S7 API 26 Client passed their first deliberately cold exact-qualification Session through authentication,
+setup, and media; a subsequent exact-cache-hit regression also passed. WNCP, qualification workloads and
+thresholds, payloads, and security semantics were unchanged. The S9 API 29 control now completes WNCP and
+setup but independently fails at Client `VideoPipelineStartFailed`; it remains a separate media-start debt.
 
 ## Phase 3 - Audio Pipeline
 

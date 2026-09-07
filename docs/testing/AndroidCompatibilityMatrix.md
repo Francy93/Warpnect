@@ -50,7 +50,7 @@ does not alter video payloads, decoder qualification, capture, or Session/protoc
 | Device class | Android/API | Production remote result | Local composition control | Current classification |
 | --- | --- | --- | --- | --- |
 | Samsung SM-G935F | Android 8.0 / API 26 | A41 API 31 Host reached authenticated, committed media setup, decoder output, immediate release, and an active SurfaceFlinger buffer. A human then clearly saw the current A41 screen in the Client video surface. | Same `SurfaceView` and decoder path visibly presented the immutable AVC fixture. | `VISIBLE_REMOTE_VIDEO_PASS` |
-| Samsung SM-G960F | Android 10 / API 29 | A41 API 31 Host Session stopped at `CapabilityNegotiationFailed` before video startup. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `OMX.Exynos.avc.dec`. | `REMOTE_PRESENTATION_INCONCLUSIVE_CAPABILITY_NEGOTIATION` |
+| Samsung SM-G960F | Android 10 / API 29 | With the host-readiness correction, A41 API 31 Host-to-Client completed capability negotiation and setup. The Client then stopped at `VideoPipelineStartFailed` before media. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `OMX.Exynos.avc.dec`. | `REMOTE_PRESENTATION_INCONCLUSIVE_VIDEO_PIPELINE_STARTUP` |
 | Aocwei X700_EEA tablet | Android 13 / API 33 | A41 API 31 Host Session did not authenticate. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `c2.mtk.avc.decoder`. | `REMOTE_PRESENTATION_INCONCLUSIVE_AUTHENTICATION` |
 
 The local fixture is a bounded debug-only composition control and is not substituted for a protected
@@ -96,8 +96,33 @@ capability query also now closes its temporary controller in `finally`. The fina
 One repeated harness batch initially left the Client UI in `Streaming` because its real `Disconnect` control
 was below the visible `ScrollView` viewport and was not tapped. The harness now performs one bounded viewport
 search before declaring that action absent; this is a harness cleanup correction, not a change to Session or
-SAS semantics. Some warm retries still fail before authentication, under the separate cold
-capability/session-negotiation debt; they did not acquire privileged helpers or cause count growth.
+SAS semantics. A post-`Disconnect` Client coordinator is terminal by current design, so a same-process
+reconnect attempt is not used as a cold-capability result; it did not acquire privileged helpers or cause
+count growth.
+
+## Cold Capability Preparation and Session Negotiation
+
+The prior cold-start failure was a local readiness ordering defect. The Host collected its required capability
+snapshot synchronously only after receiving the Client WNCP offer, while the Client WNCP window had already
+started. On a cold A41, strict-CBR qualification and privileged capability checks could therefore consume the
+remote peer's negotiation budget. `PreparedHostCapabilityCollector` now completes the required Host snapshot
+on the existing session-control scheduler before Host discovery advertisement. The responder reuses that exact
+prepared snapshot when it later receives the Client offer. No WNCP timeout, qualification threshold, codec
+profile, cache key, or wire state changed.
+
+The final validation APK was
+`0A78B3F3D61FAAB5F0788A0A17163B029F267652D195C682FCAD6FB222DF3D94`, 28,953,707 bytes, with ABIs
+`arm64-v8a`, `armeabi-v7a`, and `x86_64`.
+
+| Host / Client | Qualification state | Negotiation evidence | Result |
+| --- | --- | --- | --- |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G935F, Android 8.0 / API 26 | Host strict-CBR cache miss; Client exact RFC-002I decoder cache miss | Host capability preflight completed before advertisement (4,613 ms total; video component 1,014 ms). Client active decoder qualification completed before its offer (6,602 ms). After the offer, Host selection took 13 ms in the Host local clock and arrived after 38 ms in the Client local clock. | First cold Session authenticated, completed setup, and started media without a retry: `COLD_CAPABILITY_NEGOTIATION_VALIDATED` |
+| Same pair | Host and Client exact qualification cache hits; Host app process retained and Client app process restarted | Host selection took 2 ms after the offer in the Host local clock; Client received it after 11 ms in its local clock. | Warm cache regression passed; legacy rendered-frame callback timing remains a separate observability concern. |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G960F, Android 10 / API 29 | Host readiness preflight; Client framework decoder classification | WNCP completed and setup committed. | `S9_INDEPENDENT_VIDEO_PIPELINE_STARTUP`; the failure occurs after negotiation, at Client media start. |
+
+The debug-only cold control invalidates only the exact RFC-002I decoder-qualification cache key; it does not
+clear pairing, trust, session security, or unrelated capability state. The primary cold/cold validation did
+not reboot either device, restart Shizuku, clear app data, or hide a warm retry.
 
 ## Privileged Input Compatibility Investigation
 
