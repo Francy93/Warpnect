@@ -153,6 +153,47 @@ Session after a persistent hit completed authentication, WNCP, setup, decoder st
 unit, and first decoded frame. After normal teardown, no `capture`, `audio`, or `input-injection`
 Shizuku UserService remained.
 
+## Session Establishment and Restart Reliability
+
+The user-observed A41 API 31 Host-to-S9 API 29 first-attempt connection defect was reproduced with
+the prior validated APK without clearing data, restarting Shizuku, rebooting, or force-stopping either
+application. Two independent normal UI attempts discovered and accepted the Host presence, but did not
+start pairing or authentication. The Client UI retained a Host row and displayed `Ready`, even though
+the underlying Client coordinator had already reached its terminal `Closed` state.
+
+The first failed boundary was `CLIENT_COORDINATOR_TERMINAL_STATE_REUSED`. Before the correction,
+`SecureSessionCoordinator.disconnect()` left the application-scoped Client coordinator `Closed` after
+normal attempt cancellation. Discovery could continue to refresh the old UI model, but a later
+`SecureSessionApplicationController.connect()` correctly rejected the terminal coordinator as busy.
+The UI did not surface that rejection. A related ownership defect was also found:
+`ControllerBackedClientSessionPhaseDriver.closeAttempt(keepDiscovery = true)` closed its
+`SessionProtectionController` but retained that terminal controller for a later authenticated attempt.
+This is classified as `RETRY_REUSES_CANCELLED_RUNTIME_OWNER`.
+
+The production correction returns the Client coordinator to reusable `Idle` on normal disconnect while
+still invalidating the completed attempt token, and gives a discovery-preserving subsequent attempt a
+fresh `SessionProtectionController`. Per-attempt state remains new; discovery, SAS, authentication,
+WNCP, WNSN, payload formats, and transport semantics are unchanged. This is not an automatic retry.
+
+The final reliability candidate was SHA-256
+`6A69E3F04F265D138A50D917D941967D8B13B55BC8BED79B8292DA27D77614A7`, 28,953,707 bytes,
+with ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64`, built from `79078df`. The same artifact was
+installed on all devices in the validation rows below.
+
+| A41 API 31 Host / Client scenario | First-attempt result | Evidence |
+| --- | --- | --- |
+| S9 API 29, ten consecutive normal enable/discover/connect/disconnect cycles | 10 / 10 PASS | Each cycle authenticated, completed capabilities, setup, video-channel readiness, media start, first encoded and received video datagrams, decoder start, first access-unit submission, and first decoded frame. Each ended through the product Disconnect/Host-disable path before the next cycle. |
+| S9 API 29, Client process restart only | PASS | App data and Host process were preserved; one normal Connect reached media on its first attempt. |
+| S9 API 29, Host process restart only | PASS | App data and Client process were preserved; the Host restored the RFC-002B persistent exact-key result and one normal Connect reached media on its first attempt. |
+| S9 API 29, both application processes restarted | PASS | App data and Shizuku were preserved; one normal Connect reached media on its first attempt. The Host log recorded `encoder_cbr_persistent_cache_hit` and no active `:codecProbe`. |
+| S7 API 26 regression control | PASS | Authentication, capabilities, setup, media start, decoder start, and first decoded frame passed. The legacy `OnFrameRendered` callback remains a separate observability signal and is not used as a Session-success gate. |
+
+After final semantic teardown, A41, S9, and S7 each reported zero `capture`, `audio`,
+`input-injection`, `codecProbe`, and `decoderProbe` processes. The lifecycle cleanup invariant remains
+intact. `SESSION_ESTABLISHMENT_RESTART_RELIABILITY_VALIDATED` applies to the tested A41 API 31-to-S9
+API 29 topology; the independent tablet pre-authentication blocker and growing streaming-latency debt
+remain open.
+
 ## Privileged Input Compatibility Investigation
 
 Test-only investigation artifact: debug APK on branch `investigate/a41-privileged-input` from base

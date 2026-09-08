@@ -118,6 +118,20 @@ processes, force-stop/relaunch, and data-preserving reinstall reused those recor
 probe-death quarantine is unchanged. This removes repeated qualification work without treating
 compatibility as an install-lifetime or device-model judgment.
 
+Session establishment and restart reliability is now validated for the A41/API 31 Host-to-S9/API 29
+Client topology. The root cause was not discovery reachability or a timeout: after normal cancellation,
+the application-scoped Client coordinator remained terminal `Closed` while the retained discovery model
+could still make the UI look ready. A subsequent Connect was therefore rejected as busy before pairing.
+The discovery-preserving Client attempt path also retained a `SessionProtectionController` that it had
+already closed. Normal disconnect now returns the Client coordinator to reusable `Idle`, and a new
+attempt obtains a fresh session-protection owner without reusing a cancelled runtime. Ten consecutive
+normal first-attempt A41-to-S9 Session cycles passed through media and semantic teardown without process
+kills, force-stops, reboot, Shizuku restart, or hidden retry. Client-only, Host-only, and dual app-process
+restart cases each passed on their first attempt with preserved app data; the Host used its persistent
+RFC-002B result and did not spawn `:codecProbe`. An A41-to-S7 technical regression also passed. This
+preserves SAS, WNCP/WNSN, Session protection, and all frozen protocol/ABI contracts; it is a local
+runtime ownership correction, not automatic retry behavior.
+
 ## Phase 3 - Audio Pipeline
 
 Status: Complete.
