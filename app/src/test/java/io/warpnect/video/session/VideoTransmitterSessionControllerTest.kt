@@ -1,5 +1,6 @@
 package io.warpnect.video.session
 
+import android.graphics.SurfaceTexture
 import android.view.Surface
 import io.warpnect.capture.CaptureCapabilities
 import io.warpnect.capture.CaptureError
@@ -68,6 +69,29 @@ class VideoTransmitterSessionControllerTest {
         assertEquals(VideoSessionState.Error, session.snapshot().state)
     }
 
+    @Test
+    fun startsAndStopsConfiguredSenderControlRuntimeWithTheVideoPipeline() = runBlocking {
+        val capture = FakeCapture()
+        val encoder = FakeEncoder(inputSurface = Surface(SurfaceTexture(0)), startError = VideoEncoderError.None)
+        val transport = FakeTransport()
+        val control = FakeSenderControlRuntime()
+        val session = DefaultVideoTransmitterSessionController(
+            captureController = capture,
+            encoderController = encoder,
+            transportController = transport,
+            senderControlRuntimeFactory = VideoSenderControlRuntimeFactory { _, _ -> control },
+        )
+
+        val started = session.start(config())
+        val stopped = session.stop()
+
+        assertEquals(VideoSessionError.None, started.error)
+        assertEquals(1, capture.startCalls)
+        assertEquals(1, control.startCalls)
+        assertEquals(VideoSessionError.None, stopped.error)
+        assertEquals(1, control.stopCalls)
+    }
+
     private fun config(): VideoTransmitterSessionConfig = VideoTransmitterSessionConfig(
         captureRequest = CaptureRequest(
             sourceDisplayId = 0,
@@ -114,6 +138,8 @@ class VideoTransmitterSessionControllerTest {
 
     private class FakeEncoder(
         private val prepareError: VideoEncoderError = VideoEncoderError.None,
+        private val inputSurface: Surface? = null,
+        private val startError: VideoEncoderError = VideoEncoderError.CodecStartFailed,
     ) : VideoEncoderController {
         var prepareCalls = 0
         var stopCalls = 0
@@ -125,14 +151,13 @@ class VideoTransmitterSessionControllerTest {
             prepareCalls += 1
             return VideoEncoderPrepareResult(
                 error = prepareError,
-                inputSurface = null,
+                inputSurface = inputSurface,
                 capabilities = null,
                 snapshot = snapshot(),
             )
         }
 
-        override suspend fun start(): VideoEncoderStartResult =
-            VideoEncoderStartResult(VideoEncoderError.CodecStartFailed, snapshot())
+        override suspend fun start(): VideoEncoderStartResult = VideoEncoderStartResult(startError, snapshot())
 
         override suspend fun requestKeyFrame(): VideoEncoderControlResult =
             throw AssertionError("unexpected requestKeyFrame")
@@ -148,6 +173,23 @@ class VideoTransmitterSessionControllerTest {
         override fun snapshot(): VideoEncoderSnapshot = VideoEncoderSnapshot()
 
         override fun close() = Unit
+    }
+
+    private class FakeSenderControlRuntime : VideoSenderControlRuntime {
+        var startCalls = 0
+        var stopCalls = 0
+
+        override fun start(timeoutUs: Long): VideoSessionControlResult {
+            startCalls += 1
+            return VideoSessionControlResult.Success
+        }
+
+        override fun stop(): VideoSessionControlResult {
+            stopCalls += 1
+            return VideoSessionControlResult.Success
+        }
+
+        override fun snapshot(): VideoSenderControlSnapshot = VideoSenderControlSnapshot()
     }
 
     private class FakeTransport(

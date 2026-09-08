@@ -48,6 +48,7 @@ import io.warpnect.platform.video.render.AndroidVideoRenderController
 import io.warpnect.platform.video.render.VideoRenderDebugObserver
 import io.warpnect.platform.video.transport.NativeSclVideoReceiverController
 import io.warpnect.platform.video.transport.NativeSclVideoTransportController
+import io.warpnect.platform.video.transport.NativeVideoSenderControlRuntime
 import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.integration.SessionPipelineComponent
@@ -123,6 +124,9 @@ class DefaultAndroidSessionPipelineBindings(
                 frameDebugObserver = videoEncoderFrameDebugObserver,
             ),
             transportController = transport,
+            // Pumps the already-negotiated Video Resync Control V1 channel and forwards real
+            // keyframe requests to the active production encoder.
+            senderControlRuntimeFactory = NativeVideoSenderControlRuntime,
         )
         return AndroidVideoSenderPipeline(
             controller = controller,
