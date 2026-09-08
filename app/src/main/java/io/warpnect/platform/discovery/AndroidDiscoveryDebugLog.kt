@@ -27,11 +27,16 @@ import io.warpnect.session.pairing.PairingDebugEvent
 import io.warpnect.session.pairing.PairingDebugEventKind
 import io.warpnect.session.setup.SessionSetupDebugEvent
 import io.warpnect.session.setup.SessionSetupDebugEventKind
+import io.warpnect.video.session.VideoReceiverSessionSnapshot
 import io.warpnect.video.session.VideoSessionError
+import io.warpnect.video.session.VideoTransmitterSessionSnapshot
 
 /** Debug-build-only, control-plane observability for physical discovery validation. */
 internal class AndroidDiscoveryDebugLog(context: Context) {
     private val enabled = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    internal val isEnabled: Boolean
+        get() = enabled
 
     fun event(backend: DiscoveryRouteKind, event: String, error: DiscoveryError? = null, rawCode: Int? = null) {
         if (!enabled) return
@@ -256,6 +261,79 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
             TAG,
             "event=client_remote_access_unit_ready local_monotonic_ns=$localMonotonicNs " +
                 "pts_us=$presentationTimeUs keyframe=$keyframe",
+        )
+    }
+
+    /** Low-cadence local pipeline counters for backlog investigations; no media or peer data. */
+    fun videoPipelineSenderRuntime(snapshot: VideoTransmitterSessionSnapshot) {
+        if (!enabled) return
+        val encoder = snapshot.encoder
+        val transport = snapshot.transport
+        Log.d(
+            TAG,
+            "event=video_runtime role=host local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} capture_state=${snapshot.capture?.state} " +
+                "encoder_au=${encoder?.accessUnitsEncoded} " +
+                "encoder_keyframes=${encoder?.keyFramesEncoded} " +
+                "encoder_bytes=${encoder?.encodedBytes} " +
+                "encoder_pts_us=${encoder?.lastPresentationTimeUs} encoder_errors=${encoder?.runtimeErrors} " +
+                "transport_au=${transport?.accessUnitsSubmitted} " +
+                "transport_keyframes=${transport?.keyframesSubmitted} " +
+                "transport_generated=${transport?.videoDatagramsGenerated} " +
+                "transport_sent=${transport?.videoDatagramsSent} transport_bytes=${transport?.videoBytesSent} " +
+                "transport_retransmissions=${transport?.retransmissions} " +
+                "transport_failures=${transport?.accessUnitsFailed} " +
+                "transport_resync_received=${transport?.resyncRequestsReceived} " +
+                "transport_config_resends=${transport?.streamConfigResends} " +
+                "transport_keyframe_requests=${transport?.keyFrameRequestsReceived} " +
+                "control_running=${snapshot.control?.running} " +
+                "control_pumps=${snapshot.control?.pumpIterations} " +
+                "control_transport_errors=${snapshot.control?.transportErrors} " +
+                "control_keyframes_forwarded=${snapshot.control?.keyFrameRequestsForwarded} " +
+                "control_keyframe_failures=${snapshot.control?.keyFrameRequestFailures} " +
+                "control_error=${snapshot.control?.lastError} " +
+                "control_session_error=${snapshot.control?.lastSessionFailure?.error} " +
+                "transport_pts_us=${transport?.lastPresentationTimeUs} transport_error=${transport?.lastError}",
+        )
+    }
+
+    /** Low-cadence local receiver, decoder, and render counters for backlog investigations. */
+    fun videoPipelineReceiverRuntime(snapshot: VideoReceiverSessionSnapshot) {
+        if (!enabled) return
+        val receiver = snapshot.receiver
+        val decoder = snapshot.decoder
+        val renderer = snapshot.renderer
+        Log.d(
+            TAG,
+            "event=video_runtime role=client local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} receiver_datagrams=${receiver?.datagramsReceived} " +
+                "receiver_video_datagrams=${receiver?.videoDatagramsReceived} " +
+                "receiver_completed=${receiver?.accessUnitsCompleted} " +
+                "receiver_delivered=${receiver?.accessUnitsDelivered} " +
+                "receiver_slots=${receiver?.reassemblySlotsUsed} " +
+                "receiver_slots_hwm=${receiver?.reassemblySlotsHighWater} " +
+                "receiver_ready=${receiver?.readyAccessUnits} " +
+                "receiver_ready_hwm=${receiver?.readyAccessUnitsHighWater} " +
+                "receiver_timeouts=${receiver?.reassemblyTimeouts} " +
+                "receiver_reassembly_full=${receiver?.reassemblyWindowFull} " +
+                "receiver_ready_full=${receiver?.readyWindowFull} " +
+                "receiver_stale_released=${receiver?.staleFramesReleased} " +
+                "receiver_nacks=${receiver?.nacksSent} " +
+                "receiver_resync=${receiver?.resyncRequestsSent} " +
+                "receiver_frame_id=${receiver?.lastFrameId} " +
+                "receiver_pts_us=${receiver?.lastPresentationTimeUs} " +
+                "receiver_ready_wait_us=${receiver?.lastReadyWaitUs} " +
+                "decoder_queued=${decoder?.accessUnitsQueued} " +
+                "decoder_bytes=${decoder?.encodedBytesQueued} " +
+                "decoder_backpressure=${decoder?.inputBackpressureEvents} " +
+                "decoder_output=${decoder?.decodedOutputBuffers} " +
+                "decoder_released=${decoder?.framesRenderedRequested} " +
+                "decoder_dropped=${decoder?.framesDropped} " +
+                "decoder_input_pts_us=${decoder?.lastInputPtsUs} " +
+                "decoder_output_pts_us=${decoder?.lastOutputPtsUs} " +
+                "render_now=${renderer?.renderNowDecisions} " +
+                "render_scheduled=${renderer?.scheduledRenderDecisions} " +
+                "render_dropped=${renderer?.dropDecisions} render_pts_us=${renderer?.lastFramePtsUs}",
         )
     }
 

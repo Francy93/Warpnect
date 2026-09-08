@@ -357,6 +357,18 @@ class AndroidSecureSessionComposition private constructor(
                     discoveryDebugLog.videoAccessUnitReady(presentationTimeUs, keyframe, localMonotonicNs)
                 }
             },
+            object : VideoPipelineRuntimeDebugObserver {
+                override val enabled: Boolean
+                    get() = discoveryDebugLog.isEnabled
+
+                override fun onSenderSnapshot(snapshot: io.warpnect.video.session.VideoTransmitterSessionSnapshot) {
+                    discoveryDebugLog.videoPipelineSenderRuntime(snapshot)
+                }
+
+                override fun onReceiverSnapshot(snapshot: io.warpnect.video.session.VideoReceiverSessionSnapshot) {
+                    discoveryDebugLog.videoPipelineReceiverRuntime(snapshot)
+                }
+            },
         )
 
         fun create(): AndroidSecureSessionComposition {

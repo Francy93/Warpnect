@@ -30,8 +30,10 @@ param(
     [switch]$LeaveSessionRunning,
     [switch]$PulseHostDisplayAfterClientDecode,
     [ValidateRange(0, 60)]
+    [int]$PulseHostDisplayEverySeconds = 0,
+    [ValidateRange(0, 60)]
     [int]$HoldMediaAfterFirstFrameSeconds = 0,
-    [ValidateRange(0, 120)]
+    [ValidateRange(0, 300)]
     [int]$HoldMediaAfterFirstDecodeSeconds = 0
 )
 
@@ -844,7 +846,8 @@ function Invoke-MediaStartupTrace {
         [pscustomobject]$ClientDevice,
         [int]$HoldMediaAfterFirstFrameSeconds = 0,
         [int]$HoldMediaAfterFirstDecodeSeconds = 0,
-        [bool]$PulseHostDisplayAfterClientDecode = $false
+        [bool]$PulseHostDisplayAfterClientDecode = $false,
+        [int]$PulseHostDisplayEverySeconds = 0
     )
     Ensure-WarpnectForeground $HostDevice
     Tap-UiText $HostDevice "Enable Host"
@@ -892,6 +895,7 @@ function Invoke-MediaStartupTrace {
     # after decode output becomes available; keep the compatibility trace bounded.
     $firstFrameDeadline = [DateTime]::UtcNow.AddSeconds(60)
     $hostDisplayPulseApplied = $false
+    $hostDisplayPulseCount = 0
     do {
         $hostFirstFrameEncoded = Test-DiscoveryBreadcrumb $HostDevice "first_frame_encoded"
         $hostFirstVideoDatagramSent = Test-DiscoveryBreadcrumb $HostDevice "first_video_datagram_sent"
@@ -925,7 +929,24 @@ function Invoke-MediaStartupTrace {
             (Test-DiscoveryBreadcrumb $HostDevice "media_start_accepted") -and
                 (Test-DiscoveryBreadcrumb $ClientDevice "media_start_accepted")
         if ($decodedMediaReady -and $mediaStarted -and $HoldMediaAfterFirstDecodeSeconds -gt 0) {
-            Start-Sleep -Seconds $HoldMediaAfterFirstDecodeSeconds
+            $holdDeadline = [DateTime]::UtcNow.AddSeconds($HoldMediaAfterFirstDecodeSeconds)
+            $nextPulse = [DateTime]::UtcNow
+            while ([DateTime]::UtcNow -lt $holdDeadline) {
+                if (
+                    $PulseHostDisplayEverySeconds -gt 0 -and
+                    [DateTime]::UtcNow -ge $nextPulse
+                ) {
+                    # A reversible system overlay creates controlled Host-display updates without
+                    # changing the negotiated stream or interacting with the remote-input path.
+                    Invoke-Adb $HostDevice.Serial @("shell", "input", "keyevent", "24")
+                    Start-Sleep -Milliseconds 250
+                    Invoke-Adb $HostDevice.Serial @("shell", "input", "keyevent", "25")
+                    $hostDisplayPulseApplied = $true
+                    $hostDisplayPulseCount++
+                    $nextPulse = [DateTime]::UtcNow.AddSeconds($PulseHostDisplayEverySeconds)
+                }
+                Start-Sleep -Milliseconds 250
+            }
             break
         }
         if ($decodedMediaReady -and $clientFirstFrameRendered) {
@@ -964,6 +985,7 @@ function Invoke-MediaStartupTrace {
         client_first_frame_rendered = $clientFirstFrameRendered
         client_streaming_ui = $clientStreaming
         host_display_pulse_applied = $hostDisplayPulseApplied
+        host_display_pulse_count = $hostDisplayPulseCount
     }
 }
 
@@ -1009,7 +1031,13 @@ try {
     Start-Warpnect $clientDevice -ClearState:$clearForScenario -ReuseRunningApp:$ReuseRunningApps
     if ($Scenario -in @("MediaStartupTrace", "InputSessionHold")) {
         $decodeHold = if ($Scenario -eq "InputSessionHold") { $HoldMediaAfterFirstDecodeSeconds } else { 0 }
-        $media = Invoke-MediaStartupTrace $hostDevice $clientDevice $HoldMediaAfterFirstFrameSeconds $decodeHold $PulseHostDisplayAfterClientDecode.IsPresent
+        $media = Invoke-MediaStartupTrace `
+            $hostDevice `
+            $clientDevice `
+            $HoldMediaAfterFirstFrameSeconds `
+            $decodeHold `
+            $PulseHostDisplayAfterClientDecode.IsPresent `
+            $PulseHostDisplayEverySeconds
         $scenarioResult["sas_equal"] = $media.sas_equal
         $scenarioResult["host_authenticated"] = $media.host_authenticated
         $scenarioResult["client_authenticated"] = $media.client_authenticated

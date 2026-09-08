@@ -60,6 +60,9 @@ import io.warpnect.video.session.VideoTransmitterSessionConfig
 import io.warpnect.video.session.VideoTransmitterSessionController
 import io.warpnect.video.transport.VideoReceiverRuntimeConfig
 import io.warpnect.video.transport.VideoTransportConfig
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -133,6 +136,23 @@ data class AndroidVideoReceiverPipeline(
     val telemetrySources: List<AutoCloseable> = emptyList(),
 )
 
+/**
+ * Bounded, DEBUG-only snapshots of live video-pipeline counters. The snapshots stay local and
+ * intentionally carry no frame contents, peer addresses, or clock-derived end-to-end latency.
+ */
+interface VideoPipelineRuntimeDebugObserver {
+    val enabled: Boolean
+        get() = false
+
+    fun onSenderSnapshot(snapshot: io.warpnect.video.session.VideoTransmitterSessionSnapshot) = Unit
+
+    fun onReceiverSnapshot(snapshot: io.warpnect.video.session.VideoReceiverSessionSnapshot) = Unit
+
+    companion object {
+        val None = object : VideoPipelineRuntimeDebugObserver {}
+    }
+}
+
 /** Development-only video-start outcome. It retains fixed error enums and no media or Session data. */
 fun interface VideoPipelineStartDebugObserver {
     fun onEvent(event: VideoPipelineStartDebugEvent)
@@ -194,6 +214,7 @@ class AndroidSessionPipelineFactory(
     private val diagnosticEventHub: DiagnosticEventHub? = null,
     private val debugObserver: VideoPipelineStartDebugObserver = VideoPipelineStartDebugObserver.None,
     private val videoTransportDebugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
+    private val videoRuntimeDebugObserver: VideoPipelineRuntimeDebugObserver = VideoPipelineRuntimeDebugObserver.None,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -269,6 +290,7 @@ class AndroidSessionPipelineFactory(
                         networkTelemetry,
                         diagnosticWriter(bootstrap, channel),
                         debugObserver,
+                        videoRuntimeDebugObserver,
                     )
                 }
             }
@@ -310,6 +332,7 @@ class AndroidSessionPipelineFactory(
                         networkTelemetry,
                         diagnosticWriter(bootstrap, channel),
                         debugObserver,
+                        videoRuntimeDebugObserver,
                     )
                 }
             }
@@ -552,7 +575,12 @@ private class VideoSenderComponent(
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
     private val debugObserver: VideoPipelineStartDebugObserver,
+    runtimeDebugObserver: VideoPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = VideoPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onSenderSnapshot(pipeline.controller.snapshot())
+    }
+
     override val name = "video-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(SessionChannelKind.Video)
@@ -574,15 +602,18 @@ private class VideoSenderComponent(
             if (started) DiagnosticEventIds.VideoEncoderStarted else DiagnosticEventIds.VideoEncoderFailed,
             DiagnosticReason.CodecFailure.code,
         )
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(
             if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.VideoPipelineStartFailed,
         )
     }
     override fun stop() {
+        runtimeSampler.close()
         runBlocking { pipeline.controller.stop() }
     }
     override fun onPathMigrationCommitted() = pipeline.onPathMigrationCommitted()
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
@@ -594,7 +625,12 @@ private class VideoReceiverComponent(
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
     private val debugObserver: VideoPipelineStartDebugObserver,
+    runtimeDebugObserver: VideoPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = VideoPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onReceiverSnapshot(pipeline.controller.snapshot())
+    }
+
     override val name = "video-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(SessionChannelKind.Video)
@@ -616,19 +652,59 @@ private class VideoReceiverComponent(
             if (started) DiagnosticEventIds.VideoDecoderStarted else DiagnosticEventIds.VideoDecoderFailed,
             DiagnosticReason.CodecFailure.code,
         )
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(
             if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.VideoPipelineStartFailed,
         )
     }
     override fun stop() {
+        runtimeSampler.close()
         runBlocking { pipeline.controller.stop() }
     }
     override fun onPathMigrationCommitted() = pipeline.onPathMigrationCommitted()
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.onClose()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
+    }
+}
+
+/** Runs only for debuggable builds and samples at a deliberately low fixed cadence. */
+private class VideoPipelineRuntimeDebugSampler(
+    private val observer: VideoPipelineRuntimeDebugObserver,
+    private val sample: () -> Unit,
+) : AutoCloseable {
+    private val lock = Any()
+    private var executor: ScheduledExecutorService? = null
+
+    fun start() {
+        if (!observer.enabled) return
+        synchronized(lock) {
+            if (executor != null) return
+            executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "warpnect-video-runtime-debug").apply { isDaemon = true }
+            }.also { scheduler ->
+                scheduler.scheduleAtFixedRate(
+                    { runCatching(sample) },
+                    0L,
+                    RUNTIME_SAMPLE_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS,
+                )
+            }
+        }
+    }
+
+    override fun close() {
+        synchronized(lock) {
+            executor?.shutdownNow()
+            executor = null
+        }
+    }
+
+    private companion object {
+        const val RUNTIME_SAMPLE_INTERVAL_SECONDS = 5L
     }
 }
 
