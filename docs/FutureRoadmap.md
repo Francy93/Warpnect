@@ -87,8 +87,8 @@ capture-scope trace selected
 the physical logical display (`source_display_id=0`, `layer_stack=0`) and remained active while the Host
 left Warpnect. Home, Settings, and the notification shade were each visible on the S7; the user confirmed
 the Settings view directly. `HOST FULL-DISPLAY CAPTURE VALIDATED` therefore closes the app-window capture
-concern. Growing streaming latency remains a separate observation requiring focused evidence before any
-design change.
+concern. The then-open growing-latency observation is resolved below as a Video Resync Control V1
+sender-ownership defect, not a capture or presentation regression.
 
 Privileged helper lifecycle validation then found a real Android ownership defect rather than an expected
 Shizuku retention policy: unbinding a non-daemon UserService disconnects it but does not terminate its
@@ -131,6 +131,20 @@ restart cases each passed on their first attempt with preserved app data; the Ho
 RFC-002B result and did not spawn `:codecProbe`. An A41-to-S7 technical regression also passed. This
 preserves SAS, WNCP/WNSN, Session protection, and all frozen protocol/ABI contracts; it is a local
 runtime ownership correction, not automatic retry behavior.
+
+The growing-streaming-latency investigation then identified a freshness-correctness defect rather than a
+throughput or quality limitation. When a Client detected a video discontinuity, it correctly entered
+`WaitingForKeyFrame` and sent Video Resync Control V1. The Android production sender had not bound
+`NativeVideoSenderControlRuntime`, so its Host never pumped that control channel or forwarded a real
+keyframe request to the encoder. It kept sending frames the Client could not safely use, which made the
+last visible image increasingly stale. The production binding now owns the existing V1 control runtime;
+no profile, payload, FEC, decoder, quality, or frozen protocol/ABI semantics changed. Final 180-second
+A41 API 31 Host-to-S9 API 29 and A41 API 31 Host-to-S7 API 26 runs with repeated harmless Host-display
+updates kept reassembly/ready occupancy at 0-1, showed no timeout/full-window growth, continuously
+released decoder output, and recovered every observed resync through a forwarded keyframe request.
+`GROWING_STREAMING_LATENCY_BACKPRESSURE_VALIDATED` closes the stale-frame accumulation debt. Absolute
+end-to-end latency remains intentionally unmeasured without cross-device clock provenance; residual
+fixed latency and general throughput work remain Phase 7 concerns.
 
 ## Phase 3 - Audio Pipeline
 

@@ -191,8 +191,51 @@ installed on all devices in the validation rows below.
 After final semantic teardown, A41, S9, and S7 each reported zero `capture`, `audio`,
 `input-injection`, `codecProbe`, and `decoderProbe` processes. The lifecycle cleanup invariant remains
 intact. `SESSION_ESTABLISHMENT_RESTART_RELIABILITY_VALIDATED` applies to the tested A41 API 31-to-S9
-API 29 topology; the independent tablet pre-authentication blocker and growing streaming-latency debt
-remain open.
+API 29 topology; the independent tablet pre-authentication blocker remains open. The later
+growing-streaming-latency investigation is recorded below.
+
+## Growing Streaming Latency / Backpressure
+
+The user-reported A41 API 31 Host-to-S9 API 29 progressively stale stream was reproduced with a
+changing Host display. The first failed boundary was
+`VIDEO_RESYNC_CONTROL_NOT_PUMPED_BY_PRODUCTION_SENDER`, not an accumulating encoder, transport,
+reassembly, decoder, or Surface queue. After a receiver discontinuity, the Client correctly entered
+`WaitingForKeyFrame` and emitted Video Resync Control V1 requests. The Host continued encoding and
+sending, but the Android production binding left `DefaultVideoTransmitterSessionController` on its
+default no-op sender-control runtime. It therefore never pumped the already-negotiated control channel
+or forwarded the request to `MediaCodec.requestKeyFrame()`. The last visible frame consequently became
+progressively stale while fresh non-key frames could not be safely delivered.
+
+The production binding now installs `NativeVideoSenderControlRuntime`. It pumps the existing V1 control
+channel and asks the active encoder for an IDR on a real resync request. No video profile, frame rate,
+bitrate, payload, FEC, transport, or decoder-selection behavior changed. A focused unit test covers
+sender-control start and final stop with the video pipeline. Bounded debug-only five-second snapshots
+are retained for future local diagnostics; they record counts and local PTS only, never frame content,
+peer addresses, or cross-device latency.
+
+| Stage | Queue / buffer | Bound / policy | Final sustained evidence |
+| --- | --- | --- | --- |
+| Encoder output to packetizer | Synchronous encoder sink | No retained application AU queue | Host encoded and submitted 2,148 (S9) / 2,151 (S7) AUs without failed submission. |
+| Native video reassembly | Reassembly slots | 8 slots, 50 ms expiry | Final occupancy 0; high-water 1; no timeout or full-window event. |
+| Native ready AUs | Ready slots | 8 slots, ordered bounded delivery | Final occupancy 0; high-water 1; no full-window event. |
+| Decoder to surface | MediaCodec output with immediate release | `releaseOutputBuffer(index, true)` | Decoder output/release remained within 2-5 AUs of input and continued through teardown. |
+
+The final debug APK was SHA-256
+`B9E834D546BD673F4A1E333B45CB303D808C260696CC6C28A7206EBC64BEB1E7`, 29,235,744 bytes,
+with ABIs `arm64-v8a`, `armeabi-v7a`, and `x86_64` (`minSdk 26`, `targetSdk 35`). Both runs used the
+same artifact, one normal authenticated Session, and harmless Host display pulses every two seconds;
+they did not use a restart, reconnect, quality reduction, or frame-dropping workaround.
+
+| Host / Client | Duration | Control recovery | Queue / freshness result | Classification |
+| --- | --- | --- | --- | --- |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G960F, Android 10 / API 29 | 180 s; 61 Host pulses | 12 resync requests received, 11 keyframe requests forwarded, zero control errors | Client remained `Streaming` after startup. Reassembly and ready high-water were 1; final decoder queued/output/released were 2,142 / 2,139 / 2,139. The local input-output PTS delta was 50 ms at the final sample and did not grow monotonically. | `GROWING_STREAMING_LATENCY_BACKPRESSURE_VALIDATED` |
+| Samsung SM-A415F, Android 12 / API 31 / Samsung SM-G935F, Android 8.0 / API 26 | 180 s; 62 Host pulses | 16 resync requests received, 14 keyframe requests forwarded, zero control errors | Client remained `Streaming` after startup. Reassembly and ready high-water were 1; final decoder queued/output/released were 2,166 / 2,164 / 2,164. The final local input-output PTS delta was 33 ms. | `GROWING_STREAMING_LATENCY_BACKPRESSURE_VALIDATED` |
+
+This proves the tested stream does not retain stale work unboundedly after recovery. It does not claim a
+cross-device absolute latency value because Warpnect has no accepted clock-synchronization provenance.
+The historical delayed/batched legacy `OnFrameRendered` callback remains an observability limitation,
+not a freshness or Session-success gate. `GROWING_STREAMING_LATENCY` is closed as a correctness debt;
+residual fixed latency and broader throughput tuning remain Phase 7 concerns.
 
 ## Privileged Input Compatibility Investigation
 
