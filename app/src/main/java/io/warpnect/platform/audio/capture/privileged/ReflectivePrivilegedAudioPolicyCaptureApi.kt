@@ -8,11 +8,11 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import io.warpnect.audio.capture.AudioCaptureCapabilities
-import io.warpnect.audio.capture.AudioCaptureValidation
-import io.warpnect.audio.capture.AudioChunkPlanner
 import io.warpnect.audio.capture.AudioCaptureError
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
+import io.warpnect.audio.capture.AudioCaptureValidation
+import io.warpnect.audio.capture.AudioChunkPlanner
 import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampAnchor
 import io.warpnect.audio.capture.AudioTimestampQuality

@@ -351,10 +351,9 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
         else -> AudioCaptureError.AudioRecordReadFailed
     }
 
-    private fun stopAudioPolicyCaptureAsUserService(): AudioCaptureError =
-        withUserServiceIdentity(binderIdentity) {
-            audioPolicyApi.stopSystemAudioCapture()
-        }
+    private fun stopAudioPolicyCaptureAsUserService(): AudioCaptureError = withUserServiceIdentity(binderIdentity) {
+        audioPolicyApi.stopSystemAudioCapture()
+    }
 
     private companion object {
         const val SYSTEM_AUDIO_THREAD_NAME = "WarpnectSystemAudioCapture"

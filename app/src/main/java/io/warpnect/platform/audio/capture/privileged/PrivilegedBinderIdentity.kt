@@ -16,10 +16,7 @@ internal object AndroidPrivilegedBinderIdentity : PrivilegedBinderIdentity {
     }
 }
 
-internal inline fun <T> withUserServiceIdentity(
-    identity: PrivilegedBinderIdentity,
-    operation: () -> T,
-): T {
+internal inline fun <T> withUserServiceIdentity(identity: PrivilegedBinderIdentity, operation: () -> T): T {
     val token = identity.clearCallingIdentity()
     return try {
         operation()
