@@ -74,6 +74,13 @@ prepare/start/stop path before WNCP and therefore truthfully omits SystemAudio o
 falls back after commitment nor generalizes the result to Samsung or API 36 devices beyond the tested S22.
 The S22 reverse-input E2E result remains uncounted; this SystemAudio condition is separate from the modern
 Input resolver result.
+The API 33 tablet was revalidated with the same current production SystemAudio path. Its prior
+`AudioRecordCreationFailed` no longer reproduces after the generic Binder-identity correction: the real
+preflight prepares, starts, reads PCM, and stops successfully. A normal-app 48 kHz stereo `USAGE_GAME` tone
+produced 75,120 captured frames with non-zero PCM energy through the privileged loopback path, closing the
+tablet SystemAudio compatibility debt as `SYSTEM_AUDIO_SUPPORTED`. A single Tablet-to-S9 Session authenticated
+but did not complete an independent Tablet Host/video checkpoint, so audio remote E2E remains unclaimed and
+the tablet remote-session blocker stays separate.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,

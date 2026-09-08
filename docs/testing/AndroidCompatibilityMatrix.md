@@ -310,10 +310,15 @@ channel readiness, and media start without `SystemAudioStartFailed`. This remove
 proof must correlate a human Client touch with Input Payload receipt, legacy adapter injection, and an
 event observed by the Warpnect-owned Host target.
 
-The API 33 tablet control did not reproduce the A41 permission boundary: final capability publication
-remained available and AudioPolicy preparation reached `createAudioRecordSink`, which then returned
-`AudioRecordCreationFailed`. That independent source-start condition was not negotiated into a tablet
-Session and is outside the A41 Input compatibility correction.
+The API 33 tablet originally reached `createAudioRecordSink` and returned
+`AudioRecordCreationFailed`. Revalidation after the generic UserService Binder-identity correction
+now passes the exact production preflight (`prepare` -> `start` -> `stop`) and publishes SystemAudio
+truthfully. A bounded debug-only verification used the same production controller with a normal-app
+PCM16/stereo/48 kHz `USAGE_GAME` AudioTrack tone: 75,120 frames were captured, with 122,700 non-zero
+samples, peak 8,191, and RMS 5,238.6. This is `TABLET_API33_SYSTEM_AUDIO_SUPPORTED`; it changed no
+payload, mix, fallback, or model-specific behavior. A Tablet-to-S9 automated Session authenticated and
+completed the Client-side setup/media checkpoints but did not complete the independent Tablet Host/video
+checkpoint, so it is not audio E2E evidence and does not reopen the separate tablet remote-session debt.
 
 ### API 36 SystemAudio Startability Qualification
 
@@ -329,8 +334,9 @@ Samsung-specific rule.
 SystemAudio capability now performs the exact bounded production prepare/start/stop sequence after static
 prerequisites pass. On the tested S22 that sequence returns `AudioRecordUninitialized`, so SystemAudio is
 unavailable and omitted before WNCP. The implementation does not change the audio payload, add a microphone
-substitute, or allow a committed SystemAudio channel to continue after startup failure. The tablet API 33
-`AudioRecordCreationFailed` remains a separate, unmodified compatibility debt.
+substitute, or allow a committed SystemAudio channel to continue after startup failure. The same
+Binder-identity correction allows the tested API 33 tablet to complete the production capture path; that is
+a different outcome from the API 36 attribution restriction, not a general API-level or OEM rule.
 
 The validation APK built from production commit `9e04f81d90949afc970f4480f657743e51281b85` was SHA-256
 `4C14A9854AD10DDF39C53DF877C85D56CC2A25C67AF8C1B4673A4FA3BCACA0C2`, 29,235,744 bytes, with ABIs

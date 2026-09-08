@@ -244,6 +244,24 @@ Microphone hardware capture: NOT RUN
 
 No Shizuku/Sui AudioPolicy capture success, local playback preservation, microphone hardware runtime, or signal quality result is claimed without a real device.
 
+### Current SystemAudio Compatibility Evidence
+
+SystemAudio availability is a real privileged production preflight, not a hidden-API-class check: after
+static prerequisites it performs `prepare`, `start`, and `stop` through the Shizuku UserService before
+the channel may be negotiated. The UserService clears the incoming application Binder identity around
+AudioPolicy operations so the framework sees the actual privileged caller; it neither spoofs attribution
+nor adds a fallback after a committed channel fails.
+
+| Runtime | Preflight result | Final SystemAudio result |
+| --- | --- | --- |
+| A41 API31 | Privileged routing permission absent | Unavailable before negotiation |
+| Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM | Supported |
+| S22 API36 | AudioRecord uninitialized after AudioPolicy registration because the framework rejects the shell/package attribution | Unavailable before negotiation |
+
+The API33 tablet evidence uses the exact production `AndroidSystemAudioCaptureController` and privileged
+AudioPolicy path. A debug-only normal Android `AudioTrack` tone is a source-side validation aid only; it
+does not inject PCM into the shared ring or alter RFC-003A's capture contract.
+
 ## Deferred Work
 
 - RFC-003B - Low-Latency Audio Encoder Pipeline.
