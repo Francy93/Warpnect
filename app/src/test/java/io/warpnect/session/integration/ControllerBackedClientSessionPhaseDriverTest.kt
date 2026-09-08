@@ -47,9 +47,26 @@ import io.warpnect.session.security.SessionProtectionRuntimeFactory
 import io.warpnect.session.security.SessionProtectionSnapshot
 import io.warpnect.session.setup.SessionSetupPreferences
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class ControllerBackedClientSessionPhaseDriverTest {
+    @Test
+    fun cancellingOneClientAttemptCreatesFreshSessionProtectionForTheNextAttempt() {
+        val driver = driver(RejectingSecureControlTransport())
+
+        assertEquals(
+            SecureSessionIntegrationError.None,
+            driver.createSecureCapabilityBootstrap(authenticatedBootstrap()).error,
+        )
+        driver.cancel()
+
+        val next = driver.createSecureCapabilityBootstrap(authenticatedBootstrap())
+        assertEquals(SecureSessionIntegrationError.None, next.error)
+        assertNotNull(next.bootstrap)
+        driver.close()
+    }
+
     @Test
     fun terminalCapabilityRejectFailsTheClientAttemptExactlyOnce() {
         val transport = RejectingSecureControlTransport()

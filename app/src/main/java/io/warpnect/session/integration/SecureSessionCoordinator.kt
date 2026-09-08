@@ -256,7 +256,11 @@ class SecureSessionCoordinator(
         return result(SecureSessionIntegrationError.None)
     }
 
-    /** User cancellation is terminal for this coordinator and cannot leave later callbacks alive. */
+    /**
+     * User cancellation invalidates the current attempt before returning the application-scoped
+     * Client coordinator to Idle. The incremented token prevents callbacks from that attempt from
+     * mutating a subsequent normal Connect action.
+     */
     fun disconnect(reason: DisconnectReason = DisconnectReason.UserRequested): SessionIntegrationResult {
         val owned = synchronized(lock) {
             if (closed) return@synchronized null
@@ -274,7 +278,7 @@ class SecureSessionCoordinator(
             state = if (localRole == SessionRole.Host) {
                 SecureSessionCoordinatorState.Discovering
             } else {
-                SecureSessionCoordinatorState.Closed
+                SecureSessionCoordinatorState.Idle
             }
             lastError = SecureSessionIntegrationError.None
             publishLocked()

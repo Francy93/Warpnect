@@ -391,7 +391,11 @@ class ControllerBackedClientSessionPhaseDriver(
 
     private fun closeAttempt(keepDiscovery: Boolean) {
         val owned = synchronized(lock) {
-            val result = listOfNotNull(setup, capability, pairing, handshake, secureControl, protection)
+            val previousProtection = protection
+            // A SessionProtectionController is terminal after close(). A normal Client retry
+            // keeps discovery but must receive a fresh controller and fresh root ownership.
+            if (keepDiscovery) protection = previousProtection.freshGenerationController()
+            val result = listOfNotNull(setup, capability, pairing, handshake, secureControl, previousProtection)
             setup = null
             capability = null
             pairing = null

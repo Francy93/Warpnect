@@ -118,6 +118,26 @@ class SecureSessionScreenStateTest {
     }
 
     @Test
+    fun clientDisconnectReturnsTheSameApplicationControllerToAReusableDiscoveryState() {
+        val clientDriver = DiscoveryOnlyPhaseDriver()
+        val application = SecureSessionApplicationController(
+            client = coordinator(SessionRole.Client, clientDriver),
+            host = coordinator(SessionRole.Host),
+            requestFactory = { null },
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, application.startClientDiscovery().error)
+        assertEquals(SecureSessionIntegrationError.None, application.disconnect().error)
+        assertNull(application.snapshot.value.activeRole)
+        assertEquals(SecureSessionCoordinatorState.Idle, application.snapshot.value.client.state)
+
+        assertEquals(SecureSessionIntegrationError.None, application.startClientDiscovery().error)
+        assertEquals(SecureSessionCoordinatorState.Discovering, application.snapshot.value.active?.state)
+        assertEquals(2, clientDriver.startDiscoveryCalls)
+        application.close()
+    }
+
+    @Test
     fun discoveryPresentationDistinguishesHostWaitingFromClientSearching() {
         assertEquals(
             "Waiting for clients",
