@@ -51,11 +51,11 @@ does not alter video payloads, decoder qualification, capture, or Session/protoc
 | --- | --- | --- | --- | --- |
 | Samsung SM-G935F | Android 8.0 / API 26 | A41 API 31 Host reached authenticated, committed media setup, decoder output, immediate release, and an active SurfaceFlinger buffer. A human then clearly saw the current A41 screen in the Client video surface. | Same `SurfaceView` and decoder path visibly presented the immutable AVC fixture. | `VISIBLE_REMOTE_VIDEO_PASS` |
 | Samsung SM-G960F | Android 10 / API 29 | A41 API 31 Host-to-Client completed authentication, WNCP, setup, receiver startup, AVC configuration, decoder startup, first access-unit decode, and output release to the current Surface. The user then physically confirmed visible remote video, including the Warpnect Host screen, Android Home, and ordinary Host applications. | Same `SurfaceView` visibly presented the immutable AVC fixture through `OMX.Exynos.avc.dec`. | `S9_PRODUCTION_VIDEO_PIPELINE_VALIDATED` |
-| Aocwei X700_EEA tablet | Android 13 / API 33 | A41 API 31 Host Session did not authenticate. No remote-presentation conclusion is drawn. | Same `SurfaceView` visibly presented the immutable AVC fixture through `c2.mtk.avc.decoder`. | `REMOTE_PRESENTATION_INCONCLUSIVE_AUTHENTICATION` |
+| Aocwei X700_EEA tablet | Android 13 / API 33 | Tablet Host-to-S9 Client reached authentication, WNCP, setup, capture, encoder output, protected video transport, Client decode, and output release in five consecutive first-attempt Sessions. A supplementary screenshot showed the current Tablet Host display in the S9 Client surface. | Same `SurfaceView` visibly presented the immutable AVC fixture through `c2.mtk.avc.decoder`. | `TABLET_REMOTE_SESSION_VALIDATED` |
 
 The local fixture is a bounded debug-only composition control and is not substituted for a protected
-remote Session result. Android screenshots were used only for layout/composition inspection; the S7
-remote result above includes explicit human visual confirmation.
+remote Session result. The tablet screenshot supplements the protected-session milestones and Client
+output-release evidence; the S7 remote result above additionally includes explicit human confirmation.
 
 ## Host Full-Display Capture Scope
 
@@ -70,8 +70,8 @@ notification shade. The user directly confirmed the Settings presentation on the
 | Samsung SM-A415F, Android 12 / API 31 | Samsung SM-G935F, Android 8.0 / API 26 | `SurfaceControlDisplayCaptureApi`, legacy privileged display mirror | Warpnect, Home, Settings, notification shade | `HOST_FULL_DISPLAY_CAPTURE_VALIDATED` |
 
 This is display-scope evidence for the tested device/runtime, not a claim that secure or protected Android
-content is capturable. The separate observations about growing streaming latency and remote traces blocked
-before video on the S9/tablet remain open.
+content is capturable. The former growing-latency and tablet remote-session observations are recorded below
+with their resolved boundaries; they do not alter this capture-scope evidence.
 
 ## Privileged UserService Lifecycle and Cleanup
 
@@ -191,8 +191,9 @@ installed on all devices in the validation rows below.
 After final semantic teardown, A41, S9, and S7 each reported zero `capture`, `audio`,
 `input-injection`, `codecProbe`, and `decoderProbe` processes. The lifecycle cleanup invariant remains
 intact. `SESSION_ESTABLISHMENT_RESTART_RELIABILITY_VALIDATED` applies to the tested A41 API 31-to-S9
-API 29 topology; the independent tablet pre-authentication blocker remains open. The later
-growing-streaming-latency investigation is recorded below.
+API 29 topology. The earlier tablet “pre-authentication blocker” label was superseded by the later
+Tablet Host-to-S9 investigation; its validated result is recorded below. The later growing-streaming-latency
+investigation is recorded below.
 
 ## Growing Streaming Latency / Backpressure
 
@@ -314,11 +315,12 @@ The API 33 tablet originally reached `createAudioRecordSink` and returned
 `AudioRecordCreationFailed`. Revalidation after the generic UserService Binder-identity correction
 now passes the exact production preflight (`prepare` -> `start` -> `stop`) and publishes SystemAudio
 truthfully. A bounded debug-only verification used the same production controller with a normal-app
-PCM16/stereo/48 kHz `USAGE_GAME` AudioTrack tone: 75,120 frames were captured, with 122,700 non-zero
-samples, peak 8,191, and RMS 5,238.6. This is `TABLET_API33_SYSTEM_AUDIO_SUPPORTED`; it changed no
-payload, mix, fallback, or model-specific behavior. A Tablet-to-S9 automated Session authenticated and
-completed the Client-side setup/media checkpoints but did not complete the independent Tablet Host/video
-checkpoint, so it is not audio E2E evidence and does not reopen the separate tablet remote-session debt.
+PCM16/stereo/48 kHz `USAGE_GAME` AudioTrack tone: 68,400 frames were captured, with 116,112 non-zero
+samples, peak 8,191, and RMS 5,340.6. This is `TABLET_API33_SYSTEM_AUDIO_SUPPORTED`; it changed no
+payload, mix, fallback, or model-specific behavior. The later Tablet-to-S9 campaign completed five
+first-attempt Host/video Sessions without restart. It started the current-run privileged audio helper, but
+did not play a deterministic source during those remote Sessions; SystemAudio transport/playback E2E remains
+unproven rather than being inferred from local capture or Session success.
 
 ### API 36 SystemAudio Startability Qualification
 

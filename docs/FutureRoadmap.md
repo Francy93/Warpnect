@@ -77,10 +77,16 @@ Input resolver result.
 The API 33 tablet was revalidated with the same current production SystemAudio path. Its prior
 `AudioRecordCreationFailed` no longer reproduces after the generic Binder-identity correction: the real
 preflight prepares, starts, reads PCM, and stops successfully. A normal-app 48 kHz stereo `USAGE_GAME` tone
-produced 75,120 captured frames with non-zero PCM energy through the privileged loopback path, closing the
-tablet SystemAudio compatibility debt as `SYSTEM_AUDIO_SUPPORTED`. A single Tablet-to-S9 Session authenticated
-but did not complete an independent Tablet Host/video checkpoint, so audio remote E2E remains unclaimed and
-the tablet remote-session blocker stays separate.
+produced 68,400 captured frames, 116,112 non-zero samples, peak 8,191, and RMS 5,340.6 through the privileged
+loopback path, closing the tablet SystemAudio compatibility debt as `SYSTEM_AUDIO_SUPPORTED`.
+The formerly named tablet “pre-auth” blocker was instead a diagnostic false negative: the tablet's global
+log threshold suppressed `Log.d` breadcrumbs, and the harness also used the S9's non-authoritative legacy
+render callback as a media-success gate. With debug-only breadcrumbs emitted at `INFO` and media success
+defined by Host media start plus Client decoder output, five Tablet-to-S9 first-attempt Sessions passed via
+normal semantic teardown. Authentication, WNCP, setup, capture, encoder, transport, Client decode, and
+Surface output all completed; a supplementary screenshot showed the tablet Host display on the S9. No model,
+OEM, or API-specific runtime behavior changed. SystemAudio remote transport/playback E2E remains unclaimed
+because this campaign did not inject a deterministic normal Android audio source.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
@@ -94,8 +100,9 @@ visible after the fix. S9 API 29 and tablet API 33 both visibly present the same
 fixture. The S9 now also passes A41-hosted authentication, WNCP, setup, receiver startup, AVC
 configuration, decoder startup, first access-unit decode, and Surface release. The user then physically
 confirmed the A41 Host screen, Android Home, and ordinary Host applications visibly streamed on the S9.
-`S9 PRODUCTION VIDEO PIPELINE VALIDATED` closes the former S9 media-start/presentation debt. The tablet
-remains separately blocked before video by authentication. A follow-up A41 API 31-to-S7
+`S9 PRODUCTION VIDEO PIPELINE VALIDATED` closes the former S9 media-start/presentation debt. The tablet's
+separate remote-session investigation is now validated through the Host pipeline and S9 Client decoder/output.
+A follow-up A41 API 31-to-S7
 capture-scope trace selected
 the physical logical display (`source_display_id=0`, `layer_stack=0`) and remained active while the Host
 left Warpnect. Home, Settings, and the notification shade were each visible on the S7; the user confirmed

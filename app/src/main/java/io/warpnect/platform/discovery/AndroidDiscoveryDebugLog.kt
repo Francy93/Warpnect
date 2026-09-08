@@ -54,69 +54,69 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun routeObserved(backend: DiscoveryRouteKind) = event(backend, "route_observed")
 
     fun presenceAccepted(count: Int) {
-        if (enabled) Log.d(TAG, "event=presence_accepted count=$count")
+        if (enabled) Log.i(TAG, "event=presence_accepted count=$count")
     }
 
     fun snapshotPublishRequested(count: Int) {
-        if (enabled) Log.d(TAG, "event=snapshot_publish_requested host_count=$count")
+        if (enabled) Log.i(TAG, "event=snapshot_publish_requested host_count=$count")
     }
 
     fun snapshotPublished(count: Int) {
-        if (enabled) Log.d(TAG, "event=snapshot_published host_count=$count")
+        if (enabled) Log.i(TAG, "event=snapshot_published host_count=$count")
     }
 
     fun uiStateReceived(count: Int) {
-        if (enabled) Log.d(TAG, "event=ui_state_received host_count=$count")
+        if (enabled) Log.i(TAG, "event=ui_state_received host_count=$count")
     }
 
     fun chooserVisible(count: Int) {
-        if (enabled) Log.d(TAG, "event=chooser_visible host_count=$count")
+        if (enabled) Log.i(TAG, "event=chooser_visible host_count=$count")
     }
 
     fun chooserModel(count: Int) {
-        if (enabled) Log.d(TAG, "event=chooser_model host_count=$count")
+        if (enabled) Log.i(TAG, "event=chooser_model host_count=$count")
     }
 
     fun hostRowsCreated(count: Int) {
-        if (enabled) Log.d(TAG, "event=host_rows_created count=$count")
+        if (enabled) Log.i(TAG, "event=host_rows_created count=$count")
     }
 
     fun hostRowComposed() {
-        if (enabled) Log.d(TAG, "event=host_row_composed")
+        if (enabled) Log.i(TAG, "event=host_row_composed")
     }
 
     fun hostLifecycleStarted() {
-        if (enabled) Log.d(TAG, "event=host_lifecycle_started")
+        if (enabled) Log.i(TAG, "event=host_lifecycle_started")
     }
 
     fun hostLifecycleStopped() {
-        if (enabled) Log.d(TAG, "event=host_lifecycle_stopped")
+        if (enabled) Log.i(TAG, "event=host_lifecycle_stopped")
     }
 
     fun hostRegistrationActive() {
-        if (enabled) Log.d(TAG, "event=host_registration_active")
+        if (enabled) Log.i(TAG, "event=host_registration_active")
     }
 
     fun hostRegistrationLost() {
-        if (enabled) Log.d(TAG, "event=host_registration_lost")
+        if (enabled) Log.i(TAG, "event=host_registration_lost")
     }
 
     fun p2pChannelDisconnected() {
-        if (enabled) Log.d(TAG, "event=p2p_channel_disconnected")
+        if (enabled) Log.i(TAG, "event=p2p_channel_disconnected")
     }
 
     fun handshakeStarted() {
-        if (enabled) Log.d(TAG, "event=handshake_started")
+        if (enabled) Log.i(TAG, "event=handshake_started")
     }
 
     fun handshakeFailed(error: SessionHandshakeError) {
-        if (enabled) Log.d(TAG, "event=handshake_failed reason=${error.name}")
+        if (enabled) Log.i(TAG, "event=handshake_failed reason=${error.name}")
     }
 
     fun handshake(event: SessionHandshakeDebugEvent) {
@@ -137,11 +137,11 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun presenceCount(count: Int) {
-        if (enabled) Log.d(TAG, "event=presence_count count=$count")
+        if (enabled) Log.i(TAG, "event=presence_count count=$count")
     }
 
     fun pairing(event: PairingDebugEvent) {
@@ -158,7 +158,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun sessionStartup(event: SessionStartupDebugEvent) {
@@ -171,7 +171,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun sessionLifecycle(event: SessionLifecycleDebugEvent) {
@@ -184,7 +184,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun videoPipelineStart(event: VideoPipelineStartDebugEvent) {
@@ -210,22 +210,22 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 }
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun firstVideoFrameEncoded() {
         if (!enabled) return
-        Log.d(TAG, "event=first_frame_encoded")
+        Log.i(TAG, "event=first_frame_encoded")
     }
 
     fun videoTransport(event: VideoTransportDebugEvent) {
         if (!enabled) return
-        Log.d(TAG, "event=${event.logName}")
+        Log.i(TAG, "event=${event.logName}")
     }
 
     fun videoDecoder(event: VideoDecoderDebugEvent) {
         if (!enabled) return
-        Log.d(TAG, "event=${event.logName}")
+        Log.i(TAG, "event=${event.logName}")
     }
 
     fun videoDecoderPresentation(observation: VideoDecoderPresentationObservation) {
@@ -252,12 +252,12 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun videoAccessUnitReady(presentationTimeUs: Long, keyframe: Boolean, localMonotonicNs: Long) {
         if (!enabled) return
-        Log.d(
+        Log.i(
             TAG,
             "event=client_remote_access_unit_ready local_monotonic_ns=$localMonotonicNs " +
                 "pts_us=$presentationTimeUs keyframe=$keyframe",
@@ -269,7 +269,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         if (!enabled) return
         val encoder = snapshot.encoder
         val transport = snapshot.transport
-        Log.d(
+        Log.i(
             TAG,
             "event=video_runtime role=host local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
                 "session_state=${snapshot.state} capture_state=${snapshot.capture?.state} " +
@@ -303,7 +303,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         val receiver = snapshot.receiver
         val decoder = snapshot.decoder
         val renderer = snapshot.renderer
-        Log.d(
+        Log.i(
             TAG,
             "event=video_runtime role=client local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
                 "session_state=${snapshot.state} receiver_datagrams=${receiver?.datagramsReceived} " +
@@ -339,45 +339,45 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
 
     fun clientRenderTargetAvailable(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.d(TAG, "event=client_render_target_available generation=$surfaceGeneration")
+        Log.i(TAG, "event=client_render_target_available generation=$surfaceGeneration")
     }
 
     fun clientRenderTargetDestroyed(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.d(TAG, "event=client_render_target_destroyed generation=$surfaceGeneration")
+        Log.i(TAG, "event=client_render_target_destroyed generation=$surfaceGeneration")
     }
 
     fun clientDecoderPreparedForRenderTarget(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.d(TAG, "event=client_decoder_prepared_for_render_target generation=$surfaceGeneration")
+        Log.i(TAG, "event=client_decoder_prepared_for_render_target generation=$surfaceGeneration")
     }
 
     fun clientRemoteFrameRendered(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.d(TAG, "event=client_remote_frame_rendered generation=$surfaceGeneration")
+        Log.i(TAG, "event=client_remote_frame_rendered generation=$surfaceGeneration")
     }
 
     fun clientRenderSurfaceAttached(rendererAvailable: Boolean) {
         if (!enabled) return
-        Log.d(TAG, "event=client_render_surface_attached renderer_available=$rendererAvailable")
+        Log.i(TAG, "event=client_render_surface_attached renderer_available=$rendererAvailable")
     }
 
     fun clientRenderControllerAttached(surfaceWasValid: Boolean) {
         if (!enabled) return
-        Log.d(TAG, "event=client_render_controller_attached surface_valid=$surfaceWasValid")
+        Log.i(TAG, "event=client_render_controller_attached surface_valid=$surfaceWasValid")
     }
 
     fun sessionSetupRuntimeCreated() {
-        if (enabled) Log.d(TAG, "event=setup_runtime_created")
+        if (enabled) Log.i(TAG, "event=setup_runtime_created")
     }
 
     fun routeLocalAddressResolutionStarted() {
-        if (enabled) Log.d(TAG, "event=route_local_address_resolution_started")
+        if (enabled) Log.i(TAG, "event=route_local_address_resolution_started")
     }
 
     fun routeLocalAddressResolutionSucceeded(addressFamily: String) {
         if (enabled) {
-            Log.d(
+            Log.i(
                 TAG,
                 "event=route_local_address_resolution_succeeded " +
                     "address_resolved=true wildcard=false address_family=$addressFamily",
@@ -395,7 +395,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun sessionSetup(event: SessionSetupDebugEvent) {
@@ -408,7 +408,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun capability(event: CapabilityNegotiationDebugEvent) {
@@ -423,7 +423,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     /** Bounded DEBUG-only timing for local capability collection; values are device-local only. */
@@ -444,7 +444,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun localCapabilityProbe(
@@ -455,7 +455,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         inputError: String,
     ) {
         if (enabled) {
-            Log.d(
+            Log.i(
                 TAG,
                 "event=capability_local_probe role=$role video_available=$videoAvailable video_reason=$videoError " +
                     "input_available=$inputAvailable input_reason=$inputError",
@@ -483,16 +483,16 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 append(it.name)
             }
         }
-        Log.d(TAG, message)
+        Log.i(TAG, message)
     }
 
     fun encoderCbrActiveProbeStarted() {
-        if (enabled) Log.d(TAG, "event=encoder_cbr_active_probe_started")
+        if (enabled) Log.i(TAG, "event=encoder_cbr_active_probe_started")
     }
 
     fun decoderQualificationProbeStarted() {
         if (enabled) {
-            Log.d(
+            Log.i(
                 TAG,
                 "event=decoder_qualification_probe_started main_pid=${Process.myPid()} main_uid=${Process.myUid()}",
             )
@@ -509,7 +509,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
             io.warpnect.platform.video.decoder.LegacyDecoderQualificationSource.CurrentProcessQuarantine ->
                 "decoder_qualification_quarantined"
         }
-        Log.d(TAG, "event=$event result=${decision.result.name} outcome=${decision.outcome.name}")
+        Log.i(TAG, "event=$event result=${decision.result.name} outcome=${decision.outcome.name}")
     }
 
     private companion object {

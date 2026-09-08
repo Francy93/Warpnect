@@ -630,10 +630,10 @@ function Get-MediaTraceOutcome {
         }
         return @{ result = "FAIL"; reason = "Session did not reach media readiness for human input" }
     }
-    if ($Media.client_first_frame_rendered) {
-        return @{ result = "PASS"; reason = "first real remote frame rendered on Client" }
+    if ($Media.host_media_started -and $Media.client_media_started -and $Media.client_first_frame_decoded) {
+        return @{ result = "PASS"; reason = "remote video reached Client decoder output; render callback is supplemental" }
     }
-    return @{ result = "FAIL"; reason = "first real remote frame was not rendered on Client" }
+    return @{ result = "FAIL"; reason = "first remote frame did not reach Client decoder output" }
 }
 
 function Save-RedactedScreenshot {
@@ -949,7 +949,7 @@ function Invoke-MediaStartupTrace {
             }
             break
         }
-        if ($decodedMediaReady -and $clientFirstFrameRendered) {
+        if ($decodedMediaReady) {
             if ($HoldMediaAfterFirstFrameSeconds -gt 0) {
                 Start-Sleep -Seconds $HoldMediaAfterFirstFrameSeconds
             }

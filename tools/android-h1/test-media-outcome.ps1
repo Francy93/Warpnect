@@ -35,10 +35,11 @@ $media = [pscustomobject]@{
     client_first_frame_rendered = $false
 }
 Assert-Equal (Get-MediaTraceOutcome InputSessionHold $media).result "FAIL"
+Assert-Equal (Get-MediaTraceOutcome MediaStartupTrace $media).result "FAIL"
 $media.host_media_started = $true
 Assert-Equal (Get-MediaTraceOutcome InputSessionHold $media).result "PASS"
 Assert-Equal ((Get-MediaTraceOutcome InputSessionHold $media).reason -match 'E2E NOT proven') $true
-Assert-Equal (Get-MediaTraceOutcome MediaStartupTrace $media).result "FAIL"
+Assert-Equal (Get-MediaTraceOutcome MediaStartupTrace $media).result "PASS"
 $media.client_first_frame_rendered = $true
 Assert-Equal (Get-MediaTraceOutcome MediaStartupTrace $media).result "PASS"
 $media.host_start_error = "SystemAudioStartFailed"
