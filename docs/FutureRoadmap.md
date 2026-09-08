@@ -64,10 +64,16 @@ API 30 and API 31 A41 Host-to-S7 Sessions authenticated, committed setup, and st
 `SystemAudioStartFailed`. A new human touch on the S7 Client was correlated through the protected Session,
 legacy InputManager injection, and a Warpnect-owned target on each A41 Host, closing the two A41 reverse-input
 validation targets.
-The final APK's physical API 36 modern-input regression passed locally on the S22: `ModernInputManagerGlobal`
-was selected and key, touch, pointer, and joystick events were accepted and observed. A separate S22 Host
-Session attempt stopped at `SystemAudioStartFailed` before media/Input, so no S22 reverse-input E2E event
-was counted; that audio condition remains separate from the resolver result.
+The physical API 36 modern-input regression passed locally on the S22: `ModernInputManagerGlobal` was
+selected and key, touch, pointer, and joystick events were accepted and observed. A separate S22 SystemAudio
+investigation found an audio-only API 36 restriction. After the Shizuku UserService clears the incoming
+application Binder identity, `AudioPolicy` registration can proceed as shell UID 2000, but the first
+production loopback `AudioRecord` is uninitialized because AudioFlinger rejects the incoherent
+`uid=2000, package=io.warpnect` attribution. The capability preflight now performs that same bounded
+prepare/start/stop path before WNCP and therefore truthfully omits SystemAudio on this runtime. It neither
+falls back after commitment nor generalizes the result to Samsung or API 36 devices beyond the tested S22.
+The S22 reverse-input E2E result remains uncounted; this SystemAudio condition is separate from the modern
+Input resolver result.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
