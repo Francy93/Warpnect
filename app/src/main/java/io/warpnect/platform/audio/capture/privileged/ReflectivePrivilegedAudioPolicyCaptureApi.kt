@@ -8,6 +8,8 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import io.warpnect.audio.capture.AudioCaptureCapabilities
+import io.warpnect.audio.capture.AudioCaptureValidation
+import io.warpnect.audio.capture.AudioChunkPlanner
 import io.warpnect.audio.capture.AudioCaptureError
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
@@ -33,7 +35,10 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
             hiddenApiAvailable = hiddenAudioPolicyClassesAvailable(),
             routingPermissionGranted = context?.hasSelfModifyAudioRoutingPermission() == true,
         )
-        val available = qualification.isAvailable
+        val error = qualification.requireStartability {
+            qualifyProductionStartability(request)
+        }
+        val available = error == AudioCaptureError.None
         return AudioCaptureCapabilities(
             source = AudioCaptureSource.SystemAudio,
             available = available,
@@ -49,7 +54,7 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
             } else {
                 AudioTimestampQuality.Unavailable
             },
-            lastError = qualification.error,
+            lastError = error,
         )
     }
 
@@ -273,6 +278,33 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
         1 -> AudioFormat.CHANNEL_OUT_MONO
         2 -> AudioFormat.CHANNEL_OUT_STEREO
         else -> AudioFormat.CHANNEL_OUT_STEREO
+    }
+
+    private fun qualifyProductionStartability(request: AudioCaptureRequest): AudioCaptureError {
+        val sampleRateHz = request.preferredSampleRateHz ?: AudioCaptureRequest.DEFAULT_SAMPLE_RATE_HZ
+        val channelCount = request.channelCount ?: AudioCaptureValidation.defaultChannelCount(request.source)
+        val format = AudioCaptureValidation.buildFormat(request, sampleRateHz, channelCount)
+            ?: return AudioCaptureError.UnsupportedFormat
+        val chunkFrames = AudioChunkPlanner.targetFramesPerChunk(sampleRateHz, request.targetChunkDurationUs)
+        val bytesPerChunk = AudioChunkPlanner.chunkBytes(chunkFrames, format.bytesPerFrame)
+        if (bytesPerChunk <= 0) {
+            return AudioCaptureError.UnsupportedFormat
+        }
+        val prepared = prepareSystemAudioCapture(
+            PrivilegedSystemAudioPrepareRequest(
+                request = request,
+                format = format.copy(targetFramesPerChunk = chunkFrames),
+                audioRecordBufferSizeBytes = bytesPerChunk * 2,
+            ),
+        )
+        if (prepared.error != AudioCaptureError.None) {
+            return prepared.error
+        }
+        return try {
+            startRecording()
+        } finally {
+            stopSystemAudioCapture()
+        }
     }
 
     private data class PreparedPolicy(

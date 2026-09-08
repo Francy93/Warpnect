@@ -34,6 +34,10 @@ internal data class AudioPolicyCapabilityQualification(
     val isAvailable: Boolean get() = error == AudioCaptureError.None
 }
 
+internal inline fun AudioPolicyCapabilityQualification.requireStartability(
+    startability: () -> AudioCaptureError,
+): AudioCaptureError = if (isAvailable) startability() else error
+
 internal interface PrivilegedAudioPolicyCaptureApi {
     fun queryCapabilities(request: AudioCaptureRequest): AudioCaptureCapabilities
 

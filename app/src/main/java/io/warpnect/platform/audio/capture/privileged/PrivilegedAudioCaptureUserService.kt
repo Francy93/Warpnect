@@ -25,6 +25,7 @@ import kotlin.system.exitProcess
 
 class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() {
     private val audioPolicyApi: PrivilegedAudioPolicyCaptureApi = ReflectivePrivilegedAudioPolicyCaptureApi()
+    private val binderIdentity: PrivilegedBinderIdentity = AndroidPrivilegedBinderIdentity
     private val core = AudioCaptureControllerCore()
 
     @Volatile
@@ -44,7 +45,9 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
 
     override fun querySystemAudioCapabilities(): Bundle {
         val request = AudioCaptureRequest(source = AudioCaptureSource.SystemAudio)
-        return audioPolicyApi.queryCapabilities(request).toBundle()
+        return withUserServiceIdentity(binderIdentity) {
+            audioPolicyApi.queryCapabilities(request).toBundle()
+        }
     }
 
     @SuppressLint("NewApi")
@@ -81,13 +84,15 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
         if (bytesPerChunk <= 0) {
             return prepareFailureBundle(AudioCaptureError.UnsupportedFormat)
         }
-        val policyResult = audioPolicyApi.prepareSystemAudioCapture(
-            PrivilegedSystemAudioPrepareRequest(
-                request = request,
-                format = format.copy(targetFramesPerChunk = chunkFrames),
-                audioRecordBufferSizeBytes = bytesPerChunk * 2,
-            ),
-        )
+        val policyResult = withUserServiceIdentity(binderIdentity) {
+            audioPolicyApi.prepareSystemAudioCapture(
+                PrivilegedSystemAudioPrepareRequest(
+                    request = request,
+                    format = format.copy(targetFramesPerChunk = chunkFrames),
+                    audioRecordBufferSizeBytes = bytesPerChunk * 2,
+                ),
+            )
+        }
         if (policyResult.error != AudioCaptureError.None) {
             return prepareFailureBundle(policyResult.error)
         }
@@ -98,19 +103,19 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
                 SharedPcmAudioRingLayout.totalBytes(sharedRingSlotCount, bytesPerChunk),
             )
         } catch (_: Exception) {
-            audioPolicyApi.stopSystemAudioCapture()
+            stopAudioPolicyCaptureAsUserService()
             return prepareFailureBundle(AudioCaptureError.SharedMemoryCreationFailed)
         }
         val mapped = try {
             shared.mapReadWrite()
         } catch (_: Exception) {
             shared.close()
-            audioPolicyApi.stopSystemAudioCapture()
+            stopAudioPolicyCaptureAsUserService()
             return prepareFailureBundle(AudioCaptureError.SharedMemoryMappingFailed)
         }.order(ByteOrder.nativeOrder())
         if (!SharedPcmAudioRingLayout.initialize(mapped, sharedRingSlotCount, bytesPerChunk)) {
             cleanupSharedMemory(shared, mapped)
-            audioPolicyApi.stopSystemAudioCapture()
+            stopAudioPolicyCaptureAsUserService()
             return prepareFailureBundle(AudioCaptureError.SharedRingCorrupt)
         }
 
@@ -118,7 +123,7 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
             ParcelFileDescriptor.createPipe()
         } catch (_: Exception) {
             cleanupSharedMemory(shared, mapped)
-            audioPolicyApi.stopSystemAudioCapture()
+            stopAudioPolicyCaptureAsUserService()
             return prepareFailureBundle(AudioCaptureError.NotificationChannelFailed)
         }
         val ackPipe = try {
@@ -126,7 +131,7 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
         } catch (_: Exception) {
             closePipe(notifyPipe)
             cleanupSharedMemory(shared, mapped)
-            audioPolicyApi.stopSystemAudioCapture()
+            stopAudioPolicyCaptureAsUserService()
             return prepareFailureBundle(AudioCaptureError.NotificationChannelFailed)
         }
 
@@ -168,7 +173,9 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
         if (beginError != AudioCaptureError.None) {
             return beginError.code
         }
-        val startError = audioPolicyApi.startRecording()
+        val startError = withUserServiceIdentity(binderIdentity) {
+            audioPolicyApi.startRecording()
+        }
         if (startError != AudioCaptureError.None) {
             core.completeStart(startError)
             return startError.code
@@ -182,7 +189,7 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
     override fun stopSystemAudioCapture(): Int {
         running = false
         val thread = captureThread
-        runCatching { audioPolicyApi.stopSystemAudioCapture() }
+        runCatching { stopAudioPolicyCaptureAsUserService() }
         runCatching { notifyWriteFd?.close() }
         if (thread != null && thread != Thread.currentThread()) {
             runCatching { thread.join(STOP_JOIN_TIMEOUT_MS) }
@@ -295,7 +302,7 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
 
     private fun prepareFailureBundle(error: AudioCaptureError): Bundle {
         releaseResources()
-        audioPolicyApi.stopSystemAudioCapture()
+        stopAudioPolicyCaptureAsUserService()
         core.completePrepare(error, null)
         return setupFailure(error)
     }
@@ -343,6 +350,11 @@ class PrivilegedAudioCaptureUserService : IPrivilegedAudioCaptureService.Stub() 
         -> AudioCaptureError.AudioRecordReadFailed
         else -> AudioCaptureError.AudioRecordReadFailed
     }
+
+    private fun stopAudioPolicyCaptureAsUserService(): AudioCaptureError =
+        withUserServiceIdentity(binderIdentity) {
+            audioPolicyApi.stopSystemAudioCapture()
+        }
 
     private companion object {
         const val SYSTEM_AUDIO_THREAD_NAME = "WarpnectSystemAudioCapture"

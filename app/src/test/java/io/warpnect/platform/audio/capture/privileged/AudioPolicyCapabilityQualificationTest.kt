@@ -32,6 +32,38 @@ class AudioPolicyCapabilityQualificationTest {
     }
 
     @Test
+    fun requiresTheRealAudioPolicyPathToBeStartableAfterStaticPrerequisitesPass() {
+        val qualification = AudioPolicyCapabilityQualification(
+            contextAvailable = true,
+            hiddenApiAvailable = true,
+            routingPermissionGranted = true,
+        )
+
+        assertEquals(
+            AudioCaptureError.AudioRecordCreationFailed,
+            qualification.requireStartability { AudioCaptureError.AudioRecordCreationFailed },
+        )
+    }
+
+    @Test
+    fun doesNotRunTheActivePathWhenStaticPrerequisitesAlreadyRejectIt() {
+        val qualification = AudioPolicyCapabilityQualification(
+            contextAvailable = true,
+            hiddenApiAvailable = true,
+            routingPermissionGranted = false,
+        )
+        var startabilityQueried = false
+
+        val error = qualification.requireStartability {
+            startabilityQueried = true
+            AudioCaptureError.None
+        }
+
+        assertEquals(AudioCaptureError.PermissionDenied, error)
+        assertFalse(startabilityQueried)
+    }
+
+    @Test
     fun distinguishesServiceAndHiddenApiUnavailabilityBeforePermission() {
         val noContext = AudioPolicyCapabilityQualification(
             contextAvailable = false,
