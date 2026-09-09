@@ -15,6 +15,11 @@
             android:name=".debug.audio.SystemAudioProductionValidationActivity"
             android:exported="true"
             android:noHistory="true" />
+        <!-- DEBUG-only normal Android playback source for SystemAudio E2E validation. -->
+        <activity
+            android:name=".debug.audio.SystemAudioE2eToneActivity"
+            android:exported="true"
+            android:noHistory="true" />
         <activity
             android:name=".debug.privilege.UserServiceBootstrapProbeActivity"
             android:exported="true"

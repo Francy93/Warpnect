@@ -153,6 +153,23 @@ interface VideoPipelineRuntimeDebugObserver {
     }
 }
 
+/**
+ * Bounded, DEBUG-only snapshots of live audio-pipeline counters. The snapshots stay local and
+ * intentionally carry no PCM contents, peer addresses, or cross-device latency estimates.
+ */
+interface AudioPipelineRuntimeDebugObserver {
+    val enabled: Boolean
+        get() = false
+
+    fun onSenderSnapshot(snapshot: io.warpnect.audio.session.AudioTransmitterSessionSnapshot) = Unit
+
+    fun onReceiverSnapshot(snapshot: io.warpnect.audio.session.AudioReceiverSessionSnapshot) = Unit
+
+    companion object {
+        val None = object : AudioPipelineRuntimeDebugObserver {}
+    }
+}
+
 /** Development-only video-start outcome. It retains fixed error enums and no media or Session data. */
 fun interface VideoPipelineStartDebugObserver {
     fun onEvent(event: VideoPipelineStartDebugEvent)
@@ -215,6 +232,7 @@ class AndroidSessionPipelineFactory(
     private val debugObserver: VideoPipelineStartDebugObserver = VideoPipelineStartDebugObserver.None,
     private val videoTransportDebugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
     private val videoRuntimeDebugObserver: VideoPipelineRuntimeDebugObserver = VideoPipelineRuntimeDebugObserver.None,
+    private val audioRuntimeDebugObserver: AudioPipelineRuntimeDebugObserver = AudioPipelineRuntimeDebugObserver.None,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -385,6 +403,7 @@ class AndroidSessionPipelineFactory(
                         pipeline,
                         networkTelemetry,
                         diagnosticWriter(bootstrap, channel),
+                        audioRuntimeDebugObserver,
                     )
                 }
             }
@@ -432,6 +451,7 @@ class AndroidSessionPipelineFactory(
                         pipeline,
                         networkTelemetry,
                         diagnosticWriter(bootstrap, channel),
+                        audioRuntimeDebugObserver,
                     )
                 }
             }
@@ -713,7 +733,12 @@ private class AudioSenderComponent(
     private val pipeline: AndroidAudioSenderPipeline,
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
+    runtimeDebugObserver: AudioPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = AudioPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onSenderSnapshot(pipeline.controller.snapshot())
+    }
+
     override val name = "${kind.name.lowercase()}-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(kind)
@@ -723,12 +748,15 @@ private class AudioSenderComponent(
             if (started) DiagnosticEventIds.AudioCaptureStarted else DiagnosticEventIds.AudioCaptureFailed,
             DiagnosticReason.AudioFailure.code,
         )
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(if (started) SecureSessionIntegrationError.None else kind.startError())
     }
     override fun stop() {
+        runtimeSampler.close()
         runBlocking { pipeline.controller.stop() }
     }
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
@@ -740,7 +768,12 @@ private class AudioReceiverComponent(
     private val pipeline: AndroidAudioReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
+    runtimeDebugObserver: AudioPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = AudioPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onReceiverSnapshot(pipeline.controller.snapshot())
+    }
+
     override val name = "${kind.name.lowercase()}-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(kind)
@@ -750,15 +783,55 @@ private class AudioReceiverComponent(
             if (started) DiagnosticEventIds.AudioPlaybackStarted else DiagnosticEventIds.AudioPlaybackFailed,
             DiagnosticReason.AudioFailure.code,
         )
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(if (started) SecureSessionIntegrationError.None else kind.startError())
     }
     override fun stop() {
+        runtimeSampler.close()
         runBlocking { pipeline.controller.stop() }
     }
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
+    }
+}
+
+/** Runs only for debuggable builds and samples at a deliberately low fixed cadence. */
+private class AudioPipelineRuntimeDebugSampler(
+    private val observer: AudioPipelineRuntimeDebugObserver,
+    private val sample: () -> Unit,
+) : AutoCloseable {
+    private val lock = Any()
+    private var executor: ScheduledExecutorService? = null
+
+    fun start() {
+        if (!observer.enabled) return
+        synchronized(lock) {
+            if (executor != null) return
+            executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "warpnect-audio-runtime-debug").apply { isDaemon = true }
+            }.also { scheduler ->
+                scheduler.scheduleAtFixedRate(
+                    { runCatching(sample) },
+                    0L,
+                    RUNTIME_SAMPLE_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS,
+                )
+            }
+        }
+    }
+
+    override fun close() {
+        synchronized(lock) {
+            executor?.shutdownNow()
+            executor = null
+        }
+    }
+
+    private companion object {
+        const val RUNTIME_SAMPLE_INTERVAL_SECONDS = 5L
     }
 }
 

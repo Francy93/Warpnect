@@ -5,6 +5,8 @@ import android.content.pm.ApplicationInfo
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
+import io.warpnect.audio.session.AudioReceiverSessionSnapshot
+import io.warpnect.audio.session.AudioTransmitterSessionSnapshot
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
@@ -334,6 +336,54 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "render_now=${renderer?.renderNowDecisions} " +
                 "render_scheduled=${renderer?.scheduledRenderDecisions} " +
                 "render_dropped=${renderer?.dropDecisions} render_pts_us=${renderer?.lastFramePtsUs}",
+        )
+    }
+
+    /** Low-cadence local sender counters for DEBUG SystemAudio end-to-end validation. */
+    fun audioPipelineSenderRuntime(snapshot: AudioTransmitterSessionSnapshot) {
+        if (!enabled) return
+        val capture = snapshot.capture
+        val encoder = snapshot.encoder
+        val transport = snapshot.transport
+        Log.i(
+            TAG,
+            "event=audio_runtime role=host local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} source=${snapshot.source} " +
+                "capture_state=${capture?.state} capture_frames=${snapshot.pcmFramesCaptured} " +
+                "capture_chunks=${capture?.chunksCaptured} capture_ring_occupancy=${capture?.ringOccupancy} " +
+                "capture_ring_hwm=${capture?.ringHighWaterMark} capture_ring_overruns=${capture?.ringOverruns} " +
+                "capture_dropped=${capture?.framesDropped} encoder_pcm_frames=${encoder?.pcmFramesReceived} " +
+                "encoder_frames=${snapshot.opusFramesEncoded} encoder_bytes=${encoder?.encodedBytes} " +
+                "payload_frames=${snapshot.audioFramesSubmitted} " +
+                "datagrams_generated=${transport?.datagramsGenerated} " +
+                "datagrams_sent=${snapshot.datagramsSent} transport_would_block=${transport?.wouldBlockCount} " +
+                "transport_send_failures=${transport?.sendFailures} transport_error=${transport?.lastError} " +
+                "session_error=${snapshot.lastError.error}",
+        )
+    }
+
+    /** Low-cadence local receiver and playback counters for DEBUG SystemAudio end-to-end validation. */
+    fun audioPipelineReceiverRuntime(snapshot: AudioReceiverSessionSnapshot) {
+        if (!enabled) return
+        val receiver = snapshot.receiver
+        val decoder = snapshot.decoder
+        val playback = snapshot.playback
+        Log.i(
+            TAG,
+            "event=audio_runtime role=client local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} source=${snapshot.source} receiver_state=${receiver?.state} " +
+                "datagrams_received=${receiver?.datagramsReceived} " +
+                "audio_datagrams_received=${receiver?.audioDatagramsReceived} " +
+                "stream_configs=${receiver?.streamConfigsReceived} completed=${receiver?.audioFramesCompleted} " +
+                "delivered=${receiver?.audioFramesDelivered} frames_received=${snapshot.framesReceived} " +
+                "frames_decoded=${snapshot.framesDecoded} decoder_pcm_frames=${decoder?.pcmFramesDecoded} " +
+                "decoder_failures=${decoder?.decodeFailures} playback_state=${playback?.state} " +
+                "playback_ring_occupancy=${playback?.ringOccupancyFrames} " +
+                "playback_ring_hwm=${playback?.ringHighWaterMark} playback_written=${playback?.pcmFramesSubmitted} " +
+                "playback_consumed=${playback?.pcmFramesConsumed} playback_rejected=${playback?.pcmFramesRejected} " +
+                "playback_underruns=${playback?.underrunCallbacks} playback_xruns=${playback?.xRunCount} " +
+                "receiver_error=${receiver?.lastError} playback_error=${playback?.lastError} " +
+                "session_error=${snapshot.lastError.error}",
         )
     }
 

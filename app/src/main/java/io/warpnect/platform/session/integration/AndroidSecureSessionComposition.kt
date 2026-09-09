@@ -369,6 +369,18 @@ class AndroidSecureSessionComposition private constructor(
                     discoveryDebugLog.videoPipelineReceiverRuntime(snapshot)
                 }
             },
+            object : AudioPipelineRuntimeDebugObserver {
+                override val enabled: Boolean
+                    get() = discoveryDebugLog.isEnabled
+
+                override fun onSenderSnapshot(snapshot: io.warpnect.audio.session.AudioTransmitterSessionSnapshot) {
+                    discoveryDebugLog.audioPipelineSenderRuntime(snapshot)
+                }
+
+                override fun onReceiverSnapshot(snapshot: io.warpnect.audio.session.AudioReceiverSessionSnapshot) {
+                    discoveryDebugLog.audioPipelineReceiverRuntime(snapshot)
+                }
+            },
         )
 
         fun create(): AndroidSecureSessionComposition {
