@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
+import android.os.Build
 import io.warpnect.audio.capture.AudioCaptureCapabilities
 import io.warpnect.audio.capture.AudioCaptureError
 import io.warpnect.audio.capture.AudioCaptureRequest
@@ -16,6 +17,7 @@ import io.warpnect.audio.capture.AudioChunkPlanner
 import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampAnchor
 import io.warpnect.audio.capture.AudioTimestampQuality
+import io.warpnect.platform.audio.capture.supportsSystemAudioSharedMemory
 import java.lang.reflect.Method
 import java.nio.ByteBuffer
 
@@ -31,6 +33,7 @@ internal class ReflectivePrivilegedAudioPolicyCaptureApi : PrivilegedAudioPolicy
         // This implementation has no MediaProjection token. Resolving hidden classes alone does
         // not authorize an AudioPolicy sink for Warpnect's normal application attribution.
         val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT),
             contextAvailable = context != null,
             hiddenApiAvailable = hiddenAudioPolicyClassesAvailable(),
             routingPermissionGranted = context?.hasSelfModifyAudioRoutingPermission() == true,

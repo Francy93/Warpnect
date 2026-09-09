@@ -64,6 +64,7 @@ class SystemAudioProductionValidationActivity : Activity() {
                     "encoding=${capabilities.encoding} timestamp=${capabilities.timestampSupport} " +
                     "error=${capabilities.lastError}",
             )
+            if (!capabilities.available) return
             val prepared = runBlocking { controller.prepare(request, StructuralSink()) }
             logResult("PREPARE", prepared.error)
             logSnapshot("PREPARE_SNAPSHOT", prepared.snapshot)

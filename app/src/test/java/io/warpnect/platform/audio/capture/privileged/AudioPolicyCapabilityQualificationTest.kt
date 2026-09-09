@@ -10,6 +10,7 @@ class AudioPolicyCapabilityQualificationTest {
     @Test
     fun requiresTheAudioPolicyCallersRoutingPermissionWhenNoProjectionAuthorizationExists() {
         val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = true,
             hiddenApiAvailable = true,
             routingPermissionGranted = false,
@@ -22,6 +23,7 @@ class AudioPolicyCapabilityQualificationTest {
     @Test
     fun acceptsOnlyACompleteAuthorizedAudioPolicyPath() {
         val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = true,
             hiddenApiAvailable = true,
             routingPermissionGranted = true,
@@ -34,6 +36,7 @@ class AudioPolicyCapabilityQualificationTest {
     @Test
     fun requiresTheRealAudioPolicyPathToBeStartableAfterStaticPrerequisitesPass() {
         val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = true,
             hiddenApiAvailable = true,
             routingPermissionGranted = true,
@@ -48,6 +51,7 @@ class AudioPolicyCapabilityQualificationTest {
     @Test
     fun doesNotRunTheActivePathWhenStaticPrerequisitesAlreadyRejectIt() {
         val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = true,
             hiddenApiAvailable = true,
             routingPermissionGranted = false,
@@ -66,11 +70,13 @@ class AudioPolicyCapabilityQualificationTest {
     @Test
     fun distinguishesServiceAndHiddenApiUnavailabilityBeforePermission() {
         val noContext = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = false,
             hiddenApiAvailable = true,
             routingPermissionGranted = true,
         )
         val noApi = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = true,
             contextAvailable = true,
             hiddenApiAvailable = false,
             routingPermissionGranted = true,
@@ -78,5 +84,24 @@ class AudioPolicyCapabilityQualificationTest {
 
         assertEquals(AudioCaptureError.PrivilegedServiceUnavailable, noContext.error)
         assertEquals(AudioCaptureError.AudioPolicyUnavailable, noApi.error)
+    }
+
+    @Test
+    fun rejectsPlatformsWithoutSharedMemoryBeforeOtherAudioPolicyPrerequisites() {
+        val qualification = AudioPolicyCapabilityQualification(
+            sharedMemoryTransportSupported = false,
+            contextAvailable = false,
+            hiddenApiAvailable = false,
+            routingPermissionGranted = false,
+        )
+        var startabilityQueried = false
+
+        val error = qualification.requireStartability {
+            startabilityQueried = true
+            AudioCaptureError.None
+        }
+
+        assertEquals(AudioCaptureError.UnsupportedPlatform, error)
+        assertFalse(startabilityQueried)
     }
 }

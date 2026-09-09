@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.os.RemoteException
 import io.warpnect.audio.capture.AudioCaptureCapabilities
@@ -69,6 +70,9 @@ internal class ShizukuAudioCaptureGateway(
     }
 
     override suspend fun prepareSystemAudioCapture(request: AudioCaptureRequest): PrivilegedSystemAudioSetup {
+        if (!supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT)) {
+            return failedSetup(AudioCaptureError.UnsupportedPlatform)
+        }
         val readiness = shizukuReadiness()
         if (readiness != AudioCaptureError.None) {
             return failedSetup(readiness)

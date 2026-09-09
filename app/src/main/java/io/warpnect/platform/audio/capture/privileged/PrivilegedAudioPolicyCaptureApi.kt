@@ -20,11 +20,13 @@ internal data class PrivilegedAudioPolicyPrepareResult(
 
 /** Cold capability result for the current AudioPolicy-based system-audio implementation. */
 internal data class AudioPolicyCapabilityQualification(
+    val sharedMemoryTransportSupported: Boolean,
     val contextAvailable: Boolean,
     val hiddenApiAvailable: Boolean,
     val routingPermissionGranted: Boolean,
 ) {
     val error: AudioCaptureError = when {
+        !sharedMemoryTransportSupported -> AudioCaptureError.UnsupportedPlatform
         !contextAvailable -> AudioCaptureError.PrivilegedServiceUnavailable
         !hiddenApiAvailable -> AudioCaptureError.AudioPolicyUnavailable
         !routingPermissionGranted -> AudioCaptureError.PermissionDenied

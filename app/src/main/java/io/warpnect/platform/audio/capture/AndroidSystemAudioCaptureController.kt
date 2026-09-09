@@ -1,6 +1,7 @@
 package io.warpnect.platform.audio.capture
 
 import android.content.Context
+import android.os.Build
 import io.warpnect.audio.capture.AudioCaptureCapabilities
 import io.warpnect.audio.capture.AudioCaptureController
 import io.warpnect.audio.capture.AudioCaptureControllerCore
@@ -39,6 +40,9 @@ internal class AndroidSystemAudioCaptureController(
                 lastError = AudioCaptureError.InvalidRequest,
             )
         }
+        if (!supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT)) {
+            return unavailableCapabilities(AudioCaptureError.UnsupportedPlatform)
+        }
         return kotlinx.coroutines.runBlocking {
             gateway.querySystemAudioCapabilities(request)
         }
@@ -52,6 +56,10 @@ internal class AndroidSystemAudioCaptureController(
             if (request.source != AudioCaptureSource.SystemAudio) {
                 core.fail(AudioCaptureError.InvalidRequest)
                 return@synchronized AudioCaptureResult(AudioCaptureError.InvalidRequest, core.snapshot())
+            }
+            if (!supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT)) {
+                core.fail(AudioCaptureError.UnsupportedPlatform)
+                return@synchronized AudioCaptureResult(AudioCaptureError.UnsupportedPlatform, core.snapshot())
             }
             val beginError = core.beginPrepare(request)
             if (beginError != AudioCaptureError.None) {
@@ -191,6 +199,13 @@ internal class AndroidSystemAudioCaptureController(
         core.completePrepare(error, null)
         return AudioCaptureResult(error, core.snapshot())
     }
+
+    private fun unavailableCapabilities(error: AudioCaptureError) = AudioCaptureCapabilities(
+        source = AudioCaptureSource.SystemAudio,
+        available = false,
+        privilegedBackendAvailable = false,
+        lastError = error,
+    )
 
     private fun onDrainError(error: AudioCaptureError) {
         synchronized(lock) {
