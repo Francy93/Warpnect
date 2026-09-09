@@ -15,6 +15,10 @@
             android:name=".debug.audio.SystemAudioProductionValidationActivity"
             android:exported="true"
             android:noHistory="true" />
+        <activity
+            android:name=".debug.privilege.UserServiceBootstrapProbeActivity"
+            android:exported="true"
+            android:noHistory="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"

@@ -322,15 +322,20 @@ first-attempt Host/video Sessions without restart. It started the current-run pr
 did not play a deterministic source during those remote Sessions; SystemAudio transport/playback E2E remains
 unproven rather than being inferred from local capture or Session success.
 
-On 2026-09-09, after the tablet's Shizuku Manager was updated to 13.6.0.r1086.2650830c, a new direct
-production-controller run exposed a provider bootstrap failure before the privileged Binder was delivered.
-The Shizuku UserService process died in `LoadedApk.makeApplication` with a framework null-pointer exception;
-no AudioPolicy or AudioRecord operation ran. The manager removes an unstarted UserService after its 30-second
-startup deadline without delivering a `ServiceConnection` callback. Warpnect now bounds that local bind by the
-same deadline and reports `PrivilegedServiceUnavailable` before negotiation rather than wedging Host readiness.
-This is `TABLET_SYSTEM_AUDIO_REMOTE_E2E_OPEN`: it neither contradicts the earlier local capture proof nor
-constitutes remote transport/playback evidence. It is a current privilege-provider/bootstrap boundary, not an
-API33, OEM, payload, or audio-format support claim.
+On 2026-09-09, after the tablet's Shizuku Manager was updated to 13.6.0.r1086.2650830c, a direct
+production-controller run exposed a provider bootstrap failure before the privileged Binder was delivered. A
+bounded isolator repeated the same failure for a minimal Binder and the production capture, audio, and input
+UserServices. On this tablet's MediaTek `LoadedApk`, `makeApplication` calls
+`Application.getProcessName().equals(mPackageName)` in an OEM resource-preload guard. The Shizuku
+`ActivityThread.systemMain()` bootstrap has no application process name, so that forced 13.6 application path
+throws before the UserService class loader, constructor, AudioPolicy, or AudioRecord is reached. The same APK
+and Shizuku 13.6 publish all four Binders on the A41. The precise result is
+`SHIZUKU_13_6_MAKEAPPLICATION_TABLET_FRAMEWORK_INCOMPATIBILITY`; it does not generalize to API33, an OEM, a
+payload, or an audio format. The manager removes an unstarted service after its 30-second startup deadline
+without delivering a `ServiceConnection` callback. Warpnect bounds that local bind by the same deadline and
+reports `PrivilegedServiceUnavailable` before negotiation rather than wedging Host readiness. This remains
+`TABLET_SYSTEM_AUDIO_REMOTE_E2E_OPEN`: it neither contradicts the earlier local capture proof nor constitutes
+remote transport/playback evidence.
 
 ### API 36 SystemAudio Startability Qualification
 

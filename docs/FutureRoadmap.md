@@ -89,14 +89,20 @@ OEM, or API-specific runtime behavior changed. SystemAudio remote transport/play
 because this campaign did not inject a deterministic normal Android audio source.
 
 On 2026-09-09, a subsequent tablet SystemAudio remote-E2E attempt found a changed external precondition rather
-than an audio-pipeline regression: Shizuku Manager 13.6.0.r1086.2650830c failed to bootstrap Warpnect's audio
-UserService before its Binder was delivered, in `LoadedApk.makeApplication`. The provider removes such an
-unstarted service after 30 seconds without a `ServiceConnection` terminal callback. Warpnect therefore bounds
-that local bind by the provider's own deadline and truthfully reports `PrivilegedServiceUnavailable` instead of
-blocking Host readiness forever. The prior API33 local production capture result remains valid evidence for the
-then-running privilege provider, but `TABLET_SYSTEM_AUDIO_REMOTE_E2E` remains open until a healthy privileged
-UserService can run the real capture-to-playback chain. This introduces no device allowlist, audio fallback,
-payload change, or Session retry.
+than an audio-pipeline regression. Shizuku Manager 13.6.0.r1086.2650830c starts every tested Warpnect
+UserService as shell but fails before Binder publication: the minimal debug Binder plus production capture,
+audio, and input classes all die in `LoadedApk.makeApplication`. The tablet's MediaTek framework calls
+`Application.getProcessName().equals(mPackageName)` in its OEM resource-preload guard, but
+`ActivityThread.systemMain()` has no application process name in the Shizuku UserService bootstrap, producing
+the recorded null-pointer exception. Shizuku 13.6 introduced the forced `makeApplication` path; the identical
+APK and provider version publish all four Binders on the A41. This is
+`SHIZUKU_13_6_MAKEAPPLICATION_TABLET_FRAMEWORK_INCOMPATIBILITY`, not an API33-wide, OEM-wide, or audio-format
+claim. The provider removes an unstarted service after 30 seconds without a `ServiceConnection` terminal
+callback. Warpnect therefore bounds that local bind by the provider's own deadline and truthfully reports
+`PrivilegedServiceUnavailable` instead of blocking Host readiness forever. The prior API33 local production
+capture result remains valid evidence for the prior healthy provider; `TABLET_SYSTEM_AUDIO_REMOTE_E2E` remains
+open until a compatible privileged-provider bootstrap can run the real capture-to-playback chain. This adds no
+device allowlist, audio fallback, payload change, or Session retry.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
