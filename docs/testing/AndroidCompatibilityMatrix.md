@@ -343,7 +343,7 @@ OEM, or Warpnect packaging claim. The old provider remains diagnostic only: Shiz
 official stable and no official fixed revision was available during this run. On 2026-09-09, a clean Tablet-to-S9
 Session under 13.5.4 ran the normal 997 Hz PCM16/stereo/48 kHz `AudioTrack` tone for 60 seconds (2,875,396 source
 frames). The Tablet SystemAudio runtime stayed `Running`: capture and encoder progress matched, the Shared PCM
-Ring high-water mark was 7 with no overrun/drop, and all 69,998 sampled payloads/datagrams were sent with zero
+Ring high-water mark was 7 with no overrun/drop, and 69,998 payloads plus 69,999 generated/sent datagrams with zero
 `WouldBlock`, transport failures, or Session errors at the 50-second sample. The S9 SystemAudio receiver and native
 Oboe playback runtime stayed `Running`; at the 60-second sample it had received 71,439 audio datagrams, delivered
 71,438 payloads, decoded 71,437 frames, and advanced the playback ring from 13,499,760/13,499,760 written/consumed

@@ -111,7 +111,7 @@ an API33-, OEM-, or all-13.6 claim. The older provider is diagnostic evidence, n
 subsequent clean Tablet-to-S9 run under 13.5.4 completed the technical remote SystemAudio chain. The normal
 997 Hz PCM16/stereo/48 kHz `AudioTrack` tone ran for 60 seconds and wrote 2,875,396 source frames. On the Tablet,
 the privileged recorder, Shared PCM Ring, encoder, payload producer, and UDP sender remained active; the 50-second
-snapshot showed 69,998 payloads/datagrams, ring high-water mark 7, no capture drop/overrun, no `WouldBlock`, and no
+snapshot showed 69,998 payloads and 69,999 generated/sent datagrams, ring high-water mark 7, no capture drop/overrun, no `WouldBlock`, and no
 transport or Session error. On the S9, the receiver decoded 71,437 audio frames by the 60-second snapshot and the
 native Oboe playback consumer advanced its PCM Playback Ring from 13,499,760/13,499,760 written/consumed frames to
 16,251,120/16,250,976, bounded by its 960-frame high-water mark, with zero xruns and no receiver or Session error.
