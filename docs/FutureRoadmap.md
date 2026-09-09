@@ -88,6 +88,16 @@ Surface output all completed; a supplementary screenshot showed the tablet Host 
 OEM, or API-specific runtime behavior changed. SystemAudio remote transport/playback E2E remains unclaimed
 because this campaign did not inject a deterministic normal Android audio source.
 
+On 2026-09-09, a subsequent tablet SystemAudio remote-E2E attempt found a changed external precondition rather
+than an audio-pipeline regression: Shizuku Manager 13.6.0.r1086.2650830c failed to bootstrap Warpnect's audio
+UserService before its Binder was delivered, in `LoadedApk.makeApplication`. The provider removes such an
+unstarted service after 30 seconds without a `ServiceConnection` terminal callback. Warpnect therefore bounds
+that local bind by the provider's own deadline and truthfully reports `PrivilegedServiceUnavailable` instead of
+blocking Host readiness forever. The prior API33 local production capture result remains valid evidence for the
+then-running privilege provider, but `TABLET_SYSTEM_AUDIO_REMOTE_E2E` remains open until a healthy privileged
+UserService can run the real capture-to-playback chain. This introduces no device allowlist, audio fallback,
+payload change, or Session retry.
+
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
 same-UID active decoder qualification only for unknown legacy candidates. It does not alter RFC-002D,

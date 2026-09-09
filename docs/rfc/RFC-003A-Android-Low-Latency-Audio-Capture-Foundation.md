@@ -255,12 +255,19 @@ nor adds a fallback after a committed channel fails.
 | Runtime | Preflight result | Final SystemAudio result |
 | --- | --- | --- |
 | A41 API31 | Privileged routing permission absent | Unavailable before negotiation |
-| Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM | Supported |
+| Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM. A later Shizuku Manager 13.6.0 provider bootstrap failed before Binder delivery. | Local path supported; remote E2E blocked by current provider bootstrap |
 | S22 API36 | AudioRecord uninitialized after AudioPolicy registration because the framework rejects the shell/package attribution | Unavailable before negotiation |
 
 The API33 tablet evidence uses the exact production `AndroidSystemAudioCaptureController` and privileged
 AudioPolicy path. A debug-only normal Android `AudioTrack` tone is a source-side validation aid only; it
 does not inject PCM into the shared ring or alter RFC-003A's capture contract.
+
+The later provider-bootstrap failure occurred before `AudioPolicy`, `AudioRecord`, the PCM shared ring, or
+Audio Payload V1. Its UserService died in framework application construction and Shizuku then removed the
+unstarted record after 30 seconds without a connection callback. The ordinary-process gateway bounds its bind
+wait by that same provider deadline and treats it as unavailable before negotiation. This preserves the
+post-commit no-fallback rule while preventing a privileged-provider failure from indefinitely blocking Host
+capability collection.
 
 ## Deferred Work
 

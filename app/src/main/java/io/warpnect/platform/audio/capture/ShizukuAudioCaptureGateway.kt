@@ -20,7 +20,6 @@ import io.warpnect.platform.audio.capture.privileged.privilegedSystemAudioSetupF
 import io.warpnect.platform.audio.capture.privileged.toAudioCaptureCapabilities
 import io.warpnect.platform.audio.capture.privileged.toAudioCaptureSnapshot
 import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
 import rikka.shizuku.Shizuku
 
 internal class ShizukuAudioCaptureGateway(
@@ -144,7 +143,10 @@ internal class ShizukuAudioCaptureGateway(
         if (shizukuReadiness() != AudioCaptureError.None) {
             return null
         }
-        return suspendCancellableCoroutine { continuation ->
+        // Shizuku removes an unstarted UserService after this same interval without invoking
+        // ServiceConnection callbacks. Bound the local wait so a failed privileged bootstrap
+        // remains an unavailable capability rather than wedging Host readiness forever.
+        return awaitPrivilegedUserServiceStart(USER_SERVICE_START_TIMEOUT_MILLIS) { continuation ->
             val connection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName, service: IBinder) {
                     val audioService = IPrivilegedAudioCaptureService.Stub.asInterface(service)
@@ -223,4 +225,9 @@ internal class ShizukuAudioCaptureGateway(
         notifyReadFd = null,
         ackWriteFd = null,
     )
+
+    private companion object {
+        // Shizuku's UserServiceManager declares the same 30-second startup deadline.
+        const val USER_SERVICE_START_TIMEOUT_MILLIS = 30_000L
+    }
 }
