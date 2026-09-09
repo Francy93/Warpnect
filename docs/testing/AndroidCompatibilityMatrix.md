@@ -318,9 +318,7 @@ truthfully. A bounded debug-only verification used the same production controlle
 PCM16/stereo/48 kHz `USAGE_GAME` AudioTrack tone: 68,400 frames were captured, with 116,112 non-zero
 samples, peak 8,191, and RMS 5,340.6. This is `TABLET_API33_SYSTEM_AUDIO_SUPPORTED`; it changed no
 payload, mix, fallback, or model-specific behavior. The later Tablet-to-S9 campaign completed five
-first-attempt Host/video Sessions without restart. It started the current-run privileged audio helper, but
-did not play a deterministic source during those remote Sessions; SystemAudio transport/playback E2E remains
-unproven rather than being inferred from local capture or Session success.
+first-attempt Host/video Sessions without restart.
 
 On 2026-09-09, after the tablet's Shizuku Manager was updated to 13.6.0.r1086.2650830c, a direct
 production-controller run exposed a provider bootstrap failure before the privileged Binder was delivered. A
@@ -342,10 +340,18 @@ control. The production tablet SystemAudio controller then prepared, started, an
 48 kHz stereo tone (70,080 frames, 115,632 non-zero samples, peak 8,191, RMS 5,265.3) before clean stop. The
 exact differential is `SHIZUKU_13_6_PROVIDER_REGRESSION_CONFIRMED_FOR_TABLET_FRAMEWORK`, not a broad Android,
 OEM, or Warpnect packaging claim. The old provider remains diagnostic only: Shizuku 13.6 was still the current
-official stable and no official fixed revision was available during this run. A later Tablet-to-S9 session under
-13.5.4 started SystemAudio and advanced Host PCM/Opus/payload/UDP counters during a 60-second normal `AudioTrack`
-tone, but the S9 disconnected from ADB before Client receiver, playback-ring, and Android playback counters could
-be collected. `TABLET_SYSTEM_AUDIO_REMOTE_E2E_OPEN` remains the truthful state.
+official stable and no official fixed revision was available during this run. On 2026-09-09, a clean Tablet-to-S9
+Session under 13.5.4 ran the normal 997 Hz PCM16/stereo/48 kHz `AudioTrack` tone for 60 seconds (2,875,396 source
+frames). The Tablet SystemAudio runtime stayed `Running`: capture and encoder progress matched, the Shared PCM
+Ring high-water mark was 7 with no overrun/drop, and all 69,998 sampled payloads/datagrams were sent with zero
+`WouldBlock`, transport failures, or Session errors at the 50-second sample. The S9 SystemAudio receiver and native
+Oboe playback runtime stayed `Running`; at the 60-second sample it had received 71,439 audio datagrams, delivered
+71,438 payloads, decoded 71,437 frames, and advanced the playback ring from 13,499,760/13,499,760 written/consumed
+frames to 16,251,120/16,250,976. Its occupancy remained bounded (high-water mark 960), with zero xruns and no
+receiver or Session error. The S9 stayed attached to ADB for the complete run. This is
+`TABLET_SYSTEM_AUDIO_REMOTE_E2E_PASS` technical evidence through the real Client playback consumer; human
+audibility remains pending. The provider was then restored to official 13.6, whose Tablet incompatibility remains
+separate from this controlled 13.5.4 validation.
 
 ### API 36 SystemAudio Startability Qualification
 

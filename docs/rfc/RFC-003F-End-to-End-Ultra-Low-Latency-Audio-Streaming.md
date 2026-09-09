@@ -176,7 +176,11 @@ Coverage added for RFC-003F includes:
 - Transmitter start rollback and `WouldBlock` drop handling.
 - Receiver config wait, first-frame prime, contiguous decode, small-gap PLC, late/duplicate drop, misaligned reset, large-gap reset, config change, playback-ring-full drop, and ready-slot release on decoder failure.
 
-Device end-to-end tests are device-dependent. Without a connected Android device or emulator, Oboe runtime and microphone/system-audio full pipeline checks remain not run.
+Device end-to-end tests are device-dependent. On 2026-09-09, a controlled Tablet API33 Host -> S9 API29 Client
+SystemAudio run completed the real capture, PCM Shared Ring, encoder, Audio Payload V1, protected UDP, receiver,
+decoder, PCM Playback Ring, and native Oboe-consumer chain for a 60-second 997 Hz normal Android tone. The result
+uses the compatible official Shizuku provider required by the Tablet experiment and does not claim MicrophoneAudio
+coverage, human audibility, or general Shizuku 13.6 compatibility.
 
 ## Versioning
 

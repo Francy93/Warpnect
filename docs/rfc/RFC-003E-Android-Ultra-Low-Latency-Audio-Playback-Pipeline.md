@@ -215,7 +215,11 @@ Android instrumentation compiles a direct PCM playback lifecycle smoke test and 
 
 ## Device Status
 
-No connected Android device or emulator was available during RFC-003E verification, so Oboe runtime instrumentation and encoder-to-decoder-to-playback device execution were not run.
+On 2026-09-09, the production native Oboe playback consumer ran on the S9 API29 Client during a controlled Tablet
+API33 Host -> S9 SystemAudio Session. During a 60-second 997 Hz normal Android tone, the PCM Playback Ring advanced
+from 13,499,760/13,499,760 written/consumed frames to 16,251,120/16,250,976, with a bounded 960-frame high-water
+mark, zero xruns, and no receiver or Session error. This is technical consumer evidence; human audibility remains
+pending and MicrophoneAudio is outside this result.
 
 ## Limitations
 

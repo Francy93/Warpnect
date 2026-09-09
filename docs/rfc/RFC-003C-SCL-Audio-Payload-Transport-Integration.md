@@ -307,7 +307,11 @@ Android instrumentation includes JNI direct-buffer audio transport smoke coverag
 
 ## Device Status
 
-No device-specific capture -> encoder -> transport result is claimed by this RFC unless instrumentation is actually run on a connected device.
+On 2026-09-09, a controlled Tablet API33 Host -> S9 API29 Client SystemAudio run exercised the real capture ->
+encoder -> Audio Payload V1 -> protected UDP path for a 60-second normal Android 997 Hz tone. The S9 received and
+decoded 71,437 audio frames by the 60-second snapshot; no payload, transport, or wire-contract change was made.
+This is SystemAudio-only evidence under the compatible Shizuku provider used for that Tablet experiment; it does not
+claim MicrophoneAudio coverage or general provider compatibility.
 
 ## Static Audit
 

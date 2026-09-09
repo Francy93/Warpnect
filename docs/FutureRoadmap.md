@@ -85,8 +85,7 @@ render callback as a media-success gate. With debug-only breadcrumbs emitted at 
 defined by Host media start plus Client decoder output, five Tablet-to-S9 first-attempt Sessions passed via
 normal semantic teardown. Authentication, WNCP, setup, capture, encoder, transport, Client decode, and
 Surface output all completed; a supplementary screenshot showed the tablet Host display on the S9. No model,
-OEM, or API-specific runtime behavior changed. SystemAudio remote transport/playback E2E remains unclaimed
-because this campaign did not inject a deterministic normal Android audio source.
+OEM, or API-specific runtime behavior changed.
 
 On 2026-09-09, a subsequent tablet SystemAudio remote-E2E attempt found a changed external precondition rather
 than an audio-pipeline regression. Shizuku Manager 13.6.0.r1086.2650830c starts every tested Warpnect
@@ -109,10 +108,17 @@ stereo tone, and stopped cleanly (70,080 frames, 115,632 non-zero samples, peak 
 `SHIZUKU_13_6_PROVIDER_REGRESSION_CONFIRMED_FOR_TABLET_FRAMEWORK`, while remaining deliberately narrower than
 an API33-, OEM-, or all-13.6 claim. The older provider is diagnostic evidence, not a Warpnect version requirement:
 13.6 remains the current official stable and no official fixed release was available during the experiment. A
-subsequent Tablet-to-S9 tone run under 13.5.4 restored SystemAudio runtime startup and advanced Host PCM, Opus,
-payload, and UDP counters without send errors, but the S9 disappeared from ADB before Client receive/playback-ring
-counters could be collected. `TABLET_SYSTEM_AUDIO_REMOTE_E2E` therefore remains open. This adds no device
-allowlist, audio fallback, payload change, or Session retry.
+subsequent clean Tablet-to-S9 run under 13.5.4 completed the technical remote SystemAudio chain. The normal
+997 Hz PCM16/stereo/48 kHz `AudioTrack` tone ran for 60 seconds and wrote 2,875,396 source frames. On the Tablet,
+the privileged recorder, Shared PCM Ring, encoder, payload producer, and UDP sender remained active; the 50-second
+snapshot showed 69,998 payloads/datagrams, ring high-water mark 7, no capture drop/overrun, no `WouldBlock`, and no
+transport or Session error. On the S9, the receiver decoded 71,437 audio frames by the 60-second snapshot and the
+native Oboe playback consumer advanced its PCM Playback Ring from 13,499,760/13,499,760 written/consumed frames to
+16,251,120/16,250,976, bounded by its 960-frame high-water mark, with zero xruns and no receiver or Session error.
+ADB stayed connected for the full measurement. `TABLET_SYSTEM_AUDIO_REMOTE_E2E_PASS` is therefore closed as
+technical E2E evidence; human audibility is pending. This adds no device allowlist, audio fallback, payload change,
+or Session retry. Official Shizuku 13.6 was restored after the controlled run and remains incompatible with this
+Tablet's UserService bootstrap until upstream supplies a compatible provider revision.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,

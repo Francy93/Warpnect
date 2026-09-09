@@ -255,7 +255,7 @@ nor adds a fallback after a committed channel fails.
 | Runtime | Preflight result | Final SystemAudio result |
 | --- | --- | --- |
 | A41 API31 | Privileged routing permission absent | Unavailable before negotiation |
-| Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM. Shizuku 13.6 later fails before Binder delivery in the tablet framework's forced-application bootstrap. | Local path supported; remote E2E blocked by current provider bootstrap |
+| Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM. Under controlled official Shizuku 13.5.4, the same source completed real Tablet-to-S9 capture, shared-ring, transport, Client playback-ring, and Oboe-consumer E2E. Shizuku 13.6 later fails before Binder delivery in the tablet framework's forced-application bootstrap. | SystemAudio supported with a compatible provider; technical remote E2E pass; human audibility pending |
 | S22 API36 | AudioRecord uninitialized after AudioPolicy registration because the framework rejects the shell/package attribution | Unavailable before negotiation |
 
 The API33 tablet evidence uses the exact production `AndroidSystemAudioCaptureController` and privileged
@@ -267,7 +267,9 @@ Audio Payload V1. Shizuku 13.6 forces `LoadedApk.makeApplication` before it load
 tablet framework's MediaTek resource-preload guard dereferences a null `Application.getProcessName()` in that
 bootstrap context, so the minimal Binder and each production UserService fail identically. The identical APK
 and provider version work on the A41; this is a narrow provider/framework incompatibility, not a tablet audio
-capability result. Shizuku removes an unstarted record after 30 seconds without a connection callback. The
+capability result. With the controlled official 13.5.4 provider, a 60-second 997 Hz normal Android `AudioTrack`
+tone completed the production Tablet-to-S9 SystemAudio chain through the Client PCM Playback Ring and native Oboe
+consumer. Shizuku removes an unstarted record after 30 seconds without a connection callback. The
 ordinary-process gateway bounds its bind wait by that same provider deadline and treats it as unavailable before
 negotiation. This preserves the post-commit no-fallback rule while preventing a privileged-provider failure from
 indefinitely blocking Host capability collection.
