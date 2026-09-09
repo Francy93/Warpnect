@@ -89,7 +89,22 @@ internal class AndroidSystemAudioCaptureController(
                         if (delta > 0) telemetry?.captureOverruns?.add(delta.toULong())
                         observedRingOverruns = overruns
                     },
-                    onPcmAccepted = { frameCount -> telemetry?.capturedSamples?.add(frameCount.toULong()) },
+                    onPcmAccepted = {
+                            sizeBytes,
+                            frameCount,
+                            firstFramePosition,
+                            captureTimeNs,
+                            timestampQuality,
+                        ->
+                        core.recordChunk(
+                            sizeBytes,
+                            frameCount,
+                            firstFramePosition,
+                            captureTimeNs,
+                            timestampQuality,
+                        )
+                        telemetry?.capturedSamples?.add(frameCount.toULong())
+                    },
                 )
                 core.completePrepare(
                     error = AudioCaptureError.None,

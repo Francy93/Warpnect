@@ -21,7 +21,13 @@ internal class SharedPcmAudioDrain(
     private val sink: PcmAudioSink,
     private val onError: (AudioCaptureError) -> Unit,
     private val onRingState: (occupancy: Int, highWater: Int, overruns: Int) -> Unit,
-    private val onPcmAccepted: (frameCount: Int) -> Unit = {},
+    private val onPcmAccepted: (
+        sizeBytes: Int,
+        frameCount: Int,
+        firstFramePosition: Long,
+        captureTimeNs: Long,
+        timestampQuality: AudioTimestampQuality,
+    ) -> Unit = { _, _, _, _, _ -> },
 ) : AutoCloseable {
     @Volatile
     private var running = false
@@ -98,7 +104,15 @@ internal class SharedPcmAudioDrain(
                         AudioTimestampQuality.Unavailable
                     },
                 )
-                onPcmAccepted(slot.frameCount)
+                onPcmAccepted(
+                    slot.validBytes,
+                    slot.frameCount,
+                    slot.firstFramePosition,
+                    slot.captureTimeNs,
+                    AudioTimestampQuality.entries.getOrElse(slot.timestampQualityCode) {
+                        AudioTimestampQuality.Unavailable
+                    },
+                )
             } catch (_: RuntimeException) {
                 onError(AudioCaptureError.SinkFailure)
             } finally {
