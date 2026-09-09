@@ -257,6 +257,8 @@ nor adds a fallback after a committed channel fails.
 | A41 API31 | Privileged routing permission absent | Unavailable before negotiation |
 | Tablet API33 | Prepare/start/read/stop pass; 48 kHz stereo normal-app tone captured with non-zero PCM. Under controlled official Shizuku 13.5.4, the same source completed real Tablet-to-S9 capture, shared-ring, transport, Client playback-ring, and Oboe-consumer E2E. Shizuku 13.6 later fails before Binder delivery in the tablet framework's forced-application bootstrap. | SystemAudio supported with a compatible provider; technical remote E2E pass; human audibility pending |
 | S22 API36 | AudioRecord uninitialized after AudioPolicy registration because the framework rejects the shell/package attribution | Unavailable before negotiation |
+| S9 API29 | The actual shell-UID AudioPolicy caller lacks `MODIFY_AUDIO_ROUTING`; static preflight returns `PermissionDenied`. | Unavailable before negotiation |
+| S7 API26 | PCM Shared Ring V1 uses `android.os.SharedMemory`, introduced in API27; static preflight returns `UnsupportedPlatform` before a provider bind or AudioPolicy call. | Unavailable before negotiation |
 
 The API33 tablet evidence uses the exact production `AndroidSystemAudioCaptureController` and privileged
 AudioPolicy path. A debug-only normal Android `AudioTrack` tone is a source-side validation aid only; it
@@ -273,6 +275,12 @@ consumer. Shizuku removes an unstarted record after 30 seconds without a connect
 ordinary-process gateway bounds its bind wait by that same provider deadline and treats it as unavailable before
 negotiation. This preserves the post-commit no-fallback rule while preventing a privileged-provider failure from
 indefinitely blocking Host capability collection.
+
+The API26 result is a transport-platform prerequisite, not an old-device heuristic. This SystemAudio
+implementation must pass a real `SharedMemory` parcelable and mapped ring between its privileged producer and
+ordinary-process drain. The capability and direct prepare gates therefore reject only API levels that lack that
+framework class; they do not alter Audio Payload V1, substitute another shared-memory mechanism, or claim a
+successful AudioPolicy path on S7.
 
 ## Deferred Work
 

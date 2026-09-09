@@ -79,6 +79,21 @@ class AndroidLocalCapabilityCollectorTest {
     }
 
     @Test
+    fun unsupportedSystemAudioPlatformIsNotAdvertisedIntoCapabilityNegotiation() {
+        val snapshot = AndroidCapabilityProbeSnapshot(
+            lanSecurePathAvailable = true,
+            systemAudioCapture = AudioCaptureCapabilities(
+                source = AudioCaptureSource.SystemAudio,
+                available = false,
+                lastError = AudioCaptureError.UnsupportedPlatform,
+            ),
+        ).toLocalSnapshot(SessionRole.Host, 1)
+
+        assertEquals(0, snapshot.audio.audioFlags and CapabilityBits.AUDIO_SYSTEM_CAPTURE)
+        assertEquals(LocalCapabilityAvailability.SupportedButUnavailable, snapshot.localAvailability["systemAudio"])
+    }
+
+    @Test
     fun activelyQualifiedLegacyDecoderMakesClientVideoAvailableWithoutHostCapabilities() {
         val decoder = VideoDecoderCapabilities(
             config = VideoDecoderConfig(

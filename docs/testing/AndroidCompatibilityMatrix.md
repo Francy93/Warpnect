@@ -376,6 +376,29 @@ The validation APK built from production commit `9e04f81d90949afc970f4480f657743
 `arm64-v8a`, `armeabi-v7a`, and `x86_64`. Its installed `base.apk` digest was verified on the tested S22,
 S9, and A41 without clearing application data.
 
+### S9 / S7 SystemAudio Host Coverage
+
+The 2026-09-09 host-coverage pass used production commit `e51d7e3`, debug APK SHA-256
+`A7AD7211B7F82F672EE4B0F3C8F0650607D29EF805400D56D612690F5CCD2389`, 28,986,547 bytes, and ABIs
+`arm64-v8a`, `armeabi-v7a`, and `x86_64`. The installed `base.apk` digest matched on both Hosts; app
+data was retained. Each device ran the official Shizuku Manager package
+`13.6.0.r1086.2650830c` with an ADB-started server and authorized Warpnect. The debug bootstrap probe
+published minimal, capture, audio, and input Binders as shell UID 2000 on both devices before capability
+collection; no pending install operation overlapped a measured result.
+
+| Host | Android/API | First SystemAudio boundary | Local PCM / remote E2E | Final result |
+| --- | --- | --- | --- | --- |
+| Samsung SM-G960F | Android 10 / API 29 | The actual shell-UID audio UserService lacks `MODIFY_AUDIO_ROUTING`; the production preflight returns `PermissionDenied` before `AudioPolicy` preparation. | Not applicable: SystemAudio is absent from the Host capability snapshot and is therefore omitted before WNCP. | `S9_PRIVILEGED_PERMISSION_UNAVAILABLE`; `SYSTEM_AUDIO_TRUTHFULLY_UNAVAILABLE` |
+| Samsung SM-G935F | Android 8.0 / API 26 | PCM Shared Ring V1 requires `android.os.SharedMemory`, which Android adds in API 27. The production preflight now returns `UnsupportedPlatform` before a gateway bind, bundle unmarshalling, `AudioPolicy`, or `AudioRecord`. | Not applicable: SystemAudio is absent from the Host capability snapshot and is therefore omitted before WNCP. | `S7_SHARED_MEMORY_PLATFORM_UNSUPPORTED`; `SYSTEM_AUDIO_TRUTHFULLY_UNAVAILABLE` |
+
+The API26 gate is a generic platform-contract correction, not an API26 success allowlist: the existing
+SystemAudio transport requires a real `SharedMemory` parcelable across the privileged and ordinary app
+processes. It also makes a direct erroneous `prepare` call return `UnsupportedPlatform` rather than resolving
+the unavailable framework class. No Audio Payload V1, PCM ring layout, format, Session, WNCP, fallback, or
+device/OEM branch changed. Since neither Host can truthfully select SystemAudio, no local tone or remote
+audio E2E is claimed or required for these two results. Probe teardown left current-run capture, audio, and
+input helpers at zero.
+
 Earlier startup retries included one clean-state pairing attempt on the API 30 Host and S7 Client;
 pairing was re-established normally and the API 30 recording permission was restored. The final
 post-helper-reset comparisons did not clear application data. Test applications were stopped after

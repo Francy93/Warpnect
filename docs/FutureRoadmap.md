@@ -120,6 +120,16 @@ technical E2E evidence; human audibility is pending. This adds no device allowli
 or Session retry. Official Shizuku 13.6 was restored after the controlled run and remains incompatible with this
 Tablet's UserService bootstrap until upstream supplies a compatible provider revision.
 
+The independent S9/API29 and S7/API26 Host coverage pass is complete. With the actual Shizuku shell-UID
+UserService, S9 lacks `MODIFY_AUDIO_ROUTING`, so its production SystemAudio preflight returns
+`PermissionDenied` and omits the channel before WNCP. S7 has the same real privilege-provider bootstrap but a
+separate framework-contract boundary: PCM Shared Ring V1 uses `android.os.SharedMemory`, introduced in API27.
+The capability path now returns `UnsupportedPlatform` on an API below that requirement and the direct prepare
+path returns the same typed result without loading the unavailable class. This is a generic API-contract guard,
+not a device, OEM, or blind API success rule. Neither Host can truthfully select SystemAudio, so local PCM and
+remote E2E are not applicable; both classifications are complete. The task added no audio fallback, profile
+change, payload/ring amendment, or Session retry.
+
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,
 same-UID active decoder qualification only for unknown legacy candidates. It does not alter RFC-002D,
