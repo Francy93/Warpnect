@@ -99,10 +99,20 @@ APK and provider version publish all four Binders on the A41. This is
 `SHIZUKU_13_6_MAKEAPPLICATION_TABLET_FRAMEWORK_INCOMPATIBILITY`, not an API33-wide, OEM-wide, or audio-format
 claim. The provider removes an unstarted service after 30 seconds without a `ServiceConnection` terminal
 callback. Warpnect therefore bounds that local bind by the provider's own deadline and truthfully reports
-`PrivilegedServiceUnavailable` instead of blocking Host readiness forever. The prior API33 local production
-capture result remains valid evidence for the prior healthy provider; `TABLET_SYSTEM_AUDIO_REMOTE_E2E` remains
-open until a compatible privileged-provider bootstrap can run the real capture-to-playback chain. This adds no
-device allowlist, audio fallback, payload change, or Session retry.
+`PrivilegedServiceUnavailable` instead of blocking Host readiness forever. A controlled provider-only A/B held
+the Tablet build, Warpnect APK, app data, and UserService arguments constant and changed only the signed official
+Shizuku Manager APK. The prior official 13.5.4.r1049.0e53409 APK
+(`A05832CE3716AFB1FCCCF46F348006D2A296CA777E1FF3D223797DC74D06B31F`) published the minimal,
+capture, audio, and input Binders on the Tablet; the same four binds also passed on the A41 control. Under that
+provider the production tablet SystemAudio controller again prepared, started, captured a normal-app 48 kHz
+stereo tone, and stopped cleanly (70,080 frames, 115,632 non-zero samples, peak 8,191, RMS 5,265.3). This proves
+`SHIZUKU_13_6_PROVIDER_REGRESSION_CONFIRMED_FOR_TABLET_FRAMEWORK`, while remaining deliberately narrower than
+an API33-, OEM-, or all-13.6 claim. The older provider is diagnostic evidence, not a Warpnect version requirement:
+13.6 remains the current official stable and no official fixed release was available during the experiment. A
+subsequent Tablet-to-S9 tone run under 13.5.4 restored SystemAudio runtime startup and advanced Host PCM, Opus,
+payload, and UDP counters without send errors, but the S9 disappeared from ADB before Client receive/playback-ring
+counters could be collected. `TABLET_SYSTEM_AUDIO_REMOTE_E2E` therefore remains open. This adds no device
+allowlist, audio fallback, payload change, or Session retry.
 
 RFC-002I is implemented supplemental Client decoder qualification for legacy Android where framework
 hardware classification is unavailable. It uses conservative static inspection plus a contained,

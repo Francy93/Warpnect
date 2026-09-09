@@ -333,9 +333,19 @@ and Shizuku 13.6 publish all four Binders on the A41. The precise result is
 `SHIZUKU_13_6_MAKEAPPLICATION_TABLET_FRAMEWORK_INCOMPATIBILITY`; it does not generalize to API33, an OEM, a
 payload, or an audio format. The manager removes an unstarted service after its 30-second startup deadline
 without delivering a `ServiceConnection` callback. Warpnect bounds that local bind by the same deadline and
-reports `PrivilegedServiceUnavailable` before negotiation rather than wedging Host readiness. This remains
-`TABLET_SYSTEM_AUDIO_REMOTE_E2E_OPEN`: it neither contradicts the earlier local capture proof nor constitutes
-remote transport/playback evidence.
+reports `PrivilegedServiceUnavailable` before negotiation rather than wedging Host readiness. A controlled A/B
+kept the Tablet Android build, Warpnect APK/app data, and UserService arguments fixed and changed only the official
+signed Shizuku provider. With 13.5.4.r1049.0e53409 (APK SHA-256
+`A05832CE3716AFB1FCCCF46F348006D2A296CA777E1FF3D223797DC74D06B31F`), all four Tablet probes (minimal,
+capture, audio, input) published their Binders; the same minimal/capture/audio/input matrix also passed on the A41
+control. The production tablet SystemAudio controller then prepared, started, and captured the normal Android
+48 kHz stereo tone (70,080 frames, 115,632 non-zero samples, peak 8,191, RMS 5,265.3) before clean stop. The
+exact differential is `SHIZUKU_13_6_PROVIDER_REGRESSION_CONFIRMED_FOR_TABLET_FRAMEWORK`, not a broad Android,
+OEM, or Warpnect packaging claim. The old provider remains diagnostic only: Shizuku 13.6 was still the current
+official stable and no official fixed revision was available during this run. A later Tablet-to-S9 session under
+13.5.4 started SystemAudio and advanced Host PCM/Opus/payload/UDP counters during a 60-second normal `AudioTrack`
+tone, but the S9 disconnected from ADB before Client receiver, playback-ring, and Android playback counters could
+be collected. `TABLET_SYSTEM_AUDIO_REMOTE_E2E_OPEN` remains the truthful state.
 
 ### API 36 SystemAudio Startability Qualification
 
