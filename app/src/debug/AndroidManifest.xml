@@ -24,6 +24,12 @@
             android:name=".debug.privilege.UserServiceBootstrapProbeActivity"
             android:exported="true"
             android:noHistory="true" />
+        <!-- DEBUG-only normal-app client for the isolated app_process DirectShell probe. -->
+        <activity
+            android:name=".debug.directshell.DirectShellProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:noHistory="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"

@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.bundling.Zip
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -100,4 +102,22 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+/**
+ * Produces the DEX-only classpath artifact used by the DEBUG-only DirectShell app_process probe.
+ * It intentionally contains no resource or native-library contract; the probe uses framework and
+ * Java APIs only, and is never loaded by the production runtime.
+ */
+val directShellProbeDebugApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+tasks.register<Zip>("packageDirectShellProbeDex") {
+    group = "distribution"
+    description = "Packages debug DEX files for the isolated DirectShell app_process probe."
+    dependsOn("packageDebug")
+    from({ zipTree(directShellProbeDebugApk.get().asFile) }) {
+        include("classes*.dex")
+    }
+    archiveFileName.set("warpnect-directshell-probe.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("outputs/directshell-probe"))
+    includeEmptyDirs = false
 }
