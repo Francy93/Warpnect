@@ -34,6 +34,24 @@ public final class DirectShellProbeProtocolTest {
     }
 
     @Test
+    public void audioProbeCommandRoundTripsThroughTheSameAuthenticatedFraming() throws Exception {
+        byte[] encoded = encodeRequest(
+                42L,
+                DirectShellProbeProtocol.Command.AUDIO_SAMPLE,
+                "duration_ms=1500".getBytes(StandardCharsets.UTF_8)
+        );
+
+        DirectShellProbeProtocol.Request request = DirectShellProbeProtocol.readRequest(
+                new DataInputStream(new ByteArrayInputStream(encoded)),
+                SECRET
+        );
+
+        assertEquals(42L, request.requestId);
+        assertEquals(DirectShellProbeProtocol.Command.AUDIO_SAMPLE, request.command);
+        assertArrayEquals("duration_ms=1500".getBytes(StandardCharsets.UTF_8), request.payload);
+    }
+
+    @Test
     public void responseAuthenticatesItsRequestIdAndPayload() throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DirectShellProbeProtocol.writeResponse(

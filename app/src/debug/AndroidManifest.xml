@@ -30,6 +30,16 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:noHistory="true" />
+        <!-- DEBUG-only normal-app controller for the isolated shell REMOTE_SUBMIX probe. -->
+        <activity
+            android:name=".debug.directshell.DirectShellSystemAudioProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:noHistory="true" />
+        <!-- DEBUG-only non-UI command surface so sampling does not interrupt the tone activity. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellSystemAudioProbeReceiver"
+            android:exported="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"

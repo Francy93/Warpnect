@@ -37,7 +37,12 @@ final class DirectShellProbeProtocol {
     enum Command {
         PING(1),
         GET_RUNTIME_INFO(2),
-        SHUTDOWN(3);
+        SHUTDOWN(3),
+        AUDIO_PREPARE(4),
+        AUDIO_START(5),
+        AUDIO_SAMPLE(6),
+        AUDIO_STOP(7),
+        GET_AUDIO_DIAGNOSTICS(8);
 
         final int code;
 
@@ -58,7 +63,8 @@ final class DirectShellProbeProtocol {
         OUT_OF_ORDER(1),
         UNSUPPORTED(2),
         SHUTTING_DOWN(3),
-        INTERNAL_ERROR(4);
+        INTERNAL_ERROR(4),
+        BAD_STATE(5);
 
         final int code;
 
