@@ -48,9 +48,18 @@
             android:name=".debug.directshell.DirectShellFdProbeContentProvider"
             android:authorities="io.warpnect.debug.directshell.fdprobe"
             android:exported="true" />
+        <!-- DEBUG-only, shell-gated descriptor set for the DirectShell PCM-ring integration spike. -->
+        <provider
+            android:name=".debug.directshell.DirectShellPcmRingProbeContentProvider"
+            android:authorities="io.warpnect.debug.directshell.pcmringprobe"
+            android:exported="true" />
         <!-- DEBUG-only non-UI command surface so sampling does not interrupt the tone activity. -->
         <receiver
             android:name=".debug.directshell.DirectShellSystemAudioProbeReceiver"
+            android:exported="true" />
+        <!-- DEBUG-only normal-process control surface for the DirectShell PCM-ring spike. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellPcmRingProbeReceiver"
             android:exported="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
