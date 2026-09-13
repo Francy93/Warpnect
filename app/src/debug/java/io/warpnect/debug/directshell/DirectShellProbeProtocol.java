@@ -42,7 +42,18 @@ final class DirectShellProbeProtocol {
         AUDIO_START(5),
         AUDIO_SAMPLE(6),
         AUDIO_STOP(7),
-        GET_AUDIO_DIAGNOSTICS(8);
+        GET_AUDIO_DIAGNOSTICS(8),
+        FD_BIND_SHARED_MEMORY(20),
+        FD_VERIFY_APP_A(21),
+        FD_WRITE_SHELL_B(22),
+        FD_VERIFY_APP_C(23),
+        FD_CLOSE_SHARED_MEMORY(24),
+        GET_FD_DIAGNOSTICS(25),
+        FD_REQUEST_STALE_GENERATION(26),
+        FD_REQUEST_INVALID_MAGIC(27),
+        FD_REQUEST_OVERSIZED_METADATA(28),
+        FD_REQUEST_REPLAY(29),
+        FD_REQUEST_INVALID_PROOF(30);
 
         final int code;
 

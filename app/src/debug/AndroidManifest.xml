@@ -36,6 +36,18 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:noHistory="true" />
+        <!-- DEBUG-only controller and shell-gated Binder endpoint for FD handoff feasibility. -->
+        <activity
+            android:name=".debug.directshell.DirectShellFdProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+        <!-- DEBUG-only, one-operation external-provider path for shell FD handoff feasibility. -->
+        <provider
+            android:name=".debug.directshell.DirectShellFdProbeContentProvider"
+            android:authorities="io.warpnect.debug.directshell.fdprobe"
+            android:exported="true" />
         <!-- DEBUG-only non-UI command surface so sampling does not interrupt the tone activity. -->
         <receiver
             android:name=".debug.directshell.DirectShellSystemAudioProbeReceiver"
