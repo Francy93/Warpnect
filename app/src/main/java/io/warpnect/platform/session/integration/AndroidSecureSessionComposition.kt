@@ -19,8 +19,7 @@ import io.warpnect.diagnostics.report.DiagnosticReportBuilder
 import io.warpnect.diagnostics.report.HubDiagnosticReportReader
 import io.warpnect.diagnostics.report.ReportExportController
 import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureController
-import io.warpnect.platform.audio.capture.AndroidSystemAudioCaptureController
-import io.warpnect.platform.audio.capture.queryCapabilitiesAndClose
+import io.warpnect.platform.audio.capture.SystemAudioCaptureControllerSelector
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
 import io.warpnect.platform.diagnostics.AndroidReportSupport
@@ -671,8 +670,8 @@ class AndroidSecureSessionComposition private constructor(
                     )
                 }
                 val system = measureCapabilityCollection(role, "system_audio") {
-                    queryCapabilitiesAndClose(
-                        AndroidSystemAudioCaptureController(context),
+                    SystemAudioCaptureControllerSelector.queryCapabilities(
+                        context,
                         AudioCaptureRequest(
                             source = AudioCaptureSource.SystemAudio,
                             preferredSampleRateHz = 48_000,
@@ -834,7 +833,7 @@ class AndroidSecureSessionComposition private constructor(
             videoEncoderDiscovery = videoEncoderDiscovery,
             videoDecoderDiscovery = videoDecoderDiscovery,
             systemAudioCapture = { request ->
-                queryCapabilitiesAndClose(AndroidSystemAudioCaptureController(context), request)
+                SystemAudioCaptureControllerSelector.queryCapabilities(context, request)
             },
             microphoneCapture = { request ->
                 AndroidMicrophoneAudioCaptureController(

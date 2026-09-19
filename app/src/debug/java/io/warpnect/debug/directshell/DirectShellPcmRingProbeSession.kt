@@ -46,7 +46,53 @@ internal object DirectShellPcmRingProbeSession {
 
     @JvmStatic
     @Synchronized
-    fun arm(generationId: Long, secret: ByteArray): Result {
+    fun arm(generationId: Long, secret: ByteArray): Result = armLocked(
+        generationId = generationId,
+        secret = secret,
+        downstreamSink = null,
+        callbacks = DrainCallbacks(),
+        startDrain = true,
+    )
+
+    /**
+     * Reuses the exact production ring and drain while forwarding accepted PCM to the supplied
+     * downstream sink. The remote-E2E spike starts the drain at capture start so its state matches
+     * the established SystemAudio controller lifecycle.
+     */
+    @Synchronized
+    fun armForDownstream(
+        generationId: Long,
+        secret: ByteArray,
+        downstreamSink: PcmAudioSink,
+        callbacks: DrainCallbacks,
+    ): Result = armLocked(
+        generationId = generationId,
+        secret = secret,
+        downstreamSink = downstreamSink,
+        callbacks = callbacks,
+        startDrain = false,
+    )
+
+    @Synchronized
+    fun startDrain(generationId: Long): Result {
+        val current = currentGeneration(generationId) ?: return Result.failure("GENERATION_NOT_ACTIVE")
+        if (current.drainStarted) return Result.success(payloadLocked("DRAIN_ALREADY_STARTED"))
+        val error = current.drain.start()
+        if (error != AudioCaptureError.None) {
+            return Result.failure("DRAIN_START_${error.name}")
+        }
+        current.drainStarted = true
+        log("APP_RING_DRAIN_STARTED generation=$generationId")
+        return Result.success(payloadLocked("DRAIN_STARTED"))
+    }
+
+    private fun armLocked(
+        generationId: Long,
+        secret: ByteArray,
+        downstreamSink: PcmAudioSink?,
+        callbacks: DrainCallbacks,
+        startDrain: Boolean,
+    ): Result {
         if (generationId <= 0L) return Result.failure("INVALID_GENERATION")
         val safeSecret = try {
             DirectShellProbeProtocol.requireSecret(secret)
@@ -74,7 +120,7 @@ internal object DirectShellPcmRingProbeSession {
 
             notifyPipe = ParcelFileDescriptor.createPipe()
             ackPipe = ParcelFileDescriptor.createPipe()
-            val metrics = ConsumerMetrics(generationId)
+            val metrics = ConsumerMetrics(generationId, downstreamSink)
             metrics.onFormatChanged(productionFormat())
             drain = SharedPcmAudioDrain(
                 sharedMemory = sharedMemory,
@@ -83,24 +129,41 @@ internal object DirectShellPcmRingProbeSession {
                 sink = metrics,
                 onError = { error ->
                     metrics.recordDrainError(error)
+                    callbacks.onError(error)
                     Unit
                 },
                 onRingState = { occupancy, highWater, overruns ->
                     metrics.recordRingState(occupancy, highWater, overruns)
+                    callbacks.onRingState(occupancy, highWater, overruns)
                     Unit
                 },
-                onPcmAccepted = { _, _, _, _, _ ->
+                onPcmAccepted = {
+                        sizeBytes,
+                        frameCount,
+                        firstFramePosition,
+                        captureTimeNs,
+                        timestampQuality,
+                    ->
                     metrics.recordNotificationWakeup()
+                    callbacks.onPcmAccepted(
+                        sizeBytes,
+                        frameCount,
+                        firstFramePosition,
+                        captureTimeNs,
+                        timestampQuality,
+                    )
                     Unit
                 },
             )
-            val drainError = drain.start()
-            if (drainError != AudioCaptureError.None) {
-                drain.close()
-                closePipe(notifyPipe)
-                closePipe(ackPipe)
-                Arrays.fill(safeSecret, 0.toByte())
-                return Result.failure("DRAIN_START_${drainError.name}")
+            if (startDrain) {
+                val drainError = drain.start()
+                if (drainError != AudioCaptureError.None) {
+                    drain.close()
+                    closePipe(notifyPipe)
+                    closePipe(ackPipe)
+                    Arrays.fill(safeSecret, 0.toByte())
+                    return Result.failure("DRAIN_START_${drainError.name}")
+                }
             }
             active = ActiveGeneration(
                 generationId = generationId,
@@ -112,6 +175,7 @@ internal object DirectShellPcmRingProbeSession {
                 metrics = metrics,
                 regionBytes = regionBytes,
                 fdBeforeArm = fdBeforeArm,
+                drainStarted = startDrain,
             )
             log("APP_RING_ARM generation=$generationId ${payloadLocked("ARMED")}")
             return Result.success(payloadLocked("ARMED"))
@@ -334,6 +398,18 @@ internal object DirectShellPcmRingProbeSession {
         }
     }
 
+    internal data class DrainCallbacks(
+        val onError: (AudioCaptureError) -> Unit = {},
+        val onRingState: (occupancy: Int, highWater: Int, overruns: Int) -> Unit = { _, _, _ -> },
+        val onPcmAccepted: (
+            sizeBytes: Int,
+            frameCount: Int,
+            firstFramePosition: Long,
+            captureTimeNs: Long,
+            timestampQuality: AudioTimestampQuality,
+        ) -> Unit = { _, _, _, _, _ -> },
+    )
+
     private class ActiveGeneration(
         val generationId: Long,
         val secret: ByteArray,
@@ -344,11 +420,13 @@ internal object DirectShellPcmRingProbeSession {
         val metrics: ConsumerMetrics,
         val regionBytes: Int,
         val fdBeforeArm: Int,
+        var drainStarted: Boolean,
         var descriptorIssued: Boolean = false,
     )
 
     private class ConsumerMetrics(
         private val generationId: Long,
+        private val downstreamSink: PcmAudioSink?,
     ) : PcmAudioSink {
         private var chunks = 0L
         private var bytes = 0L
@@ -365,7 +443,9 @@ internal object DirectShellPcmRingProbeSession {
         private var firstReadLogged = false
 
         @Synchronized
-        override fun onFormatChanged(format: AudioCaptureFormat) = Unit
+        override fun onFormatChanged(format: AudioCaptureFormat) {
+            downstreamSink?.onFormatChanged(format)
+        }
 
         @Synchronized
         override fun onPcmChunk(
@@ -379,17 +459,11 @@ internal object DirectShellPcmRingProbeSession {
         ) {
             val bounded = sizeBytes.coerceAtLeast(0).coerceAtMost(buffer.capacity() - offset)
             if (bounded <= 0) return
-            val copy = ByteArray(bounded)
             val source = buffer.duplicate()
-            source.position(offset)
-            source.limit(offset + bounded)
-            source.get(copy)
+            source.order(ByteOrder.nativeOrder())
             val completeBytes = bounded - (bounded % BYTES_PER_FRAME)
             for (position in 0 until completeBytes step Short.SIZE_BYTES) {
-                val sample = (
-                    (copy[position].toInt() and 0xff) or
-                        ((copy[position + 1].toInt() and 0xff) shl 8)
-                    ).toShort().toInt()
+                val sample = source.getShort(offset + position).toInt()
                 val magnitude = if (sample == Short.MIN_VALUE.toInt()) Short.MAX_VALUE.toInt() + 1 else abs(sample)
                 samples++
                 sampleSquares += sample.toDouble() * sample.toDouble()
@@ -406,12 +480,22 @@ internal object DirectShellPcmRingProbeSession {
                         "timestamp_quality=${timestampQuality.name}",
                 )
             }
+            downstreamSink?.onPcmChunk(
+                buffer,
+                offset,
+                sizeBytes,
+                frameCount,
+                firstFramePosition,
+                captureTimeNs,
+                timestampQuality,
+            )
         }
 
         @Synchronized
         override fun onCaptureError(error: AudioCaptureError) {
             drainErrors++
             log("APP_DRAIN_ERROR generation=$generationId error=${error.name}")
+            downstreamSink?.onCaptureError(error)
         }
 
         @Synchronized

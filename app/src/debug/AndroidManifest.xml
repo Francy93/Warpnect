@@ -61,6 +61,10 @@
         <receiver
             android:name=".debug.directshell.DirectShellPcmRingProbeReceiver"
             android:exported="true" />
+        <!-- DEBUG-only Session source switch for the DirectShell remote SystemAudio E2E spike. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellSystemAudioRemoteE2eReceiver"
+            android:exported="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"

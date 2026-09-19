@@ -22,7 +22,7 @@ import io.warpnect.input.session.ReverseInputSenderSessionController
 import io.warpnect.input.transport.InputReceiverConfig
 import io.warpnect.input.transport.InputTransportConfig
 import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureController
-import io.warpnect.platform.audio.capture.AndroidSystemAudioCaptureController
+import io.warpnect.platform.audio.capture.SystemAudioCaptureControllerSelector
 import io.warpnect.platform.audio.decoder.NativeOpusAudioDecoderController
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
 import io.warpnect.platform.audio.playback.NativeOboeAudioPlaybackController
@@ -203,7 +203,7 @@ class DefaultAndroidSessionPipelineBindings(
     ): AndroidAudioSenderPipeline {
         val source = channel.audioSource()
         val capture = when (source) {
-            AudioCaptureSource.SystemAudio -> AndroidSystemAudioCaptureController(appContext, telemetry = telemetry)
+            AudioCaptureSource.SystemAudio -> SystemAudioCaptureControllerSelector.create(appContext, telemetry)
             AudioCaptureSource.MicrophoneAudio -> AndroidMicrophoneAudioCaptureController(
                 appContext,
                 telemetry = telemetry,
