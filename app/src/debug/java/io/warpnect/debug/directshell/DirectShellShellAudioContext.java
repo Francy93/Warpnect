@@ -36,7 +36,7 @@ final class DirectShellShellAudioContext extends ContextWrapper {
     }
 
     static Result create() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        if (DirectShellRuntimeApi.sdkInt() < Build.VERSION_CODES.S) {
             return Result.failure("API_LT_31_CONTEXT_UNSUPPORTED");
         }
         if (Process.myUid() != Process.SHELL_UID) {

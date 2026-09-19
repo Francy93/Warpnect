@@ -42,9 +42,10 @@ public final class WarpnectPrivilegedFdSharedMemoryProbeServer {
         int exitCode = 0;
         try {
             ServerArguments arguments = ServerArguments.parse(args);
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            int api = DirectShellRuntimeApi.sdkInt();
+            if (api < Build.VERSION_CODES.S) {
                 log("START_FAILURE result=UNSUPPORTED_PLATFORM_API31_REQUIRED api=" +
-                        Build.VERSION.SDK_INT);
+                        api + " api_source=" + DirectShellRuntimeApi.source());
                 exitCode = 4;
             } else {
                 new ProbeServer(arguments).run();
@@ -104,7 +105,8 @@ public final class WarpnectPrivilegedFdSharedMemoryProbeServer {
             log("START result=READY pid=" + Process.myPid() +
                     " uid=" + Process.myUid() +
                     " gid=" + currentGid() +
-                    " uid_kind=SHELL api=" + Build.VERSION.SDK_INT +
+                    " uid_kind=SHELL api=" + DirectShellRuntimeApi.sdkInt() +
+                    " api_source=" + DirectShellRuntimeApi.source() +
                     " selinux_context=" + readSelinuxContext() +
                     " endpoint=" + endpoint() +
                     " transport=LOOPBACK_TCP framework_context=" + frameworkResult.classification +
@@ -454,7 +456,8 @@ public final class WarpnectPrivilegedFdSharedMemoryProbeServer {
                     "\nuid=" + Process.myUid() +
                     "\ngid=" + currentGid() +
                     "\nuid_kind=" + (Process.myUid() == Process.SHELL_UID ? "SHELL" : "OTHER") +
-                    "\napi=" + Build.VERSION.SDK_INT +
+                    "\napi=" + DirectShellRuntimeApi.sdkInt() +
+                    "\napi_source=" + DirectShellRuntimeApi.source() +
                     "\nselinux_context=" + readSelinuxContext() +
                     "\njava_class_path=" + safe(System.getProperty("java.class.path", "")) +
                     "\nclass_loader=" + classLoaderName() +

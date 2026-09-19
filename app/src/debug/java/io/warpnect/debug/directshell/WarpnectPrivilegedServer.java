@@ -1,5 +1,6 @@
 package io.warpnect.debug.directshell;
 
+import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
@@ -351,7 +352,8 @@ public final class WarpnectPrivilegedServer {
             values.put("uid", String.valueOf(uid));
             values.put("gid", currentGid());
             values.put("uid_kind", uidKind(uid));
-            values.put("api", String.valueOf(Build.VERSION.SDK_INT));
+            values.put("api", String.valueOf(DirectShellRuntimeApi.sdkInt()));
+            values.put("api_source", DirectShellRuntimeApi.source());
             values.put("process_name", processName());
             values.put("declared_package", declaredPackage);
             values.put("selinux_context", readSelinuxContext());
@@ -431,7 +433,7 @@ public final class WarpnectPrivilegedServer {
         }
 
         private static void collectAttribution(Map<String, String> values, Context context) {
-            if (Build.VERSION.SDK_INT < 31) {
+            if (DirectShellRuntimeApi.sdkInt() < 31) {
                 values.put("attribution", "API_LT_31");
                 return;
             }
@@ -444,8 +446,9 @@ public final class WarpnectPrivilegedServer {
             }
         }
 
+        @TargetApi(Build.VERSION_CODES.Q)
         private static String opPackageName(Context context) {
-            if (Build.VERSION.SDK_INT < 29) return "API_LT_29";
+            if (DirectShellRuntimeApi.sdkInt() < 29) return "API_LT_29";
             return safe(context.getOpPackageName());
         }
 
@@ -458,7 +461,7 @@ public final class WarpnectPrivilegedServer {
         }
 
         private static String processName() {
-            if (Build.VERSION.SDK_INT >= 28) {
+            if (DirectShellRuntimeApi.sdkInt() >= 28) {
                 try {
                     Class<?> application = Class.forName("android.app.Application");
                     Method getProcessName = application.getMethod("getProcessName");

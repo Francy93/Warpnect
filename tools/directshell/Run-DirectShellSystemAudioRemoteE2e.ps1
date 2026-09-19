@@ -148,6 +148,13 @@ function Tap-IfPresent {
     return $true
 }
 
+function Test-AppReady {
+    param([Parameter(Mandatory = $true)][string]$Serial)
+    return @((Get-UiDocument $Serial).SelectNodes('//node')) | Where-Object {
+        $_.text -eq 'Ready' -or $_.'content-desc' -eq 'Ready'
+    } | Select-Object -First 1
+}
+
 function Stop-SessionSemantically {
     [void](Tap-IfPresent $ClientSerial 'Disconnect')
     [void](Tap-IfPresent $ClientSerial 'Cancel search')
@@ -256,6 +263,11 @@ $apkEvidence = [PSCustomObject]@{
 }
 if ($apkEvidence.host_installed_sha256 -ne $localHash -or $apkEvidence.client_installed_sha256 -ne $localHash) {
     throw 'The exact same local debug APK is not installed on both devices.'
+}
+foreach ($serial in @($HostSerial, $ClientSerial)) {
+    if ($null -eq (Test-AppReady $serial)) {
+        throw "INVALID_HARNESS_ATTEMPT: -ReuseRunningApps requires io.warpnect Ready on $serial before a counted cycle."
+    }
 }
 Invoke-Adb $HostSerial @('push', $artifact, $remoteArtifact) | Out-Null
 

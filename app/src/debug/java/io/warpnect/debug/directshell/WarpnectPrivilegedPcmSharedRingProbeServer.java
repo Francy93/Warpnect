@@ -99,7 +99,8 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
             }
             listenerDescriptor = DirectShellProbeIpv4Socket.bindListener(arguments.port);
             log("START result=READY pid=" + Process.myPid() + " uid=" + Process.myUid() +
-                    " gid=" + currentGid() + " uid_kind=SHELL api=" + Build.VERSION.SDK_INT +
+                    " gid=" + currentGid() + " uid_kind=SHELL api=" + DirectShellRuntimeApi.sdkInt() +
+                    " api_source=" + DirectShellRuntimeApi.source() +
                     " selinux_context=" + readSelinuxContext() + " generation=" +
                     arguments.generationId + " endpoint=" + endpoint() + " transport=LOOPBACK_TCP");
             startIdleWatchdog();
@@ -256,7 +257,8 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                     "uid=" + Process.myUid() + '\n' +
                     "gid=" + currentGid() + '\n' +
                     "uid_kind=" + (Process.myUid() == Process.SHELL_UID ? "SHELL" : "OTHER") + '\n' +
-                    "api=" + Build.VERSION.SDK_INT + '\n' +
+                    "api=" + DirectShellRuntimeApi.sdkInt() + '\n' +
+                    "api_source=" + DirectShellRuntimeApi.source() + '\n' +
                     "selinux_context=" + readSelinuxContext() + '\n' +
                     "java_class_path=" + safe(System.getProperty("java.class.path", "")) + '\n' +
                     producer.diagnosticsPayload();

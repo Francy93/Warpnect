@@ -99,7 +99,8 @@ public final class WarpnectPrivilegedSystemAudioProbeServer {
                     "START result=READY pid=" + Process.myPid() +
                             " uid=" + Process.myUid() +
                             " gid=" + currentGid() +
-                            " uid_kind=SHELL api=" + Build.VERSION.SDK_INT +
+                            " uid_kind=SHELL api=" + DirectShellRuntimeApi.sdkInt() +
+                            " api_source=" + DirectShellRuntimeApi.source() +
                             " selinux_context=" + readSelinuxContext() +
                             " endpoint=" + endpoint() + " transport=LOOPBACK_TCP"
             );
@@ -262,7 +263,8 @@ public final class WarpnectPrivilegedSystemAudioProbeServer {
                     "uid=" + Process.myUid() + '\n' +
                     "gid=" + currentGid() + '\n' +
                     "uid_kind=" + (Process.myUid() == Process.SHELL_UID ? "SHELL" : "OTHER") + '\n' +
-                    "api=" + Build.VERSION.SDK_INT + '\n' +
+                    "api=" + DirectShellRuntimeApi.sdkInt() + '\n' +
+                    "api_source=" + DirectShellRuntimeApi.source() + '\n' +
                     "selinux_context=" + readSelinuxContext() + '\n' +
                     "java_class_path=" + safe(System.getProperty("java.class.path", "")) + '\n' +
                     "audio_probe_state=" + capture.stateName() + '\n' +
@@ -594,8 +596,9 @@ public final class WarpnectPrivilegedSystemAudioProbeServer {
             return output.toString();
         }
 
+        @TargetApi(Build.VERSION_CODES.Q)
         private static String appOpMode(Context context) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return "API_LT_29";
+            if (DirectShellRuntimeApi.sdkInt() < Build.VERSION_CODES.Q) return "API_LT_29";
             try {
                 AppOpsManager appOps = context.getSystemService(AppOpsManager.class);
                 if (appOps == null) return "UNAVAILABLE";
