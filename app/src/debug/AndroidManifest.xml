@@ -65,6 +65,10 @@
         <receiver
             android:name=".debug.directshell.DirectShellSystemAudioRemoteE2eReceiver"
             android:exported="true" />
+        <!-- DEBUG-only normal-process controller for bounded DirectShell Input injection. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellInputProbeReceiver"
+            android:exported="true" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"
