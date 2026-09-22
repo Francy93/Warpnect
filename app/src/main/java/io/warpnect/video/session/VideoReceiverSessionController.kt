@@ -41,6 +41,7 @@ class DefaultVideoReceiverSessionController(
 ) : VideoReceiverSessionController {
     private val lock = Any()
     private val core = VideoReceiverSessionCore()
+    private val streamConfigAdmission = VideoReceiverStreamConfigAdmission()
     private var currentConfig: VideoReceiverSessionConfig? = null
     private var latestStreamConfig: VideoReceiverStreamConfig? = null
     private var currentRenderTarget: VideoRenderTarget? = null
@@ -48,6 +49,7 @@ class DefaultVideoReceiverSessionController(
     private var framesDelivered = 0L
     private var nonKeyframesDroppedAwaitingKeyframe = 0L
     private var discontinuities = 0L
+    private var duplicateStreamConfigsIgnored = 0L
     private var surfaceRecreatedRequiresKeyFrame = false
 
     override suspend fun start(config: VideoReceiverSessionConfig): VideoSessionControlResult {
@@ -164,6 +166,7 @@ class DefaultVideoReceiverSessionController(
             framesDelivered = framesDelivered,
             nonKeyframesDroppedAwaitingKeyframe = nonKeyframesDroppedAwaitingKeyframe,
             discontinuities = discontinuities,
+            duplicateStreamConfigsIgnored = duplicateStreamConfigsIgnored,
             lastPresentationTimeUs = receiverRuntimeController.snapshot().lastPresentationTimeUs,
             lastFrameId = receiverRuntimeController.snapshot().lastFrameId,
             lastError = lastError,
@@ -285,11 +288,19 @@ class DefaultVideoReceiverSessionController(
 
     private val runtimeListener = object : VideoReceiverRuntimeListener {
         override fun onStreamConfig(config: VideoReceiverStreamConfig) {
-            synchronized(lock) {
-                latestStreamConfig = config
-                core.onStreamConfigReady()
+            val shouldPrepare = synchronized(lock) {
+                if (!streamConfigAdmission.admits(config.configGeneration)) {
+                    duplicateStreamConfigsIgnored += 1
+                    false
+                } else {
+                    latestStreamConfig = config
+                    core.onStreamConfigReady()
+                    true
+                }
             }
-            scope.launch { prepareDecoderIfReady() }
+            if (shouldPrepare) {
+                scope.launch { prepareDecoderIfReady() }
+            }
         }
 
         override fun onAccessUnitReady(accessUnit: VideoReceiverAccessUnitReady) {
@@ -316,13 +327,15 @@ class DefaultVideoReceiverSessionController(
             receiverRuntimeController.setAwaitingKeyFrame(true)
             synchronized(lock) {
                 core.onDiscontinuity()
-                requestResyncLocked(VideoResyncReason.Discontinuity)
                 lastError = VideoSessionFailure(
                     source = VideoSessionErrorSource.Receiver,
                     error = VideoSessionError.KeyFrameRequired,
                     transportError = error,
                 )
             }
+            // Native mark_discontinuity() has already emitted the immediate resync request.
+            // Keep the delayed keyframe request as its bounded recovery retry, rather than
+            // sending two equivalent control records back-to-back.
             currentConfig?.let(::scheduleKeyFrameResyncIfNeeded)
         }
 

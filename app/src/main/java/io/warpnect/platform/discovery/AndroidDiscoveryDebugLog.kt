@@ -286,6 +286,8 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "transport_retransmissions=${transport?.retransmissions} " +
                 "transport_failures=${transport?.accessUnitsFailed} " +
                 "transport_resync_received=${transport?.resyncRequestsReceived} " +
+                "transport_resync_suppressed=${transport?.resyncRequestsSuppressed} " +
+                "transport_last_resync_reason=${transport?.lastResyncReason} " +
                 "transport_config_resends=${transport?.streamConfigResends} " +
                 "transport_keyframe_requests=${transport?.keyFrameRequestsReceived} " +
                 "control_running=${snapshot.control?.running} " +
@@ -322,9 +324,15 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "receiver_stale_released=${receiver?.staleFramesReleased} " +
                 "receiver_nacks=${receiver?.nacksSent} " +
                 "receiver_resync=${receiver?.resyncRequestsSent} " +
+                "receiver_resync_suppressed=${receiver?.resyncRequestsSuppressed} " +
+                "receiver_last_resync_reason=${receiver?.lastResyncReason} " +
                 "receiver_frame_id=${receiver?.lastFrameId} " +
                 "receiver_pts_us=${receiver?.lastPresentationTimeUs} " +
+                "receiver_reassembly_last_us=${receiver?.lastReassemblyLatencyUs} " +
+                "receiver_reassembly_max_us=${receiver?.maxReassemblyLatencyUs} " +
                 "receiver_ready_wait_us=${receiver?.lastReadyWaitUs} " +
+                "receiver_ready_wait_max_us=${receiver?.maxReadyWaitUs} " +
+                "receiver_duplicate_configs=${snapshot.duplicateStreamConfigsIgnored} " +
                 "decoder_queued=${decoder?.accessUnitsQueued} " +
                 "decoder_bytes=${decoder?.encodedBytesQueued} " +
                 "decoder_backpressure=${decoder?.inputBackpressureEvents} " +

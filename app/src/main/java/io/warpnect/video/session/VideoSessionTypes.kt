@@ -117,6 +117,7 @@ data class VideoReceiverSessionSnapshot(
     val framesDelivered: Long = 0,
     val nonKeyframesDroppedAwaitingKeyframe: Long = 0,
     val discontinuities: Long = 0,
+    val duplicateStreamConfigsIgnored: Long = 0,
     val lastPresentationTimeUs: Long? = null,
     val lastFrameId: Long? = null,
     val lastError: VideoSessionFailure = VideoSessionFailure(),
