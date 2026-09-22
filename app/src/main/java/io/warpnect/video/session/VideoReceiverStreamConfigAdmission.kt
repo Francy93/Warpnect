@@ -14,4 +14,8 @@ internal class VideoReceiverStreamConfigAdmission {
         admittedGeneration = configGeneration
         return true
     }
+
+    fun reset() {
+        admittedGeneration = null
+    }
 }

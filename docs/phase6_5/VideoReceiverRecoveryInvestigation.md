@@ -40,6 +40,10 @@ once. A retransmission of the active generation remains recovery data and does
 not recreate the decoder. A new generation is still admitted and prepares the
 decoder normally.
 
+Starting a new receiver Session resets this admission state before any new
+configuration arrives. A controller instance that is stopped and restarted can
+therefore admit the same generation number for its new transport lifetime.
+
 The Kotlin session controller no longer duplicates the immediate discontinuity
 resync already sent by the native receiver. Its existing delayed keyframe retry
 remains as bounded recovery behavior.

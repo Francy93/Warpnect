@@ -20,4 +20,16 @@ class VideoReceiverStreamConfigAdmissionTest {
         assertTrue(admission.admits(7L))
         assertTrue(admission.admits(8L))
     }
+
+    @Test
+    fun admitsTheSameGenerationForANewSessionAfterReset() {
+        val admission = VideoReceiverStreamConfigAdmission()
+
+        assertTrue(admission.admits(7L))
+        assertFalse(admission.admits(7L))
+
+        admission.reset()
+
+        assertTrue(admission.admits(7L))
+    }
 }

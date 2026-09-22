@@ -63,9 +63,11 @@ class DefaultVideoReceiverSessionController(
             if (config.performanceConfig.validate() != VideoTransportError.None) {
                 return rememberLocked(sessionFailure(VideoSessionError.InvalidConfiguration))
             }
+            streamConfigAdmission.reset()
+            latestStreamConfig = null
             currentConfig = config
             currentRenderTarget = renderController.currentTarget()
-            core.start(surfaceAvailable = currentRenderTarget != null, configAvailable = latestStreamConfig != null)
+            core.start(surfaceAvailable = currentRenderTarget != null, configAvailable = false)
         }
 
         val open = receiverRuntimeController.open(config.receiverRuntimeConfig)
