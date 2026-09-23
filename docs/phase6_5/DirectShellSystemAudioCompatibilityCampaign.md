@@ -230,3 +230,24 @@ DirectShell audio experiment, before treating tablet remote audio as blocked
 by DirectShell.
 
 Decision: `DIRECTSHELL_SYSTEM_AUDIO_MODERN_COMPATIBILITY_PARTIAL`.
+
+## Later DirectShell Input integration status
+
+The Tablet pre-discovery boundary described above was subsequently addressed
+by the separate DEBUG-only DirectShell Input Session integration. With the
+same Tablet Shizuku 13.6 environment left in place, DirectShell Input
+capability qualification reached `Host: Available` and discovery advertising
+without a Shizuku Input UserService. This closes the historical
+`TABLET_HOST_INPUT_INJECTION_CAPABILITY_QUERY_NOT_COMPLETED_BEFORE_DISCOVERY`
+boundary; it does not alter the historical SystemAudio evidence in this
+report.
+
+The S9 Client subsequently reconnected for the DirectShell Input Session
+integration closure. A generic serialized NSD-resolution correction eliminated
+the S9 API29 `FAILURE_ALREADY_ACTIVE` discovery boundary. S22 -> S9 then
+completed 3/3 first-attempt technical DirectShell SystemAudio/Input Sessions,
+and the operator confirmed the tone was audible on S9. The Tablet now passes
+through discovery, authentication, WNCP, setup, and DirectShell Input start,
+but stops at a separately classified Host-video first-AU boundary before its
+audio runtime begins. See `DirectShellInputSessionIntegration.md` for the
+current exact matrix and remaining video boundary.
