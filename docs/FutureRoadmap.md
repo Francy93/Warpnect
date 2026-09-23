@@ -273,6 +273,36 @@ Status: implementation-complete. Real-device validation debt remains.
 Phase 6 is implementation-complete. Host/JVM, Android build, ABI, and native validation are green;
 real Android/hardware validation remains separately tracked because no device was attached.
 
+## Phase 6.5 - Privileged Runtime Evolution
+
+Status: validated DirectShell modern Host baseline; static per-capability
+planning is accepted architecture and remains the next implementation step.
+
+The validated modern DirectShell path uses user-authorized Wireless Debugging,
+app-owned local ADB, app_process as shell uid 2000, and purpose-specific
+DirectShell Video, SystemAudio, and Input servers. It has hardware evidence on
+A41/API31, Tablet/API33, and S22/API36, with S9/API29 as the established
+Client. The final modern SystemAudio matrix includes audible S9 confirmation
+for every Host. DirectShell remains a carefully validated migration path, not
+an unconditional release default.
+
+The next milestones are:
+
+- RFC-006I - Privileged Capability Planning and Composite Runtime [accepted architecture]
+- Privileged Capability Matrix [planned]
+- Privileged Capability Planner with static complete-plan selection [planned]
+- Composite Host Plan ownership and hardware validation [planned]
+- DirectRoot integration and qualification [planned]
+- Shizuku Demotion to Optional Privileged Capability Provider [planned]
+- In-Session Privileged Capability Provider Migration RFC [planned]
+- In-Session Privileged Capability Provider Migration implementation [planned]
+- Final privileged-runtime acceptance [planned]
+
+The normal Host invariant remains Video plus SystemAudio plus Input. If no
+complete qualified provider plan exists, Host is unavailable while Client mode
+remains available. Shizuku is preserved as a future optional compatibility
+provider rather than being unconditionally deleted.
+
 ## Phase 7 - Optimization
 
 Optimize:

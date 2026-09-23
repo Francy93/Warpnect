@@ -431,3 +431,33 @@ observations did not force Surface destruction/recreation or establish a separat
 presentation event. A later tablet-Host attempt still reported `ShizukuPermissionRequired` during local Host
 capability collection despite a Shizuku permission update; that Input/privilege-provider boundary
 is separate from Client decoder qualification and leaves the reverse-role trace inconclusive.
+
+## Phase 6.5 DirectShell Modern Host Runtime
+
+This current-status section records the validated app-owned DirectShell modern
+Host baseline. It does not rewrite the historical Shizuku evidence above.
+Counted DirectShell Host runs use user-authorized Wireless Debugging, app-owned
+local ADB, app_process as shell uid 2000, and purpose-specific DirectShell
+servers. Desktop ADB may install or observe, but does not launch the privileged
+server. Shizuku is not the privileged Video, SystemAudio, or Input provider in
+the counted DirectShell runs.
+
+| Host | API | Bootstrap and three privileged features | Video to S9 | SystemAudio to S9 | Current result |
+| --- | ---: | --- | --- | --- | --- |
+| Samsung SM-A415F | 31 | DirectShell Video, SystemAudio, Input PASS | Visible E2E PASS | AUDIBLE_CONFIRMED | Modern DirectShell Host validated |
+| Tablet X700_EEA | 33 | DirectShell Video, SystemAudio, Input PASS while Shizuku 13.6 remains bootstrap-incompatible | 3/3 visible E2E PASS | AUDIBLE_CONFIRMED | DirectShell bypasses the documented Shizuku UserService boundary |
+| Samsung SM-S901B | 36 | DirectShell Video, SystemAudio, Input PASS | 3/3 visible E2E PASS | 3/3 technical PASS; AUDIBLE_CONFIRMED | Shell identity avoids the historical Shizuku attribution boundary |
+
+The A41 initially retained a valid Wireless Debugging pairing while its local
+connection service was absent. A normal Wireless Debugging off/on transition
+restored service publication, after which Warpnect completed repeated
+self-bootstrap acquisition. This is
+A41_WIRELESS_DEBUGGING_CONNECTION_SERVICE_PUBLICATION_DELAY_RECOVERED: a
+bounded adbd service-publication condition, not a SystemAudio failure and not a
+device-specific code path.
+
+DirectShell hardware evidence is now sufficient for the modern baseline.
+Provider selection is not yet a per-capability planner: RFC-006I defines the
+next static complete-plan architecture. The normal Host continues to require
+Video, SystemAudio, and Input together; a missing required capability means
+Host unavailable rather than a partial advertised Host.
