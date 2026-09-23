@@ -277,13 +277,101 @@ void test_sender_handles_resync_with_config_resend_and_keyframe_event() {
     expect_equal(sender.snapshot().stream_config_resends, 1ULL,
                  "sender counts StreamConfig resend");
     expect_equal(sender.snapshot().keyframe_requests_received, 1ULL,
-                 "sender exposes keyframe request");
+                  "sender exposes keyframe request");
+}
+
+void test_nack_cache_miss_keeps_video_resync_recoverable() {
+    UdpSocket receiver;
+    UdpEndpoint endpoint{};
+    if (!open_bound_receiver(receiver, endpoint)) {
+        return;
+    }
+
+    SenderStorage storage(256, 1);
+    VideoTransportSender sender(
+        VideoTransportSenderConfig{
+            .remote_endpoint = endpoint,
+            .local_port = 0,
+            .max_wire_datagram_size = 256,
+            .initial_video_sequence = 1000,
+            .initial_control_sequence = 2000,
+            .initial_frame_id = 1,
+            .retransmission_cache_slots = 1,
+            .fec = VideoTransportFecConfig{},
+            .resync_request_cooldown_us = 0,
+        },
+        storage.workspace());
+    expect(sender.open().ok(), "cache-miss sender opens");
+
+    const std::array<std::byte, 2> csd{byte(0x67), byte(0x42)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(sender.submit_stream_config(640, 360, entries).ok(), "cache-miss sender submits config");
+
+    std::array<std::byte, warpnect::scl::kNackPayloadWireSize> nack_payload{};
+    expect(warpnect::scl::encode_nack(
+               warpnect::scl::NackRequest{
+                   .target_payload_type = PayloadType::Video,
+                   .base_sequence_number = 9999,
+                   .missing_bitmap = 1,
+               },
+               nack_payload)
+               .ok(),
+           "evicted NACK encodes");
+    std::array<std::byte, 128> nack_datagram{};
+    const auto encoded_nack = warpnect::scl::encode_packet(
+        PacketHeader{
+            .protocol_version = warpnect::scl::kSclProtocolVersion,
+            .flags = 0,
+            .sequence_number = 44,
+            .timestamp_us = 0,
+            .payload_type = PayloadType::SessionControl,
+            .slice_index = 0,
+            .total_slices = 1,
+        },
+        nack_payload,
+        nack_datagram);
+    expect(encoded_nack.ok(), "evicted NACK packet encodes");
+    expect(sender.handle_control_datagram(
+               std::span<const std::byte>(nack_datagram).first(encoded_nack.bytes_written))
+               .ok(),
+           "cache miss does not terminate sender control processing");
+
+    std::array<std::byte, warpnect::scl::kVideoResyncRequestWireSize> resync_payload{};
+    expect(warpnect::scl::encode_video_resync_request(
+               VideoResyncRequest{
+                   .reason = VideoResyncReason::NeedKeyFrame,
+                   .receiver_config_generation = 1,
+               },
+               resync_payload)
+               .ok(),
+           "post-cache-miss resync encodes");
+    std::array<std::byte, 128> resync_datagram{};
+    const auto encoded_resync = warpnect::scl::encode_packet(
+        PacketHeader{
+            .protocol_version = warpnect::scl::kSclProtocolVersion,
+            .flags = 0,
+            .sequence_number = 45,
+            .timestamp_us = 0,
+            .payload_type = PayloadType::SessionControl,
+            .slice_index = 0,
+            .total_slices = 1,
+        },
+        resync_payload,
+        resync_datagram);
+    expect(encoded_resync.ok(), "post-cache-miss resync packet encodes");
+    expect(sender.handle_control_datagram(
+               std::span<const std::byte>(resync_datagram).first(encoded_resync.bytes_written))
+               .ok(),
+           "sender keeps handling VideoResync after a cache miss");
+    expect_equal(sender.snapshot().stream_config_resends, 1ULL,
+                 "post-cache-miss VideoResync resends the stream config");
 }
 
 int run_all_tests() {
     test_video_resync_golden_and_malformed();
     test_receiver_emits_video_resync_request();
     test_sender_handles_resync_with_config_resend_and_keyframe_event();
+    test_nack_cache_miss_keeps_video_resync_recoverable();
     return failures == 0 ? 0 : 1;
 }
 

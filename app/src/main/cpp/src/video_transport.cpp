@@ -339,8 +339,10 @@ VideoStatus VideoTransportSender::handle_nack(const NackRequest& request) noexce
             cache_.find(PayloadType::Video, sequence.sequence_number);
         if (!cached.ok()) {
             if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->retransmission_cache_miss();
-            remember(VideoError::RetransmissionFailed);
-            return status(snapshot_.last_error);
+            // A bounded cache can legitimately evict an old NACK target. Keep pumping the
+            // control channel so the receiver's existing VideoResync request can recover with a
+            // fresh stream configuration and keyframe.
+            continue;
         }
         const VideoStatus sent = send_retransmission(cached.datagram);
         if (!sent.ok()) {

@@ -11,7 +11,6 @@ import io.warpnect.capture.CaptureBackend
 import io.warpnect.capture.CaptureCapabilities
 import io.warpnect.capture.CaptureDisplayInfo
 import io.warpnect.capture.CaptureError
-import io.warpnect.capture.CaptureGeometry
 import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.capture.CaptureRequest
 import io.warpnect.capture.CaptureSessionSnapshot
@@ -155,13 +154,7 @@ internal class SurfaceControlDisplayCaptureApi : PrivilegedDisplayCaptureApi {
         targetSurface: Surface?,
     ): CaptureError {
         val projection = try {
-            CaptureGeometry.computeProjection(
-                sourceWidth = displayInfo.logicalWidth,
-                sourceHeight = displayInfo.logicalHeight,
-                sourceRotation = if (request.followSourceRotation) displayInfo.rotation else 0,
-                targetWidth = request.outputWidth,
-                targetHeight = request.outputHeight,
-            )
+            SurfaceControlDisplayProjectionPlanner.plan(displayInfo, request)
         } catch (_: IllegalArgumentException) {
             return CaptureError.ProjectionConfigurationFailed
         }

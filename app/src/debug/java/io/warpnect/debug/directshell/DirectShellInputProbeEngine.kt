@@ -71,18 +71,23 @@ internal class DirectShellInputProbeEngine(
         Result.success("KEY_SEQUENCE_OK", diagnosticsPayload("key_sequence count=$count"))
     }
 
-    fun injectTouchGesture(count: Int): Result = withTracker("TOUCH_GESTURE") { active ->
-        repeat(count) {
-            val down = active.injectTouch(touchEvent(MotionEvent.ACTION_DOWN, TOUCH_START_X, TOUCH_START_Y))
-            if (!down.isAccepted) return@withTracker failureFor("TOUCH_DOWN", down)
-            val move = active.injectTouch(touchEvent(MotionEvent.ACTION_MOVE, TOUCH_END_X, TOUCH_END_Y))
-            if (!move.isAccepted) return@withTracker failureFor("TOUCH_MOVE", move)
-            val up = active.injectTouch(touchEvent(MotionEvent.ACTION_UP, TOUCH_END_X, TOUCH_END_Y))
-            if (!up.isAccepted) return@withTracker failureFor("TOUCH_UP", up)
-            touchGestures += 1
+    fun injectTouchGesture(gesture: DirectShellInputProbeRequest.TouchGesture): Result =
+        withTracker("TOUCH_GESTURE") { active ->
+            val startX = gesture.targetX?.toFloat() ?: TOUCH_START_X
+            val startY = gesture.targetY?.toFloat() ?: TOUCH_START_Y
+            val endX = gesture.targetX?.plus(TOUCH_TARGET_DELTA_PX)?.toFloat() ?: TOUCH_END_X
+            val endY = gesture.targetY?.plus(TOUCH_TARGET_DELTA_PX)?.toFloat() ?: TOUCH_END_Y
+            repeat(gesture.count) {
+                val down = active.injectTouch(touchEvent(MotionEvent.ACTION_DOWN, startX, startY))
+                if (!down.isAccepted) return@withTracker failureFor("TOUCH_DOWN", down)
+                val move = active.injectTouch(touchEvent(MotionEvent.ACTION_MOVE, endX, endY))
+                if (!move.isAccepted) return@withTracker failureFor("TOUCH_MOVE", move)
+                val up = active.injectTouch(touchEvent(MotionEvent.ACTION_UP, endX, endY))
+                if (!up.isAccepted) return@withTracker failureFor("TOUCH_UP", up)
+                touchGestures += 1
+            }
+            Result.success("TOUCH_GESTURE_OK", diagnosticsPayload("touch_gesture count=${gesture.count}"))
         }
-        Result.success("TOUCH_GESTURE_OK", diagnosticsPayload("touch_gesture count=$count"))
-    }
 
     fun injectPointer(): Result = withTracker("POINTER") { active ->
         val result = active.injectPointer(
@@ -246,6 +251,7 @@ internal class DirectShellInputProbeEngine(
         const val TOUCH_START_Y = 220f
         const val TOUCH_END_X = 420f
         const val TOUCH_END_Y = 520f
+        const val TOUCH_TARGET_DELTA_PX = 1
         const val POINTER_X = 300f
         const val POINTER_Y = 360f
     }

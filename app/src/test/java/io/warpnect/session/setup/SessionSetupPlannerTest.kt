@@ -1,9 +1,12 @@
 package io.warpnect.session.setup
 
+import io.warpnect.session.ChannelId
 import io.warpnect.session.NetworkPathKind
 import io.warpnect.session.PathId
 import io.warpnect.session.PathPreferencePolicy
 import io.warpnect.session.SecondaryPathPolicy
+import io.warpnect.session.SessionChannelDirection
+import io.warpnect.session.SessionChannelKind
 import io.warpnect.session.capability.CapabilityBits
 import io.warpnect.session.capability.MicrophoneRoutingSelection
 import io.warpnect.session.capability.NegotiatedCapabilityProfile
@@ -167,6 +170,51 @@ class SessionSetupPlannerTest {
         assertEquals(requested.input?.criticalCopies, retained.input?.criticalCopies)
         assertEquals(requested.input?.resetCopies, retained.input?.resetCopies)
         assertEquals(null, SessionSetupPlanner.validateExactPreferences(negotiated, retained))
+    }
+
+    @Test
+    fun videoNackRecoveryConfigurationCarriesTheBoundedSenderCache() {
+        val recoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC
+        val recoveredProfile = profile().copy(recoveryFlags = recoveryFlags)
+        val video = ChannelDescriptor(
+            channelId = ChannelId.requireValid(1u),
+            kind = SessionChannelKind.Video,
+            direction = SessionChannelDirection.HostToClient,
+            instanceIndex = 0,
+            pathId = PathId.requireValid(1u),
+            hostLocalPort = 41000,
+            clientLocalPort = 42000,
+            maxSecureDatagramBytes = 1200,
+            recoveryFlags = recoveryFlags,
+        )
+        val input = ChannelDescriptor(
+            channelId = ChannelId.requireValid(2u),
+            kind = SessionChannelKind.Input,
+            direction = SessionChannelDirection.ClientToHost,
+            instanceIndex = 0,
+            pathId = PathId.requireValid(1u),
+            hostLocalPort = 41001,
+            clientLocalPort = 42001,
+            maxSecureDatagramBytes = 1200,
+            recoveryFlags = 0,
+        )
+
+        val result = SessionSetupPlanner.buildConfigurations(
+            profile = recoveredProfile,
+            preferences = preferences(),
+            descriptors = listOf(video, input),
+            recoveryPolicy = SessionRecoveryPolicy(
+                video = RecoveryConfigurationTemplate(
+                    recoveryFlags = recoveryFlags,
+                    retransmissionCacheSlots = 64,
+                ),
+            ),
+        ) as SetupPlanResult.Success
+
+        val recovery = result.configurations.filterIsInstance<SetupConfiguration.Recovery>().single()
+        assertEquals(video.channelId, recovery.channelId)
+        assertEquals(recoveryFlags, recovery.config.recoveryFlags)
+        assertEquals(64, recovery.config.retransmissionCacheSlots)
     }
 
     private fun profile() = NegotiatedCapabilityProfile(

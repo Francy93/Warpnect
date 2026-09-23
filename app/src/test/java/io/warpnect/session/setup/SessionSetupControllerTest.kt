@@ -69,6 +69,26 @@ class SessionSetupControllerTest {
     }
 
     @Test
+    fun videoNackAndResyncRecoveryPolicyCompletesTheFullHostClientSetup() {
+        val recoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC
+        val fixture = Fixture(profile = profile().copy(recoveryFlags = recoveryFlags))
+        val policy = HostSessionSetupPolicy(
+            streamPreferences = fixture.preferences,
+            recoveryPolicy = SessionRecoveryPolicy(
+                video = RecoveryConfigurationTemplate(
+                    recoveryFlags = recoveryFlags,
+                    retransmissionCacheSlots = 64,
+                ),
+            ),
+        )
+
+        fixture.start(policy)
+
+        assertEquals(1, fixture.hostCompletions.size)
+        assertEquals(1, fixture.clientCompletions.size)
+    }
+
+    @Test
     fun debugObserverReportsBoundedLanSetupMilestonesWithoutPayloadData() {
         val fixture = Fixture()
 
@@ -407,10 +427,10 @@ class SessionSetupControllerTest {
             hostTransport.deliver = hostToClientDelivery
         }
 
-        fun start() {
+        fun start(policy: HostSessionSetupPolicy = HostSessionSetupPolicy(preferences)) {
             assertEquals(
                 SessionSetupError.None,
-                host.registerHost(hostBootstrap, hostSetupRuntime, HostSessionSetupPolicy(preferences)),
+                host.registerHost(hostBootstrap, hostSetupRuntime, policy),
             )
             assertEquals(
                 SessionSetupError.None,

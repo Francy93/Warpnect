@@ -229,7 +229,9 @@ class DefaultLocalDiscoveryController(
     override fun expireStaleRoutes(): DiscoveryOperationResult {
         if (closed) return resultLocked(DiscoveryError.Closed)
         if (activeControllerGeneration != null && browsingRequested) {
-            counters.expiredRoutes += cache.expire(clock.nowMs()).expiredRoutes
+            val expiredRoutes = cache.expire(clock.nowMs()).expiredRoutes
+            counters.expiredRoutes += expiredRoutes
+            if (expiredRoutes > 0) notifyPresenceCountChangedLocked()
         }
         return resultLocked(DiscoveryError.None)
     }
@@ -329,8 +331,7 @@ class DefaultLocalDiscoveryController(
         if (closed || controllerGeneration != activeControllerGeneration || !browsingRequested) return
         when (cache.observe(observation, ownPresenceId, clock.nowMs()).change) {
             DiscoveryCacheChange.Accepted -> {
-                onPresenceCountChanged?.invoke(cache.snapshot().candidates.size)
-                discoveryUpdateListener?.invoke()
+                notifyPresenceCountChangedLocked()
             }
             DiscoveryCacheChange.SelfSuppressed -> counters.selfDiscoveryDrops += 1
             DiscoveryCacheChange.Conflicted -> counters.conflictingAdvertisements += 1
@@ -342,7 +343,7 @@ class DefaultLocalDiscoveryController(
     @Synchronized
     override fun onRouteLost(controllerGeneration: Long, kind: DiscoveryRouteKind, backendRouteKey: String) {
         if (closed || controllerGeneration != activeControllerGeneration || !browsingRequested) return
-        cache.markRouteLost(kind, backendRouteKey)
+        if (cache.markRouteLost(kind, backendRouteKey)) notifyPresenceCountChangedLocked()
     }
 
     @Synchronized
@@ -368,6 +369,11 @@ class DefaultLocalDiscoveryController(
     private fun ensurePreparedLocked(): DiscoveryError {
         if (closed) return DiscoveryError.Closed
         return if (prepared) DiscoveryError.None else prepare().error
+    }
+
+    private fun notifyPresenceCountChangedLocked() {
+        onPresenceCountChanged?.invoke(cache.snapshot().candidates.size)
+        discoveryUpdateListener?.invoke()
     }
 
     private fun activateGenerationLocked() {

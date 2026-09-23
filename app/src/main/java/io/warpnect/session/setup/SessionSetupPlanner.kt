@@ -221,10 +221,13 @@ object SessionSetupPlanner {
                 add(SetupConfiguration.Recovery(descriptor.channelId, configured))
             }
         }
-        return if (configurations.size > SessionSetupProtocol.MAX_CONFIGURATION_TLVS) {
+        val canonicalConfigurations = configurations.sortedWith(
+            compareBy<SetupConfiguration>({ it.channelId.value.toLong() }, ::configurationWireType),
+        )
+        return if (canonicalConfigurations.size > SessionSetupProtocol.MAX_CONFIGURATION_TLVS) {
             SetupPlanResult.Failure(SessionSetupError.ChannelPlanInvalid)
         } else {
-            SetupPlanResult.Success(configurations)
+            SetupPlanResult.Success(canonicalConfigurations)
         }
     }
 
@@ -324,6 +327,16 @@ object SessionSetupPlanner {
     private fun profilePathKinds(profile: NegotiatedCapabilityProfile): Set<NetworkPathKind> = buildSet {
         if (profile.eligiblePathKinds and CapabilityBits.PATH_LAN != 0) add(NetworkPathKind.Lan)
         if (profile.eligiblePathKinds and CapabilityBits.PATH_DIRECT != 0) add(NetworkPathKind.Direct)
+    }
+
+    /** Mirrors the canonical configuration ordering used by the SessionSetup codec on the wire. */
+    private fun configurationWireType(configuration: SetupConfiguration): Int = when (configuration) {
+        is SetupConfiguration.Video -> 1
+        is SetupConfiguration.SystemAudio -> 2
+        is SetupConfiguration.MicrophoneAudio -> 3
+        is SetupConfiguration.Input -> 4
+        is SetupConfiguration.Telemetry -> 5
+        is SetupConfiguration.Recovery -> 6
     }
 
     private fun videoWithinProfile(mode: VideoStreamMode, profile: NegotiatedCapabilityProfile): Boolean =

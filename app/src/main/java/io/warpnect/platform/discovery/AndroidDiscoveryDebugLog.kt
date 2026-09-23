@@ -7,6 +7,9 @@ import android.os.SystemClock
 import android.util.Log
 import io.warpnect.audio.session.AudioReceiverSessionSnapshot
 import io.warpnect.audio.session.AudioTransmitterSessionSnapshot
+import io.warpnect.input.session.ReverseInputReceiverSessionConfig
+import io.warpnect.input.session.ReverseInputReceiverSessionSnapshot
+import io.warpnect.input.session.ReverseInputSenderSessionSnapshot
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEvent
 import io.warpnect.platform.session.integration.VideoPipelineStartDebugEventKind
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
@@ -392,6 +395,65 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "playback_underruns=${playback?.underrunCallbacks} playback_xruns=${playback?.xRunCount} " +
                 "receiver_error=${receiver?.lastError} playback_error=${playback?.lastError} " +
                 "session_error=${snapshot.lastError.error}",
+        )
+    }
+
+    /** Low-cadence local reverse-Input counters for DEBUG transport-boundary investigation. */
+    fun inputPipelineSenderRuntime(snapshot: ReverseInputSenderSessionSnapshot) {
+        if (!enabled) return
+        val capture = snapshot.capture
+        val mapper = snapshot.mapper
+        val transport = snapshot.transport
+        Log.i(
+            TAG,
+            "event=input_runtime role=client local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} capture_state=${capture.state} " +
+                "captured_touch=${capture.touchFramesCaptured} captured_key=${capture.keyEventsCaptured} " +
+                "mapper_received=${mapper?.eventsReceived} mapper_forwarded=${mapper?.eventsForwarded} " +
+                "transport_state=${transport.state} configured_local_port=${transport.localPort} " +
+                "bound_local_port=${transport.boundLocalPort} remote_port=${transport.remotePort} " +
+                "events_submitted=${transport.eventsSubmitted} datagrams_attempted=${transport.datagramsAttempted} " +
+                "datagrams_sent=${transport.datagramsSent} bytes_sent=${transport.bytesSent} " +
+                "touch_frames=${transport.touchFrames} key_events=${transport.keyEvents} " +
+                "would_block=${transport.wouldBlockCount} send_failures=${transport.sendFailureCount} " +
+                "last_sequence=${transport.lastSentSequence} transport_error=${transport.lastError} " +
+                "session_error=${snapshot.lastError}",
+        )
+    }
+
+    /** Low-cadence local reverse-Input receiver counters; ports are local session metadata only. */
+    fun inputPipelineReceiverRuntime(
+        snapshot: ReverseInputReceiverSessionSnapshot,
+        config: ReverseInputReceiverSessionConfig,
+    ) {
+        if (!enabled) return
+        val receiver = snapshot.receiver
+        val mapper = snapshot.mapper
+        val injection = snapshot.injection
+        Log.i(
+            TAG,
+            "event=input_runtime role=host local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+                "session_state=${snapshot.state} receiver_state=${receiver.state} " +
+                "configured_local_port=${config.receiverConfig.localPort} " +
+                "bound_local_port=${receiver.localEndpointPort} " +
+                "expected_remote_port=${config.receiverConfig.expectedRemotePort} " +
+                "datagrams_received=${receiver.datagramsReceived} events_delivered=${receiver.eventsDelivered} " +
+                "unexpected_endpoint_drops=${receiver.unexpectedEndpointDrops} " +
+                "malformed_drops=${receiver.malformedDatagramDrops} " +
+                "unsupported_drops=${receiver.unsupportedInputDrops} " +
+                "oversize_drops=${receiver.oversizeDatagramDrops} " +
+                "socket_failures=${receiver.socketFailures} receiver_error=${receiver.lastError} " +
+                "session_received=${snapshot.receivedEvents} session_dropped=${snapshot.droppedDatagrams} " +
+                "mapping_failures=${snapshot.mappingFailures} injection_failures=${snapshot.injectionFailures} " +
+                "mapped_events=${mapper.eventsReceived} mapped_key=${mapper.keysMapped} " +
+                "mapped_touch=${mapper.touchFramesMapped} mapped_pointer=${mapper.pointerSnapshotsMapped} " +
+                "injection_backend=${injection.backend} injection_key_attempts=${injection.keyAttempts} " +
+                "injection_key_submitted=${injection.keySubmitted} " +
+                "injection_touch_attempts=${injection.touchAttempts} " +
+                "injection_touch_submitted=${injection.touchSubmitted} " +
+                "injection_pointer_attempts=${injection.pointerAttempts} " +
+                "injection_pointer_submitted=${injection.pointerSubmitted} injection_error=${injection.lastError} " +
+                "session_error=${snapshot.lastError}",
         )
     }
 

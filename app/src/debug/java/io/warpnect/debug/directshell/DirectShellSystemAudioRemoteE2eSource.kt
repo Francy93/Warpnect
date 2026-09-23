@@ -53,6 +53,22 @@ internal class DirectShellSystemAudioRemoteE2eSource private constructor(
 
     fun describe(): String = "generation=$generationId port=$port cleared=$cleared"
 
+    fun shutdown(): String {
+        val shutdownSecret = copySecret()
+        if (shutdownSecret.size != DirectShellProbeProtocol.SECRET_BYTES) return "secret_cleared"
+        return try {
+            DirectShellPcmRingProbeClient.connectLoopback(port, shutdownSecret).use { client ->
+                "server_${client.call(DirectShellProbeProtocol.Command.SHUTDOWN).status.name.lowercase()}"
+            }
+        } catch (_: IOException) {
+            "server_already_unreachable"
+        } catch (_: DirectShellProbeProtocol.ProtocolException) {
+            "server_protocol_unreachable"
+        } finally {
+            Arrays.fill(shutdownSecret, 0.toByte())
+        }
+    }
+
     fun clear() {
         if (!cleared) {
             Arrays.fill(secret, 0.toByte())

@@ -139,6 +139,7 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                 SecureSessionScreen(
                     controller = composition.applicationController,
                     onEnableHost = { requestDiscoveryStart(SessionRole.Host) },
+                    onDisableHost = composition::stopHostFromUi,
                     onFindHosts = { requestDiscoveryStart(SessionRole.Client) },
                     discoveryPermissionNotice = discoveryPermissionNotice,
                     clientVideoRendererBound = clientVideoRendererBound,

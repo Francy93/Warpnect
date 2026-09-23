@@ -20,6 +20,7 @@ import io.warpnect.platform.audio.capture.privileged.PrivilegedSystemAudioSetup
 import io.warpnect.platform.audio.capture.privileged.privilegedSystemAudioSetupFromBundle
 import io.warpnect.platform.audio.capture.privileged.toAudioCaptureCapabilities
 import io.warpnect.platform.audio.capture.privileged.toAudioCaptureSnapshot
+import io.warpnect.platform.privileged.awaitPrivilegedUserServiceStart
 import kotlin.coroutines.resume
 import rikka.shizuku.Shizuku
 

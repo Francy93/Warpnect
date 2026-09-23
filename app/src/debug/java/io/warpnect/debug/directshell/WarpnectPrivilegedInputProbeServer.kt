@@ -51,6 +51,7 @@ object WarpnectPrivilegedInputProbeServer {
         private val endpointReleased = AtomicBoolean(false)
         private val lastAuthenticatedActivityMillis = AtomicLong(SystemClock.elapsedRealtime())
         private val engine = DirectShellInputProbeEngine(arguments.displayId)
+        private val sessionBridge = arguments.generationId.takeIf { it > 0L }?.let(::DirectShellInputSessionBridge)
         private val shellContext = DirectShellShellAudioContext.create()
         private var listener: FileDescriptor? = null
         private var idleWatchdog: Thread? = null
@@ -62,7 +63,8 @@ object WarpnectPrivilegedInputProbeServer {
                 "START result=READY pid=${Process.myPid()} uid=${Process.myUid()} gid=${Os.getgid()} " +
                     "uid_kind=SHELL api=${DirectShellRuntimeApi.sdkInt()} " +
                     "api_source=${DirectShellRuntimeApi.source()} selinux_context=${selinuxContext()} " +
-                    "endpoint=${endpoint()} transport=LOOPBACK_TCP context=${shellContext.classification}",
+                    "endpoint=${endpoint()} transport=LOOPBACK_TCP context=${shellContext.classification} " +
+                    "generation=${arguments.generationId}",
             )
             log("RUNTIME_IDENTITY ${compact(shellContext.toPayload())}")
             if (arguments.startupLocalKey) {
@@ -85,7 +87,7 @@ object WarpnectPrivilegedInputProbeServer {
                     }
                 }
             } finally {
-                engine.shutdown()
+                shutdownEngines()
                 releaseEndpoint()
                 joinWatchdog()
             }
@@ -97,6 +99,10 @@ object WarpnectPrivilegedInputProbeServer {
                 val input = client.input()
                 val output = client.output()
                 while (running.get()) {
+                    // A session transport is intentionally quiet between input events. Poll before
+                    // parsing so the socket's bounded per-frame deadline never turns quiet time
+                    // into a terminal ServiceDied result in the normal process.
+                    if (!client.awaitReadable(CONTROL_IDLE_POLL_TIMEOUT_MILLIS)) continue
                     val request = try {
                         DirectShellProbeProtocol.readRequest(input, arguments.secret)
                     } catch (error: DirectShellProbeProtocol.ProtocolException) {
@@ -110,7 +116,7 @@ object WarpnectPrivilegedInputProbeServer {
                             output,
                             request.requestId,
                             DirectShellProbeProtocol.Status.OUT_OF_ORDER,
-                            "request_id_not_strictly_increasing",
+                            "request_id_not_strictly_increasing".encodeToByteArray(),
                         )
                         log("REQUEST id=${request.requestId} command=${request.command.name} result=OUT_OF_ORDER")
                         continue
@@ -126,6 +132,35 @@ object WarpnectPrivilegedInputProbeServer {
         }
 
         private fun dispatch(request: DirectShellProbeProtocol.Request, output: DataOutputStream): Boolean {
+            val response = if (request.command.isSessionCommand()) {
+                sessionBridge?.dispatch(request.command, request.payload)
+                    ?: DirectShellInputSessionBridge.Reply.badState(
+                        "INPUT_SESSION_UNAVAILABLE",
+                        "generation_not_configured".encodeToByteArray(),
+                    )
+            } else {
+                legacyReply(request)
+            }
+            return try {
+                writeResponse(
+                    output,
+                    request.requestId,
+                    response.status,
+                    response.payload,
+                )
+                log(
+                    "REQUEST id=${request.requestId} command=${request.command.name} " +
+                        "result=${response.classification} status=${response.status.name} " +
+                        "payload_bytes=${response.payload.size}",
+                )
+                request.command == DirectShellProbeProtocol.Command.SHUTDOWN
+            } catch (error: IOException) {
+                log("RESPONSE_FAILURE command=${request.command.name} type=${error.javaClass.simpleName}")
+                false
+            }
+        }
+
+        private fun legacyReply(request: DirectShellProbeProtocol.Request): DirectShellInputSessionBridge.Reply {
             val response = when (request.command) {
                 DirectShellProbeProtocol.Command.PING -> DirectShellInputProbeEngine.Result.success("PONG", "PONG")
                 DirectShellProbeProtocol.Command.GET_RUNTIME_INFO -> DirectShellInputProbeEngine.Result.success(
@@ -137,40 +172,30 @@ object WarpnectPrivilegedInputProbeServer {
                     request.payload,
                     engine::injectKeySequence,
                 )
-                DirectShellProbeProtocol.Command.INPUT_TOUCH_GESTURE -> withCount(
-                    request.payload,
-                    engine::injectTouchGesture,
-                )
+                DirectShellProbeProtocol.Command.INPUT_TOUCH_GESTURE -> withTouchGesture(request.payload)
                 DirectShellProbeProtocol.Command.INPUT_POINTER -> engine.injectPointer()
                 DirectShellProbeProtocol.Command.INPUT_JOYSTICK -> engine.injectJoystick()
                 DirectShellProbeProtocol.Command.INPUT_RESET -> engine.resetAfterPressedKey()
                 DirectShellProbeProtocol.Command.GET_INPUT_DIAGNOSTICS -> engine.diagnostics()
-                DirectShellProbeProtocol.Command.SHUTDOWN -> engine.shutdown()
+                DirectShellProbeProtocol.Command.SHUTDOWN -> {
+                    shutdownEngines()
+                    DirectShellInputProbeEngine.Result.success("INPUT_STOPPED", "INPUT_STOPPED")
+                }
                 else -> DirectShellInputProbeEngine.Result.failure(
                     "UNSUPPORTED_COMMAND",
                     "command=${request.command.name}",
                 )
             }
-            val status = if (response.success) {
-                DirectShellProbeProtocol.Status.OK
+            return if (response.success) {
+                DirectShellInputSessionBridge.Reply.ok(
+                    response.classification,
+                    "result=${response.classification} ${response.payload}".toByteArray(StandardCharsets.UTF_8),
+                )
             } else {
-                DirectShellProbeProtocol.Status.BAD_STATE
-            }
-            return try {
-                writeResponse(
-                    output,
-                    request.requestId,
-                    status,
-                    "result=${response.classification} ${response.payload}",
+                DirectShellInputSessionBridge.Reply.badState(
+                    response.classification,
+                    "result=${response.classification} ${response.payload}".toByteArray(StandardCharsets.UTF_8),
                 )
-                log(
-                    "REQUEST id=${request.requestId} command=${request.command.name} " +
-                        "result=${response.classification} success=${response.success} ${response.payload}",
-                )
-                request.command == DirectShellProbeProtocol.Command.SHUTDOWN
-            } catch (error: IOException) {
-                log("RESPONSE_FAILURE command=${request.command.name} type=${error.javaClass.simpleName}")
-                false
             }
         }
 
@@ -183,19 +208,43 @@ object WarpnectPrivilegedInputProbeServer {
             return operation(count)
         }
 
+        private fun withTouchGesture(payload: ByteArray): DirectShellInputProbeEngine.Result {
+            val gesture = DirectShellInputProbeRequest.parseTouchGesture(payload)
+                ?: return DirectShellInputProbeEngine.Result.failure(
+                    "INVALID_TOUCH_GESTURE",
+                    "touch_gesture_payload_rejected",
+                )
+            return engine.injectTouchGesture(gesture)
+        }
+
         private fun writeResponse(
             output: DataOutputStream,
             requestId: Long,
             status: DirectShellProbeProtocol.Status,
-            payload: String,
+            payload: ByteArray,
         ) {
             DirectShellProbeProtocol.writeResponse(
                 output,
                 requestId,
                 status,
-                payload.toByteArray(StandardCharsets.UTF_8),
+                payload,
                 arguments.secret,
             )
+        }
+
+        private fun DirectShellProbeProtocol.Command.isSessionCommand(): Boolean = when (this) {
+            DirectShellProbeProtocol.Command.INPUT_SESSION_CAPABILITIES,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_PREPARE,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_START,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_KEY,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_TOUCH,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_POINTER,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_JOYSTICK,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_RESET,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_STOP,
+            DirectShellProbeProtocol.Command.INPUT_SESSION_SNAPSHOT,
+            -> true
+            else -> false
         }
 
         private fun runtimePayload(): String = listOf(
@@ -239,9 +288,14 @@ object WarpnectPrivilegedInputProbeServer {
 
         private fun requestShutdown(reason: String) {
             if (!running.compareAndSet(true, false)) return
-            engine.shutdown()
+            shutdownEngines()
             log("SHUTDOWN result=REQUESTED reason=$reason")
             releaseEndpoint()
+        }
+
+        private fun shutdownEngines() {
+            engine.shutdown()
+            sessionBridge?.shutdown()
         }
 
         private fun releaseEndpoint() {
@@ -270,24 +324,30 @@ object WarpnectPrivilegedInputProbeServer {
         val secret: ByteArray,
         val idleTimeoutMillis: Long,
         val displayId: Int,
+        val generationId: Long,
         val startupLocalKey: Boolean,
     ) {
         companion object {
             fun parse(args: Array<String>): ServerArguments {
                 var port: Int? = null
-                var secret: ByteArray? = null
+                var encodedSecret: String? = null
+                var secretFile: String? = null
                 var idleTimeoutMillis = DEFAULT_IDLE_TIMEOUT_MILLIS
                 var displayId = 0
+                var generationId = 0L
                 var startupLocalKey = false
                 var index = 0
                 while (index < args.size) {
                     when (val argument = args[index++]) {
                         "--port" -> port = args.valueAt(index++, argument).toIntOrNull()
-                        "--secret-base64" -> secret = decodeSecret(args.valueAt(index++, argument))
+                        "--secret-base64" -> encodedSecret = args.valueAt(index++, argument)
+                        "--secret-file" -> secretFile = args.valueAt(index++, argument)
                         "--idle-timeout-ms" -> idleTimeoutMillis = args.valueAt(index++, argument).toLongOrNull()
                             ?: throw IllegalArgumentException("invalid_idle_timeout")
                         "--display-id" -> displayId = args.valueAt(index++, argument).toIntOrNull()
                             ?: throw IllegalArgumentException("invalid_display_id")
+                        "--generation" -> generationId = args.valueAt(index++, argument).toLongOrNull()
+                            ?: throw IllegalArgumentException("invalid_generation")
                         "--startup-local-key" -> startupLocalKey = true
                         else -> throw IllegalArgumentException("unknown_argument_$argument")
                     }
@@ -297,11 +357,23 @@ object WarpnectPrivilegedInputProbeServer {
                     idleTimeoutMillis in MIN_IDLE_TIMEOUT_MILLIS..MAX_IDLE_TIMEOUT_MILLIS,
                 ) { "invalid_idle_timeout" }
                 require(displayId in 0..64) { "invalid_display_id" }
+                require(generationId >= 0L) { "invalid_generation" }
+                require((encodedSecret == null) != (secretFile == null)) { "invalid_secret_source" }
+                val rawSecret = if (encodedSecret != null) {
+                    decodeSecret(encodedSecret)
+                } else {
+                    DirectShellSecretFile.readAndDelete(requireNotNull(secretFile))
+                }
                 return ServerArguments(
                     port = requireNotNull(port),
-                    secret = DirectShellProbeProtocol.requireSecret(requireNotNull(secret)),
+                    secret = try {
+                        DirectShellProbeProtocol.requireSecret(rawSecret)
+                    } finally {
+                        rawSecret.fill(0)
+                    },
                     idleTimeoutMillis = idleTimeoutMillis,
                     displayId = displayId,
+                    generationId = generationId,
                     startupLocalKey = startupLocalKey,
                 )
             }
@@ -337,7 +409,8 @@ object WarpnectPrivilegedInputProbeServer {
     }
 
     private const val CONTROL_ACCEPT_TIMEOUT_MILLIS = 250
+    private const val CONTROL_IDLE_POLL_TIMEOUT_MILLIS = 250
     private const val DEFAULT_IDLE_TIMEOUT_MILLIS = 30_000L
     private const val MIN_IDLE_TIMEOUT_MILLIS = 3_000L
-    private const val MAX_IDLE_TIMEOUT_MILLIS = 60_000L
+    private const val MAX_IDLE_TIMEOUT_MILLIS = 900_000L
 }

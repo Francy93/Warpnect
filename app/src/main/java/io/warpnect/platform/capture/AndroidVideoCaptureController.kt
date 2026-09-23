@@ -16,15 +16,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+// Display callbacks arrive on the main looper, while a privileged gateway may perform
+// blocking Binder or local-control work to reconfigure its mirror.
+internal val displayReconfigurationDispatcher = Dispatchers.IO
+
 internal class AndroidVideoCaptureController(
     context: Context,
     private val surfaceValidator: CaptureSurfaceValidator = AndroidCaptureSurfaceValidator,
 ) : VideoCaptureController {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(SupervisorJob() + displayReconfigurationDispatcher)
     private val lock = Mutex()
     private val core = CaptureControllerCore(CaptureClock::monotonicUs)
     private val monitor = DisplayConfigurationMonitor(context.applicationContext)
-    private val gateway = ShizukuCaptureGateway(
+    private val gateway = CaptureGatewaySelector.create(
         context = context.applicationContext,
         onServiceDied = {
             monitor.stop()

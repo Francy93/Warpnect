@@ -64,6 +64,29 @@ class SecureSessionScreenStateTest {
     }
 
     @Test
+    fun hostChooserRetainsEveryPresenceAndDisambiguatesDuplicateDeviceNames() {
+        val first = discoveredHost(
+            high = 0x1111111111111111uL,
+            low = 1uL,
+            alias = "Studio Host",
+        )
+        val second = discoveredHost(
+            high = 0x2222222222222222uL,
+            low = 2uL,
+            alias = "Studio Host",
+        )
+
+        val rows = hostChooserRows(listOf(first, second))
+
+        assertEquals(listOf(first, second), rows.map(HostChooserRow::presence))
+        assertEquals(listOf("Studio Host", "Studio Host"), rows.map(HostChooserRow::label))
+        assertEquals(
+            listOf("Host ID 111111111111", "Host ID 222222222222"),
+            rows.map(HostChooserRow::detail),
+        )
+    }
+
+    @Test
     fun rendererIsAbsentForReadyAndSearchingAndAppearsOnlyForAnActualReceiverPipeline() {
         assertFalse(shouldComposeClientVideoSurface(null, clientVideoRendererBound = false))
         assertFalse(shouldComposeClientVideoSurface(SessionRole.Client, clientVideoRendererBound = false))
@@ -452,9 +475,9 @@ class SecureSessionScreenStateTest {
         ): SessionLifecycleFactoryResult = SessionLifecycleFactoryResult(SecureSessionIntegrationError.Failed)
     }
 
-    private fun discoveredHost() = DiscoveredPresence(
-        presenceId = DiscoveryPresenceId.requireValid(0uL, 1uL),
-        displayAlias = DiscoveryDisplayAlias.requireValid("Host"),
+    private fun discoveredHost(high: ULong = 0uL, low: ULong = 1uL, alias: String = "Host") = DiscoveredPresence(
+        presenceId = DiscoveryPresenceId.requireValid(high, low),
+        displayAlias = DiscoveryDisplayAlias.requireValid(alias),
         offeredRole = SessionRole.Host,
         availability = DiscoveryAvailability.Available,
         discoverySchemaVersion = 1,

@@ -21,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,6 +48,7 @@ import io.warpnect.session.integration.SecureSessionIntegrationError
 fun SecureSessionScreen(
     controller: SecureSessionApplicationController,
     onEnableHost: () -> Unit,
+    onDisableHost: () -> Unit,
     onFindHosts: () -> Unit,
     discoveryPermissionNotice: String?,
     clientVideoRendererBound: Boolean,
@@ -108,7 +110,7 @@ fun SecureSessionScreen(
             discoveryDetail(active?.discovery, discoveryPermissionNotice)?.let { detail -> Text(detail) }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (uiModel.activeRole == SessionRole.Host) {
-                    Button(onClick = controller::stopHost) { Text("Disable Host") }
+                    Button(onClick = onDisableHost) { Text("Disable Host") }
                 } else {
                     Button(onClick = onEnableHost) { Text("Enable Host") }
                 }
@@ -195,13 +197,23 @@ internal data class SecureSessionScreenUiModel(
 internal data class HostChooserRow(
     val presence: DiscoveredPresence,
     val label: String,
+    val detail: String?,
 )
 
-internal fun hostChooserRows(hosts: List<DiscoveredPresence>): List<HostChooserRow> = hosts.map { presence ->
-    HostChooserRow(
-        presence = presence,
-        label = presence.displayAlias?.value ?: "Nearby Host",
-    )
+internal fun hostChooserRows(hosts: List<DiscoveredPresence>): List<HostChooserRow> {
+    val labels = hosts.map { presence -> presence.displayAlias?.value ?: "Nearby Host" }
+    val labelCounts = labels.groupingBy { it }.eachCount()
+    return hosts.zip(labels).map { (presence, label) ->
+        HostChooserRow(
+            presence = presence,
+            label = label,
+            detail = if (labelCounts.getValue(label) > 1) {
+                "Host ID ${presence.presenceId.shortValue()}"
+            } else {
+                null
+            },
+        )
+    }
 }
 
 internal const val HOST_CHOOSER_TEST_TAG = "secure_session_host_chooser"
@@ -237,19 +249,24 @@ internal fun HostChooser(
     ) {
         Text("Hosts found")
         rows.forEach { row ->
-            LaunchedEffect(row.presence.presenceId) {
-                debugLog.hostRowComposed()
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().testTag(HOST_ROW_TEST_TAG),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(row.label)
-                Button(
-                    onClick = { onConnect(row.presence) },
-                    modifier = Modifier.testTag(HOST_CONNECT_TEST_TAG),
+            key(row.presence.presenceId) {
+                LaunchedEffect(row.presence.presenceId) {
+                    debugLog.hostRowComposed()
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag(HOST_ROW_TEST_TAG),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Connect")
+                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                        Text(row.label)
+                        row.detail?.let { detail -> Text(detail, fontSize = 12.sp) }
+                    }
+                    Button(
+                        onClick = { onConnect(row.presence) },
+                        modifier = Modifier.testTag(HOST_CONNECT_TEST_TAG),
+                    ) {
+                        Text("Connect")
+                    }
                 }
             }
         }

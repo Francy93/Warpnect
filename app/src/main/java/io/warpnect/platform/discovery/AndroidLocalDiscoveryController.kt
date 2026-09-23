@@ -50,7 +50,6 @@ class AndroidLocalDiscoveryController(
         presenceIdGenerator = presenceIdGenerator,
         availabilityProvider = availabilityProvider,
         onPresenceCountChanged = { count ->
-            debugLog.presenceAccepted(count)
             debugLog.presenceCount(count)
             // Publish after the cache mutation has returned from DefaultLocalDiscoveryController's
             // synchronized callback boundary, so UI observation never nests its lock.

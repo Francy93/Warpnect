@@ -2,7 +2,9 @@ package io.warpnect.debug.input
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -18,13 +20,18 @@ class InputSessionTargetActivity : Activity() {
         super.onCreate(savedInstanceState)
         status = TextView(this).apply { text = "Warpnect reverse input target\nEvents: 0" }
         setContentView(status)
-        Log.i(TAG, "INPUT_SESSION_TARGET_READY")
+        publishReadyTargetWhenLaidOut()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        Log.i(TAG, "INPUT_SESSION_TARGET_READY")
+        publishReadyTargetWhenLaidOut()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) publishReadyTargetWhenLaidOut()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -79,6 +86,7 @@ class InputSessionTargetActivity : Activity() {
 
     private fun observe(kind: String, detail: String) {
         val sequence = eventSequence.incrementAndGet()
+        InputSessionTargetProbeState.record(kind)
         status.text = "Warpnect reverse input target\nEvents: $sequence\n$kind"
         Log.i(
             TAG,
@@ -87,10 +95,93 @@ class InputSessionTargetActivity : Activity() {
         )
     }
 
+    private fun publishReadyTargetWhenLaidOut() {
+        status.post {
+            val bounds = Rect()
+            if (!status.getGlobalVisibleRect(bounds) || bounds.width() < 3 || bounds.height() < 3) {
+                return@post
+            }
+            val target = InputSessionTargetProbeState.TouchTarget(bounds.centerX(), bounds.centerY())
+            InputSessionTargetProbeState.markReady(target)
+            Log.i(TAG, "INPUT_SESSION_TARGET_READY x=${target.x} y=${target.y}")
+        }
+    }
+
     private fun targetDisplayId(): Int = window.decorView.display?.displayId ?: -1
 
     private companion object {
         const val TAG = "WarpnectInputSessionTarget"
         val eventSequence = AtomicLong()
+    }
+}
+
+/**
+ * In-process DEBUG observation bridge for bounded DirectShell Input smoke tests.
+ *
+ * It records event kinds only. It neither captures raw input nor participates in production input
+ * delivery.
+ */
+internal object InputSessionTargetProbeState {
+    data class TouchTarget(
+        val x: Int,
+        val y: Int,
+    )
+
+    private val lock = java.lang.Object()
+    private var activeGeneration = 0L
+    private var readyGeneration = 0L
+    private var touchTarget: TouchTarget? = null
+    private val eventKinds = linkedSetOf<String>()
+
+    fun begin(): Long = synchronized(lock) {
+        activeGeneration += 1L
+        readyGeneration = 0L
+        touchTarget = null
+        eventKinds.clear()
+        activeGeneration
+    }
+
+    fun markReady(target: TouchTarget) = synchronized(lock) {
+        if (activeGeneration > 0L) {
+            readyGeneration = activeGeneration
+            touchTarget = target
+            lock.notifyAll()
+        }
+    }
+
+    fun record(kind: String) = synchronized(lock) {
+        if (activeGeneration > 0L) {
+            eventKinds += kind
+            lock.notifyAll()
+        }
+    }
+
+    fun awaitReady(generation: Long, timeoutMillis: Long): Boolean = synchronized(lock) {
+        await(generation, timeoutMillis) { readyGeneration == generation }
+        readyGeneration == generation
+    }
+
+    fun awaitTouchTarget(generation: Long, timeoutMillis: Long): TouchTarget? = synchronized(lock) {
+        await(generation, timeoutMillis) { readyGeneration == generation && touchTarget != null }
+        touchTarget.takeIf { readyGeneration == generation }
+    }
+
+    fun awaitEvents(generation: Long, expected: Set<String>, timeoutMillis: Long): Set<String> = synchronized(lock) {
+        await(generation, timeoutMillis) { expected.all(eventKinds::contains) }
+        return expected - eventKinds
+    }
+
+    private fun await(generation: Long, timeoutMillis: Long, complete: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+        while (generation == activeGeneration && !complete()) {
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            if (remaining <= 0L) return
+            try {
+                lock.wait(remaining)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
     }
 }

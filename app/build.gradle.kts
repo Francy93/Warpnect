@@ -102,6 +102,13 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // DEBUG-only Wireless Debugging feasibility client. It is deliberately not a production
+    // runtime dependency while pairing, key storage, and lifecycle semantics are qualified.
+    debugImplementation("com.github.osservatorionessuno:libadb-android-bc:3.4.0")
+    debugImplementation("org.bouncycastle:bcpkix-jdk15to18:1.84")
+    // Keep the Startup provider's generated R class in the DEBUG APK. The transitive 1.1.1
+    // declaration is insufficient with this project's non-transitive R configuration.
+    debugImplementation("androidx.startup:startup-runtime:1.2.0")
 }
 
 /**

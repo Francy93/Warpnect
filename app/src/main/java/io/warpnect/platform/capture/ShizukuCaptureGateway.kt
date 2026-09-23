@@ -21,8 +21,8 @@ import io.warpnect.platform.capture.privileged.PrivilegedCaptureContract
 import io.warpnect.platform.capture.privileged.PrivilegedCaptureUserService
 import io.warpnect.platform.capture.privileged.toCaptureCapabilities
 import io.warpnect.platform.capture.privileged.toCaptureSessionSnapshot
+import io.warpnect.platform.privileged.awaitPrivilegedUserServiceStart
 import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
 import rikka.shizuku.Shizuku
 
 internal class ShizukuCaptureGateway(
@@ -174,7 +174,10 @@ internal class ShizukuCaptureGateway(
         if (shizukuReadiness() != CaptureError.None) {
             return null
         }
-        return suspendCancellableCoroutine { continuation ->
+        // Shizuku can remove a UserService that never publishes Binder without invoking this
+        // connection. A missing provider process must fail capture startup, never wedge Session
+        // control while the Host video sender is being prepared.
+        return awaitPrivilegedUserServiceStart(USER_SERVICE_START_TIMEOUT_MILLIS) { continuation ->
             val connection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName, service: IBinder) {
                     val captureService = IPrivilegedCaptureService.Stub.asInterface(service)
@@ -259,5 +262,8 @@ internal class ShizukuCaptureGateway(
 
     private companion object {
         const val SHIZUKU_PERMISSION_REQUEST_CODE = 20_020
+
+        // Matches Shizuku's UserServiceManager startup deadline and the audio gateway policy.
+        const val USER_SERVICE_START_TIMEOUT_MILLIS = 30_000L
     }
 }

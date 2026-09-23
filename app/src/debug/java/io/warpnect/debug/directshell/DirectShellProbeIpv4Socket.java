@@ -83,6 +83,26 @@ final class DirectShellProbeIpv4Socket implements AutoCloseable {
         return output;
     }
 
+    /**
+     * Waits for the next complete control request to begin without consuming any bytes.
+     *
+     * The normal request/response streams retain their short per-operation deadline. Session-owned
+     * control connections, however, may legitimately be quiet between remote input events; the
+     * server polls this method before it starts parsing a new frame so that quiet time is not
+     * mistaken for a dead peer.
+     */
+    boolean awaitReadable(int timeoutMillis) throws IOException {
+        try {
+            StructPollfd pollfd = new StructPollfd();
+            pollfd.fd = descriptor;
+            pollfd.events = (short) OsConstants.POLLIN;
+            int ready = Os.poll(new StructPollfd[] {pollfd}, timeoutMillis);
+            return ready != 0 && (pollfd.revents & OsConstants.POLLIN) != 0;
+        } catch (ErrnoException exception) {
+            throw asIOException("DirectShell probe socket read poll failed", exception);
+        }
+    }
+
     @Override
     public void close() throws IOException {
         if (!closed.compareAndSet(false, true)) return;

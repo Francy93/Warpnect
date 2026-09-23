@@ -19,6 +19,9 @@ enum class InputInjectionState {
 enum class InputInjectionBackend {
     None,
     ShizukuUserService,
+
+    /** Explicit DEBUG-only DirectShell execution path; it does not alter Input Payload V1. */
+    DirectShell,
 }
 
 /** Cold-path `/dev/uhid` availability only; RFC-004G does not create a virtual HID device. */

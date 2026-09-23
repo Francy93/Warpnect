@@ -81,6 +81,18 @@ enum class DiscoveryRouteStatus {
     Failed,
 }
 
+/**
+ * States whether the platform backend has an authoritative route-loss callback.
+ *
+ * A DNS-SD browser retains a service until it receives `onServiceLost`, so expiring that route
+ * merely because `onServiceFound` is not repeated would hide an active Host. Other backends keep
+ * the bounded silence expiry until they can provide equivalent lifecycle information.
+ */
+enum class DiscoveryRouteLiveness {
+    ExpireAfterSilence,
+    BackendTracksLoss,
+}
+
 enum class DiscoveryPresenceStatus {
     Usable,
     Unavailable,
@@ -215,6 +227,7 @@ data class DiscoveryRouteObservation(
     val kind: DiscoveryRouteKind,
     val advertisement: DiscoveryAdvertisement,
     val descriptor: DiscoveryRouteDescriptor,
+    val liveness: DiscoveryRouteLiveness = DiscoveryRouteLiveness.ExpireAfterSilence,
 )
 
 data class DiscoveredPresence(

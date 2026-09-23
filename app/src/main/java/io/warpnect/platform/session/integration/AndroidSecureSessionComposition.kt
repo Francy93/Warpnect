@@ -8,6 +8,7 @@ import android.net.Network
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import io.warpnect.CoreOrchestrator
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
@@ -24,9 +25,13 @@ import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
 import io.warpnect.platform.diagnostics.AndroidReportSupport
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
+import io.warpnect.platform.discovery.AndroidDiscoveryHostAlias
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
-import io.warpnect.platform.input.injection.AndroidInputInjectionController
+import io.warpnect.platform.input.injection.InputInjectionControllerSelector
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeRegistry
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.session.capability.AndroidCapabilityProbe
 import io.warpnect.platform.session.capability.AndroidCapabilityProbeSnapshot
 import io.warpnect.platform.session.capability.AndroidLocalCapabilityCollector
@@ -39,6 +44,7 @@ import io.warpnect.platform.session.identity.AndroidSessionIdentityFactory
 import io.warpnect.platform.session.lifecycle.AndroidLifecycleCandidateDatagramIo
 import io.warpnect.platform.session.lifecycle.AndroidNetworkPathMonitor
 import io.warpnect.platform.session.lifecycle.PreparedSessionMigrationAdapter
+import io.warpnect.platform.session.lifecycle.SerializedLifecyclePlatformCallbackDispatcher
 import io.warpnect.platform.session.pairing.AndroidDatagramPairingTransport
 import io.warpnect.platform.session.pairing.AndroidPairingController
 import io.warpnect.platform.session.pairing.AndroidPairingControllerFactory
@@ -115,6 +121,7 @@ import io.warpnect.session.integration.SecureSessionApplicationController
 import io.warpnect.session.integration.SecureSessionConnectRequest
 import io.warpnect.session.integration.SecureSessionConnectRequestFactory
 import io.warpnect.session.integration.SecureSessionCoordinator
+import io.warpnect.session.integration.SessionControlDispatcher
 import io.warpnect.session.integration.SessionLifecycleControllerProvider
 import io.warpnect.session.integration.SessionPipelineRuntime
 import io.warpnect.session.integration.SessionStartupDebugObserver
@@ -140,6 +147,8 @@ import io.warpnect.session.setup.AudioStreamPreference
 import io.warpnect.session.setup.HostSessionSetupPolicy
 import io.warpnect.session.setup.PathSocketBinding
 import io.warpnect.session.setup.PreparedSessionBootstrap
+import io.warpnect.session.setup.RecoveryConfigurationTemplate
+import io.warpnect.session.setup.SessionRecoveryPolicy
 import io.warpnect.session.setup.SessionSetupController
 import io.warpnect.session.setup.SessionSetupDebugObserver
 import io.warpnect.session.setup.SessionSetupPreferences
@@ -187,13 +196,31 @@ class AndroidSecureSessionComposition private constructor(
 ) : AutoCloseable {
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
-        controlScheduler.dispatch { applicationController.startHost() }
+        controlScheduler.dispatch {
+            val runtime = PrivilegedRuntimeRegistry.acquireForHost()
+            if (!runtime.ready) {
+                uiResources.publishHostRuntimeUnavailable(runtime)
+                Log.w(
+                    TAG,
+                    "PRIVILEGED_RUNTIME_HOST_BLOCKED kind=${runtime.kind} " +
+                        "phase=${runtime.phase} failure=${runtime.failure} detail=${runtime.detail}",
+                )
+                return@dispatch
+            }
+            applicationController.startHost()
+        }
+    }
+
+    /** Host shutdown remains serialized with Session teardown; DirectShell releases on readiness stop. */
+    fun stopHostFromUi() {
+        controlScheduler.dispatch { applicationController.stopHost() }
     }
 
     override fun close() {
         reportExportController.close()
         controlScheduler.close()
         applicationController.close()
+        PrivilegedRuntimeRegistry.releaseForHost()
         hostRegistry.close()
         directPathBackend?.close()
         coreOrchestrator.shutdown()
@@ -201,6 +228,9 @@ class AndroidSecureSessionComposition private constructor(
     }
 
     companion object {
+        private const val TAG = "WarpnectPrivilegedRuntime"
+        private const val VIDEO_RETRANSMISSION_CACHE_SLOTS = 64
+
         fun create(context: Context): AndroidSecureSessionComposition? = runCatching {
             Factory(context.applicationContext).create()
         }.getOrNull()
@@ -255,6 +285,7 @@ class AndroidSecureSessionComposition private constructor(
                 mode = DiscoveryMode.AdvertiseOnly,
                 backendPolicy = DiscoveryBackendPolicy.DirectAndLan,
                 offeredRole = SessionRole.Host,
+                displayAlias = AndroidDiscoveryHostAlias.from(context),
             ),
             availabilityProvider = SessionManagerHostAvailabilityProvider(sessionManager),
         )
@@ -380,6 +411,21 @@ class AndroidSecureSessionComposition private constructor(
                     discoveryDebugLog.audioPipelineReceiverRuntime(snapshot)
                 }
             },
+            object : InputPipelineRuntimeDebugObserver {
+                override val enabled: Boolean
+                    get() = discoveryDebugLog.isEnabled
+
+                override fun onSenderSnapshot(snapshot: io.warpnect.input.session.ReverseInputSenderSessionSnapshot) {
+                    discoveryDebugLog.inputPipelineSenderRuntime(snapshot)
+                }
+
+                override fun onReceiverSnapshot(
+                    snapshot: io.warpnect.input.session.ReverseInputReceiverSessionSnapshot,
+                    config: io.warpnect.input.session.ReverseInputReceiverSessionConfig,
+                ) {
+                    discoveryDebugLog.inputPipelineReceiverRuntime(snapshot, config)
+                }
+            },
         )
 
         fun create(): AndroidSecureSessionComposition {
@@ -468,7 +514,12 @@ class AndroidSecureSessionComposition private constructor(
 
             val lifecycleFactory = ControllerManagedLifecycleSessionFactory(
                 SessionLifecycleControllerProvider { bootstrap, pipeline, listener ->
-                    lifecycleController(bootstrap, pipeline, listener) { record, generation ->
+                    lifecycleController(
+                        bootstrap = bootstrap,
+                        pipeline = pipeline,
+                        listener = listener,
+                        controlDispatcher = controlScheduler,
+                    ) { record, generation ->
                         if (bootstrap.localRole == SessionRole.Client) {
                             client.beginReconnect(record, generation)
                         } else {
@@ -528,7 +579,7 @@ class AndroidSecureSessionComposition private constructor(
                     sessionSetupRuntime(bootstrap, null)
                 },
                 capabilityPolicy = productionHostCapabilityPolicy(),
-                setupPolicy = HostSessionSetupPolicy(productionSetupPreferences()),
+                setupPolicy = productionHostSetupPolicy(),
                 onPrepared = { bootstrap -> host.acceptPreparedHostSession(bootstrap) },
                 prepareHostCapabilities = {
                     discoveryDebugLog.capabilityCollection("Host", "snapshot", "preparing")
@@ -547,6 +598,8 @@ class AndroidSecureSessionComposition private constructor(
                 onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
                 onHostReadinessStopped = {
                     localCapabilityCollector.clearPreparedHost()
+                    PrivilegedRuntimeRegistry.releaseForHost()
+                    uiResources.clearHostCapability()
                     discoveryDebugLog.hostLifecycleStopped()
                 },
             )
@@ -703,7 +756,7 @@ class AndroidSecureSessionComposition private constructor(
                 }
                 val injection = if (role == SessionRole.Host) {
                     measureCapabilityCollection(role, "input_injection") {
-                        AndroidInputInjectionController(context).let { controller ->
+                        InputInjectionControllerSelector.create(context).let { controller ->
                             try {
                                 runBlocking { controller.queryCapabilities() }
                             } finally {
@@ -844,7 +897,7 @@ class AndroidSecureSessionComposition private constructor(
                 config.inputKinds and (CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE) != 0
             },
             inputInjectionAvailable = { config ->
-                val controller = AndroidInputInjectionController(context)
+                val controller = InputInjectionControllerSelector.create(context)
                 try {
                     val capabilities = runBlocking { controller.queryCapabilities() }
                     capabilities.serviceAvailable &&
@@ -859,6 +912,7 @@ class AndroidSecureSessionComposition private constructor(
             bootstrap: PreparedSessionBootstrap,
             pipeline: SessionPipelineRuntime,
             listener: io.warpnect.session.integration.SessionLifecycleRuntimeListener,
+            controlDispatcher: SessionControlDispatcher,
             reconnect: (
                 io.warpnect.session.lifecycle.RecoverableSessionRecord,
                 io.warpnect.session.SessionGeneration,
@@ -973,6 +1027,11 @@ class AndroidSecureSessionComposition private constructor(
                 clock = AndroidSessionMonotonicClock(),
             )
             controllerReference.set(controller)
+            val platformCallbacks = SerializedLifecyclePlatformCallbackDispatcher(
+                controlDispatcher = controlDispatcher,
+                handlePathLoss = controller::onPlatformPathLoss,
+                handlePathAvailable = controller::onPlatformPathAvailable,
+            )
             val directPathIds = (listOf(bootstrap.activePath) + listOfNotNull(bootstrap.standbyPath))
                 .filter { it.kind == io.warpnect.session.NetworkPathKind.Direct }
                 .map { it.pathId }
@@ -980,9 +1039,9 @@ class AndroidSecureSessionComposition private constructor(
                 directGroupObserver = directPathBackend?.observeGroupState { formed ->
                     directPathIds.forEach { pathId ->
                         if (formed) {
-                            controller.onPlatformPathAvailable(pathId)
+                            platformCallbacks.pathAvailable(pathId)
                         } else {
-                            controller.onPlatformPathLoss(pathId, hard = true)
+                            platformCallbacks.pathLoss(pathId, hardLoss = true)
                         }
                     }
                 }
@@ -995,8 +1054,8 @@ class AndroidSecureSessionComposition private constructor(
                     AndroidNetworkPathMonitor(
                         connectivityManager = manager,
                         callbackHandler = networkCallbackHandler,
-                        dispatch = controller::onPlatformPathLoss,
-                        onAvailable = controller::onPlatformPathAvailable,
+                        dispatch = platformCallbacks::pathLoss,
+                        onAvailable = platformCallbacks::pathAvailable,
                     ).also { monitor -> lanPathIds.forEach { (pathId, network) -> monitor.register(pathId, network) } }
                 }
             }
@@ -1075,6 +1134,21 @@ class AndroidSecureSessionComposition private constructor(
             ),
         )
 
+        /**
+         * Video NACK is negotiated as a required recovery feature. The sender therefore needs a
+         * bounded cache large enough for the receiver's negotiated recovery window rather than
+         * the one-slot no-policy fallback.
+         */
+        private fun productionHostSetupPolicy(): HostSessionSetupPolicy = HostSessionSetupPolicy(
+            streamPreferences = productionSetupPreferences(),
+            recoveryPolicy = SessionRecoveryPolicy(
+                video = RecoveryConfigurationTemplate(
+                    recoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,
+                    retransmissionCacheSlots = VIDEO_RETRANSMISSION_CACHE_SLOTS,
+                ),
+            ),
+        )
+
         private fun capabilityBits(capabilities: io.warpnect.input.injection.InputInjectionCapabilities): Int =
             (if (capabilities.keyInjectionSupported) CapabilityBits.INPUT_KEYBOARD else 0) or
                 (if (capabilities.pointerInjectionSupported) CapabilityBits.INPUT_MOUSE else 0) or
@@ -1130,6 +1204,16 @@ class AndroidSessionUiResources(
                 }
             }
         }
+    }
+
+    /** Replaces a preflight spinner with a concise, recoverable Host-runtime outcome. */
+    fun publishHostRuntimeUnavailable(runtime: PrivilegedRuntimeSnapshot) {
+        _hostCapability.value = DeviceRoleCapability.Unavailable(hostRuntimeFailureMessage(runtime.failure))
+    }
+
+    /** Host capability evidence is scoped to the currently acquired privileged runtime. */
+    fun clearHostCapability() {
+        _hostCapability.value = DeviceRoleCapability.NotChecked
     }
 
     fun attachClientRenderSurface(renderSurface: WarpnectVideoSurfaceView) {
@@ -1199,6 +1283,31 @@ sealed interface DeviceRoleCapability {
     data object Available : DeviceRoleCapability
     data class SetupRequired(val message: String) : DeviceRoleCapability
     data class Unavailable(val message: String) : DeviceRoleCapability
+}
+
+internal fun hostRuntimeFailureMessage(failure: PrivilegedRuntimeFailure): String = when (failure) {
+    PrivilegedRuntimeFailure.DIRECTSHELL_WIRELESS_DEBUGGING_DISABLED ->
+        "Host setup required: enable Wireless debugging"
+    PrivilegedRuntimeFailure.DIRECTSHELL_NOT_PAIRED ->
+        "Host setup required: pair Wireless debugging"
+    PrivilegedRuntimeFailure.DIRECTSHELL_CONNECT_FAILED ->
+        "Host unavailable: Wireless debugging connection failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_ARTIFACT_INVALID ->
+        "Host unavailable: DirectShell artifact verification failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_LAUNCH_FAILED ->
+        "Host unavailable: DirectShell launch failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_IDENTITY_INVALID ->
+        "Host unavailable: DirectShell identity check failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_AUTHENTICATION_FAILED ->
+        "Host unavailable: DirectShell authentication failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED ->
+        "Host unavailable: DirectShell feature qualification failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_NOT_ARMED,
+    PrivilegedRuntimeFailure.DIRECTSHELL_RUNTIME_RELEASED,
+    PrivilegedRuntimeFailure.ROOT_NOT_IMPLEMENTED,
+    PrivilegedRuntimeFailure.SHIZUKU_LEGACY_FALLBACK,
+    PrivilegedRuntimeFailure.NONE,
+    -> "Host unavailable: privileged runtime is not ready"
 }
 
 /** Keeps only the selected ephemeral RFC-005B Direct locator for the current Client attempt. */

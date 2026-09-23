@@ -72,7 +72,22 @@ final class DirectShellProbeProtocol {
         INPUT_POINTER(63),
         INPUT_RESET(64),
         GET_INPUT_DIAGNOSTICS(65),
-        INPUT_JOYSTICK(66);
+        INPUT_JOYSTICK(66),
+        INPUT_SESSION_CAPABILITIES(67),
+        INPUT_SESSION_PREPARE(68),
+        INPUT_SESSION_START(69),
+        INPUT_SESSION_KEY(70),
+        INPUT_SESSION_TOUCH(71),
+        INPUT_SESSION_POINTER(72),
+        INPUT_SESSION_JOYSTICK(73),
+        INPUT_SESSION_RESET(74),
+        INPUT_SESSION_STOP(75),
+        INPUT_SESSION_SNAPSHOT(76),
+        VIDEO_QUALIFY(80),
+        VIDEO_START(81),
+        VIDEO_UPDATE(82),
+        VIDEO_STOP(83),
+        GET_VIDEO_DIAGNOSTICS(84);
 
         final int code;
 

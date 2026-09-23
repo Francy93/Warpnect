@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <application>
+        <!-- Registers a lazy DirectShell factory; no shell process is launched at app startup. -->
+        <provider
+            android:name=".debug.directshell.DirectShellRuntimeAutoRegistrationProvider"
+            android:authorities="${applicationId}.directshell.runtime"
+            android:exported="false"
+            android:initOrder="100" />
         <!-- Debug-only owned target used to inspect the Shizuku UserService framework API surface. -->
         <activity
             android:name=".debug.input.InputApiForensicsActivity"
@@ -30,6 +38,15 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:noHistory="true" />
+        <!-- DEBUG-only user-consented Wireless Debugging / self-ADB bootstrap feasibility UI. -->
+        <activity
+            android:name=".debug.directshell.DirectShellSelfBootstrapProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
+        <service
+            android:name=".debug.directshell.DirectShellSelfBootstrapPairingService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- DEBUG-only normal-app controller for the isolated shell REMOTE_SUBMIX probe. -->
         <activity
             android:name=".debug.directshell.DirectShellSystemAudioProbeActivity"
@@ -53,6 +70,11 @@
             android:name=".debug.directshell.DirectShellPcmRingProbeContentProvider"
             android:authorities="io.warpnect.debug.directshell.pcmringprobe"
             android:exported="true" />
+        <!-- DEBUG-only shell-gated Surface handoff for the DirectShell display-capture probe. -->
+        <provider
+            android:name=".debug.directshell.DirectShellVideoCaptureProbeContentProvider"
+            android:authorities="io.warpnect.debug.directshell.videocaptureprobe"
+            android:exported="true" />
         <!-- DEBUG-only non-UI command surface so sampling does not interrupt the tone activity. -->
         <receiver
             android:name=".debug.directshell.DirectShellSystemAudioProbeReceiver"
@@ -69,6 +91,23 @@
         <receiver
             android:name=".debug.directshell.DirectShellInputProbeReceiver"
             android:exported="true" />
+        <!-- DEBUG-only Host Session source switch for the DirectShell privileged Input spike. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellInputSessionIntegrationReceiver"
+            android:exported="true" />
+        <!-- DEBUG-only normal-process control surface for the DirectShell display-capture probe. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellVideoCaptureProbeReceiver"
+            android:exported="true" />
+        <!-- DEBUG-only Host Session source switch for the DirectShell display-capture spike. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellVideoSessionIntegrationReceiver"
+            android:exported="true" />
+        <!-- DEBUG-only visual fixture; it deliberately has no audio behavior. -->
+        <activity
+            android:name=".debug.directshell.DirectShellVideoCaptureProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTop" />
         <!-- Debug-only, non-privileged target for end-to-end reverse-input validation. -->
         <activity
             android:name=".debug.input.InputSessionTargetActivity"

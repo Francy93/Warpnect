@@ -253,6 +253,42 @@ class LocalDiscoveryControllerTest {
     }
 
     @Test
+    fun backendTrackedLanRouteRemainsUntilTheBackendSignalsServiceLost() {
+        val clock = TestClock()
+        val lan = FakeBackend(DiscoveryRouteKind.Lan)
+        val publishedPresenceCounts = mutableListOf<Int>()
+        val controller = controller(
+            config = DiscoveryConfig(
+                mode = DiscoveryMode.BrowseOnly,
+                backendPolicy = DiscoveryBackendPolicy.LanOnly,
+                presenceStaleAfterMs = 30_000L,
+                expiryCheckIntervalMs = 5_000L,
+            ),
+            backends = listOf(lan),
+            clock = clock,
+            publishedPresenceCounts = publishedPresenceCounts,
+        )
+        controller.start()
+        lan.emit(
+            advertisement = remoteAdvertisement(presence(33uL)),
+            descriptor = lanDescriptor("10.0.0.7", 40_005),
+            key = "lan",
+            liveness = DiscoveryRouteLiveness.BackendTracksLoss,
+        )
+
+        clock.nowMs = 30_000L
+        controller.expireStaleRoutes()
+
+        assertEquals(1, controller.snapshot().candidateCount)
+        assertEquals(0L, controller.snapshot().expiredRoutes)
+
+        lan.lose("lan")
+
+        assertEquals(0, controller.snapshot().candidateCount)
+        assertEquals(listOf(1, 0), publishedPresenceCounts)
+    }
+
+    @Test
     fun presenceCacheRejectsNewCandidatesAtItsFixedCapacity() {
         val lan = FakeBackend(DiscoveryRouteKind.Lan)
         val controller = controller(
@@ -513,12 +549,14 @@ class LocalDiscoveryControllerTest {
         ),
         clock: TestClock = TestClock(),
         presenceIds: DiscoveryPresenceIdGenerator = SequencePresenceIdGenerator(presence(1_000uL)),
+        publishedPresenceCounts: MutableList<Int>? = null,
     ): DefaultLocalDiscoveryController = DefaultLocalDiscoveryController(
         config = config,
         backends = backends,
         contactEndpointLeaseFactory = FakeLeaseFactory(),
         clock = clock,
         presenceIdGenerator = presenceIds,
+        onPresenceCountChanged = publishedPresenceCounts?.let { counts -> { count -> counts += count } },
     )
 
     private fun remoteAdvertisement(
@@ -614,10 +652,11 @@ class LocalDiscoveryControllerTest {
             descriptor: DiscoveryRouteDescriptor,
             key: String,
             generation: Long = requireNotNull(browseGeneration),
+            liveness: DiscoveryRouteLiveness = DiscoveryRouteLiveness.ExpireAfterSilence,
         ) {
             observer.onRouteObserved(
                 generation,
-                DiscoveryRouteObservation(key, kind, advertisement, descriptor),
+                DiscoveryRouteObservation(key, kind, advertisement, descriptor, liveness),
             )
         }
 

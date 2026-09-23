@@ -14,8 +14,10 @@ import io.warpnect.diagnostics.DiagnosticEventWriter
 import io.warpnect.diagnostics.DiagnosticReason
 import io.warpnect.input.session.ReverseInputReceiverSessionConfig
 import io.warpnect.input.session.ReverseInputReceiverSessionController
+import io.warpnect.input.session.ReverseInputReceiverSessionSnapshot
 import io.warpnect.input.session.ReverseInputSenderSessionConfig
 import io.warpnect.input.session.ReverseInputSenderSessionController
+import io.warpnect.input.session.ReverseInputSenderSessionSnapshot
 import io.warpnect.input.transport.InputReceiverConfig
 import io.warpnect.input.transport.InputTransportConfig
 import io.warpnect.platform.audio.transport.NativeSclAudioReceiverController
@@ -170,6 +172,24 @@ interface AudioPipelineRuntimeDebugObserver {
     }
 }
 
+/**
+ * Bounded, DEBUG-only snapshots of the reverse-Input pipeline. These expose only local
+ * transport counters and negotiated ports, never input contents or peer addresses.
+ */
+interface InputPipelineRuntimeDebugObserver {
+    val enabled: Boolean
+        get() = false
+
+    fun onSenderSnapshot(snapshot: ReverseInputSenderSessionSnapshot) = Unit
+
+    fun onReceiverSnapshot(snapshot: ReverseInputReceiverSessionSnapshot, config: ReverseInputReceiverSessionConfig) =
+        Unit
+
+    companion object {
+        val None = object : InputPipelineRuntimeDebugObserver {}
+    }
+}
+
 /** Development-only video-start outcome. It retains fixed error enums and no media or Session data. */
 fun interface VideoPipelineStartDebugObserver {
     fun onEvent(event: VideoPipelineStartDebugEvent)
@@ -233,6 +253,7 @@ class AndroidSessionPipelineFactory(
     private val videoTransportDebugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
     private val videoRuntimeDebugObserver: VideoPipelineRuntimeDebugObserver = VideoPipelineRuntimeDebugObserver.None,
     private val audioRuntimeDebugObserver: AudioPipelineRuntimeDebugObserver = AudioPipelineRuntimeDebugObserver.None,
+    private val inputRuntimeDebugObserver: InputPipelineRuntimeDebugObserver = InputPipelineRuntimeDebugObserver.None,
 ) : SessionPipelineFactory {
     override fun create(bootstrap: PreparedSessionBootstrap): SessionPipelineFactoryResult {
         if (bootstrap.isClosed()) return SessionPipelineFactoryResult(SecureSessionIntegrationError.Closed)
@@ -492,7 +513,7 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         transport.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    InputSenderComponent(pipeline, networkTelemetry)
+                    InputSenderComponent(pipeline, networkTelemetry, inputRuntimeDebugObserver)
                 }
             }
         } else {
@@ -522,7 +543,12 @@ class AndroidSessionPipelineFactory(
                     channel.adoptLiveTransport { lease, remoteAddress, remotePort ->
                         receiver.rebindLiveTransport(lease, remoteAddress, remotePort)
                     }
-                    InputReceiverComponent(pipeline, networkTelemetry, diagnosticWriter(bootstrap, channel))
+                    InputReceiverComponent(
+                        pipeline,
+                        networkTelemetry,
+                        diagnosticWriter(bootstrap, channel),
+                        inputRuntimeDebugObserver,
+                    )
                 }
             }
         }
@@ -838,21 +864,29 @@ private class AudioPipelineRuntimeDebugSampler(
 private class InputSenderComponent(
     private val pipeline: AndroidInputSenderPipeline,
     private val networkTelemetry: AutoCloseable?,
+    runtimeDebugObserver: InputPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = InputPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onSenderSnapshot(pipeline.controller.snapshot())
+    }
+
     override val name = "input-sender"
     override val phase = SessionPipelineStartPhase.PhysicalSource
     override val channelKinds = setOf(SessionChannelKind.Input)
     override fun start(): SessionPipelineComponentResult {
         val started = pipeline.controller.start(pipeline.surface, pipeline.config).isSuccess
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(
             if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.InputPipelineStartFailed,
         )
     }
     override fun stop() {
+        runtimeSampler.close()
         pipeline.controller.stop()
     }
     override fun onInputSafetyReset() = pipeline.onInputSafetyReset()
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
@@ -863,7 +897,12 @@ private class InputReceiverComponent(
     private val pipeline: AndroidInputReceiverPipeline,
     private val networkTelemetry: AutoCloseable?,
     private val diagnostics: DiagnosticEventWriter?,
+    runtimeDebugObserver: InputPipelineRuntimeDebugObserver,
 ) : SessionPipelineComponent {
+    private val runtimeSampler = InputPipelineRuntimeDebugSampler(runtimeDebugObserver) {
+        runtimeDebugObserver.onReceiverSnapshot(pipeline.controller.snapshot(), pipeline.config)
+    }
+
     override val name = "input-receiver"
     override val phase = SessionPipelineStartPhase.InboundTransport
     override val channelKinds = setOf(SessionChannelKind.Input)
@@ -876,18 +915,58 @@ private class InputReceiverComponent(
                 DiagnosticEventIds.InputInjectionServiceLost
             },
         )
+        if (started) runtimeSampler.start()
         return SessionPipelineComponentResult(
             if (started) SecureSessionIntegrationError.None else SecureSessionIntegrationError.InputPipelineStartFailed,
         )
     }
     override fun stop() {
+        runtimeSampler.close()
         pipeline.controller.stop()
     }
     override fun onInputSafetyReset() = pipeline.onInputSafetyReset()
     override fun close() {
+        runtimeSampler.close()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
+    }
+}
+
+/** Runs only for debuggable builds and samples local Input counters at a low fixed cadence. */
+private class InputPipelineRuntimeDebugSampler(
+    private val observer: InputPipelineRuntimeDebugObserver,
+    private val sample: () -> Unit,
+) : AutoCloseable {
+    private val lock = Any()
+    private var executor: ScheduledExecutorService? = null
+
+    fun start() {
+        if (!observer.enabled) return
+        synchronized(lock) {
+            if (executor != null) return
+            executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "warpnect-input-runtime-debug").apply { isDaemon = true }
+            }.also { scheduler ->
+                scheduler.scheduleAtFixedRate(
+                    { runCatching(sample) },
+                    0L,
+                    RUNTIME_SAMPLE_INTERVAL_SECONDS,
+                    TimeUnit.SECONDS,
+                )
+            }
+        }
+    }
+
+    override fun close() {
+        synchronized(lock) {
+            executor?.shutdownNow()
+            executor = null
+        }
+    }
+
+    private companion object {
+        const val RUNTIME_SAMPLE_INTERVAL_SECONDS = 5L
     }
 }
 

@@ -21,6 +21,7 @@ import io.warpnect.session.discovery.DiscoveryOpaqueRouteLocator
 import io.warpnect.session.discovery.DiscoveryPresenceSchema
 import io.warpnect.session.discovery.DiscoveryRouteDescriptor
 import io.warpnect.session.discovery.DiscoveryRouteKind
+import io.warpnect.session.discovery.DiscoveryRouteLiveness
 import io.warpnect.session.discovery.DiscoveryRouteObservation
 import io.warpnect.session.discovery.isValidPort
 import java.net.InetAddress
@@ -48,7 +49,7 @@ class AndroidLanNsdDiscoveryBackend(
     private var observer: DiscoveryBackendObserver? = null
     private var registration: Registration? = null
     private var discovery: Discovery? = null
-    private val pendingResolutions = linkedMapOf<String, NsdManager.ResolveListener>()
+    private val resolutionQueue = SerializedServiceResolutionQueue<PendingResolution>(MAX_PENDING_RESOLUTIONS)
     private val lanNetworksByRouteKey = mutableMapOf<String, Network?>()
 
     override fun prepare(observer: DiscoveryBackendObserver): DiscoveryBackendCommandResult {
@@ -241,7 +242,7 @@ class AndroidLanNsdDiscoveryBackend(
                 dispatchToControl {
                     if (discovery?.controllerGeneration == controllerGeneration) {
                         val serviceKey = serviceKey(serviceInfo)
-                        stopPendingResolution(serviceKey)
+                        cancelResolution(serviceKey)
                         lanNetworksByRouteKey.keys
                             .filter { it.startsWith("$serviceKey|") }
                             .toList()
@@ -276,7 +277,7 @@ class AndroidLanNsdDiscoveryBackend(
     override fun stopBrowsing(controllerGeneration: Long) {
         val active = discovery ?: return
         discovery = null
-        pendingResolutions.keys.toList().forEach(::stopPendingResolution)
+        cancelAllResolutions()
         lanNetworksByRouteKey.clear()
         try {
             nsdManager?.stopServiceDiscovery(active.listener)
@@ -290,62 +291,117 @@ class AndroidLanNsdDiscoveryBackend(
     override fun close() {
         registration?.let { stopAdvertising(it.request.controllerGeneration, it.request.advertisementGeneration) }
         discovery?.let { stopBrowsing(it.controllerGeneration) }
-        pendingResolutions.keys.toList().forEach(::stopPendingResolution)
+        cancelAllResolutions()
         lanNetworksByRouteKey.clear()
         multicastLock.close()
         observer = null
     }
 
     private fun resolveService(controllerGeneration: Long, serviceInfo: NsdServiceInfo) {
-        val manager = nsdManager ?: return
         val serviceKey = serviceKey(serviceInfo)
-        if (serviceKey in pendingResolutions) return
-        if (pendingResolutions.size >= MAX_PENDING_RESOLUTIONS) {
-            observer?.onRouteCapacityDropped(controllerGeneration, kind)
-            return
+        when (
+            val result = resolutionQueue.enqueue(
+                serviceKey,
+                PendingResolution(controllerGeneration, serviceKey, serviceInfo),
+            )
+        ) {
+            is SerializedServiceResolutionQueue.EnqueueResult.Start -> startResolution(result.work)
+            SerializedServiceResolutionQueue.EnqueueResult.CapacityReached ->
+                observer?.onRouteCapacityDropped(controllerGeneration, kind)
+            SerializedServiceResolutionQueue.EnqueueResult.Duplicate,
+            SerializedServiceResolutionQueue.EnqueueResult.Queued,
+            -> Unit
         }
+    }
+
+    private fun startResolution(work: SerializedServiceResolutionQueue.Work<PendingResolution>) {
+        val manager = nsdManager ?: return
+        val pending = work.value
         val listener = object : NsdManager.ResolveListener {
             override fun onResolveFailed(failedServiceInfo: NsdServiceInfo, errorCode: Int) {
                 dispatchToControl {
-                    debugLog.event(
-                        kind,
-                        "resolve_failed",
-                        DiscoveryError.ResolutionFailed,
-                        errorCode,
-                    )
-                    pendingResolutions.remove(serviceKey)
-                    if (discovery?.controllerGeneration == controllerGeneration) {
-                        observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.ResolutionFailed)
+                    finishResolution(work) {
+                        debugLog.event(
+                            kind,
+                            "resolve_failed",
+                            DiscoveryError.ResolutionFailed,
+                            errorCode,
+                        )
+                        if (discovery?.controllerGeneration == pending.controllerGeneration) {
+                            observer?.onBackendDiagnostic(
+                                pending.controllerGeneration,
+                                kind,
+                                DiscoveryError.ResolutionFailed,
+                            )
+                        }
                     }
                 }
             }
 
             override fun onServiceResolved(resolvedServiceInfo: NsdServiceInfo) {
                 dispatchToControl {
-                    debugLog.event(kind, "resolve_succeeded")
-                    pendingResolutions.remove(serviceKey)
-                    if (discovery?.controllerGeneration == controllerGeneration) {
-                        publishResolvedService(controllerGeneration, serviceKey, resolvedServiceInfo)
+                    finishResolution(work) {
+                        debugLog.event(kind, "resolve_succeeded")
+                        if (discovery?.controllerGeneration == pending.controllerGeneration) {
+                            publishResolvedService(
+                                pending.controllerGeneration,
+                                pending.serviceKey,
+                                resolvedServiceInfo,
+                            )
+                        }
                     }
                 }
             }
+
+            override fun onResolutionStopped(serviceInfo: NsdServiceInfo) {
+                dispatchToControl { finishResolution(work) }
+            }
+
+            override fun onStopResolutionFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                dispatchToControl { finishResolution(work) }
+            }
         }
-        pendingResolutions[serviceKey] = listener
+        pending.listener = listener
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                manager.resolveService(serviceInfo, controlExecutor, listener)
+                manager.resolveService(pending.serviceInfo, controlExecutor, listener)
             } else {
-                manager.resolveService(serviceInfo, listener)
+                manager.resolveService(pending.serviceInfo, listener)
             }
         } catch (_: SecurityException) {
-            pendingResolutions.remove(serviceKey)
-            debugLog.event(kind, "resolve_failed", DiscoveryError.LanPermissionDenied)
-            observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.LanPermissionDenied)
+            finishResolution(work) {
+                debugLog.event(kind, "resolve_failed", DiscoveryError.LanPermissionDenied)
+                if (discovery?.controllerGeneration == pending.controllerGeneration) {
+                    observer?.onBackendDiagnostic(
+                        pending.controllerGeneration,
+                        kind,
+                        DiscoveryError.LanPermissionDenied,
+                    )
+                }
+            }
         } catch (_: IllegalArgumentException) {
-            pendingResolutions.remove(serviceKey)
-            debugLog.event(kind, "resolve_failed", DiscoveryError.ResolutionFailed)
-            observer?.onBackendDiagnostic(controllerGeneration, kind, DiscoveryError.ResolutionFailed)
+            finishResolution(work) {
+                debugLog.event(kind, "resolve_failed", DiscoveryError.ResolutionFailed)
+                if (discovery?.controllerGeneration == pending.controllerGeneration) {
+                    observer?.onBackendDiagnostic(
+                        pending.controllerGeneration,
+                        kind,
+                        DiscoveryError.ResolutionFailed,
+                    )
+                }
+            }
         }
+    }
+
+    private fun finishResolution(
+        work: SerializedServiceResolutionQueue.Work<PendingResolution>,
+        onCurrentResolution: () -> Unit = {},
+    ) {
+        if (!resolutionQueue.isActive(work)) return
+        val cancelled = work.cancelled
+        val next = resolutionQueue.complete(work)
+        if (!cancelled) onCurrentResolution()
+        next?.let(::startResolution)
     }
 
     private fun publishResolvedService(controllerGeneration: Long, serviceKey: String, serviceInfo: NsdServiceInfo) {
@@ -395,17 +451,29 @@ class AndroidLanNsdDiscoveryBackend(
                     port = port,
                     networkLocator = network?.let { DiscoveryOpaqueRouteLocator("lan:$routeKey") },
                 ),
+                liveness = DiscoveryRouteLiveness.BackendTracksLoss,
             ),
         )
     }
 
-    private fun stopPendingResolution(serviceKey: String) {
-        val listener = pendingResolutions.remove(serviceKey) ?: return
+    private fun cancelResolution(serviceKey: String) {
+        val cancellation = resolutionQueue.cancel(serviceKey)
+        if (cancellation !is SerializedServiceResolutionQueue.Cancellation.Active) return
+        stopActiveResolutionIfSupported(cancellation.work)
+    }
+
+    private fun cancelAllResolutions() {
+        resolutionQueue.cancelAll()?.let(::stopActiveResolutionIfSupported)
+    }
+
+    private fun stopActiveResolutionIfSupported(work: SerializedServiceResolutionQueue.Work<PendingResolution>) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        val listener = work.value.listener ?: return
         try {
             nsdManager?.stopServiceResolution(listener)
         } catch (_: IllegalArgumentException) {
-            // Resolution may already have completed before a service-lost callback.
+            // The framework no longer owns this operation, so the serialized slot can advance.
+            finishResolution(work)
         }
     }
 
@@ -433,6 +501,13 @@ class AndroidLanNsdDiscoveryBackend(
     private data class Discovery(
         val controllerGeneration: Long,
         val listener: NsdManager.DiscoveryListener,
+    )
+
+    private data class PendingResolution(
+        val controllerGeneration: Long,
+        val serviceKey: String,
+        val serviceInfo: NsdServiceInfo,
+        var listener: NsdManager.ResolveListener? = null,
     )
 
     companion object {

@@ -175,6 +175,10 @@ class AndroidInputInjectionController private constructor(
     }
 
     internal companion object {
+        fun fromGatewayFactory(
+            gatewayFactory: ((() -> Unit) -> PrivilegedInputInjectionGateway),
+        ): AndroidInputInjectionController = AndroidInputInjectionController(gatewayFactory)
+
         fun forTesting(gateway: PrivilegedInputInjectionGateway): AndroidInputInjectionController =
             AndroidInputInjectionController { gateway }
     }

@@ -51,7 +51,9 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
     private static final String TAG = "WarpnectDirectShellRing";
     private static final long DEFAULT_IDLE_TIMEOUT_MILLIS = 45_000L;
     private static final long MIN_IDLE_TIMEOUT_MILLIS = 5_000L;
-    private static final long MAX_IDLE_TIMEOUT_MILLIS = 90_000L;
+    // A Host-owned feature server may remain inactive between Sessions, but must not outlive
+    // the bounded DirectShell Host runtime lease.
+    private static final long MAX_IDLE_TIMEOUT_MILLIS = 900_000L;
     private static final int CONTROL_ACCEPT_TIMEOUT_MILLIS = 250;
 
     private WarpnectPrivilegedPcmSharedRingProbeServer() {}
@@ -1064,6 +1066,7 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         static ServerArguments parse(String[] args) {
             int port = -1;
             String encodedSecret = null;
+            String secretFile = null;
             long generationId = -1L;
             long idleTimeoutMillis = DEFAULT_IDLE_TIMEOUT_MILLIS;
             for (int index = 0; index < args.length; index++) {
@@ -1072,6 +1075,8 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                     port = Integer.parseInt(requireValue(args, ++index, argument));
                 } else if ("--secret-base64".equals(argument)) {
                     encodedSecret = requireValue(args, ++index, argument);
+                } else if ("--secret-file".equals(argument)) {
+                    secretFile = requireValue(args, ++index, argument);
                 } else if ("--generation".equals(argument)) {
                     generationId = Long.parseLong(requireValue(args, ++index, argument));
                 } else if ("--idle-timeout-ms".equals(argument)) {
@@ -1086,11 +1091,15 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 throw new IllegalArgumentException("invalid_idle_timeout");
             }
             try {
+                if ((encodedSecret == null) == (secretFile == null)) {
+                    throw new IllegalArgumentException("invalid_secret_source");
+                }
+                byte[] rawSecret = encodedSecret != null
+                        ? Base64.getUrlDecoder().decode(encodedSecret)
+                        : DirectShellSecretFile.readAndDelete(secretFile);
                 return new ServerArguments(
                         port,
-                        DirectShellProbeProtocol.requireSecret(Base64.getUrlDecoder().decode(
-                                encodedSecret == null ? "" : encodedSecret
-                        )),
+                        DirectShellProbeProtocol.requireSecret(rawSecret),
                         generationId,
                         idleTimeoutMillis
                 );

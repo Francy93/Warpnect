@@ -31,7 +31,7 @@ import io.warpnect.platform.audio.transport.NativeSclAudioTransportController
 import io.warpnect.platform.capture.AndroidVideoCaptureController
 import io.warpnect.platform.input.capture.AndroidInputCaptureController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
-import io.warpnect.platform.input.injection.AndroidInputInjectionController
+import io.warpnect.platform.input.injection.InputInjectionControllerSelector
 import io.warpnect.platform.input.mapping.AndroidTargetDisplayGeometryProvider
 import io.warpnect.platform.input.mapping.AndroidTargetInputDeviceResolver
 import io.warpnect.platform.input.mapping.AndroidTargetInputMapper
@@ -288,7 +288,7 @@ class DefaultAndroidSessionPipelineBindings(
         receiver: NativeSclInputReceiverController,
         telemetry: InputReceiverTelemetry,
     ): AndroidInputReceiverPipeline {
-        val injection = AndroidInputInjectionController(appContext)
+        val injection = InputInjectionControllerSelector.create(appContext)
         val mapper = AndroidTargetInputMapper(
             injectionController = injection,
             displayGeometryProvider = AndroidTargetDisplayGeometryProvider(appContext),

@@ -293,6 +293,7 @@ public final class WarpnectPrivilegedServer {
         static ServerArguments parse(String[] args) {
             int port = -1;
             String encodedSecret = null;
+            String secretFile = null;
             String declaredPackage = "io.warpnect";
             long idleTimeoutMillis = DEFAULT_IDLE_TIMEOUT_MILLIS;
             for (int index = 0; index < args.length; index++) {
@@ -301,6 +302,8 @@ public final class WarpnectPrivilegedServer {
                     port = Integer.parseInt(requireValue(args, ++index, argument));
                 } else if ("--secret-base64".equals(argument)) {
                     encodedSecret = requireValue(args, ++index, argument);
+                } else if ("--secret-file".equals(argument)) {
+                    secretFile = requireValue(args, ++index, argument);
                 } else if ("--declared-package".equals(argument)) {
                     declaredPackage = requireValue(args, ++index, argument);
                 } else if ("--idle-timeout-ms".equals(argument)) {
@@ -318,8 +321,13 @@ public final class WarpnectPrivilegedServer {
             if (idleTimeoutMillis < MIN_IDLE_TIMEOUT_MILLIS || idleTimeoutMillis > MAX_IDLE_TIMEOUT_MILLIS) {
                 throw new IllegalArgumentException("invalid_idle_timeout");
             }
+            if ((encodedSecret == null) == (secretFile == null)) {
+                throw new IllegalArgumentException("invalid_secret_source");
+            }
             try {
-                byte[] secret = Base64.getUrlDecoder().decode(encodedSecret == null ? "" : encodedSecret);
+                byte[] secret = encodedSecret != null
+                        ? Base64.getUrlDecoder().decode(encodedSecret)
+                        : readSecretFile(secretFile);
                 return new ServerArguments(
                         port,
                         DirectShellProbeProtocol.requireSecret(secret),
@@ -329,6 +337,10 @@ public final class WarpnectPrivilegedServer {
             } catch (IllegalArgumentException exception) {
                 throw new IllegalArgumentException("invalid_secret");
             }
+        }
+
+        private static byte[] readSecretFile(String path) {
+            return DirectShellSecretFile.readAndDelete(path);
         }
 
         private static String requireValue(String[] args, int index, String argument) {

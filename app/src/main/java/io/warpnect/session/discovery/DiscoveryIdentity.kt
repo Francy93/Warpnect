@@ -79,7 +79,10 @@ value class DiscoveryOpaqueRouteLocator internal constructor(
     override fun toString(): String = "DiscoveryOpaqueRouteLocator"
 }
 
-/** Presentation metadata only. It is never identity and is not derived from the Android device name. */
+/**
+ * Presentation metadata only. It may reflect a locally configured Android device name, but is
+ * never identity, authentication, or authorization input.
+ */
 @ConsistentCopyVisibility
 data class DiscoveryDisplayAlias private constructor(
     val value: String,

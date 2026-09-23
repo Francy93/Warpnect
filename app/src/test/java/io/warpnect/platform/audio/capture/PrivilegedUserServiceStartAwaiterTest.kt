@@ -1,5 +1,6 @@
 package io.warpnect.platform.audio.capture
 
+import io.warpnect.platform.privileged.awaitPrivilegedUserServiceStart
 import kotlin.coroutines.resume
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

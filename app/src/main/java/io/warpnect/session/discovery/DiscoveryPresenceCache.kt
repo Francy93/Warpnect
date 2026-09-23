@@ -93,6 +93,7 @@ class DiscoveryPresenceCache(
             token = routeToken,
             descriptor = observation.descriptor,
             lastSeenMonotonicMs = nowMonotonicMs,
+            liveness = observation.liveness,
         )
         presence.routes[observation.kind] = route
         routesByBackendKey[backendKey] = RouteOwner(presence.id, observation.kind)
@@ -112,7 +113,8 @@ class DiscoveryPresenceCache(
         var expired = 0
         presences.values.toList().forEach { presence ->
             presence.routes.values.toList().forEach { route ->
-                if (nowMonotonicMs >= route.lastSeenMonotonicMs &&
+                if (route.liveness == DiscoveryRouteLiveness.ExpireAfterSilence &&
+                    nowMonotonicMs >= route.lastSeenMonotonicMs &&
                     nowMonotonicMs - route.lastSeenMonotonicMs >= staleAfterMs
                 ) {
                     if (removeRouteLocked(presence.id, route.descriptor.kind, route.backendKey)) {
@@ -211,6 +213,7 @@ class DiscoveryPresenceCache(
         val token: DiscoveryRouteToken,
         val descriptor: DiscoveryRouteDescriptor,
         val lastSeenMonotonicMs: Long,
+        val liveness: DiscoveryRouteLiveness,
     )
 
     private class MutablePresence(
