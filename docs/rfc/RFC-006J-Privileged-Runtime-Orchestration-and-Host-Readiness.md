@@ -2,11 +2,15 @@
 
 ## Status
 
-Designed / Accepted Architecture.
+Accepted architecture. Step 1 is implemented, JVM-tested, and hardware
+validated on A41/API31 and Tablet/API33.
 
-This RFC defines the future orchestration layer above RFC-006I. It does not
-implement runtime discovery, background readiness, DirectRoot, remediation,
-same-provider recovery, or live provider migration.
+The implemented slice supplies volatile runtime-state observation,
+asynchronous background Host readiness, single-flight Host preparation,
+generation-safe invalidation, structured readiness UI state, and late reuse of
+the existing RFC-006I admission/freeze boundary. It does not implement
+DirectRoot, root-assisted remediation, same-provider recovery, or live provider
+migration.
 
 ## Purpose
 
@@ -64,9 +68,12 @@ provider after every application launch.
 on each Android environment, and the protocol/lifecycle requirements for live
 provider migration have not been implemented or hardware-qualified.
 
-**PROPOSAL:** The discovery, readiness, remediation, prepared-plan, and
-same-provider recovery concepts below are the intended architecture for future
-work. They are not current production behavior.
+**FACT:** Step 1 now implements passive discovery, volatile state publication,
+and single-flight readiness ownership. Its active Host path delegates to the
+existing RFC-006I admission and frozen-plan boundary.
+
+**PROPOSAL:** Remediation, same-provider recovery, and live provider migration
+remain future work. They are not current product behavior.
 
 ## Terms
 
@@ -99,15 +106,16 @@ VolatileRuntimeStateSnapshot
         -> Session health and future recovery boundary
 ```
 
-`PrivilegedRuntimeResolver` remains the existing acquisition seam until the
-future coordinator is implemented. The coordinator must feed RFC-006I rather
-than replace its matrix, planner, ownership, or freeze rules.
+`PrivilegedRuntimeResolver` remains the acquisition seam. Step 1 adds a
+coordinator above it: passive observation never acquires a provider, while a
+user Host request re-observes volatile assumptions and delegates to the
+existing RFC-006I admission, matrix, planner, ownership, and freeze rules.
 
 ## Runtime Discovery
 
-A future `PrivilegedRuntimeDiscovery` observes the state of each candidate
-without needlessly starting every provider. It reports separate dimensions
-where they are meaningful:
+Step 1 implements bounded passive observation of each candidate without
+needlessly starting every provider. It reports separate dimensions where they
+are meaningful:
 
 ```text
 installed
@@ -156,10 +164,11 @@ be derived outside the core state model.
 
 ## Runtime State Model
 
-The internal state model must distinguish provider reality from user-facing
-readiness. A future snapshot should contain per-provider state, reason,
-generation, observation time, relevant cache dimensions, and non-sensitive
-evidence references.
+The internal state model distinguishes provider reality from user-facing
+readiness. Step 1 provides `PrivilegedRuntimeAvailabilityState`,
+`PrivilegedRuntimeFailureReason`, `PrivilegedRuntimeAvailability`, and immutable
+`PrivilegedRuntimeStateSnapshot` types. A snapshot contains per-provider state,
+reason, generation, observation time, and non-sensitive detail.
 
 Suggested internal states are:
 
@@ -180,32 +189,36 @@ already published or that a Session may use an unfrozen provider assignment.
 
 ## Background Host Readiness
 
-Normal application startup must make the UI usable immediately. Background
-readiness begins independently and must not sit on the main startup critical
-path:
+Normal application startup makes the UI usable immediately. Step 1 starts one
+asynchronous, passive readiness generation after session composition is ready;
+it never sits on the main startup critical path:
 
 ```text
 app start
   -> UI usable immediately
   -> one asynchronous readiness generation
-       -> load and validate persistent evidence
        -> observe cheap volatile runtime state
        -> classify obvious unsupported or user-action states
-       -> safely qualify only stale and necessary capabilities
-       -> build a prepared matrix and prepared plan when possible
+       -> publish stale evidence when a complete current plan is not already available
 ```
 
-Background work may load evidence, inspect Android/build identity, inspect
-known authorization state, observe Wireless Debugging state, observe the ADB
-endpoint, inspect Shizuku Binder state, and classify platform support. It must
-not unnecessarily retain DirectShell feature servers, Warpnect Shizuku
-UserServices, display mirrors, AudioRecords, input state, or media pipelines
-while the user has not requested Host mode.
+The Android implementation passively observes API level, explicit Wireless
+Debugging disablement, the existing DirectShell runtime snapshot, and Shizuku
+Binder access state. DirectRoot is reported as `NOT_IMPLEMENTED`. It does not
+connect local ADB, launch `app_process`, start a DirectShell feature server, or
+start a Warpnect Shizuku UserService while Host is not requested.
 
-Expensive qualification is allowed only when it is stale, necessary, bounded,
-safe to run without surprising the user, and has a defined cleanup path. A
-normal application launch must not start Root, DirectShell, and Shizuku merely
-to benchmark every capability.
+Existing lower-level compatibility evidence remains owned by the existing
+admission path and is reused there when its cache dimensions remain valid. Step
+1 deliberately does not create a new global persisted complete-plan cache. A
+passive observation without a trustworthy complete plan therefore publishes
+`STALE`, not a fabricated `READY` result.
+
+When the user requests Host, the same generation is upgraded to the existing
+acquisition/admission path. That late path performs bounded qualification,
+selects the RFC-006I plan, and publishes `READY` only with
+`FROZEN_AT_HOST_ADMISSION`. It must release resources if the generation becomes
+stale or Host startup is abandoned.
 
 ## Single-Flight and Generation Ownership
 
@@ -235,6 +248,12 @@ key plus provider, capability, Warpnect/provider implementation version, Android
 build, and artifact identity where applicable. Volatile state must carry an
 observation time and must not be promoted into a timeless compatibility claim.
 
+Step 1 preserves this ownership boundary. It does not introduce a second
+compatibility cache: `AndroidHostPrivilegedCapabilityAdmission` retains the
+existing evidence/cache behavior when active Host admission needs it. The new
+snapshot is volatile-only and `HostReadinessEvidenceSource` records whether a
+visible plan came from existing compatible evidence or current Host admission.
+
 Relevant invalidation events include:
 
 ```text
@@ -256,6 +275,13 @@ continuous polling or discard unrelated qualification evidence.
 A prepared plan may be computed in the background from a current matrix. It is
 advisory and carries the readiness generation and evidence provenance. It may
 be invalidated at any time before Host admission.
+
+In Step 1, no new globally persisted complete-plan cache exists. Passive startup
+therefore produces a `STALE` observation unless a future implementation can
+prove a current complete plan from valid evidence. The active Host request is
+the late admission boundary and publishes `PreparedPrivilegedCapabilityPlan`
+with `CURRENT_HOST_ADMISSION` and `FROZEN_AT_HOST_ADMISSION` only after the
+existing RFC-006I admission succeeds.
 
 At `Enable Host`, the required sequence is:
 
@@ -358,6 +384,12 @@ Successful readiness advances to ordinary Host admission. Meaningful failure
 or user action must remain visible until dismissed or resolved. Client mode
 remains available whenever Host is not.
 
+Step 1 presents the preparation surface only after a user requests Host. It
+maps `CHECKING` to a non-dismissible preparation state, briefly presents
+`READY`, and leaves authorization, user-action, unsupported, and failed results
+visible until dismissed. Dismissing the surface changes presentation only; it
+does not erase the underlying runtime state.
+
 ## Session Health and Future Recovery
 
 The plan remains frozen for a Session. This RFC introduces no live substitution
@@ -394,7 +426,8 @@ The orchestration design preserves:
 
 ## Telemetry
 
-Future bounded diagnostics should include names such as:
+Step 1 emits a bounded, non-sensitive `HOST_READINESS_STATE` diagnostic with
+state and generation. Future diagnostics may add names such as:
 
 ```text
 host_readiness_generation
@@ -412,33 +445,41 @@ host_plan_frozen
 They must remain generation-scoped and non-sensitive. They do not imply a new
 network protocol or diagnostic persistence policy.
 
-## Future Acceptance Criteria
+## Step 1 Verification
 
-The first implementation following this RFC must demonstrate:
+The implemented slice demonstrates:
 
 1. application UI startup stays non-blocking;
 2. one shared readiness operation serves both background observation and
    `Enable Host`;
 3. stale generations cannot publish over newer invalidations;
-4. valid evidence is reused only for matching cache dimensions;
+4. volatile observation is kept distinct from the existing compatibility
+   evidence/cache ownership;
 5. Host is never advertised before late revalidation and RFC-006I plan freeze;
 6. `USER_ACTION_REQUIRED`, unsupported, and failed states are distinguishable;
 7. no background operation leaks feature servers, capture, audio, input state,
    secrets, or provider helpers; and
 8. existing Session behavior and all frozen protocols remain unchanged.
 
-Future test layers should include pure state-model tests, cache/invalidation
-tests, single-flight and generation tests, fake provider discovery tests, UI
-state tests, lifecycle cleanup tests, and later hardware validation. A future
-DirectRoot remediation test is explicitly out of scope until DirectRoot exists.
+The JVM suite covers asynchronous startup, single flight, Host joining an
+in-flight observation, stale-generation suppression, disabled Wireless
+Debugging, API26 DirectShell unsupported state, DirectRoot not implemented,
+healthy DirectShell without Shizuku admission, staged Shizuku qualification,
+resource release, and UI presentation semantics.
+
+On Tablet/API33 and A41/API31, a passive app launch completed without a
+DirectShell launch or Shizuku UserService. User Host admission selected a
+single DirectShell plan, deferred Shizuku, reached Host Available, and released
+all three DirectShell feature servers on Host disable. Tablet re-acquisition
+also produced one readiness generation and one runtime acquisition under a
+double Host action. No deliberate audio tone or Session was required for this
+lifecycle validation.
 
 ## Non-Goals
 
 This RFC does not implement:
 
 * DirectRoot or root command execution;
-* runtime discovery or a runtime state store;
-* background Host readiness;
 * automatic Wireless Debugging or Shizuku startup/recovery;
 * root-assisted remediation;
 * same-provider runtime recovery;
@@ -449,17 +490,19 @@ This RFC does not implement:
 ## Implementation Status
 
 ```text
-Background Host Readiness: DESIGNED, NOT IMPLEMENTED
-Root-assisted Remediation: DESIGNED, NOT IMPLEMENTED
+Runtime State Model: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
+Background Host Readiness: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
+Root-assisted Remediation: NOT IMPLEMENTED
 DirectRoot: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
-Same-provider Recovery: DESIGNED, NOT IMPLEMENTED
+Same-provider Recovery: NOT IMPLEMENTED
 Live Provider Migration: NOT IMPLEMENTED
 ```
 
 ## Next Implementation Step
 
-The smallest coherent follow-up is a `RuntimeStateModel` plus
-`BackgroundHostReadinessCoordinator` with discovery, cache validation,
-single-flight generation ownership, and truthful UI state publication. It must
-not include DirectRoot remediation, automatic provider recovery, or live
-migration.
+DirectRoot Bootstrap + Root Recovery Authority Foundation.
+
+That work must not be inferred from Step 1: it will require an explicit root
+authorization and command boundary, a separate capability provider contract,
+and a separately reviewed remediation authority. Same-provider recovery and
+live provider migration remain out of scope.

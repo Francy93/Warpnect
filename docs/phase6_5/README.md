@@ -6,6 +6,15 @@ The validated modern DirectShell Host baseline is:
 
     DIRECTSHELL_PRODUCTION_RUNTIME_INTEGRATION_VALIDATED
 
+RFC-006J Step 1 is also complete for its bounded scope:
+
+    BACKGROUND_HOST_READINESS_AND_RUNTIME_STATE_VALIDATED
+
+It adds a volatile runtime-state model, passive asynchronous Host-readiness
+observation, single-flight Host preparation, generation-safe invalidation, and
+structured Host-preparation UI. It does not make DirectRoot, remediation,
+same-provider recovery, or live provider migration available.
+
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
 not a declaration that DirectShell is the release default or that Shizuku can
@@ -80,18 +89,17 @@ Completed:
   before Host availability or discovery.
 * Optional Shizuku per-capability qualification and controlled A41-to-S9
   composite-plan validation: DirectShell Video/SystemAudio plus Shizuku Input.
+* RFC-006J Step 1 runtime-state observation and background Host readiness:
+  passive app startup, single-flight Host admission, structured readiness UI,
+  generation-safe cleanup, and late RFC-006I plan freeze.
 
 Next architecture milestones:
 
-1. RFC-006J - Privileged Runtime Orchestration and Host Readiness [accepted
-   architecture; implementation planned].
-2. Implement the Runtime State Model and Background Host Readiness Coordinator
-   without DirectRoot remediation or live provider migration.
-3. Implement and qualify DirectRoot separately.
-4. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
-5. Implement and hardware-validate provider migration only after that RFC is
+1. DirectRoot Bootstrap + Root Recovery Authority Foundation.
+2. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
+3. Implement and hardware-validate provider migration only after that RFC is
    accepted.
-6. Perform final privileged-runtime acceptance across modern, compatibility,
+4. Perform final privileged-runtime acceptance across modern, compatibility,
    and future DirectRoot paths.
 
 The static planner is JVM-validated and current-build Host-admission validated
@@ -103,6 +111,18 @@ real Shizuku Input provider and human S9-to-A41 touch injection. No new audible
 audio result is claimed. An S7/API26 control truthfully reports the DirectShell Android 11+ platform
 requirement without a shell launch or Shizuku fallback; its Host-only run leaves
 Client mode unblocked rather than asserting a separately executed Client probe.
+
+The RFC-006J Step 1 hardware lifecycle proof is deliberately narrower than a
+media Session: passive launch on A41/API31 and Tablet/API33 left the UI usable,
+did not launch a DirectShell server or Shizuku UserService, and settled with
+volatile `STALE` evidence when no complete current plan was cached. A user Host
+request then performed the existing late admission, froze the all-DirectShell
+`SINGLE` plan, reached Host Available, and released the runtime on disable.
+Tablet double Host actions produced one readiness generation and one runtime
+acquisition. No deliberate audio tone was used.
+
+Deferred by RFC-006J Step 1: Root-assisted Remediation, DirectRoot,
+Same-provider Recovery, and Live Provider Migration are all NOT IMPLEMENTED.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain
 jointly required for Host availability.

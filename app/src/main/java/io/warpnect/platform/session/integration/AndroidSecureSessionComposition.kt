@@ -31,10 +31,14 @@ import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.InputInjectionControllerSelector
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
-import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
+import io.warpnect.platform.privileged.readiness.AndroidHostReadinessWork
+import io.warpnect.platform.privileged.readiness.BackgroundHostReadinessCoordinator
+import io.warpnect.platform.privileged.readiness.HostReadinessDispatcher
+import io.warpnect.platform.privileged.readiness.HostReadinessState
+import io.warpnect.platform.privileged.readiness.HostReadinessUiState
+import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeFailureReason
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
-import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.session.capability.AndroidCapabilityProbe
 import io.warpnect.platform.session.capability.AndroidCapabilityProbeSnapshot
@@ -198,37 +202,30 @@ class AndroidSecureSessionComposition private constructor(
     private val controlScheduler: AndroidSessionControlScheduler,
     private val directPathBackend: AndroidDirectPathBackend?,
     private val hostPrivilegedAdmission: AndroidHostPrivilegedCapabilityAdmission,
+    private val hostReadinessCoordinator: BackgroundHostReadinessCoordinator,
 ) : AutoCloseable {
+    internal val hostReadinessUiState: StateFlow<HostReadinessUiState>
+        get() = hostReadinessCoordinator.uiState
+
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
-        controlScheduler.dispatch {
-            val runtime = PrivilegedRuntimeRegistry.acquireForHost()
-            if (!runtime.ready) {
-                val unavailable = hostPrivilegedAdmission.unavailableFromRuntime(runtime)
-                uiResources.publishHostRuntimeUnavailable(runtime)
-                Log.w(
-                    TAG,
-                    "PRIVILEGED_RUNTIME_HOST_BLOCKED kind=${runtime.kind} " +
-                        "phase=${runtime.phase} failure=${runtime.failure} detail=${runtime.detail} " +
-                        "missing=${unavailable.incompatible.missingCapabilities.joinToString()}",
-                )
-                return@dispatch
-            }
-            when (val admission = hostPrivilegedAdmission.prepare(runtime)) {
-                is AndroidHostPrivilegedCapabilityAdmissionResult.Admitted -> {
-                    uiResources.publishHostPlanAdmitted()
-                    val start = applicationController.startHost()
-                    if (!start.isSuccess) {
-                        hostPrivilegedAdmission.release()
-                        uiResources.clearHostCapability()
-                    }
-                }
-
-                is AndroidHostPrivilegedCapabilityAdmissionResult.Unavailable -> {
-                    uiResources.publishHostPlanUnavailable(hostPlanFailureMessage(admission.incompatible))
-                }
+        hostReadinessCoordinator.requestHostPreparation {
+            uiResources.publishHostPlanAdmitted()
+            val start = applicationController.startHost()
+            if (!start.isSuccess) {
+                hostReadinessCoordinator.abandonPreparedHost()
+                uiResources.clearHostCapability()
             }
         }
+    }
+
+    /** Background observation starts after composition construction and never waits for UI startup. */
+    private fun startBackgroundHostReadiness() {
+        hostReadinessCoordinator.startBackgroundReadiness()
+    }
+
+    internal fun dismissHostReadinessNotice() {
+        hostReadinessCoordinator.dismissHostActionState()
     }
 
     /** Host shutdown remains serialized with Session teardown; DirectShell releases on readiness stop. */
@@ -238,6 +235,7 @@ class AndroidSecureSessionComposition private constructor(
 
     override fun close() {
         reportExportController.close()
+        hostReadinessCoordinator.close()
         controlScheduler.close()
         applicationController.close()
         hostPrivilegedAdmission.close()
@@ -479,6 +477,14 @@ class AndroidSecureSessionComposition private constructor(
                     )
                 },
             )
+            val hostReadinessCoordinator = BackgroundHostReadinessCoordinator(
+                dispatcher = HostReadinessDispatcher(controlScheduler::dispatch),
+                work = AndroidHostReadinessWork(context, hostPrivilegedAdmission),
+                onStateChanged = { state ->
+                    uiResources.publishHostReadinessState(state)
+                    Log.i(TAG, "HOST_READINESS_STATE ${hostReadinessLogFields(state)}")
+                },
+            )
 
             val clientDriver = ControllerBackedClientSessionPhaseDriver(
                 discovery = clientDiscovery,
@@ -628,7 +634,8 @@ class AndroidSecureSessionComposition private constructor(
                 },
                 onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
                 onHostReadinessStopped = {
-                    hostPrivilegedAdmission.release()
+                    // The readiness coordinator owns the admitted plan and releases it once.
+                    hostReadinessCoordinator.invalidate()
                     uiResources.clearHostCapability()
                     discoveryDebugLog.hostLifecycleStopped()
                 },
@@ -677,7 +684,10 @@ class AndroidSecureSessionComposition private constructor(
                 controlScheduler,
                 directPathBackend,
                 hostPrivilegedAdmission,
-            )
+                hostReadinessCoordinator,
+            ).also { composition ->
+                composition.startBackgroundHostReadiness()
+            }
         }
 
         private fun clientSecureControlFactory(): io.warpnect.session.integration.SecureSessionControlTransportFactory =
@@ -1241,6 +1251,33 @@ class AndroidSessionUiResources(
         }
     }
 
+    /** Presents RFC-006J orchestration state without collapsing it into capability evidence. */
+    internal fun publishHostReadinessState(state: HostReadinessState) {
+        _hostCapability.value = when (state) {
+            HostReadinessState.NotStarted,
+            is HostReadinessState.Stale,
+            -> DeviceRoleCapability.NotChecked
+
+            is HostReadinessState.Checking -> DeviceRoleCapability.Checking
+            is HostReadinessState.Ready -> DeviceRoleCapability.Available
+            is HostReadinessState.AuthorizationRequired -> DeviceRoleCapability.SetupRequired(
+                hostReadinessFailureMessage(state.reason),
+            )
+
+            is HostReadinessState.UserActionRequired -> DeviceRoleCapability.SetupRequired(
+                hostReadinessFailureMessage(state.reason),
+            )
+
+            is HostReadinessState.Unsupported -> DeviceRoleCapability.Unavailable(
+                hostReadinessFailureMessage(state.reason),
+            )
+
+            is HostReadinessState.Failed -> DeviceRoleCapability.Unavailable(
+                hostReadinessFailureMessage(state.reason),
+            )
+        }
+    }
+
     fun publishRoleCapability(
         role: SessionRole,
         videoAvailable: Boolean,
@@ -1384,6 +1421,50 @@ internal fun hostRuntimeFailureMessage(failure: PrivilegedRuntimeFailure): Strin
     PrivilegedRuntimeFailure.SHIZUKU_LEGACY_FALLBACK,
     PrivilegedRuntimeFailure.NONE,
     -> "Host unavailable: privileged runtime is not ready"
+}
+
+internal fun hostReadinessFailureMessage(reason: PrivilegedRuntimeFailureReason): String = when (reason) {
+    PrivilegedRuntimeFailureReason.WIRELESS_DEBUGGING_DISABLED ->
+        "Host setup required: enable Wireless debugging"
+    PrivilegedRuntimeFailureReason.WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE ->
+        "Host unavailable: Wireless debugging endpoint is unavailable"
+    PrivilegedRuntimeFailureReason.ADB_PAIRING_REQUIRED ->
+        "Host setup required: pair Wireless debugging"
+    PrivilegedRuntimeFailureReason.ADB_AUTH_FAILED ->
+        "Host setup required: renew Wireless debugging authorization"
+    PrivilegedRuntimeFailureReason.SHIZUKU_SERVER_STOPPED ->
+        "Host unavailable: Shizuku server is stopped"
+    PrivilegedRuntimeFailureReason.SHIZUKU_AUTHORIZATION_REQUIRED ->
+        "Host setup required: authorize Shizuku"
+    PrivilegedRuntimeFailureReason.PLATFORM_UNSUPPORTED ->
+        "Host unavailable: privileged runtime is unsupported on this platform"
+    PrivilegedRuntimeFailureReason.PROVIDER_BOOTSTRAP_FAILED ->
+        "Host unavailable: privileged runtime preparation failed"
+    PrivilegedRuntimeFailureReason.UNKNOWN ->
+        "Host unavailable: privileged runtime state is unknown"
+}
+
+/** Concise, non-sensitive state evidence for asynchronous Host readiness diagnostics. */
+internal fun hostReadinessLogFields(state: HostReadinessState): String = when (state) {
+    HostReadinessState.NotStarted -> "state=NOT_STARTED"
+    is HostReadinessState.Checking -> "state=CHECKING generation=${state.generation} phase=${state.phase}"
+    is HostReadinessState.Ready -> {
+        val plan = state.prepared.plan
+        "state=READY generation=${state.prepared.generation} shape=${plan.shape} " +
+            "providers=${plan.participatingProviders.joinToString()} " +
+            "commit=${state.prepared.commitState} evidence=${state.prepared.evidenceSource}"
+    }
+
+    is HostReadinessState.AuthorizationRequired ->
+        "state=AUTHORIZATION_REQUIRED generation=${state.generation} reason=${state.reason}"
+    is HostReadinessState.UserActionRequired ->
+        "state=USER_ACTION_REQUIRED generation=${state.generation} reason=${state.reason}"
+    is HostReadinessState.Unsupported ->
+        "state=UNSUPPORTED generation=${state.generation} reason=${state.reason}"
+    is HostReadinessState.Failed ->
+        "state=FAILED generation=${state.generation} reason=${state.reason}"
+    is HostReadinessState.Stale ->
+        "state=STALE generation=${state.generation} evidence=${state.evidenceSource}"
 }
 
 internal fun hostPlanFailureMessage(result: PrivilegedCapabilityPlanResult.HostIncompatible): String {

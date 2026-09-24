@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -32,7 +33,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
+import io.warpnect.platform.privileged.readiness.HostReadinessPhase
+import io.warpnect.platform.privileged.readiness.HostReadinessState
+import io.warpnect.platform.privileged.readiness.HostReadinessUiState
+import io.warpnect.platform.privileged.readiness.generationOrNull
 import io.warpnect.platform.session.integration.DeviceRoleCapability
+import io.warpnect.platform.session.integration.hostReadinessFailureMessage
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
 import io.warpnect.session.SessionRole
 import io.warpnect.session.discovery.DiscoveredPresence
@@ -42,10 +48,11 @@ import io.warpnect.session.integration.SecureSessionApplicationController
 import io.warpnect.session.integration.SecureSessionApplicationSnapshot
 import io.warpnect.session.integration.SecureSessionCoordinatorState
 import io.warpnect.session.integration.SecureSessionIntegrationError
+import kotlinx.coroutines.delay
 
 /** Minimal RFC-005I product surface. No manual IP address or UDP-port values are accepted here. */
 @Composable
-fun SecureSessionScreen(
+internal fun SecureSessionScreen(
     controller: SecureSessionApplicationController,
     onEnableHost: () -> Unit,
     onDisableHost: () -> Unit,
@@ -55,6 +62,8 @@ fun SecureSessionScreen(
     clientVideoStreaming: Boolean,
     clientCapability: DeviceRoleCapability,
     hostCapability: DeviceRoleCapability,
+    hostReadinessUiState: HostReadinessUiState,
+    onDismissHostReadiness: () -> Unit,
     onClientRenderSurfaceAttached: (WarpnectVideoSurfaceView) -> Unit,
     onClientRenderSurfaceDetached: (WarpnectVideoSurfaceView) -> Unit,
     onClientInputSurfaceAttached: (WarpnectInputCaptureView) -> Unit,
@@ -71,6 +80,7 @@ fun SecureSessionScreen(
     val clientVideoSurfaceVisible = shouldComposeClientVideoSurface(uiModel.activeRole, clientVideoRendererBound)
     val context = LocalContext.current
     val discoveryDebugLog = remember(context) { AndroidDiscoveryDebugLog(context) }
+    val hostPreparationPresentation = hostReadinessPresentation(hostReadinessUiState)
 
     LaunchedEffect(uiModel.hostCount) {
         discoveryDebugLog.uiStateReceived(uiModel.hostCount)
@@ -81,6 +91,19 @@ fun SecureSessionScreen(
 
     BackHandler(enabled = cancellableClientDiscovery) {
         controller.cancelClientDiscovery()
+    }
+
+    hostPreparationPresentation?.let { presentation ->
+        if (presentation.autoDismiss) {
+            LaunchedEffect(hostReadinessUiState.readiness.generationOrNull) {
+                delay(HOST_READY_NOTICE_DURATION_MS)
+                onDismissHostReadiness()
+            }
+        }
+        HostReadinessDialog(
+            presentation = presentation,
+            onDismiss = onDismissHostReadiness,
+        )
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -112,7 +135,11 @@ fun SecureSessionScreen(
                 if (uiModel.activeRole == SessionRole.Host) {
                     Button(onClick = onDisableHost) { Text("Disable Host") }
                 } else {
-                    Button(onClick = onEnableHost) { Text("Enable Host") }
+                    Button(
+                        onClick = onEnableHost,
+                        enabled = !hostReadinessUiState.hostActionVisible ||
+                            hostPreparationPresentation?.dismissible == true,
+                    ) { Text("Enable Host") }
                 }
                 OutlinedButton(onClick = onFindHosts) {
                     Text("Find Hosts")
@@ -162,6 +189,82 @@ fun SecureSessionScreen(
         }
     }
 }
+
+internal data class HostReadinessPresentation(
+    val title: String,
+    val detail: String,
+    val dismissible: Boolean,
+    val autoDismiss: Boolean = false,
+)
+
+/** Pure mapping from structured orchestration state to the minimal Host-preparation surface. */
+internal fun hostReadinessPresentation(state: HostReadinessUiState): HostReadinessPresentation? {
+    if (!state.hostActionVisible) return null
+    return when (val readiness = state.readiness) {
+        HostReadinessState.NotStarted,
+        is HostReadinessState.Stale,
+        -> null
+
+        is HostReadinessState.Checking -> HostReadinessPresentation(
+            title = "Preparing Host",
+            detail = when (readiness.phase) {
+                HostReadinessPhase.CHECKING_DEVICE -> "Checking device..."
+                HostReadinessPhase.CHECKING_PRIVILEGED_RUNTIME -> "Checking privileged runtime..."
+                HostReadinessPhase.PREPARING_HOST -> "Preparing Host..."
+            },
+            dismissible = false,
+        )
+
+        is HostReadinessState.Ready -> HostReadinessPresentation(
+            title = "Host ready",
+            detail = "Host capabilities are ready.",
+            dismissible = false,
+            autoDismiss = true,
+        )
+
+        is HostReadinessState.AuthorizationRequired -> HostReadinessPresentation(
+            title = "Host setup required",
+            detail = hostReadinessFailureMessage(readiness.reason),
+            dismissible = true,
+        )
+
+        is HostReadinessState.UserActionRequired -> HostReadinessPresentation(
+            title = "Host setup required",
+            detail = hostReadinessFailureMessage(readiness.reason),
+            dismissible = true,
+        )
+
+        is HostReadinessState.Unsupported -> HostReadinessPresentation(
+            title = "Host mode unavailable",
+            detail = hostReadinessFailureMessage(readiness.reason),
+            dismissible = true,
+        )
+
+        is HostReadinessState.Failed -> HostReadinessPresentation(
+            title = "Host mode unavailable",
+            detail = hostReadinessFailureMessage(readiness.reason),
+            dismissible = true,
+        )
+    }
+}
+
+@Composable
+private fun HostReadinessDialog(presentation: HostReadinessPresentation, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {
+            if (presentation.dismissible) onDismiss()
+        },
+        title = { Text(presentation.title) },
+        text = { Text(presentation.detail) },
+        confirmButton = {
+            if (presentation.dismissible) {
+                Button(onClick = onDismiss) { Text("Dismiss") }
+            }
+        },
+    )
+}
+
+private const val HOST_READY_NOTICE_DURATION_MS = 1_000L
 
 internal fun roleCapabilityText(capability: DeviceRoleCapability): String = when (capability) {
     DeviceRoleCapability.NotChecked -> "Not checked"

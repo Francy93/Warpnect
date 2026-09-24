@@ -276,9 +276,10 @@ real Android/hardware validation remains separately tracked because no device wa
 ## Phase 6.5 - Privileged Runtime Evolution
 
 Status: validated DirectShell modern Host baseline; static per-capability
-planning and the optional Shizuku provider integration are implemented,
-JVM-tested, and hardware-admission validated on the currently tested
-A41/API31 and Tablet/API33 DirectShell Hosts.
+planning, optional Shizuku provider integration, and RFC-006J Step 1 runtime
+state/background Host readiness are implemented, JVM-tested, and
+hardware-admission validated on the currently tested A41/API31 and
+Tablet/API33 DirectShell Hosts.
 
 The validated modern DirectShell path uses user-authorized Wireless Debugging,
 app-owned local ADB, app_process as shell uid 2000, and purpose-specific
@@ -294,10 +295,10 @@ The next milestones are:
 - Privileged Capability Matrix [implemented; JVM-tested; modern DirectShell Host admission validated]
 - Privileged Capability Planner with static complete-plan selection [implemented; JVM-tested; modern DirectShell Host admission validated]
 - Composite Host Plan ownership and controlled hardware validation [complete: A41/API31 to S9/API29; DirectShell Video/SystemAudio + Shizuku Input]
-- DirectRoot integration and qualification [planned]
 - Shizuku Optional Per-Capability Provider Integration [complete for controlled DEBUG composition]
-- RFC-006J - Privileged Runtime Orchestration and Host Readiness [accepted architecture; implementation planned]
-- Runtime State Model and Background Host Readiness Coordinator [next implementation; no DirectRoot remediation]
+- RFC-006J - Privileged Runtime Orchestration and Host Readiness [Step 1 implemented, JVM-tested, and lifecycle-validated on A41/API31 and Tablet/API33]
+- Runtime State Model and Background Host Readiness Coordinator [implemented: passive volatile observation, single-flight admission, generation-safe cleanup, and late RFC-006I plan freeze]
+- DirectRoot Bootstrap + Root Recovery Authority Foundation [next; not implemented]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
@@ -306,6 +307,13 @@ The normal Host invariant remains Video plus SystemAudio plus Input. If no
 complete qualified provider plan exists, Host is unavailable while Client mode
 remains available. Shizuku is preserved as a future optional compatibility
 provider rather than being unconditionally deleted.
+
+RFC-006J Step 1 leaves Root-assisted Remediation, DirectRoot, Same-provider
+Recovery, and Live Provider Migration NOT IMPLEMENTED. Passive application
+startup never launches DirectShell feature servers or Warpnect Shizuku
+UserServices; user Host admission re-observes runtime state, performs the
+existing bounded RFC-006I admission, and freezes a plan only before Host
+availability and discovery.
 
 ## Phase 7 - Optimization
 
