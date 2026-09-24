@@ -111,6 +111,12 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
         disconnectTransport()
         trace("PAIR")
         ensureManager().pair(pairingEndpoint.host, pairingEndpoint.port, pairingCode)
+        keyStore.rememberTrustedConnectionServiceName(pairingEndpoint.serviceName)
+        Log.i(
+            TAG,
+            "DIRECT_SHELL_SELF_ADB_DISCOVERY event=trusted_service_recorded " +
+                "service=${pairingEndpoint.serviceName}",
+        )
         disconnectTransport()
 
         val connectionEndpoint = discoverAndConnectConnectionEndpoint("SELF_BOOTSTRAP")
@@ -673,7 +679,14 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
         tracePrefix: String,
     ): DirectShellSelfAdbEndpointDiscovery.Endpoint {
         trace("${tracePrefix}_DISCOVER_CONNECTION")
-        val initial = DirectShellSelfAdbEndpointDiscovery.discoverConnection(applicationContext)
+        val trustedServiceName = keyStore.trustedConnectionServiceName()
+            ?: throw DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
+                DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_IDENTITY_REQUIRED,
+            )
+        val initial = DirectShellSelfAdbEndpointDiscovery.discoverConnection(
+            context = applicationContext,
+            trustedServiceName = trustedServiceName,
+        )
         try {
             trace("${tracePrefix}_CONNECT")
             connectEndpoint(initial.host, initial.port).requireSuccess()
@@ -688,7 +701,8 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
             releaseConnectionManager()
             trace("${tracePrefix}_REDISCOVER_CONNECTION")
             val replacement = DirectShellSelfAdbEndpointDiscovery.discoverConnection(
-                applicationContext,
+                context = applicationContext,
+                trustedServiceName = trustedServiceName,
                 excludedEndpoint = initial,
             )
             trace("${tracePrefix}_RECONNECT")

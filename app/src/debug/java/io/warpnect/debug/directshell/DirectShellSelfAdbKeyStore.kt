@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
+import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -41,6 +42,39 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
     private val random = SecureRandom()
 
     fun loadOrCreate(): Material = load() ?: create().also(::save)
+
+    /**
+     * The ADB Wi-Fi GUID is mDNS service metadata, not a shell credential. It is nevertheless
+     * kept alongside the paired key under the same app-private encryption key so a later bootstrap
+     * resolves only the service the user explicitly paired with.
+     */
+    fun trustedConnectionServiceName(): String? {
+        val encrypted = preferences.getString(PREF_TRUSTED_CONNECTION_SERVICE_NAME, null) ?: return null
+        val bytes = runCatching { decrypt(encrypted) }.getOrNull() ?: return null
+        return try {
+            DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName(
+                String(bytes, StandardCharsets.UTF_8),
+            )
+        } catch (_: IllegalArgumentException) {
+            null
+        } finally {
+            bytes.fill(0)
+        }
+    }
+
+    fun rememberTrustedConnectionServiceName(serviceName: String) {
+        val normalized = DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName(serviceName)
+        val bytes = normalized.toByteArray(StandardCharsets.UTF_8)
+        try {
+            check(
+                preferences.edit()
+                    .putString(PREF_TRUSTED_CONNECTION_SERVICE_NAME, encrypt(bytes))
+                    .commit(),
+            ) { "trusted_adb_service_name_persist_failed" }
+        } finally {
+            bytes.fill(0)
+        }
+    }
 
     fun clear() {
         preferences.edit().clear().apply()
@@ -155,6 +189,7 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         const val PREFERENCES = "directshell_self_adb_probe"
         const val PREF_PRIVATE_KEY = "private_key"
         const val PREF_CERTIFICATE = "certificate"
+        const val PREF_TRUSTED_CONNECTION_SERVICE_NAME = "trusted_connection_service_name"
         const val ANDROID_KEY_STORE = "AndroidKeyStore"
         const val ENCRYPTION_KEY_ALIAS = "warpnect.directshell.selfadb.debug.v1"
         const val CIPHER = "AES/GCM/NoPadding"
