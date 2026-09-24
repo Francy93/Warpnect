@@ -456,8 +456,34 @@ A41_WIRELESS_DEBUGGING_CONNECTION_SERVICE_PUBLICATION_DELAY_RECOVERED: a
 bounded adbd service-publication condition, not a SystemAudio failure and not a
 device-specific code path.
 
-DirectShell hardware evidence is now sufficient for the modern baseline.
-Provider selection is not yet a per-capability planner: RFC-006I defines the
-next static complete-plan architecture. The normal Host continues to require
-Video, SystemAudio, and Input together; a missing required capability means
-Host unavailable rather than a partial advertised Host.
+DirectShell hardware evidence is now sufficient for the modern baseline. The
+2026-09-23 final static-planner debug APK (SHA-256
+`32017CC0DC069E0F380A10C6FB5FCF1CBDD0FCCF4AD938ADD460A70E94CD00C5`,
+33,669,698 bytes) was installed identically on A41/API31, Tablet/API33,
+S9/API29, and S7/API26 without clearing app data. A41 and Tablet each performed ordinary
+`Enable Host` admission through app-owned Wireless Debugging and DirectShell.
+Their explicit matrix was `DIRECT_ROOT=NOT_IMPLEMENTED`,
+`DIRECT_SHELL={VIDEO,SYSTEM_AUDIO,INPUT}=QUALIFIED`, and
+`SHIZUKU=NOT_AVAILABLE`; the frozen selected plan was the all-DirectShell
+`SINGLE` plan. The UI remained unavailable until that freeze, then displayed
+`Host: Available` and `Waiting for clients`.
+
+With both Hosts active, the S9 Client discovered two separate rows by their
+device aliases, `Galaxy A41 di Massima` and `Z138_EEA`. A silent
+Tablet-to-S9 Session then reached Streaming with the frozen DirectShell plan:
+the Host reported DirectShell Video, SystemAudio, and Input, while the Client
+ran its normal receive/decode/playback pipeline. No deliberate tone was played
+and this run makes no new human-audibility claim. Semantic Disconnect followed
+by Disable Host returned S9, Tablet, and A41 to `Ready`/`Host: Not checked`;
+each host had zero remaining DirectShell shell processes.
+
+This validates current-build DirectShell-only Host admission, plan freeze, and
+cleanup. An S7/API26 natural preflight control returned
+`DIRECTSHELL_UNSUPPORTED_PLATFORM` / `wireless_debugging_requires_api_30` before
+any shell runtime launch. The final UI stated `Host unavailable: DirectShell
+requires Android 11 or later`; the Host-only control left Client mode unblocked
+(`Client: Not checked`), and no Shizuku fallback was activated. DirectRoot remains
+not implemented, and real Shizuku
+fallback/composite activation remains deferred. The normal Host continues to
+require Video, SystemAudio, and Input together; a missing required capability
+means Host unavailable rather than a partial advertised Host.

@@ -530,6 +530,8 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime {
     )
 
     private fun launchFailure(classification: String): PrivilegedRuntimeFailure = when {
+        classification.contains("REQUIRES_API_30") ->
+            PrivilegedRuntimeFailure.DIRECTSHELL_UNSUPPORTED_PLATFORM
         classification.contains("WIRELESS_DEBUGGING_DISABLED") ->
             PrivilegedRuntimeFailure.DIRECTSHELL_WIRELESS_DEBUGGING_DISABLED
         classification.contains("PAIRING_REQUIRED") || classification.contains("AUTHORIZATION_REJECTED") ->

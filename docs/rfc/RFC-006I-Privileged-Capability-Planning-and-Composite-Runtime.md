@@ -2,9 +2,46 @@
 
 ## Status
 
-Accepted architecture. This RFC defines the next planning boundary only. It does
-not implement a matrix, a planner, a composite Host, DirectRoot, provider
-migration, or a protocol revision.
+Accepted architecture with a first static implementation. The current
+implementation provides an immutable per-capability matrix, a deterministic
+complete-plan planner, bounded pre-freeze re-planning, and Host admission
+before discovery. It does not implement DirectRoot, a real new-planner Shizuku
+fallback, composite hardware composition, provider migration, or a protocol
+revision.
+
+## Implementation Status
+
+The current static layer is deliberately narrow:
+
+* `PrivilegedCapabilityMatrix` contains every `DIRECT_ROOT`, `DIRECT_SHELL`,
+  and `SHIZUKU` coordinate for Video, SystemAudio, and Input in canonical
+  order. Every cell has a state, a bounded non-sensitive reason, and
+  provenance.
+* `PrivilegedCapabilityPlanner` enumerates only usable complete assignments.
+  It prefers fewer providers, then the strongest weakest evidence, then the
+  number of `VALIDATED` cells, then canonical provider order. There is no
+  concrete lifecycle-cost distinction yet, so that step is explicitly equal.
+* The modern Android adapter derives DirectShell cells only from real current
+  Video capture plus encoder, SystemAudio plus Opus, and Input probes. It does
+  not infer qualification from API level or Wireless Debugging alone.
+* DirectRoot is `NOT_IMPLEMENTED` for every cell. Shizuku is preserved, but it
+  is `NOT_AVAILABLE` to this new real Host path unless it was already the
+  selected legacy runtime; the planner never starts a new Shizuku fallback.
+* A frozen complete plan is required before Host UI availability, discovery,
+  WNCP, or Session setup. The current DirectShell path retains its already
+  acquired runtime through admission rather than launching it twice.
+
+Pure planner and bounded-acquisition tests cover single, composite, impossible,
+deterministic, authorization-required, and failed-acquisition cases. Current-build
+hardware admission passed on A41/API31 and Tablet/API33: both formed the complete
+DirectShell-only plan before discovery, became available only after that freeze,
+and cleaned up the runtime on Host disable. A silent Tablet-to-S9 Session also
+preserved the frozen plan through discovery, authentication, WNCP, and media
+startup. A natural S7/API26 control classified the DirectShell branch as an
+unsupported Android 11+ Wireless Debugging platform, kept Host unavailable,
+left Client mode unblocked without running a separate Client probe, and launched
+no shell server. No composite hardware plan or
+new human-audibility claim is made here.
 
 ## Motivation
 
@@ -174,7 +211,8 @@ three required capabilities. The planner then applies this deterministic order:
 
        DIRECT_ROOT > DIRECT_SHELL > SHIZUKU
 
-5. Prefer lower operational and lifecycle cost.
+5. Treat operational and lifecycle cost as equal until the repository has a
+   concrete measurable distinction.
 6. Apply a stable, documented final tie-break using the canonical capability
    order Video, SystemAudio, Input and the provider order above.
 
@@ -266,11 +304,13 @@ The admission order is:
       -> discovery and WNCP
       -> Session
 
-If a provider cannot be acquired after selection, preflight fails, every
-partially acquired provider is released, and Host remains unavailable. A plan
-is frozen before discovery, WNCP, or Session. No provider may silently replace
-another after negotiation, including a Shizuku substitution after a DirectShell
-failure.
+If a provider cannot be acquired after selection, every partially acquired
+provider is released and that provider is invalidated for this Host admission
+attempt. The planner may then make one deterministic re-plan from the strictly
+smaller matrix. It never retries an unchanged plan. If no complete plan remains,
+Host is unavailable. A plan is frozen before discovery, WNCP, or Session. No
+provider may silently replace another after negotiation, including a Shizuku
+substitution after a DirectShell failure.
 
 ## Lifecycle and Ownership
 
@@ -392,9 +432,9 @@ This RFC does not:
 * create a partial Host mode;
 * add device, OEM, or blind API allowlists.
 
-## Future Validation
+## Remaining Validation
 
-The later implementation must add pure planner tests for:
+The static implementation includes pure planner tests for:
 
 * complete one-provider, two-provider, and three-provider plans;
 * equivalent-plan tie breaking;
@@ -403,13 +443,15 @@ The later implementation must add pure planner tests for:
 * deterministic output;
 * per-provider/per-capability cache provenance.
 
-Runtime integration tests must cover partial acquisition cleanup, multiple
-provider lifetime, Host disable, truthful capability publication, no provider
-leakage, and no Shizuku start when DirectShell is independently complete.
+The current bounded-acquisition tests cover partial acquisition cleanup,
+unchanged-plan retry prevention, and finite termination. Current-build hardware
+coverage also confirms DirectShell-only Host admission and Host-disable cleanup
+on A41/API31 and Tablet/API33. Remaining integration coverage must prove concrete
+multi-provider ownership and no provider leakage once an explicit Shizuku adapter
+is introduced.
 
-Hardware validation must eventually cover DirectShell-only modern devices,
-intentionally qualified Shizuku compatibility cases, DirectRoot when it exists,
-and at least one controlled composite plan.
+Hardware validation still must cover intentionally qualified Shizuku compatibility
+cases, DirectRoot when it exists, and at least one controlled composite plan.
 
 ## Acceptance Criteria for the Follow-On Implementation
 

@@ -72,22 +72,29 @@ Completed:
 * DirectShell SystemAudio, Input, and Video qualification on the modern matrix.
 * App-owned Wireless Debugging bootstrap on the qualified devices.
 * Modern audible SystemAudio matrix to S9.
+* Static `PrivilegedCapabilityMatrix` and deterministic complete-plan planner.
+* Host preflight that freezes a complete Video, SystemAudio, and Input plan
+  before Host availability or discovery.
 
 Next architecture milestones:
 
-1. Implement PrivilegedCapabilityMatrix with per-provider/per-capability
-   qualification evidence.
-2. Implement PrivilegedCapabilityPlanner with static complete-plan selection.
-3. Introduce Composite Host Plan ownership and validate explicit multi-provider
-   cases.
-4. Implement and qualify DirectRoot separately.
-5. Demote Shizuku to an optional privileged capability provider rather than
-   deleting it unconditionally.
-6. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
-7. Implement and hardware-validate provider migration only after that RFC is
+1. Integrate Shizuku as an explicit optional per-capability provider and
+   validate a controlled composite plan.
+2. Implement and qualify DirectRoot separately.
+3. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
+4. Implement and hardware-validate provider migration only after that RFC is
    accepted.
-8. Perform final privileged-runtime acceptance across modern, compatibility,
+5. Perform final privileged-runtime acceptance across modern, compatibility,
    and future DirectRoot paths.
+
+The static planner is JVM-validated and current-build Host-admission validated
+on A41/API31 and Tablet/API33. Both selected the all-DirectShell `SINGLE` plan
+before discovery; a silent Tablet-to-S9 Session retained it through media
+startup and both Host runtimes cleaned up on disable. The current implementation
+does not claim composite hardware validation or a new audible-audio result. An
+S7/API26 control truthfully reports the DirectShell Android 11+ platform
+requirement without a shell launch or Shizuku fallback; its Host-only run leaves
+Client mode unblocked rather than asserting a separately executed Client probe.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain
 jointly required for Host availability.

@@ -5,6 +5,7 @@ package io.warpnect.platform.session.capability
 import android.os.SystemClock
 import io.warpnect.audio.capture.AudioCaptureCapabilities
 import io.warpnect.audio.encoder.AudioEncoderCapabilities
+import io.warpnect.capture.CaptureCapabilities
 import io.warpnect.input.injection.InputInjectionBackend
 import io.warpnect.input.injection.InputInjectionCapabilities
 import io.warpnect.session.SessionRole
@@ -32,8 +33,14 @@ class AndroidLocalCapabilityCollector(
     private val probe: AndroidCapabilityProbe,
     private val monotonicNs: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) : LocalCapabilityCollector {
-    override fun collect(role: SessionRole): LocalCapabilitySnapshot =
-        probe.snapshot(role).toLocalSnapshot(role, monotonicNs())
+    override fun collect(role: SessionRole): LocalCapabilitySnapshot = collect(role, probeSnapshot(role))
+
+    /** Exposes one cold subsystem probe to Host-only preflight without performing it twice. */
+    fun probeSnapshot(role: SessionRole): AndroidCapabilityProbeSnapshot = probe.snapshot(role)
+
+    /** Converts a previously collected cold probe into the immutable WNCP-facing snapshot. */
+    fun collect(role: SessionRole, snapshot: AndroidCapabilityProbeSnapshot): LocalCapabilitySnapshot =
+        snapshot.toLocalSnapshot(role, monotonicNs())
 }
 
 fun interface AndroidCapabilityProbe {
@@ -49,6 +56,7 @@ data class AndroidCapabilityProbeSnapshot(
     val directPathBackendImplemented: Boolean = false,
     val directPathAvailable: Boolean = false,
     val standbyPathSupported: Boolean = false,
+    val privilegedVideoCapture: CaptureCapabilities? = null,
     val videoEncoder: VideoEncoderCapabilities? = null,
     val videoDecoder: VideoDecoderCapabilities? = null,
     val systemAudioCapture: AudioCaptureCapabilities? = null,

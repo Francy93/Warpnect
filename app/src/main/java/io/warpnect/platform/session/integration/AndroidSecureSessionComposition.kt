@@ -22,6 +22,7 @@ import io.warpnect.diagnostics.report.ReportExportController
 import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureController
 import io.warpnect.platform.audio.capture.SystemAudioCaptureControllerSelector
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
+import io.warpnect.platform.capture.AndroidVideoCaptureController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticEventClock
 import io.warpnect.platform.diagnostics.AndroidReportSupport
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
@@ -29,6 +30,9 @@ import io.warpnect.platform.discovery.AndroidDiscoveryHostAlias
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.InputInjectionControllerSelector
+import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
+import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
+import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
@@ -193,21 +197,37 @@ class AndroidSecureSessionComposition private constructor(
     private val hostRegistry: HostSessionRuntimeRegistry,
     private val controlScheduler: AndroidSessionControlScheduler,
     private val directPathBackend: AndroidDirectPathBackend?,
+    private val hostPrivilegedAdmission: AndroidHostPrivilegedCapabilityAdmission,
 ) : AutoCloseable {
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
         controlScheduler.dispatch {
             val runtime = PrivilegedRuntimeRegistry.acquireForHost()
             if (!runtime.ready) {
+                val unavailable = hostPrivilegedAdmission.unavailableFromRuntime(runtime)
                 uiResources.publishHostRuntimeUnavailable(runtime)
                 Log.w(
                     TAG,
                     "PRIVILEGED_RUNTIME_HOST_BLOCKED kind=${runtime.kind} " +
-                        "phase=${runtime.phase} failure=${runtime.failure} detail=${runtime.detail}",
+                        "phase=${runtime.phase} failure=${runtime.failure} detail=${runtime.detail} " +
+                        "missing=${unavailable.incompatible.missingCapabilities.joinToString()}",
                 )
                 return@dispatch
             }
-            applicationController.startHost()
+            when (val admission = hostPrivilegedAdmission.prepare(runtime)) {
+                is AndroidHostPrivilegedCapabilityAdmissionResult.Admitted -> {
+                    uiResources.publishHostPlanAdmitted()
+                    val start = applicationController.startHost()
+                    if (!start.isSuccess) {
+                        hostPrivilegedAdmission.release()
+                        uiResources.clearHostCapability()
+                    }
+                }
+
+                is AndroidHostPrivilegedCapabilityAdmissionResult.Unavailable -> {
+                    uiResources.publishHostPlanUnavailable(hostPlanFailureMessage(admission.incompatible))
+                }
+            }
         }
     }
 
@@ -220,7 +240,7 @@ class AndroidSecureSessionComposition private constructor(
         reportExportController.close()
         controlScheduler.close()
         applicationController.close()
-        PrivilegedRuntimeRegistry.releaseForHost()
+        hostPrivilegedAdmission.close()
         hostRegistry.close()
         directPathBackend?.close()
         coreOrchestrator.shutdown()
@@ -447,7 +467,12 @@ class AndroidSecureSessionComposition private constructor(
             val controlScheduler = AndroidSessionControlScheduler {
                 applicationReference.get()?.advance()
             }
-            val localCapabilityCollector = PreparedHostCapabilityCollector(capabilityCollector())
+            val androidCapabilityCollector = capabilityCollector()
+            val localCapabilityCollector = PreparedHostCapabilityCollector(androidCapabilityCollector)
+            val hostPrivilegedAdmission = AndroidHostPrivilegedCapabilityAdmission(
+                androidCollector = androidCapabilityCollector,
+                preparedCollector = localCapabilityCollector,
+            )
 
             val clientDriver = ControllerBackedClientSessionPhaseDriver(
                 discovery = clientDiscovery,
@@ -597,8 +622,7 @@ class AndroidSecureSessionComposition private constructor(
                 },
                 onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
                 onHostReadinessStopped = {
-                    localCapabilityCollector.clearPreparedHost()
-                    PrivilegedRuntimeRegistry.releaseForHost()
+                    hostPrivilegedAdmission.release()
                     uiResources.clearHostCapability()
                     discoveryDebugLog.hostLifecycleStopped()
                 },
@@ -646,6 +670,7 @@ class AndroidSecureSessionComposition private constructor(
                 hostRegistry,
                 controlScheduler,
                 directPathBackend,
+                hostPrivilegedAdmission,
             )
         }
 
@@ -696,6 +721,19 @@ class AndroidSecureSessionComposition private constructor(
                     SessionRole.Client -> directRouteState.isUsable()
                 }
                 val videoMode = VideoStreamMode(1280, 720, 60, 8_000_000L)
+                val capture = if (role == SessionRole.Host) {
+                    measureCapabilityCollection(role, "privileged_video_capture") {
+                        AndroidVideoCaptureController(context).let { controller ->
+                            try {
+                                runBlocking { controller.queryCapabilities() }
+                            } finally {
+                                controller.close()
+                            }
+                        }
+                    }
+                } else {
+                    null
+                }
                 val encoder = if (role == SessionRole.Host) {
                     measureCapabilityCollection(role, "video_encoder") {
                         videoEncoderDiscovery.query(
@@ -772,6 +810,7 @@ class AndroidSecureSessionComposition private constructor(
                     directPathBackendImplemented = directImplemented,
                     directPathAvailable = directAvailable,
                     standbyPathSupported = directImplemented,
+                    privilegedVideoCapture = capture,
                     videoEncoder = encoder,
                     videoDecoder = decoder,
                     systemAudioCapture = system,
@@ -786,8 +825,17 @@ class AndroidSecureSessionComposition private constructor(
                 )
                 val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
                 val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
+                val systemAudioAvailable =
+                    local.localAvailability["systemAudio"] == LocalCapabilityAvailability.Available
                 val inputAvailable = local.input.injectionKinds != 0
-                uiResources.publishRoleCapability(role, videoAvailable, inputAvailable)
+                if (role == SessionRole.Client) {
+                    uiResources.publishRoleCapability(
+                        role,
+                        videoAvailable,
+                        systemAudioAvailable,
+                        inputAvailable,
+                    )
+                }
                 discoveryDebugLog.localCapabilityProbe(
                     role = role.name,
                     videoAvailable = videoAvailable,
@@ -1187,7 +1235,12 @@ class AndroidSessionUiResources(
         }
     }
 
-    fun publishRoleCapability(role: SessionRole, videoAvailable: Boolean, inputAvailable: Boolean) {
+    fun publishRoleCapability(
+        role: SessionRole,
+        videoAvailable: Boolean,
+        systemAudioAvailable: Boolean,
+        inputAvailable: Boolean,
+    ) {
         when (role) {
             SessionRole.Client -> {
                 _clientCapability.value = if (videoAvailable) {
@@ -1199,6 +1252,7 @@ class AndroidSessionUiResources(
             SessionRole.Host -> {
                 _hostCapability.value = when {
                     !videoAvailable -> DeviceRoleCapability.Unavailable("Host video unavailable")
+                    !systemAudioAvailable -> DeviceRoleCapability.Unavailable("Host SystemAudio unavailable")
                     !inputAvailable -> DeviceRoleCapability.SetupRequired("Host input setup required")
                     else -> DeviceRoleCapability.Available
                 }
@@ -1206,9 +1260,23 @@ class AndroidSessionUiResources(
         }
     }
 
+    /** Preserves the earlier call shape for callers that do not own Host SystemAudio evidence. */
+    fun publishRoleCapability(role: SessionRole, videoAvailable: Boolean, inputAvailable: Boolean) {
+        publishRoleCapability(role, videoAvailable, true, inputAvailable)
+    }
+
     /** Replaces a preflight spinner with a concise, recoverable Host-runtime outcome. */
     fun publishHostRuntimeUnavailable(runtime: PrivilegedRuntimeSnapshot) {
         _hostCapability.value = DeviceRoleCapability.Unavailable(hostRuntimeFailureMessage(runtime.failure))
+    }
+
+    fun publishHostPlanUnavailable(message: String) {
+        _hostCapability.value = DeviceRoleCapability.Unavailable(message)
+    }
+
+    /** A Host becomes visible only after its complete privileged plan has frozen. */
+    fun publishHostPlanAdmitted() {
+        _hostCapability.value = DeviceRoleCapability.Available
     }
 
     /** Host capability evidence is scoped to the currently acquired privileged runtime. */
@@ -1286,6 +1354,8 @@ sealed interface DeviceRoleCapability {
 }
 
 internal fun hostRuntimeFailureMessage(failure: PrivilegedRuntimeFailure): String = when (failure) {
+    PrivilegedRuntimeFailure.DIRECTSHELL_UNSUPPORTED_PLATFORM ->
+        "Host unavailable: DirectShell requires Android 11 or later"
     PrivilegedRuntimeFailure.DIRECTSHELL_WIRELESS_DEBUGGING_DISABLED ->
         "Host setup required: enable Wireless debugging"
     PrivilegedRuntimeFailure.DIRECTSHELL_NOT_PAIRED ->
@@ -1308,6 +1378,17 @@ internal fun hostRuntimeFailureMessage(failure: PrivilegedRuntimeFailure): Strin
     PrivilegedRuntimeFailure.SHIZUKU_LEGACY_FALLBACK,
     PrivilegedRuntimeFailure.NONE,
     -> "Host unavailable: privileged runtime is not ready"
+}
+
+internal fun hostPlanFailureMessage(result: PrivilegedCapabilityPlanResult.HostIncompatible): String {
+    val missing = result.missingCapabilities.joinToString(separator = ", ") { capability ->
+        when (capability) {
+            io.warpnect.platform.privileged.planning.PrivilegedCapability.VIDEO -> "video"
+            io.warpnect.platform.privileged.planning.PrivilegedCapability.SYSTEM_AUDIO -> "SystemAudio"
+            io.warpnect.platform.privileged.planning.PrivilegedCapability.INPUT -> "input"
+        }
+    }
+    return "Host unavailable: privileged $missing qualification failed"
 }
 
 /** Keeps only the selected ephemeral RFC-005B Direct locator for the current Client attempt. */

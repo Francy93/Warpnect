@@ -16,6 +16,11 @@ class PreparedHostCapabilityCollector(
         preparedHost ?: delegate.collect(SessionRole.Host).also { preparedHost = it }
     }
 
+    /** Stores a Host snapshot built from a caller-owned cold probe exactly once. */
+    fun prepareHost(snapshot: () -> LocalCapabilitySnapshot): LocalCapabilitySnapshot = synchronized(lock) {
+        preparedHost ?: snapshot().also { preparedHost = it }
+    }
+
     fun clearPreparedHost() = synchronized(lock) {
         preparedHost = null
     }
