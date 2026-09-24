@@ -42,13 +42,15 @@ The Tablet result is important because its documented Shizuku 13.6
 UserService bootstrap incompatibility remained present while DirectShell Video,
 SystemAudio, and Input ran through app_process.
 
-The A41 pairing evidence is also retained: pairing succeeded, but the
-Wireless Debugging connection service initially did not publish its
-_adb-tls-connect endpoint. A controlled ordinary Wireless Debugging
-off/on transition allowed normal adbd publication; Warpnect's bounded
-connection-service discovery grace then supported repeated self-bootstrap
-acquisition. This is recorded as a bootstrap-environment/adbd publication
-condition, not an audio failure and not an A41-specific code branch.
+The A41 pairing evidence is also retained. The observed TLS-connect endpoint
+was real, but the original client accepted foreign `_adb-tls-connect` records.
+On API31 one foreign resolve starved the sole active NSD resolve slot and left
+late work behind the bounded caller. The repair binds TLS-connect discovery to
+the paired ADB service identity, accepts only its standard DNS-SD conflict
+alias, serializes generation-owned resolution, and prevents late callbacks from
+starting queued work. See `DirectShellA41NsdResolutionFix.md`. This is a
+portable client lifecycle correction, not an A41/Samsung branch or an audio
+failure.
 
 ## Report Roles
 
@@ -63,6 +65,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectShellInputInjectionProbe.md and DirectShellInputSessionIntegration.md - input feasibility and Host integration.
 * DirectShellVideoCaptureIntegration.md - surface handoff and visible video.
 * DirectShellProductionBootstrapFeasibility.md and DirectShellProductionRuntimeIntegration.md - app-owned Wireless Debugging acquisition and complete modern runtime.
+* DirectShellA41NsdResolutionFix.md - trusted ADB DNS-SD endpoint resolution and controlled composite evidence.
 
 ## Roadmap
 
@@ -75,12 +78,14 @@ Completed:
 * Static `PrivilegedCapabilityMatrix` and deterministic complete-plan planner.
 * Host preflight that freezes a complete Video, SystemAudio, and Input plan
   before Host availability or discovery.
+* Optional Shizuku per-capability qualification and controlled A41-to-S9
+  composite-plan validation: DirectShell Video/SystemAudio plus Shizuku Input.
 
 Next architecture milestones:
 
-1. Integrate Shizuku as an explicit optional per-capability provider and
-   validate a controlled composite plan.
-2. Implement and qualify DirectRoot separately.
+1. Implement and qualify DirectRoot separately.
+2. Write the dedicated Privileged Runtime Discovery, State Classification,
+   Background Host Readiness & Root-Assisted Remediation RFC.
 3. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
 4. Implement and hardware-validate provider migration only after that RFC is
    accepted.
@@ -90,9 +95,10 @@ Next architecture milestones:
 The static planner is JVM-validated and current-build Host-admission validated
 on A41/API31 and Tablet/API33. Both selected the all-DirectShell `SINGLE` plan
 before discovery; a silent Tablet-to-S9 Session retained it through media
-startup and both Host runtimes cleaned up on disable. The current implementation
-does not claim composite hardware validation or a new audible-audio result. An
-S7/API26 control truthfully reports the DirectShell Android 11+ platform
+startup and both Host runtimes cleaned up on disable. A controlled A41-to-S9
+composite Session additionally validated DirectShell Video/SystemAudio with a
+real Shizuku Input provider and human S9-to-A41 touch injection. No new audible
+audio result is claimed. An S7/API26 control truthfully reports the DirectShell Android 11+ platform
 requirement without a shell launch or Shizuku fallback; its Host-only run leaves
 Client mode unblocked rather than asserting a separately executed Client probe.
 

@@ -448,13 +448,16 @@ the counted DirectShell runs.
 | Tablet X700_EEA | 33 | DirectShell Video, SystemAudio, Input PASS while Shizuku 13.6 remains bootstrap-incompatible | 3/3 visible E2E PASS | AUDIBLE_CONFIRMED | DirectShell bypasses the documented Shizuku UserService boundary |
 | Samsung SM-S901B | 36 | DirectShell Video, SystemAudio, Input PASS | 3/3 visible E2E PASS | 3/3 technical PASS; AUDIBLE_CONFIRMED | Shell identity avoids the historical Shizuku attribution boundary |
 
-The A41 initially retained a valid Wireless Debugging pairing while its local
-connection service was absent. A normal Wireless Debugging off/on transition
-restored service publication, after which Warpnect completed repeated
-self-bootstrap acquisition. This is
-A41_WIRELESS_DEBUGGING_CONNECTION_SERVICE_PUBLICATION_DELAY_RECOVERED: a
-bounded adbd service-publication condition, not a SystemAudio failure and not a
-device-specific code path.
+The A41 initially retained a valid Wireless Debugging pairing and a usable
+local TLS-connect endpoint, but Warpnect accepted foreign `_adb-tls-connect`
+records. On API31, the foreign resolve occupied the one active NSD resolve slot
+and the later local candidate failed with `NsdManager.FAILURE_ALREADY_ACTIVE`
+(`3`). The repaired client binds discovery to the ADB service identity observed
+during pairing, accepts only the canonical DNS-SD conflict alias, and owns
+candidate resolution by generation. The result is
+`WARPNECT_NSD_FOREIGN_SERVICE_STARVATION_AND_STALE_ACTIVE_RESOLUTION_BUG`, a
+portable Warpnect lifecycle correction rather than a device-specific branch or
+an ADB publication failure.
 
 DirectShell hardware evidence is now sufficient for the modern baseline. The
 2026-09-23 final static-planner debug APK (SHA-256
@@ -483,7 +486,15 @@ cleanup. An S7/API26 natural preflight control returned
 any shell runtime launch. The final UI stated `Host unavailable: DirectShell
 requires Android 11 or later`; the Host-only control left Client mode unblocked
 (`Client: Not checked`), and no Shizuku fallback was activated. DirectRoot remains
-not implemented, and real Shizuku
-fallback/composite activation remains deferred. The normal Host continues to
-require Video, SystemAudio, and Input together; a missing required capability
-means Host unavailable rather than a partial advertised Host.
+not implemented. Controlled DEBUG composite activation is now hardware-proven:
+the A41/API31 to S9/API29 Session froze
+`COMPOSITE { Video=DIRECT_SHELL, SystemAudio=DIRECT_SHELL, Input=SHIZUKU }`.
+It reached Streaming without a deliberate tone. Approximately five to six
+physical user touch interactions on the S9 produced 26 captured Warpnect touch
+events; all 26 corresponding events were injected on the A41 through
+`ShizukuUserService`, with no injection error. The 26-event count is
+protocol/input-event evidence, not 26 separate human taps. Normal A41 admission
+after teardown again selected all-DirectShell `SINGLE`. This is not live provider
+migration and does not make Shizuku the release default. The normal Host
+continues to require Video, SystemAudio, and Input together; a missing required
+capability means Host unavailable rather than a partial advertised Host.

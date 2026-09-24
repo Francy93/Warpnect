@@ -5,9 +5,10 @@
 Accepted architecture with a first static implementation. The current
 implementation provides an immutable per-capability matrix, a deterministic
 complete-plan planner, bounded pre-freeze re-planning, and Host admission
-before discovery. It does not implement DirectRoot, a real new-planner Shizuku
-fallback, composite hardware composition, provider migration, or a protocol
-revision.
+before discovery. A controlled DEBUG Shizuku optional-provider adapter and
+composite hardware composition are now validated. It does not implement
+DirectRoot, release-default provider substitution, provider migration, or a
+protocol revision.
 
 ## Implementation Status
 
@@ -24,9 +25,10 @@ The current static layer is deliberately narrow:
 * The modern Android adapter derives DirectShell cells only from real current
   Video capture plus encoder, SystemAudio plus Opus, and Input probes. It does
   not infer qualification from API level or Wireless Debugging alone.
-* DirectRoot is `NOT_IMPLEMENTED` for every cell. Shizuku is preserved, but it
-  is `NOT_AVAILABLE` to this new real Host path unless it was already the
-  selected legacy runtime; the planner never starts a new Shizuku fallback.
+* DirectRoot is `NOT_IMPLEMENTED` for every cell. Shizuku remains an optional
+  per-capability provider in the controlled integration path; it is qualified
+  only when DirectShell cannot provide the requested capability and the frozen
+  complete plan requires it. It is not an implicit fallback after plan freeze.
 * A frozen complete plan is required before Host UI availability, discovery,
   WNCP, or Session setup. The current DirectShell path retains its already
   acquired runtime through admission rather than launching it twice.
@@ -37,11 +39,12 @@ hardware admission passed on A41/API31 and Tablet/API33: both formed the complet
 DirectShell-only plan before discovery, became available only after that freeze,
 and cleaned up the runtime on Host disable. A silent Tablet-to-S9 Session also
 preserved the frozen plan through discovery, authentication, WNCP, and media
-startup. A natural S7/API26 control classified the DirectShell branch as an
+startup. A controlled A41/API31 to S9/API29 composite Session also validated
+DirectShell Video/SystemAudio plus Shizuku Input, including real human
+reverse-touch injection. A natural S7/API26 control classified the DirectShell branch as an
 unsupported Android 11+ Wireless Debugging platform, kept Host unavailable,
 left Client mode unblocked without running a separate Client probe, and launched
-no shell server. No composite hardware plan or
-new human-audibility claim is made here.
+no shell server. No new human-audibility claim is made here.
 
 ## Motivation
 
@@ -425,7 +428,7 @@ Architecture V1.0, SCL Protocol V1, and Native ABI V1 remain frozen.
 This RFC does not:
 
 * implement DirectRoot;
-* activate Shizuku fallback or composite Host composition;
+* make Shizuku fallback or composite Host composition a release-default policy;
 * change the current validated DirectShell selection;
 * implement live migration;
 * change protocol, payload, Session, or native ABI contracts;
@@ -446,12 +449,14 @@ The static implementation includes pure planner tests for:
 The current bounded-acquisition tests cover partial acquisition cleanup,
 unchanged-plan retry prevention, and finite termination. Current-build hardware
 coverage also confirms DirectShell-only Host admission and Host-disable cleanup
-on A41/API31 and Tablet/API33. Remaining integration coverage must prove concrete
-multi-provider ownership and no provider leakage once an explicit Shizuku adapter
-is introduced.
+on A41/API31 and Tablet/API33. A controlled A41/API31-to-S9/API29 composite
+Session proved concrete multi-provider ownership: DirectShell Video/SystemAudio,
+Shizuku Input, human S9 touch delivery, and no provider leakage after semantic
+teardown.
 
-Hardware validation still must cover intentionally qualified Shizuku compatibility
-cases, DirectRoot when it exists, and at least one controlled composite plan.
+Hardware validation still must cover other intentionally qualified Shizuku
+compatibility cases, DirectRoot when it exists, and any future release-policy
+composition beyond the controlled DEBUG path.
 
 ## Acceptance Criteria for the Follow-On Implementation
 

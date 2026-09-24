@@ -276,8 +276,9 @@ real Android/hardware validation remains separately tracked because no device wa
 ## Phase 6.5 - Privileged Runtime Evolution
 
 Status: validated DirectShell modern Host baseline; static per-capability
-planning is implemented, JVM-tested, and hardware-admission validated on the
-currently tested A41/API31 and Tablet/API33 DirectShell Hosts.
+planning and the optional Shizuku provider integration are implemented,
+JVM-tested, and hardware-admission validated on the currently tested
+A41/API31 and Tablet/API33 DirectShell Hosts.
 
 The validated modern DirectShell path uses user-authorized Wireless Debugging,
 app-owned local ADB, app_process as shell uid 2000, and purpose-specific
@@ -292,10 +293,11 @@ The next milestones are:
 - RFC-006I - Privileged Capability Planning and Composite Runtime [accepted; static layer implemented]
 - Privileged Capability Matrix [implemented; JVM-tested; modern DirectShell Host admission validated]
 - Privileged Capability Planner with static complete-plan selection [implemented; JVM-tested; modern DirectShell Host admission validated]
-- Composite Host Plan ownership and hardware validation [planned]
+- Composite Host Plan ownership and controlled hardware validation [complete: A41/API31 to S9/API29; DirectShell Video/SystemAudio + Shizuku Input]
 - DirectRoot integration and qualification [planned]
-- Shizuku Optional Per-Capability Provider Integration + Controlled Composite-Plan Validation [next]
-- In-Session Privileged Capability Provider Migration RFC [planned]
+- Shizuku Optional Per-Capability Provider Integration [complete for controlled DEBUG composition]
+- Privileged Runtime Discovery, State Classification, Background Host Readiness & Root-Assisted Remediation RFC [next]
+- In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
 
