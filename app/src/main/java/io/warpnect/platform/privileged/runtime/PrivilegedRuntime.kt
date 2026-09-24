@@ -13,6 +13,13 @@ enum class PrivilegedRuntimeKind {
     NONE,
 }
 
+/** The three independently selectable privileged feature families of a Host plan. */
+enum class PrivilegedRuntimeCapability {
+    VIDEO,
+    SYSTEM_AUDIO,
+    INPUT,
+}
+
 /** Runtime lifecycle state, independent from capability-specific Audio/Input/Video state. */
 enum class PrivilegedRuntimeState {
     IDLE,
@@ -115,6 +122,14 @@ interface PrivilegedRuntime : AutoCloseable {
     fun releaseForHost()
 
     override fun close() = releaseForHost()
+}
+
+/**
+ * Optional runtime hook used after a static plan has frozen. It is intentionally feature-routing
+ * only: it neither starts a new provider nor exposes arbitrary privileged operations.
+ */
+interface PrivilegedRuntimeFeatureSelection {
+    fun applyHostFeatureSelection(selection: Map<PrivilegedRuntimeCapability, PrivilegedRuntimeKind>): Boolean
 }
 
 /**
@@ -227,6 +242,12 @@ object PrivilegedRuntimeRegistry {
     }
 
     fun snapshot(): PrivilegedRuntimeSnapshot = synchronized(lock) { latest }
+
+    /** Applies a frozen per-feature provider selection to the already acquired DirectShell runtime. */
+    fun applyHostFeatureSelection(selection: Map<PrivilegedRuntimeCapability, PrivilegedRuntimeKind>): Boolean {
+        val runtime = synchronized(lock) { directShellRuntime }
+        return (runtime as? PrivilegedRuntimeFeatureSelection)?.applyHostFeatureSelection(selection) ?: true
+    }
 
     internal fun resetForTests() {
         val runtime = synchronized(lock) {

@@ -472,6 +472,12 @@ class AndroidSecureSessionComposition private constructor(
             val hostPrivilegedAdmission = AndroidHostPrivilegedCapabilityAdmission(
                 androidCollector = androidCapabilityCollector,
                 preparedCollector = localCapabilityCollector,
+                optionalProviderFactory = { snapshot ->
+                    io.warpnect.platform.privileged.planning.ShizukuOptionalCapabilityProvider(
+                        context,
+                        snapshot,
+                    )
+                },
             )
 
             val clientDriver = ControllerBackedClientSessionPhaseDriver(

@@ -95,6 +95,10 @@
         <receiver
             android:name=".debug.directshell.DirectShellInputSessionIntegrationReceiver"
             android:exported="true" />
+        <!-- DEBUG-only one-shot selector test; it cannot create a capability or alter release builds. -->
+        <receiver
+            android:name=".debug.directshell.DirectShellOptionalProviderTestReceiver"
+            android:exported="true" />
         <!-- DEBUG-only normal-process control surface for the DirectShell display-capture probe. -->
         <receiver
             android:name=".debug.directshell.DirectShellVideoCaptureProbeReceiver"

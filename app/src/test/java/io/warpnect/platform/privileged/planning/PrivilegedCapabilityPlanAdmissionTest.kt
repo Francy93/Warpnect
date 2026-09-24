@@ -96,6 +96,26 @@ class PrivilegedCapabilityPlanAdmissionTest {
     }
 
     @Test
+    fun `failed optional Shizuku acquisition releases retained DirectShell before incompatibility`() {
+        val matrix = matrix(
+            usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO),
+            usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.SYSTEM_AUDIO),
+            usable(PrivilegedProvider.SHIZUKU, PrivilegedCapability.INPUT),
+        )
+        val acquirer = FakeAcquirer(
+            PrivilegedProvider.DIRECT_SHELL to listOf(PrivilegedProviderAcquisition.Retained),
+            PrivilegedProvider.SHIZUKU to listOf(failed("shizuku_bind_failed")),
+        )
+
+        val result = PrivilegedCapabilityPlanAdmission().admit(matrix, acquirer)
+
+        val incompatible = result as? PrivilegedCapabilityPlanAdmissionResult.Incompatible
+        assertTrue(incompatible != null)
+        assertEquals(PrivilegedProvider.SHIZUKU, incompatible?.attempts?.single()?.failedProvider)
+        assertEquals(listOf(PrivilegedProvider.DIRECT_SHELL), acquirer.releases)
+    }
+
+    @Test
     fun `failed plan is not retried without matrix change`() {
         val matrix = matrix(
             usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO, CapabilityQualificationState.VALIDATED),

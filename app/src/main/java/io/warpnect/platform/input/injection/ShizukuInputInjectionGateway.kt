@@ -25,8 +25,8 @@ import io.warpnect.platform.input.injection.privileged.PrivilegedInputInjectionC
 import io.warpnect.platform.input.injection.privileged.PrivilegedInputInjectionUserService
 import io.warpnect.platform.input.injection.privileged.toInputInjectionCapabilities
 import io.warpnect.platform.input.injection.privileged.toInputInjectionSnapshot
+import io.warpnect.platform.privileged.awaitPrivilegedUserServiceStart
 import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
 import rikka.shizuku.Shizuku
 
 internal class ShizukuInputInjectionGateway(
@@ -197,7 +197,9 @@ internal class ShizukuInputInjectionGateway(
             lastBindError = readiness
             return null
         }
-        return suspendCancellableCoroutine { continuation ->
+        // A UserService can die before Binder publication. Bound this optional-provider wait just
+        // as the capture and SystemAudio gateways do, so Host admission always stays recoverable.
+        return awaitPrivilegedUserServiceStart(USER_SERVICE_START_TIMEOUT_MILLIS) { continuation ->
             val connection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName, service: IBinder) {
                     val injectionService = IPrivilegedInputInjectionService.Stub.asInterface(service)
@@ -277,5 +279,6 @@ internal class ShizukuInputInjectionGateway(
 
     private companion object {
         const val SHIZUKU_PERMISSION_REQUEST_CODE = 20_024
+        const val USER_SERVICE_START_TIMEOUT_MILLIS = 30_000L
     }
 }

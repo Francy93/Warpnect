@@ -35,6 +35,12 @@ enum class PrivilegedProvider {
  */
 enum class CapabilityQualificationState {
     NOT_IMPLEMENTED,
+
+    /**
+     * This provider/capability has not been actively probed during the current Host attempt.
+     * Deferred observations are deliberately neither compatible nor incompatible evidence.
+     */
+    DEFERRED,
     NOT_AVAILABLE,
     AUTHORIZATION_REQUIRED,
     QUALIFICATION_FAILED,
@@ -168,6 +174,14 @@ class PrivilegedCapabilityMatrix private constructor(
             }
         },
     )
+
+    /** Returns a fresh complete matrix after replacing explicit provider/capability observations. */
+    fun withQualifications(replacements: Iterable<CapabilityQualification>): PrivilegedCapabilityMatrix {
+        val replacementByCoordinate = replacements.associateBy { it.provider to it.capability }
+        return from(
+            orderedCells.map { cell -> replacementByCoordinate[cell.provider to cell.capability] ?: cell },
+        )
+    }
 
     override fun equals(other: Any?): Boolean =
         other is PrivilegedCapabilityMatrix && orderedCells == other.orderedCells
