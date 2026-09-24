@@ -83,13 +83,15 @@ Completed:
 
 Next architecture milestones:
 
-1. Implement and qualify DirectRoot separately.
-2. Write the dedicated Privileged Runtime Discovery, State Classification,
-   Background Host Readiness & Root-Assisted Remediation RFC.
-3. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
-4. Implement and hardware-validate provider migration only after that RFC is
+1. RFC-006J - Privileged Runtime Orchestration and Host Readiness [accepted
+   architecture; implementation planned].
+2. Implement the Runtime State Model and Background Host Readiness Coordinator
+   without DirectRoot remediation or live provider migration.
+3. Implement and qualify DirectRoot separately.
+4. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
+5. Implement and hardware-validate provider migration only after that RFC is
    accepted.
-5. Perform final privileged-runtime acceptance across modern, compatibility,
+6. Perform final privileged-runtime acceptance across modern, compatibility,
    and future DirectRoot paths.
 
 The static planner is JVM-validated and current-build Host-admission validated
