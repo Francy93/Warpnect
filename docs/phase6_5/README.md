@@ -74,6 +74,15 @@ starting queued work. See `DirectShellA41NsdResolutionFix.md`. This is a
 portable client lifecycle correction, not an A41/Samsung branch or an audio
 failure.
 
+## Root Laboratory Environment
+
+`AndroidRootLab.md` records the separately qualified AOSP API25/API26 emulator
+laboratory, including adb-root UID0, natural Enforcing SELinux, cold-boot and
+snapshot behavior. API25 still rejects the normal minSdk26 APK as expected;
+API26 installs and renders the unchanged app. This is environment evidence,
+not physical-device support or an implemented DirectRoot backend. DirectRoot
+and Root-assisted Remediation remain **NOT IMPLEMENTED**.
+
 ## Report Roles
 
 The individual probe reports remain historical evidence for their original
