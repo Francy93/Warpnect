@@ -15,6 +15,19 @@ observation, single-flight Host preparation, generation-safe invalidation, and
 structured Host-preparation UI. It does not make DirectRoot, remediation,
 same-provider recovery, or live provider migration available.
 
+RFC-006J Step 2 is implemented, JVM-tested, and process-restart hardware validated
+on A41/API31 and Tablet/API33:
+
+    PERSISTENT_CAPABILITY_EVIDENCE_AND_PREPARED_PLAN_VALIDATED
+
+The app-private cache retains only versioned positive provider/capability
+evidence. It uses exact provider/capability compatibility keys, rebuilds an
+advisory RFC-006I matrix off the UI thread, and never turns cached evidence into
+Host publication. `Enable Host` still performs late runtime revalidation and
+the existing RFC-006I plan freeze. Transient Wireless Debugging, endpoint, and
+Shizuku availability changes affect current readiness without deleting durable
+compatibility evidence.
+
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
 not a declaration that DirectShell is the release default or that Shizuku can
@@ -92,6 +105,12 @@ Completed:
 * RFC-006J Step 1 runtime-state observation and background Host readiness:
   passive app startup, single-flight Host admission, structured readiness UI,
   generation-safe cleanup, and late RFC-006I plan freeze.
+* RFC-006J Step 2 persistent capability evidence and advisory prepared-plan
+  reconstruction: bounded app-private storage, schema/key validation,
+  selective invalidation, and cached DirectShell/Shizuku planning without
+  background feature-server startup. Real A41/Tablet process restarts loaded
+  three persisted qualifications, prepared an advisory DirectShell-only plan,
+  then performed current runtime acquisition and late plan freeze on demand.
 
 Next architecture milestones:
 
@@ -121,7 +140,19 @@ request then performed the existing late admission, froze the all-DirectShell
 Tablet double Host actions produced one readiness generation and one runtime
 acquisition. No deliberate audio tone was used.
 
-Deferred by RFC-006J Step 1: Root-assisted Remediation, DirectRoot,
+RFC-006J Step 2 passed its process-restart/cache-to-freeze proof 1/1 on A41/API31
+and 1/1 on Tablet/API33. Background startup loaded three `QUALIFIED` records,
+prepared `SINGLE / DIRECT_SHELL` as advisory only, and left DirectShell feature
+servers and Warpnect Shizuku UserServices at zero. The UI did not advertise Host
+until `Enable Host` acquired current runtimes, reused three records with late
+revalidation, and froze the existing RFC-006I plan. Semantic disable released
+all feature servers. A41 Wireless Debugging OFF invalidated current readiness
+without erasing the three records. The earlier A41 endpoint-unavailable attempt
+remains a recorded failure, not a hidden retry. No audio tone was required.
+The exact APK, attempt accounting, timing, 754-test gates, and laboratory
+evidence are recorded in RFC-006J's Step 2 verification section.
+
+Deferred by RFC-006J Steps 1 and 2: Root-assisted Remediation, DirectRoot,
 Same-provider Recovery, and Live Provider Migration are all NOT IMPLEMENTED.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain

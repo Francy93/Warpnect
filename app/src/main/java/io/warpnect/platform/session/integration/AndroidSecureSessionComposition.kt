@@ -35,6 +35,7 @@ import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
 import io.warpnect.platform.privileged.readiness.AndroidHostReadinessWork
 import io.warpnect.platform.privileged.readiness.BackgroundHostReadinessCoordinator
 import io.warpnect.platform.privileged.readiness.HostReadinessDispatcher
+import io.warpnect.platform.privileged.readiness.HostReadinessPlanCommitState
 import io.warpnect.platform.privileged.readiness.HostReadinessState
 import io.warpnect.platform.privileged.readiness.HostReadinessUiState
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeFailureReason
@@ -203,6 +204,7 @@ class AndroidSecureSessionComposition private constructor(
     private val directPathBackend: AndroidDirectPathBackend?,
     private val hostPrivilegedAdmission: AndroidHostPrivilegedCapabilityAdmission,
     private val hostReadinessCoordinator: BackgroundHostReadinessCoordinator,
+    private val hostReadinessObservation: AutoCloseable,
 ) : AutoCloseable {
     internal val hostReadinessUiState: StateFlow<HostReadinessUiState>
         get() = hostReadinessCoordinator.uiState
@@ -234,6 +236,7 @@ class AndroidSecureSessionComposition private constructor(
     }
 
     override fun close() {
+        hostReadinessObservation.close()
         reportExportController.close()
         hostReadinessCoordinator.close()
         controlScheduler.close()
@@ -477,9 +480,10 @@ class AndroidSecureSessionComposition private constructor(
                     )
                 },
             )
+            val hostReadinessWork = AndroidHostReadinessWork(context, hostPrivilegedAdmission)
             val hostReadinessCoordinator = BackgroundHostReadinessCoordinator(
                 dispatcher = HostReadinessDispatcher(controlScheduler::dispatch),
-                work = AndroidHostReadinessWork(context, hostPrivilegedAdmission),
+                work = hostReadinessWork,
                 onStateChanged = { state ->
                     uiResources.publishHostReadinessState(state)
                     Log.i(TAG, "HOST_READINESS_STATE ${hostReadinessLogFields(state)}")
@@ -685,6 +689,11 @@ class AndroidSecureSessionComposition private constructor(
                 directPathBackend,
                 hostPrivilegedAdmission,
                 hostReadinessCoordinator,
+                hostReadinessWork.observeWirelessDebuggingChanges(context) {
+                    if (hostReadinessCoordinator.refreshBackgroundReadiness()) {
+                        Log.i(TAG, "prepared_plan_invalidated reason=wireless_debugging_changed")
+                    }
+                },
             ).also { composition ->
                 composition.startBackgroundHostReadiness()
             }
@@ -1259,7 +1268,10 @@ class AndroidSessionUiResources(
             -> DeviceRoleCapability.NotChecked
 
             is HostReadinessState.Checking -> DeviceRoleCapability.Checking
-            is HostReadinessState.Ready -> DeviceRoleCapability.Available
+            is HostReadinessState.Ready -> when (state.prepared.commitState) {
+                HostReadinessPlanCommitState.ADVISORY -> DeviceRoleCapability.NotChecked
+                HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION -> DeviceRoleCapability.Available
+            }
             is HostReadinessState.AuthorizationRequired -> DeviceRoleCapability.SetupRequired(
                 hostReadinessFailureMessage(state.reason),
             )

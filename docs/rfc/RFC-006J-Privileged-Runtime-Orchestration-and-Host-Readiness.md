@@ -3,12 +3,17 @@
 ## Status
 
 Accepted architecture. Step 1 is implemented, JVM-tested, and hardware
-validated on A41/API31 and Tablet/API33.
+validated on A41/API31 and Tablet/API33. Step 2 persistent capability evidence
+and advisory prepared-plan reuse are implemented, JVM-tested, and process-restart
+hardware validated on the same two devices. Cached evidence remains advisory;
+current runtime acquisition and late qualification still precede Host publication.
 
 The implemented slice supplies volatile runtime-state observation,
 asynchronous background Host readiness, single-flight Host preparation,
-generation-safe invalidation, structured readiness UI state, and late reuse of
-the existing RFC-006I admission/freeze boundary. It does not implement
+generation-safe invalidation, structured readiness UI state, versioned
+persistent capability evidence, selective invalidation, cached background
+matrix reconstruction, and late reuse of the existing RFC-006I admission/freeze
+boundary. It does not implement
 DirectRoot, root-assisted remediation, same-provider recovery, or live provider
 migration.
 
@@ -208,11 +213,41 @@ Binder access state. DirectRoot is reported as `NOT_IMPLEMENTED`. It does not
 connect local ADB, launch `app_process`, start a DirectShell feature server, or
 start a Warpnect Shizuku UserService while Host is not requested.
 
-Existing lower-level compatibility evidence remains owned by the existing
-admission path and is reused there when its cache dimensions remain valid. Step
-1 deliberately does not create a new global persisted complete-plan cache. A
-passive observation without a trustworthy complete plan therefore publishes
-`STALE`, not a fabricated `READY` result.
+Step 2 adds an application-private, bounded persistent capability-evidence
+store. It stores only usable `QUALIFIED` or `VALIDATED` provider/capability
+observations with their original live provenance, explicit schema version,
+recorded-at metadata, and an exact compatibility key. It stores no ADB keys,
+pairing codes, HMAC secrets, session material, raw input, or media.
+
+The key covers provider, capability, Android API, a SHA-256 Android-build
+identity digest, Warpnect version code, provider implementation revision,
+provider runtime version where relevant, and capability backend revision.
+DirectShell keying deliberately excludes transient Wireless Debugging state.
+Shizuku keying combines the public read-only server API/UID with installed manager
+version code and update identity. The API number alone is not the manager release:
+the official [Shizuku API source](https://github.com/RikkaApps/Shizuku-API/blob/master/api/src/main/java/rikka/shizuku/Shizuku.java)
+exposes it as a server protocol value. Restricted library-only patch APIs are not
+used. A manager upgrade therefore invalidates
+only Shizuku records, even when the server API number is unchanged. An unavailable
+or unidentifiable provider is not reused. This is not a claim that an installed
+manager version proves the binary identity of an already-running server.
+DirectRoot has no positive evidence domain because it remains `NOT_IMPLEMENTED`.
+
+The cache schema is explicitly versioned. A mismatched schema or corrupt payload
+is dropped safely; an unknown bounded record is ignored without blocking
+startup. Storage is a single app-private SharedPreferences payload committed as
+a bounded whole-matrix replacement. A shared transaction lock serializes complete
+read/modify/write operations across repository instances. Preferences are opened
+lazily on the non-Main readiness worker; malformed preference types and storage
+exceptions fail closed. Failed persistence cannot turn a successful Host admission
+into provider failure.
+
+Existing codec stores (`SharedPreferencesExactVideoEncoderQualificationStore`
+and `SharedPreferencesLegacyDecoderQualificationStore`) remain the authorities
+for their detailed codec keys. `PreparedHostCapabilityCollector` remains the
+in-memory owner of the WNCP-facing Host snapshot. None previously persisted the
+complete privileged provider/capability matrix; this bounded metadata store fills
+that gap without replacing their domain-specific qualification databases.
 
 When the user requests Host, the same generation is upgraded to the existing
 acquisition/admission path. That late path performs bounded qualification,
@@ -248,11 +283,24 @@ key plus provider, capability, Warpnect/provider implementation version, Android
 build, and artifact identity where applicable. Volatile state must carry an
 observation time and must not be promoted into a timeless compatibility claim.
 
-Step 1 preserves this ownership boundary. It does not introduce a second
-compatibility cache: `AndroidHostPrivilegedCapabilityAdmission` retains the
-existing evidence/cache behavior when active Host admission needs it. The new
-snapshot is volatile-only and `HostReadinessEvidenceSource` records whether a
-visible plan came from existing compatible evidence or current Host admission.
+Step 2 implements `PersistentCapabilityEvidenceRecord` and
+`PersistentCapabilityEvidenceKey` under `platform.privileged.readiness`.
+`CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE` is used only when
+the immutable matrix is reconstructed; the stored record retains its original
+live provenance. Cached evidence is therefore visible in diagnostics without
+being mislabeled as a fresh qualification.
+
+At background startup the coordinator loads and validates evidence on its
+non-Main dispatcher, then combines reusable records with a fresh volatile
+runtime snapshot. It never calls DirectShell acquisition, starts a feature
+server, starts capture, binds a Warpnect Shizuku UserService, or starts media.
+Only an acquired DirectShell runtime, or an idle/released registered runtime with
+Wireless Debugging explicitly enabled, or a currently ready selected Shizuku
+runtime can support an advisory plan. An idle acquisition candidate is not proof
+of ADB reachability or authorization: these are checked at late admission.
+Wireless Debugging disabled,
+authorization required, unsupported, unusable, or temporarily unavailable
+runtime states override cache reuse. They do not erase durable evidence.
 
 Relevant invalidation events include:
 
@@ -267,6 +315,21 @@ runtime health failure
 explicit Host disable or provider cleanup
 ```
 
+Known compatibility-key mismatch removes only the affected provider/capability
+coordinate. A temporarily unknown Shizuku version retains historical evidence
+only if all other known key dimensions match, and withholds it from reuse.
+Negative results are not persisted. Existing positive evidence is invalidated
+only for explicit contract contradictions: unsupported Android/format, absent
+hidden capture API or AudioPolicy API, absent injection API, or unsupported display
+targeting. Generic `QUALIFICATION_FAILED`, provider crashes, unavailable services,
+authorization failure, resource exhaustion and one-shot DEBUG suppression do not
+erase it. A new cheap `QUALIFIED` observation cannot downgrade matching `VALIDATED`
+history. No arbitrary age expiration is applied.
+
+A read-only Wireless Debugging content observer refreshes advisory generations
+when that setting changes. It does not migrate or invalidate a frozen active Host
+contract. All Host requests still obtain a fresh snapshot before acquisition.
+
 Only affected coordinates should become `STALE`; this must not force broad
 continuous polling or discard unrelated qualification evidence.
 
@@ -276,12 +339,31 @@ A prepared plan may be computed in the background from a current matrix. It is
 advisory and carries the readiness generation and evidence provenance. It may
 be invalidated at any time before Host admission.
 
-In Step 1, no new globally persisted complete-plan cache exists. Passive startup
-therefore produces a `STALE` observation unless a future implementation can
-prove a current complete plan from valid evidence. The active Host request is
-the late admission boundary and publishes `PreparedPrivilegedCapabilityPlan`
-with `CURRENT_HOST_ADMISSION` and `FROZEN_AT_HOST_ADMISSION` only after the
-existing RFC-006I admission succeeds.
+Step 2 can reconstruct a complete matrix from valid cached records and run the
+unchanged RFC-006I planner before the user requests Host. A complete result is
+published only as `PreparedPrivilegedCapabilityPlan(ADVISORY)` with the
+readiness generation, volatile snapshot, cached matrix, selected compatibility
+key hashes, and planner output. It cannot publish Host availability or reuse a
+stale runtime server. A cold or partial cache remains `STALE`.
+
+The active Host request is still the sole late admission boundary. It refreshes
+volatile runtime state, acquires the chosen provider resources, runs bounded
+qualification as needed, lets RFC-006I perform its pre-freeze replan behavior,
+and publishes `CURRENT_HOST_ADMISSION` with `FROZEN_AT_HOST_ADMISSION` only
+after success. Invalidating an advisory plan releases no provider resources;
+invalidating a frozen plan uses the existing admission release path.
+
+`LateRevalidatedCapabilityEvidence` merges matching durable evidence only with
+currently usable feature and codec observations, retaining cached provenance
+and binding it to the current runtime generation. A current failed observation
+always wins. Missing coordinates retain live provenance. Diagnostics therefore
+report `CACHED` for background plans and `MIXED` for late revalidated cached plans.
+The current DirectShell lifecycle requires fresh feature-server identity checks
+and detailed controller/codec queries for each new acquired generation; these
+bounded checks are intentionally not bypassed by a coarse compatibility record.
+They do not start capture or replay an audio/video qualification soak. Within a
+Host admission the existing prepared collector prevents a second full collection.
+No second RFC-006I freeze or provider-acquisition path is introduced.
 
 At `Enable Host`, the required sequence is:
 
@@ -445,7 +527,7 @@ host_plan_frozen
 They must remain generation-scoped and non-sensitive. They do not imply a new
 network protocol or diagnostic persistence policy.
 
-## Step 1 Verification
+## Step 1 and Step 2 Verification
 
 The implemented slice demonstrates:
 
@@ -465,7 +547,12 @@ The JVM suite covers asynchronous startup, single flight, Host joining an
 in-flight observation, stale-generation suppression, disabled Wireless
 Debugging, API26 DirectShell unsupported state, DirectRoot not implemented,
 healthy DirectShell without Shizuku admission, staged Shizuku qualification,
-resource release, and UI presentation semantics.
+resource release, and UI presentation semantics. Step 2 additionally covers
+empty/valid/corrupt/schema-mismatched storage, unknown records, exact reuse,
+Android/build/backend/provider-version invalidation, retained unavailable
+Shizuku evidence, transient-failure non-persistence, authoritative
+contradiction, cached DirectShell-only and synthetic composite plans, advisory
+plan invalidation, and mandatory late admission after an advisory result.
 
 On Tablet/API33 and A41/API31, a passive app launch completed without a
 DirectShell launch or Shizuku UserService. User Host admission selected a
@@ -474,6 +561,113 @@ all three DirectShell feature servers on Host disable. Tablet re-acquisition
 also produced one readiness generation and one runtime acquisition under a
 double Host action. No deliberate audio tone or Session was required for this
 lifecycle validation.
+
+### Step 2 Process-Restart Evidence - 2026-09-26
+
+The previous validated Step 1 slice was checkpointed locally as `569155a`
+(`feat(privileged): add background Host readiness orchestration`). Step 2
+source, tests, and documentation remain uncommitted for review. The branch is
+`codex/directshell-production-runtime-integration`; master remains `032b592`.
+No merge, push, data clearing, reboot, or desktop privileged launch occurred.
+
+Exact installed debug APK on both devices:
+
+```text
+SHA-256: A96B720589ACB25DEF4D4A3734B5EAA9968E2581A1CE3119D887EDC5AF4A4049
+Size: 33,784,804 bytes
+Build timestamp UTC: 2026-09-26T15:44:59.0817562Z
+ABIs: arm64-v8a, armeabi-v7a, x86_64
+Source: 569155a plus the uncommitted Step 2 implementation
+```
+
+Installed `base.apk` SHA-256 matched this artifact on each device. Installation
+completed before qualification; no installer overlapped the counted runs.
+
+| Device | Android | Build fingerprint |
+| --- | --- | --- |
+| Samsung A41 / SM-A415F | 12 / API31 | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` |
+| Tablet / X700_EEA | 13 / API33 | `Aocwei/X700_EEA/X700_EEA:13/TP1A.220624.014/2023264:user/release-keys` |
+
+| Step 2 boundary | A41/API31 | Tablet/API33 |
+| --- | --- | --- |
+| Successful normal Host admission populates evidence | PASS: three DirectShell `QUALIFIED` records | PASS: three DirectShell `QUALIFIED` records |
+| Semantic Disable Host before restart | PASS: feature servers and wrappers exited | PASS: feature servers and wrappers exited |
+| Real app-process restart, no data clear | PASS: PID 5211 -> 6463 | PASS: PID 7232 -> 7538 |
+| Persistent cache after restart | `VALID hit=3 retained=3 invalidated=0` | `VALID hit=3 retained=3 invalidated=0` |
+| Background plan | `SINGLE / DIRECT_SHELL`, `CACHED`, `ADVISORY` | `SINGLE / DIRECT_SHELL`, `CACHED`, `ADVISORY` |
+| Feature processes before Enable Host | DirectShell 0; Warpnect Shizuku UserServices 0 | DirectShell 0; Warpnect Shizuku UserServices 0 |
+| UI before Enable Host | Ready; Host Not checked; no preparation dialog | Ready; Host Not checked; no preparation dialog |
+| Enable Host after restart | `MIXED reused=3 late_revalidated=true` | `MIXED reused=3 late_revalidated=true` |
+| Final plan and UI | `SINGLE / DIRECT_SHELL`, `FROZEN_AT_HOST_ADMISSION`; Host Available | `SINGLE / DIRECT_SHELL`, `FROZEN_AT_HOST_ADMISSION`; Host Available |
+| Final Disable Host | PASS: no remaining DirectShell feature server or wrapper | PASS: no remaining DirectShell feature server or wrapper |
+
+These are real qualifications, not imported/seeded cache records. The records
+remain `QUALIFIED`, not promoted to `VALIDATED` merely because the persistence
+mechanism passed its hardware test. The prior A41 Shizuku manager/server remained
+present, but no Warpnect Shizuku UserService was launched or used for admission.
+Both final plans logged `shizuku_started=false`.
+
+Attempt accounting is explicit. A41 evidence population passed 1/2 attempts:
+the first attempt had no published `_adb-tls-connect` endpoint and failed
+boundedly with `WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE` after 90.100 seconds.
+Desktop discovery also returned no service, no feature server started, and no
+Shizuku fallback ran. A normal Settings OFF/ON restored the daemon's publication;
+the subsequent population was a new recorded attempt, not a hidden retry.
+A41 warm admission then passed 1/1, giving 2/3 total Host admission attempts.
+Tablet population and warm admission each passed 1/1, giving 2/2 total.
+The required process-restart/cache-to-freeze proof passed 1/1 on each device.
+
+The Tablet initially had Wireless Debugging disabled. Passive cold startup
+reported `USER_ACTION_REQUIRED / WIRELESS_DEBUGGING_DISABLED`, not a fabricated
+plan. Enabling it through normal Settings reused the existing Warpnect pairing.
+No pairing code, credential, or media content was persisted in the evidence file.
+
+After the A41 warm admission and clean disable, a verified Wireless Debugging
+OFF transition at 18:09:11.214 invalidated advisory readiness. At 18:09:11.269
+the cache still had three valid records, and at 18:09:11.290 readiness became
+`USER_ACTION_REQUIRED / WIRELESS_DEBUGGING_DISABLED`. Re-enabling restored an
+advisory cached plan without acquiring a feature server. Wireless Debugging was
+left enabled on both devices; both Hosts were disabled at completion.
+
+Observed logcat times are device-local CEST (`Europe/Zurich`, UTC+02:00), not a
+cross-device synchronized performance benchmark:
+
+| Observation | A41/API31 | Tablet/API33 |
+| --- | --- | --- |
+| Warm background readiness starts | 18:01:25.448 | 18:10:52.032 |
+| Persistent evidence loaded | 18:01:25.479 | 18:10:52.107 |
+| Advisory plan selected | 18:01:25.496 | 18:10:52.153 |
+| Advisory READY | 18:01:25.497 | 18:10:52.155 |
+| User Host request | 18:02:18.085 | 18:11:47.873 |
+| Late evidence revalidation | 18:02:18.115 | 18:11:47.921 |
+| Evidence reused in current matrix | 18:02:25.853 | 18:11:58.302 |
+| Frozen READY, preceding Host publication | 18:02:25.869 | 18:11:58.329 |
+
+Background readiness took 49 ms and 123 ms in these individual samples. Warm
+Host request-to-freeze took 7.784 s and 10.456 s, including the current feature
+server generations and mandatory bounded controller/codec checks. Android
+`am start -W` reported cold UI launch TotalTime of 1,808 ms and 3,638 ms; there
+was no separate instrumented absolute UI-first-frame timestamp. Host Available
+was verified through the actual UI hierarchy after freeze. No broad latency
+claim is made from these two observations.
+
+Local evidence is under `artifacts/rfc006j/step2-*`: cache-only preference
+snapshots, filtered readiness/plan logs, UI XMLs, process inventories, and the
+exact APK. Laboratory artifacts are not part of the Step 1 checkpoint. The
+hardware run required no Session, test tone, remote input, or media recording.
+It does not repeat or extend the historical audible/video compatibility matrix.
+
+Software gates passed: `git diff --check`, `:app:ktlintCheck`, `:app:lintDebug`,
+`:app:testDebugUnitTest` (including a `--rerun-tasks` run), `:app:assembleDebug`,
+`:app:assembleDebugAndroidTest`, and `:app:packageDirectShellProbeDex`. Exact JVM
+total: 754 tests, 0 failures, 0 errors, 0 skipped, in 134 suites. The first lint
+run rejected a restricted Shizuku patch-version API; the final implementation
+uses public API/UID plus installed-manager metadata and final lint passed.
+Native production source was unchanged, so native CTest was not rerun.
+
+```text
+PERSISTENT_CAPABILITY_EVIDENCE_AND_PREPARED_PLAN_VALIDATED
+```
 
 ## Non-Goals
 
@@ -492,6 +686,9 @@ This RFC does not implement:
 ```text
 Runtime State Model: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
 Background Host Readiness: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
+Persistent Capability Evidence: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
+Selective Invalidation: IMPLEMENTED / TESTED / VALIDATED (volatile change on A41; exact-key policies JVM-tested)
+Prepared Plan Reuse: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
 Root-assisted Remediation: NOT IMPLEMENTED
 DirectRoot: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
 Same-provider Recovery: NOT IMPLEMENTED

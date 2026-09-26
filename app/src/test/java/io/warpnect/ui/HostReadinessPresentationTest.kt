@@ -54,6 +54,17 @@ class HostReadinessPresentationTest {
     }
 
     @Test
+    fun `background cached advisory completion never opens Host dialog`() {
+        val ready = readyUiState()
+        val prepared = (ready.readiness as HostReadinessState.Ready).prepared.copy(
+            evidenceSource = HostReadinessEvidenceSource.EXISTING_COMPATIBILITY_CACHE,
+            commitState = HostReadinessPlanCommitState.ADVISORY,
+        )
+
+        assertNull(hostReadinessPresentation(HostReadinessUiState(HostReadinessState.Ready(prepared), false)))
+    }
+
+    @Test
     fun `user action required remains explicit and dismissible`() {
         val presentation = requireNotNull(
             hostReadinessPresentation(
@@ -128,7 +139,7 @@ class HostReadinessPresentationTest {
                     PreparedPrivilegedCapabilityPlan(
                         generation = 1L,
                         runtimeState = runtimeState,
-                        acquiredRuntime = PrivilegedRuntimeSnapshot(
+                        runtimeSnapshot = PrivilegedRuntimeSnapshot(
                             kind = PrivilegedRuntimeKind.DIRECT_SHELL,
                             state = PrivilegedRuntimeState.READY,
                         ),

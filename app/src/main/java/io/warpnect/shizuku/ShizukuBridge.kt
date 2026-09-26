@@ -1,6 +1,8 @@
 package io.warpnect.shizuku
 
+import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import rikka.shizuku.Shizuku
 
 class ShizukuBridge {
@@ -14,6 +16,27 @@ class ShizukuBridge {
         }
     } catch (_: RuntimeException) {
         PrivilegedAccessState.Unavailable
+    }
+
+    /**
+     * Read-only server identity for compatibility evidence. A stopped binder is a volatile state,
+     * not evidence that a previously validated Shizuku backend became incompatible.
+     */
+    @Suppress("DEPRECATION")
+    fun serverVersionIdentityOrNull(context: Context): String? = try {
+        if (!Shizuku.pingBinder()) {
+            null
+        } else {
+            // The public server API number alone does not identify the provider implementation.
+            val manager = context.packageManager.getPackageInfo("moe.shizuku.privileged.api", 0)
+            val code = if (Build.VERSION.SDK_INT >= 28) manager.longVersionCode else manager.versionCode.toLong()
+            "api=${Shizuku.getVersion()};uid=${Shizuku.getUid()};" +
+                "manager=$code;update=${manager.lastUpdateTime}"
+        }
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
+    } catch (_: RuntimeException) {
+        null
     }
 
     fun requestBinding(): PrivilegedOperationResult = when (accessState()) {

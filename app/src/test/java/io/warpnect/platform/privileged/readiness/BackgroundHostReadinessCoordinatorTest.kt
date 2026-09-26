@@ -59,6 +59,116 @@ class BackgroundHostReadinessCoordinatorTest {
     }
 
     @Test
+    fun `cached advisory plan is revalidated through the existing Host admission`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork(backgroundPreparedProviders = directShellProviders())
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+        var frozen: PreparedPrivilegedCapabilityPlan? = null
+
+        coordinator.startBackgroundReadiness()
+        dispatcher.runAll()
+
+        val advisory = assertState<HostReadinessState.Ready>(coordinator.state.value).prepared
+        assertEquals(HostReadinessPlanCommitState.ADVISORY, advisory.commitState)
+        assertEquals(0, work.prepareCalls)
+        assertEquals(0, work.shizukuPreparationCalls)
+
+        coordinator.requestHostPreparation { frozen = it }
+        dispatcher.runAll()
+
+        assertEquals(2, work.observeCalls)
+        assertEquals(1, work.prepareCalls)
+        assertEquals(HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION, requireNotNull(frozen).commitState)
+    }
+
+    @Test
+    fun `invalidating a cached advisory plan does not release Host resources`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork(backgroundPreparedProviders = directShellProviders())
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+
+        coordinator.startBackgroundReadiness()
+        dispatcher.runAll()
+        coordinator.invalidate()
+
+        assertEquals(0, work.releaseCalls)
+        assertState<HostReadinessState.Stale>(coordinator.state.value)
+    }
+
+    @Test
+    fun `temporarily unavailable runtime cannot publish cached advisory plan`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork(
+            runtimeState = runtimeState(
+                directShell = availability(
+                    PrivilegedRuntimeAvailabilityState.TEMPORARILY_UNAVAILABLE,
+                    PrivilegedRuntimeFailureReason.WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE,
+                ),
+            ),
+            backgroundPreparedProviders = directShellProviders(),
+        )
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+
+        coordinator.startBackgroundReadiness()
+        dispatcher.runAll()
+
+        assertState<HostReadinessState.Stale>(coordinator.state.value)
+    }
+
+    @Test
+    fun `volatile refresh replaces advisory generation without acquiring or releasing`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork(backgroundPreparedProviders = directShellProviders())
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+        coordinator.startBackgroundReadiness()
+        dispatcher.runAll()
+        val before = assertState<HostReadinessState.Ready>(coordinator.state.value).prepared.generation
+
+        assertTrue(coordinator.refreshBackgroundReadiness())
+        dispatcher.runAll()
+
+        assertEquals(before + 1L, assertState<HostReadinessState.Ready>(coordinator.state.value).prepared.generation)
+        assertEquals(0, work.prepareCalls)
+        assertEquals(0, work.releaseCalls)
+    }
+
+    @Test
+    fun `volatile refresh cannot change frozen Host or requested admission`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork()
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+        coordinator.requestHostPreparation {}
+        assertFalse(coordinator.refreshBackgroundReadiness())
+        dispatcher.runAll()
+        assertFalse(coordinator.refreshBackgroundReadiness())
+        assertEquals(1, work.prepareCalls)
+    }
+
+    @Test
+    fun `advisory result from admission cannot start Host`() {
+        val dispatcher = QueuedDispatcher()
+        val work = FakeWork(preparationCommitState = HostReadinessPlanCommitState.ADVISORY)
+        val coordinator = BackgroundHostReadinessCoordinator(dispatcher, work)
+        coordinator.requestHostPreparation { error("advisory must not advertise Host") }
+        dispatcher.runAll()
+
+        assertState<HostReadinessState.Failed>(coordinator.state.value)
+    }
+
+    @Test
+    fun `unknown wireless debugging setting cannot promise cached acquisition`() {
+        val observed = PrivilegedRuntimeStateMapper.snapshot(
+            1L,
+            1L,
+            DirectShellRuntimeEnvironment(33, null),
+            PrivilegedRuntimeSnapshot(PrivilegedRuntimeKind.DIRECT_SHELL, PrivilegedRuntimeState.IDLE),
+            io.warpnect.shizuku.PrivilegedAccessState.Unavailable,
+        )
+
+        assertFalse(observed.directShell.candidateForHostAcquisition)
+    }
+
+    @Test
     fun `stale generation cannot overwrite a newer observation`() {
         val dispatcher = QueuedDispatcher()
         val work = FakeWork()
@@ -223,6 +333,9 @@ class BackgroundHostReadinessCoordinatorTest {
             PrivilegedCapability.SYSTEM_AUDIO to PrivilegedProvider.DIRECT_SHELL,
             PrivilegedCapability.INPUT to PrivilegedProvider.DIRECT_SHELL,
         ),
+        private val backgroundPreparedProviders: Map<PrivilegedCapability, PrivilegedProvider>? = null,
+        private val preparationCommitState: HostReadinessPlanCommitState =
+            HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION,
         var shizukuPreparationCalls: Int = 0,
         private val beforePreparedResult: () -> Unit = {},
     ) : HostReadinessWork {
@@ -233,6 +346,27 @@ class BackgroundHostReadinessCoordinatorTest {
         override fun observeVolatileRuntime(generation: Long): PrivilegedRuntimeStateSnapshot {
             observeCalls += 1
             return runtimeState.copy(generation = generation)
+        }
+
+        override fun observeBackgroundReadiness(generation: Long): BackgroundHostReadinessObservation {
+            val observed = observeVolatileRuntime(generation)
+            val providers = backgroundPreparedProviders ?: return BackgroundHostReadinessObservation(observed)
+            val matrix = matrix(providers, CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE)
+            val plan = (PrivilegedCapabilityPlanner.select(matrix) as PrivilegedCapabilityPlanResult.Complete).plan
+            return BackgroundHostReadinessObservation(
+                runtimeState = observed,
+                preparedPlan = PreparedPrivilegedCapabilityPlan(
+                    generation = generation,
+                    runtimeState = observed,
+                    runtimeSnapshot = runtimeSnapshot(),
+                    matrix = matrix,
+                    plan = plan,
+                    evidenceSource = HostReadinessEvidenceSource.EXISTING_COMPATIBILITY_CACHE,
+                    commitState = HostReadinessPlanCommitState.ADVISORY,
+                    preparedAtMonotonicMs = 1L,
+                ),
+                evidenceSource = HostReadinessEvidenceSource.EXISTING_COMPATIBILITY_CACHE,
+            )
         }
 
         override fun prepareForHost(
@@ -247,11 +381,11 @@ class BackgroundHostReadinessCoordinatorTest {
                 PreparedPrivilegedCapabilityPlan(
                     generation = generation,
                     runtimeState = runtimeState,
-                    acquiredRuntime = runtimeSnapshot(),
+                    runtimeSnapshot = runtimeSnapshot(),
                     matrix = matrix,
                     plan = plan,
                     evidenceSource = HostReadinessEvidenceSource.CURRENT_HOST_ADMISSION,
-                    commitState = HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION,
+                    commitState = preparationCommitState,
                     preparedAtMonotonicMs = 1L,
                 ),
             )
@@ -303,23 +437,31 @@ class BackgroundHostReadinessCoordinatorTest {
             generation = 7L,
         )
 
-        fun matrix(providers: Map<PrivilegedCapability, PrivilegedProvider>): PrivilegedCapabilityMatrix =
-            PrivilegedCapabilityMatrix.complete { provider, capability ->
-                val selected = providers.getValue(capability)
-                val state = when {
-                    provider == selected -> CapabilityQualificationState.VALIDATED
-                    provider == PrivilegedProvider.DIRECT_ROOT -> CapabilityQualificationState.NOT_IMPLEMENTED
-                    else -> CapabilityQualificationState.DEFERRED
-                }
-                val provenance = CapabilityQualificationProvenance(
-                    source = CapabilityQualificationSource.CURRENT_ATTEMPT_PROBE,
-                    runtimeGeneration = 7L,
-                )
-                if (state.isUsable) {
-                    CapabilityQualification.usable(provider, capability, state, "test_usable", provenance)
-                } else {
-                    CapabilityQualification.unavailable(provider, capability, state, "test_unavailable", provenance)
-                }
+        fun directShellProviders(): Map<PrivilegedCapability, PrivilegedProvider> = mapOf(
+            PrivilegedCapability.VIDEO to PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedCapability.SYSTEM_AUDIO to PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedCapability.INPUT to PrivilegedProvider.DIRECT_SHELL,
+        )
+
+        fun matrix(
+            providers: Map<PrivilegedCapability, PrivilegedProvider>,
+            source: CapabilityQualificationSource = CapabilityQualificationSource.CURRENT_ATTEMPT_PROBE,
+        ): PrivilegedCapabilityMatrix = PrivilegedCapabilityMatrix.complete { provider, capability ->
+            val selected = providers.getValue(capability)
+            val state = when {
+                provider == selected -> CapabilityQualificationState.VALIDATED
+                provider == PrivilegedProvider.DIRECT_ROOT -> CapabilityQualificationState.NOT_IMPLEMENTED
+                else -> CapabilityQualificationState.DEFERRED
             }
+            val provenance = CapabilityQualificationProvenance(
+                source = source,
+                runtimeGeneration = 7L,
+            )
+            if (state.isUsable) {
+                CapabilityQualification.usable(provider, capability, state, "test_usable", provenance)
+            } else {
+                CapabilityQualification.unavailable(provider, capability, state, "test_unavailable", provenance)
+            }
+        }
     }
 }

@@ -40,6 +40,8 @@ internal data class PrivilegedRuntimeAvailability(
     val state: PrivilegedRuntimeAvailabilityState,
     val reason: PrivilegedRuntimeFailureReason? = null,
     val detail: String = "",
+    /** A registered but intentionally idle runtime may be acquired only after an explicit Host request. */
+    val candidateForHostAcquisition: Boolean = false,
 ) {
     init {
         require(detail.length <= MAX_DETAIL_LENGTH) { "runtime_readiness_detail_too_long" }
@@ -108,16 +110,38 @@ internal enum class HostReadinessPlanCommitState {
 internal data class PreparedPrivilegedCapabilityPlan(
     val generation: Long,
     val runtimeState: PrivilegedRuntimeStateSnapshot,
-    val acquiredRuntime: PrivilegedRuntimeSnapshot,
+    /** May be IDLE for a cache-derived advisory plan; never implies that a provider is running. */
+    val runtimeSnapshot: PrivilegedRuntimeSnapshot,
     val matrix: PrivilegedCapabilityMatrix,
     val plan: PrivilegedCapabilityPlan,
     val evidenceSource: HostReadinessEvidenceSource,
+    /** Stable hashed keys used by advisory evidence. Empty only for live Host-admission plans. */
+    val evidenceCompatibilityKeys: List<String> = emptyList(),
     val commitState: HostReadinessPlanCommitState,
     val preparedAtMonotonicMs: Long,
 ) {
     init {
         require(generation == runtimeState.generation) { "prepared_plan_runtime_generation_mismatch" }
+        require(evidenceCompatibilityKeys.size == evidenceCompatibilityKeys.distinct().size) {
+            "prepared_plan_evidence_key_duplicate"
+        }
         require(preparedAtMonotonicMs >= 0L) { "prepared_plan_timestamp_invalid" }
+    }
+}
+
+/** One passive background result. A non-null prepared plan is advisory until Host admission freezes it. */
+internal data class BackgroundHostReadinessObservation(
+    val runtimeState: PrivilegedRuntimeStateSnapshot,
+    val preparedPlan: PreparedPrivilegedCapabilityPlan? = null,
+    val evidenceSource: HostReadinessEvidenceSource = HostReadinessEvidenceSource.NONE,
+) {
+    init {
+        require(preparedPlan == null || preparedPlan.generation == runtimeState.generation) {
+            "background_readiness_prepared_generation_mismatch"
+        }
+        require(preparedPlan == null || preparedPlan.commitState == HostReadinessPlanCommitState.ADVISORY) {
+            "background_readiness_plan_must_be_advisory"
+        }
     }
 }
 

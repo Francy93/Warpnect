@@ -1,9 +1,13 @@
 package io.warpnect.platform.privileged.readiness
 
 import android.content.Context
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
 import io.warpnect.platform.privileged.planning.CapabilityQualificationState
@@ -68,17 +72,22 @@ internal object PrivilegedRuntimeStateMapper {
                 "wireless_debugging_explicitly_disabled",
             )
         }
+        val candidateForHostAcquisition =
+            environment.wirelessDebuggingExplicitlyDisabled == false &&
+                runtime.state in setOf(PrivilegedRuntimeState.IDLE, PrivilegedRuntimeState.RELEASED)
         return when (runtime.state) {
             PrivilegedRuntimeState.READY -> availability(
                 PrivilegedRuntimeAvailabilityState.READY,
                 null,
                 runtime.detail,
+                candidateForHostAcquisition = candidateForHostAcquisition,
             )
 
             PrivilegedRuntimeState.ACQUIRING -> availability(
                 PrivilegedRuntimeAvailabilityState.RECOVERY_IN_PROGRESS,
                 null,
                 runtime.detail,
+                candidateForHostAcquisition = candidateForHostAcquisition,
             )
 
             PrivilegedRuntimeState.UNAVAILABLE -> unavailableAvailability(runtime.failure, runtime.detail)
@@ -88,6 +97,7 @@ internal object PrivilegedRuntimeStateMapper {
                 PrivilegedRuntimeAvailabilityState.UNKNOWN,
                 null,
                 runtime.detail.ifBlank { "directshell_not_acquired" },
+                candidateForHostAcquisition = candidateForHostAcquisition,
             )
         }
     }
@@ -188,11 +198,13 @@ internal object PrivilegedRuntimeStateMapper {
         reason: PrivilegedRuntimeFailureReason?,
         detail: String,
         kind: PrivilegedRuntimeKind = PrivilegedRuntimeKind.DIRECT_SHELL,
+        candidateForHostAcquisition: Boolean = false,
     ): PrivilegedRuntimeAvailability = PrivilegedRuntimeAvailability(
         kind = kind,
         state = state,
         reason = reason,
         detail = detail.replace('\n', ' ').replace('\r', ' ').take(PrivilegedRuntimeAvailability.MAX_DETAIL_LENGTH),
+        candidateForHostAcquisition = candidateForHostAcquisition,
     )
 
     private const val MIN_DIRECT_SHELL_API = 30
@@ -203,6 +215,7 @@ internal class AndroidHostReadinessWork(
     context: Context,
     private val admission: AndroidHostPrivilegedCapabilityAdmission,
     private val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
+    private val epochMs: () -> Long = System::currentTimeMillis,
     private val runtimeSnapshot: () -> PrivilegedRuntimeSnapshot = PrivilegedRuntimeRegistry::snapshot,
     private val acquireRuntime: () -> PrivilegedRuntimeSnapshot = PrivilegedRuntimeRegistry::acquireForHost,
     private val shizukuAccess: () -> PrivilegedAccessState = { ShizukuBridge().accessState() },
@@ -212,36 +225,107 @@ internal class AndroidHostReadinessWork(
             wirelessDebuggingExplicitlyDisabled = wirelessDebuggingExplicitlyDisabled(context.applicationContext),
         )
     },
+    private val evidenceRepository: PersistentCapabilityEvidenceRepository = PersistentCapabilityEvidenceRepository(
+        store = SharedPreferencesPersistentCapabilityEvidenceStore(context.applicationContext),
+        keyFactory = AndroidPersistentCapabilityEvidenceKeyFactory(
+            shizukuRuntimeVersion = { ShizukuBridge().serverVersionIdentityOrNull(context.applicationContext) },
+        ),
+        recordedAtEpochMs = epochMs,
+        onDiagnostic = { message -> Log.i(TAG, message) },
+    ),
 ) : HostReadinessWork {
+    /** Read-only observation, closed together with the Session composition. */
+    fun observeWirelessDebuggingChanges(context: Context, onChanged: () -> Unit): AutoCloseable {
+        val resolver = context.applicationContext.contentResolver
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) = onChanged()
+        }
+        val registered = runCatching {
+            resolver.registerContentObserver(Settings.Global.getUriFor(ADB_WIFI_ENABLED_SETTING), false, observer)
+        }.isSuccess
+        return AutoCloseable {
+            if (registered) resolver.unregisterContentObserver(observer)
+        }
+    }
+
     override fun observeVolatileRuntime(generation: Long): PrivilegedRuntimeStateSnapshot = observe(
         generation = generation,
         runtime = runtimeSnapshot(),
     )
 
+    /**
+     * This remains passive: it reads app-private metadata and the existing volatile snapshot, but
+     * never calls [acquireRuntime], binds Shizuku UserServices, or starts a capture feature.
+     */
+    override fun observeBackgroundReadiness(generation: Long): BackgroundHostReadinessObservation {
+        val runtime = runtimeSnapshot()
+        val volatile = observe(generation, runtime)
+        val evidence = evidenceRepository.loadReusableEvidence()
+        val cached = CachedPreparedPlanBuilder.build(
+            runtimeState = volatile,
+            passiveRuntimeSnapshot = runtime,
+            records = evidence.reusableRecords,
+            preparedAtMonotonicMs = elapsedRealtimeMs(),
+        )
+        cached.preparedPlan?.let { prepared ->
+            Log.i(
+                TAG,
+                "prepared_plan_selected source=CACHED shape=${prepared.plan.shape} " +
+                    "providers=${prepared.plan.participatingProviders.joinToString()}",
+            )
+        }
+        return BackgroundHostReadinessObservation(
+            runtimeState = volatile,
+            preparedPlan = cached.preparedPlan,
+            evidenceSource = if (evidence.reusableRecords.isEmpty()) {
+                HostReadinessEvidenceSource.NONE
+            } else {
+                HostReadinessEvidenceSource.EXISTING_COMPATIBILITY_CACHE
+            },
+        )
+    }
+
     override fun prepareForHost(generation: Long, runtimeState: PrivilegedRuntimeStateSnapshot): HostReadinessState {
+        val evidence = evidenceRepository.loadReusableEvidence()
+        Log.i(TAG, "prepared_plan_late_revalidation generation=$generation reusable=${evidence.reusableRecords.size}")
         val acquired = acquireRuntime()
         val currentRuntimeState = observe(generation, acquired)
         if (!acquired.ready) return unavailableRuntimeState(generation, currentRuntimeState, acquired)
+        if (acquired.kind == PrivilegedRuntimeKind.DIRECT_SHELL &&
+            currentRuntimeState.directShell.state != PrivilegedRuntimeAvailabilityState.READY
+        ) {
+            PrivilegedRuntimeRegistry.releaseForHost()
+            return unavailableRuntimeState(generation, currentRuntimeState, acquired)
+        }
         return try {
-            when (val admissionResult = admission.prepare(acquired)) {
-                is AndroidHostPrivilegedCapabilityAdmissionResult.Admitted -> HostReadinessState.Ready(
-                    PreparedPrivilegedCapabilityPlan(
-                        generation = generation,
-                        runtimeState = currentRuntimeState,
-                        acquiredRuntime = acquired,
-                        matrix = admissionResult.matrix,
-                        plan = admissionResult.plan,
-                        evidenceSource = HostReadinessEvidenceSource.CURRENT_HOST_ADMISSION,
-                        commitState = HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION,
-                        preparedAtMonotonicMs = elapsedRealtimeMs(),
-                    ),
-                )
+            when (val admissionResult = admission.prepare(acquired, evidence.reusableRecords)) {
+                is AndroidHostPrivilegedCapabilityAdmissionResult.Admitted -> {
+                    evidenceRepository.reconcileAuthoritativeMatrix(admissionResult.matrix)
+                    HostReadinessState.Ready(
+                        PreparedPrivilegedCapabilityPlan(
+                            generation = generation,
+                            runtimeState = currentRuntimeState,
+                            runtimeSnapshot = acquired,
+                            matrix = admissionResult.matrix,
+                            plan = admissionResult.plan,
+                            evidenceSource = HostReadinessEvidenceSource.CURRENT_HOST_ADMISSION,
+                            evidenceCompatibilityKeys = admissionResult.plan.selectedQualifications.mapNotNull {
+                                it.provenance.compatibilityKey
+                            },
+                            commitState = HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION,
+                            preparedAtMonotonicMs = elapsedRealtimeMs(),
+                        ),
+                    )
+                }
 
-                is AndroidHostPrivilegedCapabilityAdmissionResult.Unavailable -> unavailablePlanState(
-                    generation,
-                    currentRuntimeState,
-                    admissionResult.incompatible,
-                )
+                is AndroidHostPrivilegedCapabilityAdmissionResult.Unavailable -> {
+                    evidenceRepository.reconcileAuthoritativeMatrix(admissionResult.matrix)
+                    unavailablePlanState(
+                        generation,
+                        currentRuntimeState,
+                        admissionResult.incompatible,
+                    )
+                }
             }
         } catch (_: RuntimeException) {
             admission.release()
@@ -357,11 +441,16 @@ internal class AndroidHostReadinessWork(
     }
 
     private companion object {
+        const val TAG = "WarpnectHostReadiness"
         const val ADB_WIFI_ENABLED_SETTING = "adb_wifi_enabled"
 
         /** A missing or unreadable setting is unknown, not disabled; bounded acquisition decides. */
         fun wirelessDebuggingExplicitlyDisabled(context: Context): Boolean? = runCatching {
-            Settings.Global.getString(context.contentResolver, ADB_WIFI_ENABLED_SETTING) == "0"
+            when (Settings.Global.getString(context.contentResolver, ADB_WIFI_ENABLED_SETTING)) {
+                "0" -> true
+                "1" -> false
+                else -> null
+            }
         }.getOrNull()
     }
 }

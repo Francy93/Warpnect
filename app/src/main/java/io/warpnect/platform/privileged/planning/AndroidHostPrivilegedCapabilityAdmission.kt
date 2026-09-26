@@ -4,6 +4,9 @@ import android.util.Log
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.platform.privileged.readiness.CachedCapabilityEvidenceMatrixBuilder
+import io.warpnect.platform.privileged.readiness.LateRevalidatedCapabilityEvidence
+import io.warpnect.platform.privileged.readiness.PersistentCapabilityEvidenceRecord
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeCapability
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
@@ -51,7 +54,10 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
     private var activeLease: PrivilegedCapabilityPlanLease? = null
     private var activeResult: AndroidHostPrivilegedCapabilityAdmissionResult.Admitted? = null
 
-    fun prepare(runtime: PrivilegedRuntimeSnapshot): AndroidHostPrivilegedCapabilityAdmissionResult {
+    fun prepare(
+        runtime: PrivilegedRuntimeSnapshot,
+        reusableEvidence: List<PersistentCapabilityEvidenceRecord> = emptyList(),
+    ): AndroidHostPrivilegedCapabilityAdmissionResult {
         synchronized(lock) { activeResult }?.let { return it }
 
         val snapshot = androidCollector.probeSnapshot(SessionRole.Host)
@@ -95,7 +101,17 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         } else {
             Log.i(TAG, "privileged_shizuku_deferred reason=directshell_complete shizuku_started=false")
         }
-        return freezeOrReport(runtime, snapshot, staged.matrix, optionalProvider)
+        // Fresh controller/codec queries remain necessary for this new runtime generation and
+        // WNCP's detailed local snapshot. They do not start media or repeat a capture soak.
+        val revalidated = LateRevalidatedCapabilityEvidence.combine(
+            staged.matrix,
+            CachedCapabilityEvidenceMatrixBuilder.build(reusableEvidence),
+        )
+        val reused = revalidated.entries().count {
+            it.state.isUsable && it.provenance.source == CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE
+        }
+        Log.i(TAG, "prepared_plan_source=${if (reused == 0) "LIVE" else "MIXED"} reused=$reused late_revalidated=true")
+        return freezeOrReport(runtime, snapshot, revalidated, optionalProvider)
     }
 
     /** Builds a truthful incompatible matrix when runtime acquisition itself failed. */

@@ -16,6 +16,13 @@ internal fun interface HostReadinessDispatcher {
 internal interface HostReadinessWork {
     fun observeVolatileRuntime(generation: Long): PrivilegedRuntimeStateSnapshot
 
+    /**
+     * Runs on the coordinator's non-Main dispatcher. Implementations may load compatibility
+     * evidence, but must not acquire a provider or start a feature runtime here.
+     */
+    fun observeBackgroundReadiness(generation: Long): BackgroundHostReadinessObservation =
+        BackgroundHostReadinessObservation(observeVolatileRuntime(generation))
+
     fun prepareForHost(generation: Long, runtimeState: PrivilegedRuntimeStateSnapshot): HostReadinessState
 
     /** Releases only resources acquired by a stale or abandoned Host preparation. */
@@ -25,9 +32,9 @@ internal interface HostReadinessWork {
 /**
  * One generation-scoped readiness owner shared by background observation and Enable Host.
  *
- * Startup performs only [HostReadinessWork.observeVolatileRuntime]. A user Host request upgrades
- * that same flight to the existing acquisition/admission path, so it cannot bootstrap a second
- * DirectShell runtime or start a second staged Shizuku qualification concurrently.
+ * Startup performs only [HostReadinessWork.observeBackgroundReadiness]. A user Host request
+ * upgrades that same flight to the existing acquisition/admission path, so it cannot bootstrap a
+ * second DirectShell runtime or start a second staged Shizuku qualification concurrently.
  */
 internal class BackgroundHostReadinessCoordinator(
     private val dispatcher: HostReadinessDispatcher,
@@ -94,8 +101,9 @@ internal class BackgroundHostReadinessCoordinator(
         val shouldRelease = synchronized(lock) {
             if (closed) return@synchronized false
             nextGeneration += 1L
-            val previous = inFlight
-            val wasReady = _state.value is HostReadinessState.Ready
+            val wasFrozen = (_state.value as? HostReadinessState.Ready)
+                ?.prepared
+                ?.commitState == HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION
             inFlight = null
             completionDispatched = false
             val snapshot = latestRuntimeState
@@ -111,7 +119,7 @@ internal class BackgroundHostReadinessCoordinator(
             } else {
                 publishLocked(HostReadinessState.NotStarted, hostActionVisible = false)
             }
-            wasReady || (previous?.hostRequested == true && previous.stage != FlightStage.PREPARING_HOST)
+            wasFrozen
         }
         if (shouldRelease) work.releasePreparedResources()
     }
@@ -124,13 +132,28 @@ internal class BackgroundHostReadinessCoordinator(
     /** Releases an acquired plan after Host admission itself could not start discovery. */
     fun abandonPreparedHost() = invalidate()
 
+    /** A volatile setting change invalidates advisory work, never the active Host contract. */
+    fun refreshBackgroundReadiness(): Boolean {
+        val generation = synchronized(lock) {
+            if (closed || inFlight?.hostRequested == true ||
+                (_state.value as? HostReadinessState.Ready)?.prepared?.commitState ==
+                HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION
+            ) {
+                return@synchronized null
+            }
+            newFlightLocked(hostRequested = false)
+        } ?: return false
+        return dispatchObservation(generation)
+    }
+
     override fun close() {
         val shouldRelease = synchronized(lock) {
             if (closed) return@synchronized false
             closed = true
             nextGeneration += 1L
-            val release = _state.value is HostReadinessState.Ready ||
-                (inFlight?.hostRequested == true && inFlight?.stage != FlightStage.PREPARING_HOST)
+            val release = (_state.value as? HostReadinessState.Ready)
+                ?.prepared
+                ?.commitState == HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION
             inFlight = null
             completionDispatched = false
             publishLocked(HostReadinessState.NotStarted, hostActionVisible = false)
@@ -147,18 +170,25 @@ internal class BackgroundHostReadinessCoordinator(
 
     private fun observe(generation: Long) {
         if (!isCurrentFlight(generation)) return
-        val runtimeState = runCatching { work.observeVolatileRuntime(generation) }.getOrElse {
+        val observation = runCatching { work.observeBackgroundReadiness(generation) }.getOrElse {
             completeObservationFailure(generation)
             return
         }
+        val runtimeState = observation.runtimeState
         require(runtimeState.generation == generation) { "runtime_readiness_observation_generation_mismatch" }
 
         val next = synchronized(lock) {
             val flight = inFlight
             if (closed || flight?.generation != generation) return@synchronized DispatchAction.None
             latestRuntimeState = runtimeState
-            val observedState = backgroundStateFor(runtimeState)
-            if (flight.hostRequested && observedState is HostReadinessState.Stale) {
+            val observedState = backgroundStateFor(
+                runtimeState = runtimeState,
+                preparedPlan = observation.preparedPlan,
+                evidenceSource = observation.evidenceSource,
+            )
+            if (flight.hostRequested &&
+                (observedState is HostReadinessState.Stale || observedState is HostReadinessState.Ready)
+            ) {
                 flight.stage = FlightStage.PREPARING_HOST
                 publishLocked(
                     HostReadinessState.Checking(generation, HostReadinessPhase.PREPARING_HOST),
@@ -176,7 +206,14 @@ internal class BackgroundHostReadinessCoordinator(
 
     private fun prepare(generation: Long, runtimeState: PrivilegedRuntimeStateSnapshot) {
         if (!isCurrentFlight(generation)) return
-        val result = runCatching { work.prepareForHost(generation, runtimeState) }.getOrElse {
+        val result = runCatching {
+            work.prepareForHost(generation, runtimeState).also { prepared ->
+                require(
+                    prepared !is HostReadinessState.Ready ||
+                        prepared.prepared.commitState == HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION,
+                ) { "host_readiness_advisory_cannot_admit_host" }
+            }
+        }.getOrElse {
             HostReadinessState.Failed(
                 generation = generation,
                 runtimeState = runtimeState,
@@ -191,7 +228,9 @@ internal class BackgroundHostReadinessCoordinator(
         synchronized(lock) {
             val flight = inFlight
             if (closed || flight?.generation != generation) {
-                releaseStaleResult = result is HostReadinessState.Ready
+                releaseStaleResult = (result as? HostReadinessState.Ready)
+                    ?.prepared
+                    ?.commitState == HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION
                 return@synchronized
             }
             inFlight = null
@@ -251,7 +290,11 @@ internal class BackgroundHostReadinessCoordinator(
         return generation
     }
 
-    private fun backgroundStateFor(runtimeState: PrivilegedRuntimeStateSnapshot): HostReadinessState {
+    private fun backgroundStateFor(
+        runtimeState: PrivilegedRuntimeStateSnapshot,
+        preparedPlan: PreparedPrivilegedCapabilityPlan?,
+        evidenceSource: HostReadinessEvidenceSource,
+    ): HostReadinessState {
         val directShell = runtimeState.directShell
         return when (directShell.state) {
             PrivilegedRuntimeAvailabilityState.DISABLED_RECOVERABLE -> HostReadinessState.UserActionRequired(
@@ -274,10 +317,25 @@ internal class BackgroundHostReadinessCoordinator(
                 directShell.reason ?: PrivilegedRuntimeFailureReason.PLATFORM_UNSUPPORTED,
             )
 
-            else -> HostReadinessState.Stale(
+            PrivilegedRuntimeAvailabilityState.ENABLED_BUT_UNUSABLE -> HostReadinessState.Failed(
+                runtimeState.generation,
+                runtimeState,
+                directShell.reason ?: PrivilegedRuntimeFailureReason.PROVIDER_BOOTSTRAP_FAILED,
+            )
+
+            PrivilegedRuntimeAvailabilityState.TEMPORARILY_UNAVAILABLE,
+            PrivilegedRuntimeAvailabilityState.RECOVERY_IN_PROGRESS,
+            PrivilegedRuntimeAvailabilityState.RECOVERY_FAILED,
+            -> HostReadinessState.Stale(
                 generation = runtimeState.generation,
                 runtimeState = runtimeState,
-                evidenceSource = HostReadinessEvidenceSource.NONE,
+                evidenceSource = evidenceSource,
+            )
+
+            else -> preparedPlan?.let(HostReadinessState::Ready) ?: HostReadinessState.Stale(
+                generation = runtimeState.generation,
+                runtimeState = runtimeState,
+                evidenceSource = evidenceSource,
             )
         }
     }
