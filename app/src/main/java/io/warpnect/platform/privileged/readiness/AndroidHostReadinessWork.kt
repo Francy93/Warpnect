@@ -12,6 +12,9 @@ import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityA
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
 import io.warpnect.platform.privileged.planning.CapabilityQualificationState
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
+import io.warpnect.platform.privileged.runtime.DirectRootRuntimeRegistry
+import io.warpnect.platform.privileged.runtime.DirectRootSnapshot
+import io.warpnect.platform.privileged.runtime.DirectRootState
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeRegistry
@@ -34,14 +37,28 @@ internal object PrivilegedRuntimeStateMapper {
         directShellEnvironment: DirectShellRuntimeEnvironment,
         runtime: PrivilegedRuntimeSnapshot,
         shizukuAccess: PrivilegedAccessState,
+        directRoot: DirectRootSnapshot = DirectRootRuntimeRegistry.runtimeSnapshot(),
     ): PrivilegedRuntimeStateSnapshot = PrivilegedRuntimeStateSnapshot(
         generation = generation,
         observedAtMonotonicMs = observedAtMonotonicMs,
         directRoot = PrivilegedRuntimeAvailability(
             kind = PrivilegedRuntimeKind.DIRECT_ROOT,
-            state = PrivilegedRuntimeAvailabilityState.NOT_IMPLEMENTED,
+            state = when (directRoot.state) {
+                DirectRootState.HELPER_READY -> if (directRoot.ready) {
+                    PrivilegedRuntimeAvailabilityState.READY
+                } else {
+                    PrivilegedRuntimeAvailabilityState.ENABLED_BUT_UNUSABLE
+                }
+                DirectRootState.IMPLEMENTATION_UNAVAILABLE,
+                DirectRootState.PRODUCTION_BOOTSTRAP_NOT_IMPLEMENTED,
+                -> PrivilegedRuntimeAvailabilityState.NOT_IMPLEMENTED
+                DirectRootState.AUTHORIZATION_REQUIRED -> PrivilegedRuntimeAvailabilityState.AUTHORIZATION_REQUIRED
+                DirectRootState.BOOTSTRAP_FAILED -> PrivilegedRuntimeAvailabilityState.ENABLED_BUT_UNUSABLE
+                else -> PrivilegedRuntimeAvailabilityState.TEMPORARILY_UNAVAILABLE
+            },
             reason = null,
-            detail = "direct_root_not_implemented",
+            detail = directRoot.reason.take(PrivilegedRuntimeAvailability.MAX_DETAIL_LENGTH),
+            rootFoundation = directRoot,
         ),
         directShell = directShellAvailability(directShellEnvironment, runtime),
         shizuku = shizukuAvailability(shizukuAccess),
@@ -243,8 +260,10 @@ internal class AndroidHostReadinessWork(
         val registered = runCatching {
             resolver.registerContentObserver(Settings.Global.getUriFor(ADB_WIFI_ENABLED_SETTING), false, observer)
         }.isSuccess
+        val rootObservation = DirectRootRuntimeRegistry.observe(onChanged)
         return AutoCloseable {
             if (registered) resolver.unregisterContentObserver(observer)
+            rootObservation.close()
         }
     }
 
@@ -344,14 +363,22 @@ internal class AndroidHostReadinessWork(
         admission.release()
     }
 
-    private fun observe(generation: Long, runtime: PrivilegedRuntimeSnapshot): PrivilegedRuntimeStateSnapshot =
-        PrivilegedRuntimeStateMapper.snapshot(
+    private fun observe(generation: Long, runtime: PrivilegedRuntimeSnapshot): PrivilegedRuntimeStateSnapshot {
+        val observed = PrivilegedRuntimeStateMapper.snapshot(
             generation = generation,
             observedAtMonotonicMs = elapsedRealtimeMs(),
             directShellEnvironment = directShellEnvironment(),
             runtime = runtime,
             shizukuAccess = shizukuAccess(),
         )
+        Log.i(
+            TAG,
+            "direct_root_runtime_observed state=${observed.directRoot.state} " +
+                "foundation=${observed.directRoot.rootFoundation?.state} " +
+                "provenance=${observed.directRoot.rootFoundation?.provenance} host_capabilities=NOT_IMPLEMENTED",
+        )
+        return observed
+    }
 
     private fun unavailableRuntimeState(
         generation: Long,

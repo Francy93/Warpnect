@@ -18,7 +18,15 @@ final class DirectShellSecretFile {
     private DirectShellSecretFile() {}
 
     static byte[] readAndDelete(String path) {
-        if (path == null || !path.matches(PATH_PATTERN)) {
+        return readAndDelete(path, PATH_PATTERN);
+    }
+
+    static byte[] readRootAndDelete(String path) {
+        return readAndDelete(path, "/data/user/0/io\\.warpnect/files/root-lab/[0-9a-f]{1,16}\\.secret");
+    }
+
+    private static byte[] readAndDelete(String path, String pattern) {
+        if (path == null || !path.matches(pattern)) {
             throw new IllegalArgumentException("invalid_secret_file_path");
         }
         File file = new File(path);

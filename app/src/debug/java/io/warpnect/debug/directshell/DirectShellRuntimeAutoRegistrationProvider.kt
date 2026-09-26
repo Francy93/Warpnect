@@ -21,6 +21,7 @@ internal class DirectShellRuntimeAutoRegistrationProvider : ContentProvider() {
             Log.e(TAG, "DIRECT_SHELL_RUNTIME_AUTO_REGISTRATION_FAILED missing_context")
             return false
         }
+        DirectRootLabController.clearAbandonedFiles(applicationContext)
         val registered = PrivilegedRuntimeRegistry.registerAutomaticDirectShell(
             PrivilegedRuntimeFactory { DirectShellRuntime(applicationContext) },
         )

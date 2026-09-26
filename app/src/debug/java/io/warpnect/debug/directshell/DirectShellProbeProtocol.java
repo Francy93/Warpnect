@@ -87,7 +87,8 @@ final class DirectShellProbeProtocol {
         VIDEO_START(81),
         VIDEO_UPDATE(82),
         VIDEO_STOP(83),
-        GET_VIDEO_DIAGNOSTICS(84);
+        GET_VIDEO_DIAGNOSTICS(84),
+        ROOT_CAPABILITIES(90);
 
         final int code;
 

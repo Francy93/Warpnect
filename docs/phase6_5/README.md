@@ -28,6 +28,16 @@ the existing RFC-006I plan freeze. Transient Wireless Debugging, endpoint, and
 Shizuku availability changes affect current readiness without deleting durable
 compatibility evidence.
 
+The subsequent DEBUG/laboratory Root authority foundation is now AOSP/API26
+emulator-validated:
+
+    DIRECTROOT_LAB_BOOTSTRAP_AND_RECOVERY_AUTHORITY_FOUNDATION_VALIDATED
+
+It owns authenticated UID0 control and generations, not Host capabilities.
+Production Root authorization, Root Video/SystemAudio/Input and remediation
+remain NOT_IMPLEMENTED. See `DirectRootBootstrapFoundation.md` for the exact
+783-test gates, 8/8 qualification cases, resource cycles and physical boundary.
+
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
 not a declaration that DirectShell is the release default or that Shizuku can
@@ -80,7 +90,9 @@ failure.
 laboratory, including adb-root UID0, natural Enforcing SELinux, cold-boot and
 snapshot behavior. API25 still rejects the normal minSdk26 APK as expected;
 API26 installs and renders the unchanged app. This is environment evidence,
-not physical-device support or an implemented DirectRoot backend. DirectRoot
+not physical-device support or an implemented DirectRoot capability backend.
+The follow-up `DirectRootBootstrapFoundation.md` adds a DEBUG/laboratory UID0
+authority foundation. Production Root authorization, Root Video/SystemAudio/Input
 and Root-assisted Remediation remain **NOT IMPLEMENTED**.
 
 ## Report Roles
@@ -120,10 +132,13 @@ Completed:
   background feature-server startup. Real A41/Tablet process restarts loaded
   three persisted qualifications, prepared an advisory DirectShell-only plan,
   then performed current runtime acquisition and late plan freeze on demand.
+* DirectRoot DEBUG/laboratory bootstrap and separate recovery-authority
+  availability: authenticated UID0 control, generation/lifecycle qualification
+  on AOSP/API26, no capability provider or remediation action.
 
 Next architecture milestones:
 
-1. DirectRoot Bootstrap + Root Recovery Authority Foundation.
+1. DirectRoot Per-Capability Qualification.
 2. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
 3. Implement and hardware-validate provider migration only after that RFC is
    accepted.
@@ -163,6 +178,9 @@ evidence are recorded in RFC-006J's Step 2 verification section.
 
 Deferred by RFC-006J Steps 1 and 2: Root-assisted Remediation, DirectRoot,
 Same-provider Recovery, and Live Provider Migration are all NOT IMPLEMENTED.
+The subsequent foundation slice supersedes only the laboratory authority part
+of that historical statement; all Root capabilities, production authorization
+and remediation remain deferred.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain
 jointly required for Host availability.

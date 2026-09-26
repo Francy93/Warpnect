@@ -2,6 +2,7 @@ package io.warpnect.platform.privileged.readiness
 
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityMatrix
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlan
+import io.warpnect.platform.privileged.runtime.DirectRootSnapshot
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 
@@ -42,6 +43,7 @@ internal data class PrivilegedRuntimeAvailability(
     val detail: String = "",
     /** A registered but intentionally idle runtime may be acquired only after an explicit Host request. */
     val candidateForHostAcquisition: Boolean = false,
+    val rootFoundation: DirectRootSnapshot? = null,
 ) {
     init {
         require(detail.length <= MAX_DETAIL_LENGTH) { "runtime_readiness_detail_too_long" }

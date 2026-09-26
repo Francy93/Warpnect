@@ -393,6 +393,24 @@ Next recommended task, **not implemented here**:
 
     DirectRoot Bootstrap + Root Recovery Authority Foundation
 
+### Foundation Follow-up
+
+The environment above is historical qualification evidence, checkpointed as
+`1766fa1`. `DirectRootBootstrapFoundation.md` records the subsequent DEBUG/lab
+runtime slice and its separate validation. `tools/root-lab/RootHelper.ps1` allows
+only the verified API26 emulator to launch the fixed Warpnect UID0 helper from
+the matching installed APK, consuming a private per-generation secret file.
+It does not change these AVD configurations, minSdk, snapshots or SELinux.
+The app still cannot invoke the AOSP su, and production root-manager acquisition,
+Root capabilities and actual remediation remain NOT IMPLEMENTED.
+
+The subsequent foundation is **IMPLEMENTED / TESTED / EMULATOR-VALIDATED** on
+API26: 8/8 formal cases and 2/2 separate resource cycles passed; actual helper
+UID/GID0 and Enforcing `u:r:su:s0` were observed. Final helper processes,
+listeners and private handoff files were zero; adbd returned to UID2000 and
+RootLab stopped API26. API25 was not modified or rebooted in that slice.
+This does not change the environment-versus-production acquisition distinction.
+
 ## References
 
 * [Android emulator command-line lifecycle](https://developer.android.com/studio/run/emulator-commandline).

@@ -300,7 +300,8 @@ The next milestones are:
 - RFC-006J - Privileged Runtime Orchestration and Host Readiness [Step 1 lifecycle-validated; Step 2 process-restart/cache-to-freeze validated on A41/API31 and Tablet/API33]
 - Runtime State Model and Background Host Readiness Coordinator [implemented: passive volatile observation, single-flight admission, generation-safe cleanup, and late RFC-006I plan freeze]
 - Persistent Capability Evidence and Prepared Plan Reuse [implemented, JVM-tested, hardware-validated: bounded app-private positive evidence, exact compatibility keys, selective invalidation, advisory cache reconstruction, and mandatory late revalidation]
-- DirectRoot Bootstrap + Root Recovery Authority Foundation [next; not implemented]
+- DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization and capability providers not implemented]
+- DirectRoot Per-Capability Qualification [next; no Root capability is implemented yet]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
@@ -316,6 +317,15 @@ startup never launches DirectShell feature servers or Warpnect Shizuku
 UserServices; user Host admission re-observes runtime state, performs the
 existing bounded RFC-006I admission, and freezes a plan only before Host
 availability and discovery.
+
+The following laboratory foundation slice separates Root authority from Root
+capability provision. A purpose-specific authenticated UID0 helper may expose
+volatile authority availability, but Root Video/SystemAudio/Input remain
+NOT_IMPLEMENTED and cannot participate in a Complete Host plan. Production
+Root-manager consent, physical Root validation and actual remediation remain
+deferred. The lab authority passed 8/8 formal cases plus 2/2 resource cycles;
+this does not qualify a physical Root device or product Root manager. See
+`phase6_5/DirectRootBootstrapFoundation.md` for exact lab evidence.
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

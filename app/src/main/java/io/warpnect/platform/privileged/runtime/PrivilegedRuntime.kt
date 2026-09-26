@@ -3,8 +3,8 @@ package io.warpnect.platform.privileged.runtime
 /**
  * The finite privileged execution environments Warpnect may select for Host capabilities.
  *
- * DirectRoot is deliberately represented without an implementation. Keeping the kind visible
- * lets the resolver report the intended product order without pretending root is available.
+ * DirectRoot capability provision is deliberately not implemented. The separate authority
+ * foundation does not register a Host provider or change this resolver's admission policy.
  */
 enum class PrivilegedRuntimeKind {
     DIRECT_ROOT,

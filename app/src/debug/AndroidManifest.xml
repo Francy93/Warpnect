@@ -4,6 +4,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application>
+        <!-- Lab-only fixed controller. Ordinary applications cannot invoke it. -->
+        <receiver
+            android:name=".debug.directshell.DirectRootLabReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
         <!-- Registers a lazy DirectShell factory; no shell process is launched at app startup. -->
         <provider
             android:name=".debug.directshell.DirectShellRuntimeAutoRegistrationProvider"

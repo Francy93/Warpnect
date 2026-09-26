@@ -7,15 +7,18 @@ validated on A41/API31 and Tablet/API33. Step 2 persistent capability evidence
 and advisory prepared-plan reuse are implemented, JVM-tested, and process-restart
 hardware validated on the same two devices. Cached evidence remains advisory;
 current runtime acquisition and late qualification still precede Host publication.
+The subsequent DirectRoot authority foundation is DEBUG/laboratory implemented,
+JVM-tested and AOSP/API26 emulator-validated. Production Root authorization and
+Root capability providers remain NOT_IMPLEMENTED.
 
 The implemented slice supplies volatile runtime-state observation,
 asynchronous background Host readiness, single-flight Host preparation,
 generation-safe invalidation, structured readiness UI state, versioned
 persistent capability evidence, selective invalidation, cached background
 matrix reconstruction, and late reuse of the existing RFC-006I admission/freeze
-boundary. It does not implement
-DirectRoot, root-assisted remediation, same-provider recovery, or live provider
-migration.
+boundary, plus volatile observation of the laboratory Root authority. It does
+not implement Root capability providers, production Root authorization,
+root-assisted remediation, same-provider recovery, or live provider migration.
 
 ## Purpose
 
@@ -51,7 +54,9 @@ runtime discovery
   modern API31, API33, and API36 reference devices.
 * Shizuku can be an explicitly selected optional capability provider in the
   controlled DEBUG composition. It is not a post-freeze fallback.
-* DirectRoot is `NOT_IMPLEMENTED`.
+* DirectRoot has a validated DEBUG/laboratory UID0 runtime authority foundation.
+  Its Video/SystemAudio/Input capability cells and production bootstrap remain
+  `NOT_IMPLEMENTED`; Root cannot supply a Complete Host plan.
 * The A41 NSD repair proves that runtime state can change independently of a
   capability implementation. A valid pairing and local daemon were present;
   the prior failure was client-side endpoint selection.
@@ -69,9 +74,10 @@ repository and hardware evidence.
 state permits cheaper, more truthful preparation than requalifying every
 provider after every application launch.
 
-**UNKNOWN:** DirectRoot behavior, which runtime failures are safely recoverable
-on each Android environment, and the protocol/lifecycle requirements for live
-provider migration have not been implemented or hardware-qualified.
+**UNKNOWN:** Production/physical DirectRoot behavior, capability support, which
+runtime failures are safely recoverable on each Android environment, and the
+protocol/lifecycle requirements for live provider migration remain unqualified.
+The separate AOSP/API26 foundation report establishes only laboratory authority.
 
 **FACT:** Step 1 now implements passive discovery, volatile state publication,
 and single-flight readiness ownership. Its active Host path delegates to the
@@ -141,7 +147,7 @@ The candidate domains are:
 
 | Provider | Discovery role now | Capability role now |
 | --- | --- | --- |
-| DIRECT_ROOT | Structurally modeled only | `NOT_IMPLEMENTED` |
+| DIRECT_ROOT | Volatile authority observation; DEBUG/lab UID0 bootstrap, production bootstrap absent | Video/SystemAudio/Input `NOT_IMPLEMENTED` |
 | DIRECT_SHELL | Wireless Debugging, pairing, local ADB, artifact, and authenticated-runtime state | Modern direct provider when truly qualified |
 | SHIZUKU | Installation, Binder, authorization, and provider health | Optional per-capability compatibility provider |
 
@@ -209,7 +215,9 @@ app start
 
 The Android implementation passively observes API level, explicit Wireless
 Debugging disablement, the existing DirectShell runtime snapshot, and Shizuku
-Binder access state. DirectRoot is reported as `NOT_IMPLEMENTED`. It does not
+Binder access state, plus the separate volatile Root authority snapshot.
+Production Root bootstrap remains absent; an explicitly acquired lab helper can
+be observed READY without making Root a Host provider. Observation does not
 connect local ADB, launch `app_process`, start a DirectShell feature server, or
 start a Warpnect Shizuku UserService while Host is not requested.
 
@@ -231,7 +239,8 @@ used. A manager upgrade therefore invalidates
 only Shizuku records, even when the server API number is unchanged. An unavailable
 or unidentifiable provider is not reused. This is not a claim that an installed
 manager version proves the binary identity of an already-running server.
-DirectRoot has no positive evidence domain because it remains `NOT_IMPLEMENTED`.
+DirectRoot has no positive capability evidence domain because its capability
+providers remain `NOT_IMPLEMENTED`. Helper liveness is never persisted.
 
 The cache schema is explicitly versioned. A mismatched schema or corrupt payload
 is dropped safely; an unknown bounded record is ignored without blocking
@@ -400,7 +409,7 @@ The conceptual provider preference remains `DIRECT_ROOT > DIRECT_SHELL >
 SHIZUKU`, but it never overrides completeness, evidence, reliability, or the
 provider-count rule. No device, OEM, or blind API allowlist is introduced.
 
-## Root Has Two Future Roles
+## Root Has Two Independent Roles
 
 Root as a capability provider and Root as a recovery authority are independent:
 
@@ -414,8 +423,9 @@ Root recovery authority:
   provider.
 ```
 
-DirectRoot is `NOT_IMPLEMENTED`. This RFC neither creates a root command path
-nor grants Root a generic remediation authority.
+The laboratory authority foundation is implemented independently of those
+future operations. Root capability providers and actual remediation remain
+`NOT_IMPLEMENTED`. There is no generic Root command path or mutation authority.
 
 ## Remediation Policy
 
@@ -673,7 +683,7 @@ PERSISTENT_CAPABILITY_EVIDENCE_AND_PREPARED_PLAN_VALIDATED
 
 This RFC does not implement:
 
-* DirectRoot or root command execution;
+* DirectRoot capability providers, production Root authorization or arbitrary root command execution;
 * automatic Wireless Debugging or Shizuku startup/recovery;
 * root-assisted remediation;
 * same-provider runtime recovery;
@@ -690,16 +700,59 @@ Persistent Capability Evidence: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tab
 Selective Invalidation: IMPLEMENTED / TESTED / VALIDATED (volatile change on A41; exact-key policies JVM-tested)
 Prepared Plan Reuse: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
 Root-assisted Remediation: NOT IMPLEMENTED
-DirectRoot: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
+DirectRoot Runtime Foundation: IMPLEMENTED / TESTED / EMULATOR-VALIDATED (AOSP/API26)
+Production Root Authorization: NOT IMPLEMENTED
+DirectRoot Video/SystemAudio/Input: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
+Root Recovery Authority availability: IMPLEMENTED / TESTED / EMULATOR-VALIDATED; no executable remediation actions
+Physical Root Validation: NOT VALIDATED
 Same-provider Recovery: NOT IMPLEMENTED
 Live Provider Migration: NOT IMPLEMENTED
 ```
 
 ## Next Implementation Step
 
-DirectRoot Bootstrap + Root Recovery Authority Foundation.
+DirectRoot per-capability qualification, after the validated laboratory foundation.
 
-That work must not be inferred from Step 1: it will require an explicit root
-authorization and command boundary, a separate capability provider contract,
-and a separately reviewed remediation authority. Same-provider recovery and
-live provider migration remain out of scope.
+That work must not infer capability support from UID0 authority: it requires
+separate capability implementation/qualification. Production acquisition still
+requires explicit root-manager authorization; actual remediation requires a
+separately reviewed finite action policy. Same-provider recovery and live
+provider migration remain out of scope.
+
+## DirectRoot Authority Foundation
+
+`DirectRootRuntime` owns a `RootRuntimeBootstrap` adapter and an authenticated,
+finite `RootControlSession`. `DirectRootRuntimeRegistry` exposes only a volatile
+snapshot. The DEBUG adapter's provenance is `LABORATORY_EXTERNAL_ROOT`; future
+`PRODUCTION_ROOT_MANAGER` acquisition must require the root manager's explicit
+authorization and is NOT IMPLEMENTED. ADB root is not app Root authorization.
+
+States distinguish production bootstrap absence, lab/helper absence, acquisition,
+authenticated UID0 readiness, failure, loss and release. `RootRecoveryAuthority`
+observes that authenticated authority separately from capability provision; its
+supported action set is empty. No settings/property/permission/service mutation
+or generic Root command is enabled.
+
+The readiness mapper retains the typed foundation observation and refreshes
+passive background state when it changes. A READY Root authority cannot make
+Host ready: RFC-006I cells and acquisition still mark all Root capabilities
+NOT_IMPLEMENTED. No Root-helper liveness, lab adbd state or secret is persisted
+as capability evidence. Physical devices retain the truthful production-bootstrap
+NOT_IMPLEMENTED state without a fabricated authorization prompt.
+
+The helper reuses the existing HMAC envelope and bounded IPv4 loopback control.
+Fresh generation, connection challenge, ordered requests, APK integrity and
+UID0 checks bind acquisition. One authenticated owner, connection-loss shutdown,
+idle limit and absolute laboratory expiry bound lifetime. No peer-UID claim is
+made for TCP. See `../phase6_5/DirectRootBootstrapFoundation.md` for the launch trust
+model, emulator evidence and deferred production/physical boundaries.
+
+API26 validation: eight formal cases passed 8/8 without retry and two separate
+resource cycles passed 2/2; six authenticated UID0 acquisitions on the exact APK.
+Root authority READY retained all three capability cells as NOT_IMPLEMENTED.
+App death, stale secret, wrong generation, duplicate owner, helper loss, idle
+expiry and UID2000 rejection were exercised; final helpers/listeners/bootstrap
+files were zero. A41/API31 regression retained SINGLE / DIRECT_SHELL and Host
+Available with Shizuku deferred; Tablet was not connected. The final JVM suite
+contains 783 tests with zero failures/errors/skips. Exact identities, artifact
+hash and attempt accounting are in the focused foundation report.
