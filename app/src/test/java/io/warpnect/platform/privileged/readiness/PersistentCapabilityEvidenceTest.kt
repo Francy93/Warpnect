@@ -21,6 +21,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PersistentCapabilityEvidenceTest {
+    @Test fun `Root Video and Input evidence round trip without Root Audio`() {
+        val records = listOf(PrivilegedCapability.VIDEO, PrivilegedCapability.INPUT).map {
+            record(PrivilegedProvider.DIRECT_ROOT, it, runtime = "LABORATORY_EXTERNAL_ROOT")
+        }
+        val decoded = PersistentCapabilityEvidenceCodec.decode(PersistentCapabilityEvidenceCodec.encode(records))
+        assertEquals(records, decoded.records)
+        val matrix = CachedCapabilityEvidenceMatrixBuilder.build(decoded.records)
+        assertTrue(matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO).state.isUsable)
+        assertEquals(
+            CapabilityQualificationState.NOT_IMPLEMENTED,
+            matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO).state,
+        )
+        assertNull(
+            CachedPreparedPlanBuilder.build(runtimeState(false), idleDirectShellRuntime(), records, 1).preparedPlan,
+        )
+    }
+
+    @Test fun `Root Video contradiction preserves Input evidence`() {
+        val video =
+            record(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO, runtime = "LABORATORY_EXTERNAL_ROOT")
+        val input =
+            record(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT, runtime = "LABORATORY_EXTERNAL_ROOT")
+        val store = MemoryStore(listOf(video, input))
+        val repo =
+            repository(
+                store,
+                mapOf(
+                    video.coordinate to PersistentCapabilityEvidenceKeyExpectation.Known(video.compatibilityKey),
+                    input.coordinate to PersistentCapabilityEvidenceKeyExpectation.Known(input.compatibilityKey),
+                ),
+            )
+        repo.reconcileAuthoritativeMatrix(
+            matrix { provider, capability ->
+                unavailable(
+                    provider,
+                    capability,
+                    if (provider == PrivilegedProvider.DIRECT_ROOT && capability == PrivilegedCapability.VIDEO) {
+                        CapabilityQualificationState.QUALIFICATION_FAILED
+                    } else {
+                        CapabilityQualificationState.DEFERRED
+                    },
+                    "video_capture_HiddenApiUnavailable",
+                )
+            },
+        )
+        assertEquals(listOf(input), repo.loadReusableEvidence().reusableRecords)
+    }
+
     @Test
     fun `Root Input evidence round trips with laboratory provenance`() {
         val root = record(
@@ -36,7 +84,7 @@ class PersistentCapabilityEvidenceTest {
             matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT).state,
         )
         assertEquals(
-            CapabilityQualificationState.NOT_IMPLEMENTED,
+            CapabilityQualificationState.DEFERRED,
             matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO).state,
         )
         assertEquals(
@@ -113,12 +161,12 @@ class PersistentCapabilityEvidenceTest {
     }
 
     @Test
-    fun `Root positive media or missing bootstrap provenance cannot be persisted`() {
+    fun `Root positive audio or missing bootstrap provenance cannot be persisted`() {
         assertTrue(
             runCatching {
                 record(
                     PrivilegedProvider.DIRECT_ROOT,
-                    PrivilegedCapability.VIDEO,
+                    PrivilegedCapability.SYSTEM_AUDIO,
                     runtime = "LABORATORY_EXTERNAL_ROOT",
                 )
             }.isFailure,
@@ -151,7 +199,7 @@ class PersistentCapabilityEvidenceTest {
     }
 
     @Test
-    fun `Root compatibility key distinguishes provenance and supports only Input`() {
+    fun `Root compatibility key distinguishes provenance and supports Video and Input only`() {
         fun factory(provenance: RootBootstrapProvenance?) = AndroidPersistentCapabilityEvidenceKeyFactory(
             { 26 },
             { "aosp-x86_64-lab" },
@@ -173,7 +221,7 @@ class PersistentCapabilityEvidenceTest {
         assertTrue(labKey.stableId != prodKey.stableId)
         assertEquals(
             PersistentCapabilityEvidenceKeyExpectation.Unsupported,
-            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO),
+            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO),
         )
         assertEquals(
             PersistentCapabilityEvidenceKeyExpectation.Unsupported,

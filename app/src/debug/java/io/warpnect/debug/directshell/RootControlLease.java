@@ -60,9 +60,28 @@ final class RootControlLease {
     }
 
     static boolean supported(DirectShellProbeProtocol.Command command) {
-        return inputCommand(command) || command == DirectShellProbeProtocol.Command.PING ||
+        return videoCommand(command) || inputCommand(command) || command == DirectShellProbeProtocol.Command.PING ||
                 command == DirectShellProbeProtocol.Command.GET_RUNTIME_INFO ||
                 command == DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ||
                 command == DirectShellProbeProtocol.Command.SHUTDOWN;
+    }
+
+    synchronized boolean acceptVideo(long requestId, byte[] payload, long now) {
+        if (!authenticated || closed || now >= expiresAt) return false;
+        try {
+            io.warpnect.platform.capture.RootVideoRequest request =
+                    io.warpnect.platform.capture.RootVideoRequestCodec.INSTANCE.decode(payload);
+            return request.getGeneration() == generation && order.accept(requestId);
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
+    }
+
+    static boolean videoCommand(DirectShellProbeProtocol.Command command) {
+        switch (command) {
+            case VIDEO_QUALIFY: case VIDEO_START: case VIDEO_UPDATE: case VIDEO_STOP: case GET_VIDEO_DIAGNOSTICS:
+                return true;
+            default: return false;
+        }
     }
 }

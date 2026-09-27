@@ -342,3 +342,25 @@ cannot satisfy future physical/Magisk qualification, helper liveness is not
 persisted, and Input alone cannot make a normal Host available. The historical
 8/8 foundation and A41 PASS above remain separate from the Input slice's attempt
 accounting and its A41 live-admission endpoint failure.
+
+## Video Follow-up
+
+The validated Input slice was locally checkpointed as `ae431d9` before Video
+work. `DirectRootVideoQualification.md` now records the second capability:
+generation-bound Root mirror control, an authenticated provider/UID/PID-specific
+Binder Surface lease and the existing normal-process encoder. Helper identity
+is version3 / `warpnect-root-video-input-v1`; the HMAC foundation and laboratory
+launch trust boundary are retained, with no Surface/encoded video on TCP.
+
+The frozen APK passed3/3 AOSP/API26 fixture A/B qualifications with objective
+decoded content, and two additional active helper/app-loss cases. Video/Input
+compatibility is QUALIFIED for the exact laboratory key; liveness remains
+volatile. Software gates passed841 tests with0 failures/errors/skips. New Video
+work remains uncommitted; no push/merge. Earlier foundation and Input evidence
+above is unchanged historical evidence, not relabeled as Video qualification.
+
+Root SystemAudio, production Root-manager authorization, actual remediation,
+same-provider recovery and live migration remain NOT_IMPLEMENTED. Root-only
+Complete Host remains incomplete, missing SystemAudio. No physical Root claim.
+See the focused report for exact generations, artifact, resource sampling
+limitations and the optional physical admission observations.

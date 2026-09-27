@@ -35,12 +35,14 @@ class DirectShellVideoCaptureProbeActivity : Activity() {
     private fun applyIntent() {
         val state = intent.getStringExtra(EXTRA_STATE)?.takeIf { it == STATE_A || it == STATE_B } ?: STATE_A
         probeView.setState(state)
+        probeView.animateMarker = intent.getBooleanExtra("animate_marker", false)
         Log.i(TAG, "DIRECT_SHELL_VIDEO_FIXTURE_STATE state=$state elapsed_ms=${SystemClock.elapsedRealtime()}")
     }
 
     private inner class ProbeView : View(this@DirectShellVideoCaptureProbeActivity) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var state = STATE_A
+        var animateMarker = false
 
         fun setState(value: String) {
             state = value
@@ -76,6 +78,12 @@ class DirectShellVideoCaptureProbeActivity : Activity() {
                 }
                 paint.color = Color.GREEN
                 canvas.drawRect(width * 0.05f, height * 0.9f, width * 0.95f, height * 0.98f, paint)
+            }
+            if (animateMarker) {
+                paint.color = Color.MAGENTA
+                val x = (SystemClock.uptimeMillis() % 2000L) / 2000f * width
+                canvas.drawRect(x, height * .04f, x + width * .04f, height * .07f, paint)
+                postInvalidateOnAnimation()
             }
         }
     }

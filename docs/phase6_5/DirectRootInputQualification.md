@@ -401,3 +401,21 @@ Decision: **DIRECTROOT_INPUT_CAPABILITY_VALIDATED_IN_AOSP_LAB**.
 Next recommended task, not implemented here: **DirectRoot Video Capability**,
 beginning with a separately scoped AOSP/API26 feasibility/qualification boundary.
 Emulator video cannot by itself establish physical SurfaceFlinger or codec support.
+
+## Subsequent Video Slice
+
+This Input report remains historical evidence for its original exact APK.
+Its source/tests/tooling/docs were reviewed and checkpointed locally as
+`ae431d9` before the Video task. New Video work is uncommitted for review.
+`DirectRootVideoQualification.md` records3/3 decoded-content API26 Video cycles
+on helper identity version3 / `warpnect-root-video-input-v1`, with the same
+typed Input backend and authentication primitives retained. One explicit
+Input qualification on that frozen Video APK passed1/1 with owned-target
+key/touch/pointer/joystick receipt, ordered reset and active state0.
+
+Root Video and Input now have QUALIFIED evidence only for the exact AOSP lab.
+Both cache records survived process restart; Root liveness did not. SystemAudio
+is still NOT_IMPLEMENTED, so no Root-only Complete Host is admitted. The new
+Video report supersedes only the earlier deferred Video status/next-step
+recommendation; production authorization, remediation and physical Root
+remain deferred. The next independently scoped capability is SystemAudio.

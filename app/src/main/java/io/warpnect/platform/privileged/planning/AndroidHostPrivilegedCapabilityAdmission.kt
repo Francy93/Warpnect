@@ -4,6 +4,7 @@ import android.util.Log
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.platform.capture.DirectRootVideoCapability
 import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.readiness.CachedCapabilityEvidenceMatrixBuilder
 import io.warpnect.platform.privileged.readiness.LateRevalidatedCapabilityEvidence
@@ -158,8 +159,14 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                 if (!applyFrozenFeatureSelection(runtime, admission.plan)) {
                     admission.lease.close()
                     val failedMatrix = admission.matrix.invalidateProvider(
-                        if (admission.plan.inputProvider == PrivilegedProvider.DIRECT_ROOT &&
-                            !DirectRootInputCapability.retainForHost()
+                        if ((
+                                admission.plan.inputProvider == PrivilegedProvider.DIRECT_ROOT &&
+                                    !DirectRootInputCapability.retainForHost()
+                                ) ||
+                            (
+                                admission.plan.videoProvider == PrivilegedProvider.DIRECT_ROOT &&
+                                    !DirectRootVideoCapability.retainForHost()
+                                )
                         ) {
                             PrivilegedProvider.DIRECT_ROOT
                         } else {
@@ -276,10 +283,12 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                     ?: PrivilegedProviderAcquisition.Failed("shizuku_not_staged_for_current_attempt")
             }
 
-            PrivilegedProvider.DIRECT_ROOT -> if (DirectRootInputCapability.retainForHost()) {
+            PrivilegedProvider.DIRECT_ROOT -> if (
+                DirectRootInputCapability.retainForHost() || DirectRootVideoCapability.retainForHost()
+            ) {
                 PrivilegedProviderAcquisition.Retained
             } else {
-                PrivilegedProviderAcquisition.Failed("root_input_runtime_not_qualified")
+                PrivilegedProviderAcquisition.Failed("root_capability_runtime_not_qualified")
             }
         }
 
@@ -287,9 +296,10 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
             when (provider) {
                 PrivilegedProvider.DIRECT_SHELL -> PrivilegedRuntimeRegistry.releaseForHost()
                 PrivilegedProvider.SHIZUKU -> optionalProvider?.release()
-                PrivilegedProvider.DIRECT_ROOT -> DirectRootInputCapability.selectForHost(
-                    false,
-                )
+                PrivilegedProvider.DIRECT_ROOT -> {
+                    DirectRootInputCapability.selectForHost(false)
+                    DirectRootVideoCapability.selectForHost(false)
+                }
             }
         }
 
@@ -308,7 +318,7 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         if (runtime.kind != PrivilegedRuntimeKind.DIRECT_SHELL) {
             return DirectRootInputCapability.selectForHost(
                 plan.inputProvider == PrivilegedProvider.DIRECT_ROOT,
-            )
+            ) && DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT)
         }
         val selected = mapOf(
             PrivilegedRuntimeCapability.VIDEO to plan.videoProvider.runtimeKind(),
@@ -316,7 +326,8 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
             PrivilegedRuntimeCapability.INPUT to plan.inputProvider.runtimeKind(),
         )
         return PrivilegedRuntimeRegistry.applyHostFeatureSelection(selected) &&
-            DirectRootInputCapability.selectForHost(plan.inputProvider == PrivilegedProvider.DIRECT_ROOT)
+            DirectRootInputCapability.selectForHost(plan.inputProvider == PrivilegedProvider.DIRECT_ROOT) &&
+            DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT)
     }
 
     private fun PrivilegedProvider.runtimeKind(): PrivilegedRuntimeKind = when (this) {
@@ -338,10 +349,10 @@ internal object AndroidPrivilegedCapabilityMatrixAdapter {
         directShellSuppressed: PrivilegedCapability? = null,
     ): PrivilegedCapabilityMatrix = PrivilegedCapabilityMatrix.complete { provider, capability ->
         when (provider) {
-            PrivilegedProvider.DIRECT_ROOT -> if (capability == PrivilegedCapability.INPUT) {
-                DirectRootInputCapability.qualification()
-            } else {
-                unavailable(
+            PrivilegedProvider.DIRECT_ROOT -> when (capability) {
+                PrivilegedCapability.INPUT -> DirectRootInputCapability.qualification()
+                PrivilegedCapability.VIDEO -> DirectRootVideoCapability.qualification()
+                PrivilegedCapability.SYSTEM_AUDIO -> unavailable(
                     provider,
                     capability,
                     CapabilityQualificationState.NOT_IMPLEMENTED,

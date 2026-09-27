@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid', 'QualifyInput', 'InputStatus', 'StaleInput', 'HoldInput', 'DropInput')]
+    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid', 'QualifyInput', 'InputStatus', 'StaleInput', 'HoldInput', 'DropInput', 'QualifyVideo', 'ConfirmVideo', 'HoldVideo', 'VideoStatus')]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$Serial,
@@ -102,6 +102,10 @@ if ($Action -eq 'InputStatus') { Invoke-AppAction 'input-status' }
 if ($Action -eq 'StaleInput') { Invoke-AppAction 'stale-input' }
 if ($Action -eq 'HoldInput') { Invoke-AppAction 'hold-input' }
 if ($Action -eq 'DropInput') { Invoke-AppAction 'drop-input' }
+if ($Action -eq 'QualifyVideo') { Invoke-AppAction 'qualify-video' }
+if ($Action -eq 'ConfirmVideo') { Invoke-AppAction 'confirm-video' }
+if ($Action -eq 'HoldVideo') { Invoke-AppAction 'hold-video' }
+if ($Action -eq 'VideoStatus') { Invoke-AppAction 'video-status' }
 if ($Action -eq 'NegativeUid') {
     if ((Invoke-RootLabAdb 'shell id') -notmatch '^uid=2000\(shell\) gid=2000\(shell\)') { throw 'Negative UID test requires unrooted adbd.' }
     $request = (Invoke-RootLabAdb 'shell run-as io.warpnect cat files/root-lab/request.json') | ConvertFrom-Json

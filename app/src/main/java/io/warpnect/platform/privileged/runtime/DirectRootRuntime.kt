@@ -1,5 +1,6 @@
 package io.warpnect.platform.privileged.runtime
 
+import io.warpnect.platform.capture.RootVideoControl
 import io.warpnect.platform.input.injection.RootInputControl
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -71,7 +72,9 @@ class DirectRootRuntime(
 ) : AutoCloseable {
     private var session: RootControlSession? = null
     private var closed = false
-    var snapshot = DirectRootSnapshot(
+    private val observers = CopyOnWriteArrayList<() -> Unit>()
+
+    @Volatile var snapshot = DirectRootSnapshot(
         state = DirectRootState.LAB_BOOTSTRAP_AVAILABLE,
         generation = bootstrap.generation,
         provenance = bootstrap.provenance,
@@ -102,6 +105,7 @@ class DirectRootRuntime(
                 reason = "authenticated_uid0",
             )
             publish(snapshot)
+            observers.forEach { runCatching { it() } }
         } catch (error: Exception) {
             runCatching { acquired?.close() }
             bootstrap.cancel()
@@ -130,7 +134,20 @@ class DirectRootRuntime(
         (session as? RootInputControl).takeIf { !closed && snapshot.ready && snapshot.generation == generation }
 
     @Synchronized
+    internal fun videoControl(generation: Long): RootVideoControl? =
+        (session as? RootVideoControl).takeIf { !closed && snapshot.ready && snapshot.generation == generation }
+
+    @Synchronized
+    internal fun videoConnectionLost() = inputConnectionLost()
+
+    internal fun observe(observer: () -> Unit): AutoCloseable {
+        observers += observer
+        return AutoCloseable { observers -= observer }
+    }
+
+    @Synchronized
     internal fun inputConnectionLost() {
+        if (closed) return
         runCatching { session?.close() }
         session = null
         bootstrap.cancel()
@@ -154,11 +171,12 @@ class DirectRootRuntime(
     private fun update(state: DirectRootState, reason: String) {
         snapshot = snapshot.copy(state = state, identity = null, reason = reason)
         publish(snapshot)
+        observers.forEach { runCatching { it() } }
     }
 
     companion object {
-        const val PROTOCOL_VERSION = 2
-        const val IMPLEMENTATION = "warpnect-root-input-v1"
+        const val PROTOCOL_VERSION = 3
+        const val IMPLEMENTATION = "warpnect-root-video-input-v1"
     }
 }
 

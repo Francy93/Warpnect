@@ -711,7 +711,8 @@ Root-assisted Remediation: NOT IMPLEMENTED
 DirectRoot Runtime Foundation: IMPLEMENTED / TESTED / EMULATOR-VALIDATED (AOSP/API26)
 Production Root Authorization: NOT IMPLEMENTED
 DirectRoot Input: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; no physical claim)
-DirectRoot Video/SystemAudio: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
+DirectRoot Video: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; app-owned encoder, real decoded content)
+DirectRoot SystemAudio: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
 Root Recovery Authority availability: IMPLEMENTED / TESTED / EMULATOR-VALIDATED; no executable remediation actions
 Physical Root Validation: NOT VALIDATED
 Same-provider Recovery: NOT IMPLEMENTED
@@ -720,7 +721,7 @@ Live Provider Migration: NOT IMPLEMENTED
 
 ## Next Implementation Step
 
-DirectRoot Video Capability, after the independently qualified laboratory Input slice.
+DirectRoot SystemAudio Capability, after independently qualified laboratory Input and Video slices.
 
 That work must not infer capability support from UID0 authority: it requires
 separate capability implementation/qualification. Production acquisition still
@@ -832,4 +833,52 @@ migration remain NOT_IMPLEMENTED. No physical Root qualification is claimed.
 
 ```text
 DIRECTROOT_INPUT_CAPABILITY_VALIDATED_IN_AOSP_LAB
+```
+
+## DirectRoot Video Qualification Follow-up
+
+Input was locally checkpointed as `ae431d9`. The new Video work is uncommitted.
+`DirectRootVideoCaptureGateway` is bound to authenticated UID0 authority and its
+generation. Finite typed VIDEO_QUALIFY/START/UPDATE/STOP/DIAGNOSTICS control uses
+the foundation HMAC envelope and ordered requests. Helper identity is version3 /
+`warpnect-root-video-input-v1`; network Video/Input/Audio, SCL and Session formats
+are unchanged. SystemAudio is explicitly NOT_IMPLEMENTED; recovery actions NONE.
+
+The original app encoder Surface crosses Binder via a single-use DEBUG provider
+lease bound to provider kind, UID0, helper PID, Root/Surface generations, geometry,
+HMAC and expiry. Shell's existing method remains UID2000-only. The helper reuses
+QualifiedPrivilegedDisplayCaptureApi and the existing projection planner; it owns
+only mirror control and its parceled Surface reference. MediaCodec and AVC stay
+in the normal app, never on the Root TCP control channel.
+
+The exact Enforcing AOSP/API26 x86_64 APK passed 3/3 fresh Root/Surface generations
+with app-owned AVC output and offline decoded fixture A/B observation. Negative
+stale generations, wrong HMAC/provider/magic and consumed lease were rejected.
+One current-artifact Input regression also observed ordered target events/reset.
+Two separate active-capture loss cases passed: helper TERM invalidated liveness
+and tore down encoder/mirror; app force-stop caused owner EOF and helper cleanup.
+Persisted VIDEO+INPUT records survived restart, but runtime/capture/lease did not.
+
+Evidence is QUALIFIED only for the exact laboratory key and provenance; Root
+SystemAudio remains rejected from persistence. Background startup creates no
+encoder, mirror, lease or helper. Root-only planning remains HOST_INCOMPATIBLE,
+missing SYSTEM_AUDIO. Exact synthetic complete-Root/composite/complete-Shell
+preference cases pass without planner ranking changes. No partial Host exists.
+
+All gates passed:841 JVM tests,0 failures/errors/skips, ktlint, lint, debug and
+androidTest builds, probe packaging, diff and PowerShell physical-target guards.
+No native source changed. Final Root helpers/listeners/leases/bootstrap files,
+unexpected encoder threads and active codec resources were0; adbd returned to
+UID2000 and the AVD stopped. App graphics FD counts varied modestly, so no
+indefinite-soak leak-freedom claim is made. An optional Tablet non-Root control
+reached Host Available once; a second attempt failed at runtime preparation.
+No complete new physical media regression is claimed from those UI observations.
+
+See `../phase6_5/DirectRootVideoQualification.md` for exact APK/hash, generations,
+AVC metrics/images, failed diagnostic preservation and resource limitations.
+Production Root authorization, physical Root, SystemAudio, remediation,
+same-provider recovery and live migration remain deferred.
+
+```text
+DIRECTROOT_VIDEO_CAPABILITY_VALIDATED_IN_AOSP_LAB
 ```

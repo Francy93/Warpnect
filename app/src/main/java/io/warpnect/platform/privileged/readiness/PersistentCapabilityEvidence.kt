@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import io.warpnect.BuildConfig
+import io.warpnect.platform.capture.DirectRootVideoCapability
 import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.planning.CapabilityQualification
 import io.warpnect.platform.privileged.planning.CapabilityQualificationProvenance
@@ -90,7 +91,7 @@ internal data class PersistentCapabilityEvidenceRecord(
         require(
             provider != PrivilegedProvider.DIRECT_ROOT ||
                 (
-                    capability == PrivilegedCapability.INPUT && compatibilityKey.providerRuntimeVersion in
+                    capability != PrivilegedCapability.SYSTEM_AUDIO && compatibilityKey.providerRuntimeVersion in
                         RootBootstrapProvenance.entries.map { it.name }
                     ),
         ) { "capability_evidence_root_domain_invalid" }
@@ -134,7 +135,7 @@ internal fun interface PersistentCapabilityEvidenceKeyFactory {
 
 /**
  * Android compatibility-key source. Revisions are explicit invalidation controls rather than
- * inferred device names. DirectRoot keys are Input-only and explicitly bootstrap-provenance scoped.
+ * inferred device names. Root Video/Input keys are explicitly bootstrap-provenance scoped.
  */
 internal class AndroidPersistentCapabilityEvidenceKeyFactory(
     private val apiLevel: () -> Int = { Build.VERSION.SDK_INT },
@@ -149,12 +150,18 @@ internal class AndroidPersistentCapabilityEvidenceKeyFactory(
         provider: PrivilegedProvider,
         capability: PrivilegedCapability,
     ): PersistentCapabilityEvidenceKeyExpectation = when (provider) {
-        PrivilegedProvider.DIRECT_ROOT -> rootBootstrapProvenance()?.takeIf { capability == PrivilegedCapability.INPUT }
+        PrivilegedProvider.DIRECT_ROOT -> rootBootstrapProvenance()
+            ?.takeIf { capability != PrivilegedCapability.SYSTEM_AUDIO }
             ?.let { provenance ->
                 PersistentCapabilityEvidenceKeyExpectation.Known(
                     keyFor(
                         provider, capability,
-                        DirectRootRuntime.IMPLEMENTATION, provenance.name, DirectRootInputCapability.BACKEND_REVISION,
+                        DirectRootRuntime.IMPLEMENTATION, provenance.name,
+                        if (capability == PrivilegedCapability.INPUT) {
+                            DirectRootInputCapability.BACKEND_REVISION
+                        } else {
+                            DirectRootVideoCapability.BACKEND_REVISION
+                        },
                     ),
                 )
             } ?: PersistentCapabilityEvidenceKeyExpectation.Unsupported
@@ -607,7 +614,7 @@ internal object CachedCapabilityEvidenceMatrixBuilder {
         return PrivilegedCapabilityMatrix.complete { provider, capability ->
             val record = byCoordinate[PersistentCapabilityEvidenceCoordinate(provider, capability)]
             when {
-                provider == PrivilegedProvider.DIRECT_ROOT && capability != PrivilegedCapability.INPUT ->
+                provider == PrivilegedProvider.DIRECT_ROOT && capability == PrivilegedCapability.SYSTEM_AUDIO ->
                     CapabilityQualification.unavailable(
                         provider = provider,
                         capability = capability,

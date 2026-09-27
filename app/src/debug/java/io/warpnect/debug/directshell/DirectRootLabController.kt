@@ -5,6 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
+import android.view.Surface
+import io.warpnect.capture.CaptureCapabilities
+import io.warpnect.capture.CaptureError
+import io.warpnect.capture.CaptureRequest
+import io.warpnect.capture.CaptureSessionSnapshot
 import io.warpnect.input.injection.AndroidJoystickInjectionEvent
 import io.warpnect.input.injection.AndroidKeyInjectionEvent
 import io.warpnect.input.injection.AndroidPointerInjectionEvent
@@ -17,6 +22,10 @@ import io.warpnect.input.injection.InputInjectionSnapshot
 import io.warpnect.input.injection.InputResetReason
 import io.warpnect.input.injection.InputResetScope
 import io.warpnect.input.injection.PrivilegedUidKind
+import io.warpnect.platform.capture.DirectRootVideoCapability
+import io.warpnect.platform.capture.RootVideoControl
+import io.warpnect.platform.capture.RootVideoRequest
+import io.warpnect.platform.capture.RootVideoRequestCodec
 import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.input.injection.DirectRootInputInjectionGateway
 import io.warpnect.platform.input.injection.RootInputControl
@@ -86,6 +95,7 @@ internal object DirectRootLabController {
                 bootstrap = prepared
                 runtime = DirectRootRuntime(prepared, DirectRootRuntimeRegistry::publish)
                 DirectRootInputCapability.bindRuntime(runtime)
+                DirectRootVideoCapability.bindRuntime(runtime)
                 DirectRootRuntimeRegistry.publish(requireNotNull(runtime).snapshot)
                 monitor = Executors.newSingleThreadScheduledExecutor().also { executor ->
                     executor.schedule({
@@ -99,7 +109,14 @@ internal object DirectRootLabController {
                 val acquired = requireNotNull(runtime).acquireAuthority()
                 if (acquired.ready) {
                     inputGateway = DirectRootInputInjectionGateway(requireNotNull(runtime))
-                    monitor?.scheduleWithFixedDelay({ runtime?.checkLiveness() }, 1, 1, TimeUnit.SECONDS)
+                    monitor?.scheduleWithFixedDelay({
+                        val current = runtime
+                        if (current != null && !current.checkLiveness()) {
+                            synchronized(this) {
+                                if (runtime === current) DirectRootVideoQualification.release()
+                            }
+                        }
+                    }, 1, 1, TimeUnit.SECONDS)
                 }
             }
             "negative-auth" -> requireNotNull(bootstrap).negativeAuth(staleSecret ?: ByteArray(32))
@@ -107,6 +124,10 @@ internal object DirectRootLabController {
             "duplicate" -> requireNotNull(bootstrap).duplicateOwner()
             "ping" -> check(requireNotNull(runtime).checkLiveness())
             "qualify-input" -> DirectRootInputQualification.run(context, requireNotNull(runtime))
+            "qualify-video" -> DirectRootVideoQualification.run(context, requireNotNull(runtime))
+            "confirm-video" -> DirectRootVideoQualification.confirmContent(context, requireNotNull(runtime))
+            "hold-video" -> DirectRootVideoQualification.hold(context, requireNotNull(runtime))
+            "video-status" -> DirectRootVideoQualification.status(context, runtime)
             "hold-input" -> heldObservation = DirectRootInputQualification.hold(context, requireNotNull(inputGateway))
             "drop-input" -> {
                 requireNotNull(runtime).inputConnectionLost()
@@ -155,12 +176,15 @@ internal object DirectRootLabController {
             "direct_root_lab_action operation=$action " +
                 "result=${if (action == "acquire" && !observed.ready) "FAIL" else "OK"} state=${observed.state} " +
                 "generation=${observed.generation} provenance=${observed.provenance} " +
-                "root_recovery_authority_state=${authority.available} actions=NONE video=NOT_IMPLEMENTED " +
+                "root_recovery_authority_state=${authority.available} actions=NONE " +
+                "video=${DirectRootVideoCapability.qualification().state} " +
                 "system_audio=NOT_IMPLEMENTED input=${DirectRootInputCapability.qualification().state}",
         )
     }
 
     private fun release(retainStale: Boolean) {
+        DirectRootVideoQualification.release()
+        DirectRootVideoCapability.bindRuntime(null)
         DirectRootInputCapability.bindRuntime(null)
         monitor?.shutdownNow()
         monitor = null
@@ -290,8 +314,50 @@ private class RootLocalControl(
     private val socket: DirectShellProbeIpv4Socket,
     private val secret: ByteArray,
     override val identity: RootHelperIdentity,
-) : RootControlSession, RootInputControl {
+) : RootControlSession, RootInputControl, RootVideoControl {
     private var nextId = 2L
+    private var surfaceGeneration = 1L
+    private var videoRequest = CaptureRequest(0, 640, 360)
+    private var videoLatest = CaptureSessionSnapshot()
+
+    private fun video(command: DirectShellProbeProtocol.Command): JSONObject {
+        val bytes = RootVideoRequestCodec.encode(RootVideoRequest(identity.generation, surfaceGeneration, videoRequest))
+        return RootVideoReplies.decode(request(command, bytes), identity.generation).also {
+            videoLatest = RootVideoReplies.snapshot(it)
+        }
+    }
+
+    override fun videoCapabilities(): CaptureCapabilities = RootVideoReplies.capabilities(
+        video(DirectShellProbeProtocol.Command.VIDEO_QUALIFY),
+    )
+
+    override fun startVideo(request: CaptureRequest, target: Surface): CaptureError {
+        videoRequest = request
+        surfaceGeneration = DirectRootSurfaceHandoff.arm(identity, secret, request, target)
+        try {
+            val reply = video(DirectShellProbeProtocol.Command.VIDEO_START)
+            Log.i("WarpnectDirectRoot", "direct_root_video_start_reply $reply")
+            return CaptureError.fromCode(reply.getInt("error")).also {
+                if (it != CaptureError.None) DirectRootSurfaceHandoff.release()
+            }
+        } catch (error: Exception) {
+            DirectRootSurfaceHandoff.release()
+            throw error
+        }
+    }
+
+    override fun updateVideo(request: CaptureRequest): CaptureError {
+        videoRequest = request
+        return CaptureError.fromCode(video(DirectShellProbeProtocol.Command.VIDEO_UPDATE).getInt("error"))
+    }
+
+    override fun stopVideo(): CaptureError = try {
+        CaptureError.fromCode(video(DirectShellProbeProtocol.Command.VIDEO_STOP).getInt("error"))
+    } finally {
+        DirectRootSurfaceHandoff.release()
+    }
+
+    override fun videoSnapshot(): CaptureSessionSnapshot = videoLatest
 
     @Synchronized
     private fun request(command: DirectShellProbeProtocol.Command, payload: ByteArray): ByteArray {
@@ -388,6 +454,7 @@ private class RootLocalControl(
 
     override fun close() {
         try {
+            DirectRootSurfaceHandoff.release()
             socket.close()
         } finally {
             secret.fill(0)
@@ -422,7 +489,7 @@ private class RootLocalControl(
                 val client = RootLocalControl(socket, secret.clone(), identity)
                 check(
                     client.call(DirectShellProbeProtocol.Command.ROOT_CAPABILITIES) ==
-                        "video=NOT_IMPLEMENTED;system_audio=NOT_IMPLEMENTED;input=IMPLEMENTED;remediation=NONE",
+                        "video=IMPLEMENTED;system_audio=NOT_IMPLEMENTED;input=IMPLEMENTED;remediation=NONE",
                 )
                 Log.i("WarpnectDirectRoot", "direct_root_app_identity $info")
                 return client

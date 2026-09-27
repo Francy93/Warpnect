@@ -7,6 +7,62 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PrivilegedCapabilityPlannerTest {
+    @Test fun `Root Video and Input still miss SystemAudio`() {
+        val result =
+            select(
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO),
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+            )
+        assertEquals(
+            listOf(PrivilegedCapability.SYSTEM_AUDIO),
+            (result as PrivilegedCapabilityPlanResult.HostIncompatible).missingCapabilities,
+        )
+    }
+
+    @Test fun `synthetic complete Root fixture selects single Root not actual Audio implementation`() {
+        assertPlan(
+            select(
+                *PrivilegedCapability.canonicalOrder.map {
+                    usable(PrivilegedProvider.DIRECT_ROOT, it)
+                }.toTypedArray(),
+            ),
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapabilityPlanShape.SINGLE,
+        )
+    }
+
+    @Test fun `Root media input and Shell Audio compose when only those cells exist`() {
+        assertPlan(
+            select(
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.SYSTEM_AUDIO),
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+            ),
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapabilityPlanShape.COMPOSITE,
+        )
+    }
+
+    @Test fun `complete Shell wins over unnecessary Root Video Input composition`() {
+        val cells = PrivilegedCapability.canonicalOrder.map {
+            usable(PrivilegedProvider.DIRECT_SHELL, it)
+        } + listOf(
+            usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO),
+            usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+        )
+        assertPlan(
+            select(*cells.toTypedArray()),
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedCapabilityPlanShape.SINGLE,
+        )
+    }
+
     @Test
     fun `Root Input alone cannot produce a partial Host`() {
         val result = select(usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT))

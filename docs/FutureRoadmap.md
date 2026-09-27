@@ -302,7 +302,8 @@ The next milestones are:
 - Persistent Capability Evidence and Prepared Plan Reuse [implemented, JVM-tested, hardware-validated: bounded app-private positive evidence, exact compatibility keys, selective invalidation, advisory cache reconstruction, and mandatory late revalidation]
 - DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization not implemented]
 - DirectRoot Input Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 final-artifact cycles plus 1/1 active disconnect reset; 807-test gated; not physical Root validation]
-- DirectRoot Video Capability [next; Root Video/SystemAudio remain NOT_IMPLEMENTED]
+- DirectRoot Video Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 frozen-artifact decoded-content cycles plus two active-loss cases; 841-test gated; no physical Root claim]
+- DirectRoot SystemAudio Capability [next; NOT_IMPLEMENTED; final missing Root-only Complete Host capability]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
@@ -339,6 +340,17 @@ COMPOSITE and preference for a complete DirectShell SINGLE plan are JVM-tested,
 not a manufactured API26 hardware composite. See
 `phase6_5/DirectRootInputQualification.md` for 807-test gates, exact environment,
 resources, cleanup and the bounded A41 endpoint-unavailable regression attempt.
+
+The subsequent Video slice reuses the privileged mirror/projection and normal
+app MediaCodec pipeline. UID0 receives the real encoder Surface through a
+provider/UID/PID/generation/HMAC-bound Binder lease, not TCP. Exact AOSP/API26
+frozen-artifact qualification passed 3/3 with decoded white-circle/checkerboard
+content and two active-loss cleanup cases. Root Video/Input cache is scoped to
+LABORATORY_EXTERNAL_ROOT; runtime stays volatile and startup stays passive.
+Root-only Host is still incomplete because SystemAudio is NOT_IMPLEMENTED.
+See `phase6_5/DirectRootVideoQualification.md` for exact artifacts, 841-test gates,
+graphics-FD sampling limits and the optional Tablet admission accounting (1/2,
+second attempt failed at runtime preparation, not a Root capture boundary).
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

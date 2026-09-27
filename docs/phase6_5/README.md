@@ -47,8 +47,20 @@ real owned-target key/touch/pointer/joystick receipt, reset, 1/1 active connecti
 release, provenance-scoped cache reuse and 807 passing JVM tests. The earlier
 counted fixture failure remains recorded separately (0/1). Root Input evidence
 is `QUALIFIED` for this exact laboratory, not general physical support.
-Production Root authorization, Root Video/SystemAudio and remediation remain
-NOT_IMPLEMENTED; Root Input alone cannot satisfy a Complete Host plan.
+At that Input checkpoint, production Root authorization, Root Video/SystemAudio
+and remediation remained NOT_IMPLEMENTED; Input alone was not a Complete Host.
+
+The subsequent Video slice is now AOSP/API26 emulator-qualified:
+
+    DIRECTROOT_VIDEO_CAPABILITY_VALIDATED_IN_AOSP_LAB
+
+`DirectRootVideoQualification.md` records 3/3 frozen-artifact qualifications,
+authenticated UID0 Binder Surface handoff, reused mirror/projection and app-owned
+encoder, offline decoded fixture A/B proof, two active-loss cases and 841 passing
+JVM tests. Input checkpoint `ae431d9` is local; new Video work is uncommitted.
+Root Video/Input evidence remains QUALIFIED for the exact LABORATORY_EXTERNAL_ROOT
+compatibility key. Root SystemAudio and production authorization/remediation are
+NOT_IMPLEMENTED; Root-only Host remains incomplete, missing SystemAudio.
 
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
@@ -106,8 +118,10 @@ not physical-device support or an implemented DirectRoot capability backend.
 The follow-up `DirectRootBootstrapFoundation.md` adds a DEBUG/laboratory UID0
 authority foundation, locally checkpointed as `e762a1a`. The subsequent
 `DirectRootInputQualification.md` adds the first capability, Input, through that
-authenticated helper. Root Video/SystemAudio, production Root authorization
-and Root-assisted Remediation remain **NOT IMPLEMENTED**. ADB-root acquisition
+authenticated helper. `DirectRootVideoQualification.md` now adds mirror control
+and authenticated Surface handoff to the existing app encoder. Root SystemAudio,
+production Root authorization and Root-assisted Remediation remain
+**NOT IMPLEMENTED**. ADB-root acquisition
 still requires the explicit laboratory harness, not app-accessible AOSP `su`.
 
 ## Report Roles
@@ -126,6 +140,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectShellA41NsdResolutionFix.md - trusted ADB DNS-SD endpoint resolution and controlled composite evidence.
 * AndroidRootLab.md and DirectRootBootstrapFoundation.md - AOSP lab and authenticated laboratory Root authority.
 * DirectRootInputQualification.md - Input-only Root provider, exact emulator target proof and scoped evidence.
+* DirectRootVideoQualification.md - Root mirror/Surface provider, app-owned AVC and decoded-content AOSP lab proof.
 
 ## Roadmap
 
@@ -154,11 +169,14 @@ Completed:
   on AOSP/API26, no remediation action.
 * DirectRoot Input implementation and AOSP/API26 qualification: typed existing
   Input codec/backend, generation ownership, target-observed ordering/reset,
-  lab-provenance cache and unchanged complete-plan policy. No Root media provider.
+  lab-provenance cache and unchanged complete-plan policy.
+* DirectRoot Video implementation and AOSP/API26 qualification: existing mirror/
+  geometry/encoder contract, provider-isolated Binder lease, real A/B decoded
+  content, generation teardown and volatile liveness. No Root SystemAudio.
 
 Next architecture milestones:
 
-1. DirectRoot Video Capability, with independent feasibility/qualification evidence.
+1. DirectRoot SystemAudio Capability, with independent feasibility/qualification evidence.
 2. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
 3. Implement and hardware-validate provider migration only after that RFC is
    accepted.
@@ -199,9 +217,9 @@ evidence are recorded in RFC-006J's Step 2 verification section.
 Deferred by RFC-006J Steps 1 and 2: Root-assisted Remediation, DirectRoot,
 Same-provider Recovery, and Live Provider Migration are all NOT IMPLEMENTED.
 The subsequent foundation slice superseded only the laboratory authority part
-of that historical statement. The Input slice now supersedes only Root Input
-implementation/qualification in the exact AOSP lab; Root Video/SystemAudio,
-production authorization and remediation remain deferred.
+of that historical statement. The Input and Video slices now supersede those
+two capability implementations/qualifications in the exact AOSP lab; Root
+SystemAudio, production authorization and remediation remain deferred.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain
 jointly required for Host availability.

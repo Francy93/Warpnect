@@ -41,6 +41,7 @@ internal object DebugCaptureGatewayOverrideRegistry {
 /** Keeps Shizuku as the display-capture default until an explicit production migration is approved. */
 internal object CaptureGatewaySelector {
     fun create(context: Context, onServiceDied: () -> Unit): PrivilegedCaptureGateway =
-        DebugCaptureGatewayOverrideRegistry.createGateway(context, onServiceDied)
+        DirectRootVideoCapability.createSelectedGateway(onServiceDied)
+            ?: DebugCaptureGatewayOverrideRegistry.createGateway(context, onServiceDied)
             ?: ShizukuCaptureGateway(context.applicationContext, onServiceDied)
 }

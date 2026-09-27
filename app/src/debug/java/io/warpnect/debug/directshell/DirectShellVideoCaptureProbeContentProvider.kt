@@ -23,6 +23,9 @@ class DirectShellVideoCaptureProbeContentProvider : ContentProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        if (method == DirectRootSurfaceHandoff.METHOD) {
+            return DirectRootSurfaceHandoff.issue(Binder.getCallingUid(), Binder.getCallingPid(), extras)
+        }
         if (method != DirectShellVideoCaptureProbeBinderProtocol.PROVIDER_METHOD_OPEN_ENCODER_SURFACE) {
             return response(
                 DirectShellVideoCaptureProbeBinderProtocol.Result.PROTOCOL_REJECTED,

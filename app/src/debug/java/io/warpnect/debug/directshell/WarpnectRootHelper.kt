@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.system.exitProcess
 import org.json.JSONObject
 
-/** DEBUG/lab entry point. Typed Input only; no media, settings or arbitrary privileged operations. */
+/** DEBUG/lab entry point. Typed Input and mirror control only; no encoded media or arbitrary operations. */
 object WarpnectRootHelper {
     @JvmStatic
     fun main(args: Array<String>) {
@@ -56,7 +56,7 @@ object WarpnectRootHelper {
                 put("implementation", DirectRootRuntime.IMPLEMENTATION)
                 put("sha256", hash)
                 put("provenance", provenance.name)
-                put("capabilities", "INPUT")
+                put("capabilities", "INPUT,VIDEO")
             }.toString()
             serve(generation, port, expires, secret, identity)
         } catch (error: Exception) {
@@ -75,7 +75,11 @@ object WarpnectRootHelper {
             InputInjectionBackend.DirectRoot,
             PrivilegedUidKind.Root,
         )
-        val releaseHook = Thread({ inputBridge.shutdown() }, "WarpnectRootInputRelease")
+        val videoBridge = RootVideoBridge(generation, secret)
+        val releaseHook = Thread({
+            videoBridge.close()
+            inputBridge.shutdown()
+        }, "WarpnectRootRelease")
         Runtime.getRuntime().addShutdownHook(releaseHook)
         val listener = DirectShellProbeIpv4Socket.bindListener(port)
         val running = AtomicBoolean(true)
@@ -134,7 +138,13 @@ object WarpnectRootHelper {
                                 if (!socket.awaitReadable(200)) continue
                                 val request = DirectShellProbeProtocol.readRequest(input, secret)
                                 require(
-                                    if (RootControlLease.inputCommand(request.command)) {
+                                    if (RootControlLease.videoCommand(request.command)) {
+                                        lease.acceptVideo(
+                                            request.requestId,
+                                            request.payload,
+                                            SystemClock.elapsedRealtime(),
+                                        )
+                                    } else if (RootControlLease.inputCommand(request.command)) {
                                         lease.acceptInput(
                                             request.requestId,
                                             request.payload,
@@ -157,10 +167,15 @@ object WarpnectRootHelper {
                                 } else {
                                     null
                                 }
+                                val videoReply = if (RootControlLease.videoCommand(request.command)) {
+                                    videoBridge.dispatch(request.command, request.payload)
+                                } else {
+                                    null
+                                }
                                 val payload = when (request.command) {
                                     DirectShellProbeProtocol.Command.GET_RUNTIME_INFO -> identity
                                     DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ->
-                                        "video=NOT_IMPLEMENTED;system_audio=NOT_IMPLEMENTED;" +
+                                        "video=IMPLEMENTED;system_audio=NOT_IMPLEMENTED;" +
                                             "input=IMPLEMENTED;remediation=NONE"
                                     DirectShellProbeProtocol.Command.PING -> "PONG"
                                     DirectShellProbeProtocol.Command.SHUTDOWN -> "SHUTDOWN_ACCEPTED"
@@ -174,7 +189,7 @@ object WarpnectRootHelper {
                                     } else {
                                         DirectShellProbeProtocol.Status.UNSUPPORTED
                                     },
-                                    inputReply?.payload ?: payload.toByteArray(),
+                                    videoReply ?: inputReply?.payload ?: payload.toByteArray(),
                                     secret,
                                 )
                                 diagnostic(
@@ -206,6 +221,7 @@ object WarpnectRootHelper {
             running.set(false)
             DirectShellProbeIpv4Socket.closeListener(listener)
             handlers.forEach { it.join(4_000) }
+            videoBridge.close()
             inputBridge.shutdown()
             Runtime.getRuntime().removeShutdownHook(releaseHook)
             diagnostic("direct_root_shutdown endpoint_released=true generation=$generation")

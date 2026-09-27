@@ -508,7 +508,7 @@ SurfaceFlinger/codecs/audio HAL or production Root acquisition.
 | Target | API / image | Root runtime | Root Input | Root Video | Root SystemAudio | Normal Root-only Host |
 | --- | --- | --- | --- | --- | --- | --- |
 | Warpnect_Root_API25 | 25 / AOSP-default x86_64 r1 | ADB-root environment qualified; app helper not tested | NOT_TESTED; minSdk26 blocks APK | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Unavailable; API25 is not supported by the app |
-| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab; 3/3 final-APK cycles, owned-target key/touch/pointer/joystick and reset | NOT_IMPLEMENTED | NOT_IMPLEMENTED | INCOMPLETE; Input alone is insufficient |
+| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab; prior3/3 Input cycles plus1/1 regression on Video APK | QUALIFIED for exact lab;3/3 frozen-APK decoded fixture A/B cycles | NOT_IMPLEMENTED | INCOMPLETE; missing SYSTEM_AUDIO |
 
 API26 fingerprint:
 `Android/sdk_phone_x86_64/generic_x86_64:8.0.0/OSR1.180418.004/4931640:userdebug/test-keys`.
@@ -532,3 +532,23 @@ but its one live admission failed 0/1 at WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE
 before feature qualification. Root was not selected, no Warpnect privileged
 process remained and no fallback ran. This does not establish a new successful
 physical regression or extend the historical modern media evidence.
+
+The subsequent Video artifact on2026-09-27 has SHA-256
+`BB3B4D5B890F5869CF4788B44AF63161A0DD034EB3FB066EBABFC0AF507346FC`.
+Three fresh Root/Surface generations passed Binder handoff, shared
+SurfaceControlDisplay mirror, existing app MediaCodec AVC and offline decoded
+circle/checkerboard content. All helpers observed UID/GID0, u:r:su:s0;
+Enforcing unchanged. Two additional active helper/app-loss cases cleaned up
+mirror/helper/listener/lease/bootstrap files; cache restored VIDEO+INPUT with
+runtime/capture absent. Root audio remains NOT_IMPLEMENTED. The earlier
+diagnostic codec-metadata failure is preserved separately, not a hidden retry.
+
+No native or physical Root claim follows. App graphics FD samples varied
+modestly, so indefinite soak leak-freedom is not claimed. Exact identities,
+AVC/decoded-image evidence,841-test gates and boundaries are in
+`../phase6_5/DirectRootVideoQualification.md`. The optional same-artifact Tablet
+non-Root admission observations were1/2: first Host Available, second failed at
+privileged runtime preparation. Exact plan telemetry was unavailable; no new
+complete physical media regression is claimed. All physical devices remained
+unrooted/unflashed/unwiped, no tone was played; final adbd was UID2000 and the
+API26 AVD stopped.
