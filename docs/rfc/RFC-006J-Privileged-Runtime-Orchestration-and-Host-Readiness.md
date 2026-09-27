@@ -8,17 +8,18 @@ and advisory prepared-plan reuse are implemented, JVM-tested, and process-restar
 hardware validated on the same two devices. Cached evidence remains advisory;
 current runtime acquisition and late qualification still precede Host publication.
 The subsequent DirectRoot authority foundation is DEBUG/laboratory implemented,
-JVM-tested and AOSP/API26 emulator-validated. Production Root authorization and
-Root capability providers remain NOT_IMPLEMENTED.
+JVM-tested and AOSP/API26 emulator-validated. Its Input-only follow-up is now
+implemented and QUALIFIED for the exact AOSP/API26 lab. Production Root
+authorization, Root Video and Root SystemAudio remain NOT_IMPLEMENTED.
 
 The implemented slice supplies volatile runtime-state observation,
 asynchronous background Host readiness, single-flight Host preparation,
 generation-safe invalidation, structured readiness UI state, versioned
 persistent capability evidence, selective invalidation, cached background
 matrix reconstruction, and late reuse of the existing RFC-006I admission/freeze
-boundary, plus volatile observation of the laboratory Root authority. It does
-not implement Root capability providers, production Root authorization,
-root-assisted remediation, same-provider recovery, or live provider migration.
+boundary, plus volatile observation of the laboratory Root authority and scoped
+Root Input evidence. It does not implement Root media providers, production Root
+authorization, root-assisted remediation, same-provider recovery, or live provider migration.
 
 ## Purpose
 
@@ -55,8 +56,9 @@ runtime discovery
 * Shizuku can be an explicitly selected optional capability provider in the
   controlled DEBUG composition. It is not a post-freeze fallback.
 * DirectRoot has a validated DEBUG/laboratory UID0 runtime authority foundation.
-  Its Video/SystemAudio/Input capability cells and production bootstrap remain
-  `NOT_IMPLEMENTED`; Root cannot supply a Complete Host plan.
+  Its Input capability is separately QUALIFIED on the exact AOSP/API26 lab;
+  Video/SystemAudio and production bootstrap remain `NOT_IMPLEMENTED`.
+  Root alone cannot supply a Complete Host plan.
 * The A41 NSD repair proves that runtime state can change independently of a
   capability implementation. A valid pairing and local daemon were present;
   the prior failure was client-side endpoint selection.
@@ -77,7 +79,9 @@ provider after every application launch.
 **UNKNOWN:** Production/physical DirectRoot behavior, capability support, which
 runtime failures are safely recoverable on each Android environment, and the
 protocol/lifecycle requirements for live provider migration remain unqualified.
-The separate AOSP/API26 foundation report establishes only laboratory authority.
+The separate foundation report establishes laboratory authority; the subsequent
+Input report establishes only exact-lab Input qualification, not Root media or
+physical/root-manager behavior.
 
 **FACT:** Step 1 now implements passive discovery, volatile state publication,
 and single-flight readiness ownership. Its active Host path delegates to the
@@ -147,7 +151,7 @@ The candidate domains are:
 
 | Provider | Discovery role now | Capability role now |
 | --- | --- | --- |
-| DIRECT_ROOT | Volatile authority observation; DEBUG/lab UID0 bootstrap, production bootstrap absent | Video/SystemAudio/Input `NOT_IMPLEMENTED` |
+| DIRECT_ROOT | Volatile authority observation; DEBUG/lab UID0 bootstrap, production bootstrap absent | Input implemented and exact-lab QUALIFIED; Video/SystemAudio `NOT_IMPLEMENTED` |
 | DIRECT_SHELL | Wireless Debugging, pairing, local ADB, artifact, and authenticated-runtime state | Modern direct provider when truly qualified |
 | SHIZUKU | Installation, Binder, authorization, and provider health | Optional per-capability compatibility provider |
 
@@ -239,8 +243,11 @@ used. A manager upgrade therefore invalidates
 only Shizuku records, even when the server API number is unchanged. An unavailable
 or unidentifiable provider is not reused. This is not a claim that an installed
 manager version proves the binary identity of an already-running server.
-DirectRoot has no positive capability evidence domain because its capability
-providers remain `NOT_IMPLEMENTED`. Helper liveness is never persisted.
+DirectRoot now has an Input-only positive evidence domain with explicit bootstrap
+provenance in the provider-runtime key dimension. LABORATORY_EXTERNAL_ROOT and
+future PRODUCTION_ROOT_MANAGER cannot share evidence. Root media/unknown-provenance
+records are rejected. Helper liveness, laboratory adbd state and secrets are
+never persisted; current matching-provenance authority is separately revalidated.
 
 The cache schema is explicitly versioned. A mismatched schema or corrupt payload
 is dropped safely; an unknown bounded record is ignored without blocking
@@ -424,8 +431,9 @@ Root recovery authority:
 ```
 
 The laboratory authority foundation is implemented independently of those
-future operations. Root capability providers and actual remediation remain
-`NOT_IMPLEMENTED`. There is no generic Root command path or mutation authority.
+future recovery operations. The Input-only capability follow-up is implemented
+and exact-lab QUALIFIED; Root media providers and actual remediation remain
+`NOT_IMPLEMENTED`. There is no generic Root command or remediation path.
 
 ## Remediation Policy
 
@@ -683,7 +691,7 @@ PERSISTENT_CAPABILITY_EVIDENCE_AND_PREPARED_PLAN_VALIDATED
 
 This RFC does not implement:
 
-* DirectRoot capability providers, production Root authorization or arbitrary root command execution;
+* DirectRoot media providers, production Root authorization or arbitrary root command execution;
 * automatic Wireless Debugging or Shizuku startup/recovery;
 * root-assisted remediation;
 * same-provider runtime recovery;
@@ -702,7 +710,8 @@ Prepared Plan Reuse: IMPLEMENTED / TESTED / VALIDATED (A41/API31, Tablet/API33)
 Root-assisted Remediation: NOT IMPLEMENTED
 DirectRoot Runtime Foundation: IMPLEMENTED / TESTED / EMULATOR-VALIDATED (AOSP/API26)
 Production Root Authorization: NOT IMPLEMENTED
-DirectRoot Video/SystemAudio/Input: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
+DirectRoot Input: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; no physical claim)
+DirectRoot Video/SystemAudio: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
 Root Recovery Authority availability: IMPLEMENTED / TESTED / EMULATOR-VALIDATED; no executable remediation actions
 Physical Root Validation: NOT VALIDATED
 Same-provider Recovery: NOT IMPLEMENTED
@@ -711,7 +720,7 @@ Live Provider Migration: NOT IMPLEMENTED
 
 ## Next Implementation Step
 
-DirectRoot per-capability qualification, after the validated laboratory foundation.
+DirectRoot Video Capability, after the independently qualified laboratory Input slice.
 
 That work must not infer capability support from UID0 authority: it requires
 separate capability implementation/qualification. Production acquisition still
@@ -733,9 +742,9 @@ observes that authenticated authority separately from capability provision; its
 supported action set is empty. No settings/property/permission/service mutation
 or generic Root command is enabled.
 
-The readiness mapper retains the typed foundation observation and refreshes
-passive background state when it changes. A READY Root authority cannot make
-Host ready: RFC-006I cells and acquisition still mark all Root capabilities
+At the foundation checkpoint, the readiness mapper retained the typed observation
+and refreshed passive background state when it changed. A READY Root authority cannot make
+Host ready: RFC-006I cells and acquisition then marked all Root capabilities
 NOT_IMPLEMENTED. No Root-helper liveness, lab adbd state or secret is persisted
 as capability evidence. Physical devices retain the truthful production-bootstrap
 NOT_IMPLEMENTED state without a fabricated authorization prompt.
@@ -756,3 +765,71 @@ files were zero. A41/API31 regression retained SINGLE / DIRECT_SHELL and Host
 Available with Shizuku deferred; Tablet was not connected. The final JVM suite
 contains 783 tests with zero failures/errors/skips. Exact identities, artifact
 hash and attempt accounting are in the focused foundation report.
+
+## DirectRoot Input Qualification Follow-up
+
+The validated foundation was locally checkpointed as `e762a1a` before Input work.
+`DirectRootInputInjectionGateway` now exposes only the existing typed Input
+operations through the authenticated Root session, bound to its runtime
+generation. The helper reuses the shell path's canonical codec, local privileged
+service implementation, reflective resolver, event factory and state tracker;
+no Shizuku bootstrap/Binder call or third injector is introduced. Root helper
+identity version 2 / `warpnect-root-input-v1` distinguishes the new implementation.
+The reused WNDP/WNIS local framing and Input Payload V1 remain unchanged.
+
+The helper explicitly reports INPUT implemented and Root Video/SystemAudio
+NOT_IMPLEMENTED, with remediation NONE. A launch/UID0 assertion or API return
+value cannot create positive capability evidence: explicit owned-target receipt
+and reset qualification are required. Additional finite RPC bounds complement
+the canonical action/order validation; no generic commands or arbitrary Android
+object deserialization exist. Wrong/stale generation, replay, malformed/oversized
+frames and authentication errors fail closed. Loss moves volatile runtime out of
+READY; no retry onto another helper/provider or automatic Root recovery occurs.
+
+The actual API26 framework resolves legacy InputManager but lacks InputEvent's
+display setter. Only genuine method absence permits display 0; nondefault display
+remains rejected and security/reflection failures do not trigger that allowance.
+This is framework-driven, not an API/device allowlist. The existing modern path
+and production tracker/reset policy are preserved.
+
+Final exact APK SHA-256:
+`713A775E7350ECADB77D9C368C90DAB4B0845044CF60E1C09DAC54F7E82F33E1`.
+On the unchanged Enforcing AOSP/API26 x86_64 lab, **3/3** fresh generations
+observed real key/touch/pointer/joystick receipt, ordered key/touch flow and complete
+reset to zero active state. Helpers observed UID/GID0 and u:r:su:s0; helper FDs
+remained 30 before/after and app FDs 65 across those three cycles. A separate
+**1/1** active-key/touch connection-loss case observed KEY_UP/TOUCH_CANCEL before
+helper exit. A wrong-HMAC typed Input request and an old gateway against a new
+generation were rejected. Quiescent helper termination produced HELPER_LOST;
+compatibility evidence survived and no remediation occurred.
+
+An earlier counted artifact failed **0/1** due to an incorrect DEBUG expected
+cross-slot reset order despite actual receipt of all releases; only that fixture
+was corrected. Three exploratory boundary failures are also preserved. The
+final 3/3 campaign contains no retries. Exact identities, target observations,
+timestamps and attempt accounting are in `../phase6_5/DirectRootInputQualification.md`.
+
+Process restart loaded one scoped Root Input record with runtime unavailable,
+not falsely READY. Passive readiness emits no Input; Root Input alone still
+cannot produce a Complete Host plan. Exact JVM cases retain Root-only incomplete,
+synthetic DirectShell Video/SystemAudio plus Root Input COMPOSITE, and complete
+DirectShell SINGLE preference without changing ranking. Root evidence is
+QUALIFIED for the tested lab, not general VALIDATED/physical support.
+
+Software gates passed with **807 tests, 0 failures/errors/skips**, ktlint, lint,
+debug/androidTest builds and probe packaging, plus diff and PowerShell safety
+checks. Native source was unchanged. Final helpers/listeners/private bootstrap
+files were zero; adbd returned to UID2000 and the AVD stopped. A41's same-build
+non-Root control prepared advisory SINGLE / DIRECT_SHELL, but live admission
+failed **0/1** at WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE before feature checks;
+no new successful physical admission is claimed. Root remained unselected,
+no fallback/helper remained, and the UI returned to Ready after dismissal.
+
+Hard SIGKILL cannot execute synthetic releases; that residual is surfaced with
+stateMayRemainInjected rather than concealed. Production Root authorization,
+Root Video/SystemAudio, actual remediation, same-provider recovery and live
+migration remain NOT_IMPLEMENTED. No physical Root qualification is claimed.
+
+```text
+DIRECTROOT_INPUT_CAPABILITY_VALIDATED_IN_AOSP_LAB
+```

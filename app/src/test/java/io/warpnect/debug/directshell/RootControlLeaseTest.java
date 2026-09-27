@@ -53,12 +53,12 @@ public final class RootControlLeaseTest {
         assertFalse(lease.accept(2, "10", 2));
     }
 
-    @Test public void doesNotAuthorizeMediaInputOrMutation() {
+    @Test public void onlyTypedInputAndFoundationAreAuthorized() {
         for (DirectShellProbeProtocol.Command command : DirectShellProbeProtocol.Command.values()) {
             assertEquals(command == DirectShellProbeProtocol.Command.PING ||
                     command == DirectShellProbeProtocol.Command.GET_RUNTIME_INFO ||
                     command == DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ||
-                    command == DirectShellProbeProtocol.Command.SHUTDOWN, RootControlLease.supported(command));
+                    command == DirectShellProbeProtocol.Command.SHUTDOWN || RootControlLease.inputCommand(command), RootControlLease.supported(command));
         }
     }
 
@@ -108,4 +108,40 @@ public final class RootControlLeaseTest {
     }
 
     private static RootControlLease lease() { return new RootControlLease(10, 100, NONCE); }
+
+    private static byte[] input(long generation) {
+        return java.nio.ByteBuffer.allocate(16).putInt(0x574e4953).putInt(1).putLong(generation).array();
+    }
+    @Test public void typedInputRequiresAuthentication() {
+        assertFalse(lease().acceptInput(2, input(10), 2));
+    }
+    @Test public void typedInputBindsGenerationAndRequestOrder() {
+        RootControlLease lease = lease();
+        lease.hello(1, "10|" + NONCE, 1);
+        assertFalse(lease.acceptInput(2, input(11), 2));
+        assertTrue(lease.acceptInput(2, input(10), 2));
+        assertFalse(lease.acceptInput(2, input(10), 2));
+        assertTrue(lease.accept(3, "10", 3));
+    }
+    @Test public void malformedInputHeaderAndOversizeAreRejected() {
+        RootControlLease lease = lease();
+        lease.hello(1, "10|" + NONCE, 1);
+        assertFalse(lease.acceptInput(2, new byte[15], 2));
+        assertFalse(lease.acceptInput(2, new byte[4097], 2));
+        byte[] wrong = input(10); wrong[7] = 2;
+        assertFalse(lease.acceptInput(2, wrong, 2));
+        assertFalse(lease.acceptInput(2, input(10), 100));
+    }
+    @Test public void inputUsesTheExistingAuthenticatedEnvelope() throws Exception {
+        byte[] wrong = new byte[32]; Arrays.fill(wrong, (byte) 1);
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        DirectShellProbeProtocol.writeRequest(new DataOutputStream(encoded), 2,
+                DirectShellProbeProtocol.Command.INPUT_SESSION_KEY, input(10), wrong);
+        try {
+            DirectShellProbeProtocol.readRequest(new DataInputStream(new ByteArrayInputStream(encoded.toByteArray())), new byte[32]);
+            fail("Unauthenticated input accepted");
+        } catch (DirectShellProbeProtocol.ProtocolException expected) {
+            assertEquals(DirectShellProbeProtocol.ProtocolException.Kind.UNAUTHENTICATED, expected.kind);
+        }
+    }
 }

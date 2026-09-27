@@ -411,6 +411,19 @@ listeners and private handoff files were zero; adbd returned to UID2000 and
 RootLab stopped API26. API25 was not modified or rebooted in that slice.
 This does not change the environment-versus-production acquisition distinction.
 
+### Input Follow-up
+
+`DirectRootInputQualification.md` records the first capability on the unchanged
+API26 lab: authenticated helper UID/GID0, Enforcing u:r:su:s0, legacy InputManager,
+real owned-target key/touch/pointer/joystick receipt and reset. The final exact
+APK passed 3/3 fresh-generation qualifications and a separate 1/1 active
+connection-loss release test. Root Input is QUALIFIED only for that exact lab
+compatibility key; Root Video/SystemAudio remain NOT_IMPLEMENTED.
+Final helpers/listeners/private bootstrap files were 0, adbd was unrooted to
+UID2000, and RootLab stopped API26. Neither AVD configuration nor minSdk26 was
+changed; API25 was not booted by the Input slice. No production root-manager,
+physical Root or Complete Host support is inferred from these observations.
+
 ## References
 
 * [Android emulator command-line lifecycle](https://developer.android.com/studio/run/emulator-commandline).

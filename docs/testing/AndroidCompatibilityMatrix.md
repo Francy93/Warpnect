@@ -498,3 +498,37 @@ after teardown again selected all-DirectShell `SINGLE`. This is not live provide
 migration and does not make Shizuku the release default. The normal Host
 continues to require Video, SystemAudio, and Input together; a missing required
 capability means Host unavailable rather than a partial advertised Host.
+
+## AOSP Emulator / Root Laboratory
+
+This section is separate from physical-device qualification. Emulator evidence
+does not establish Magisk authorization, OEM SELinux, vendor/kernel, physical
+SurfaceFlinger/codecs/audio HAL or production Root acquisition.
+
+| Target | API / image | Root runtime | Root Input | Root Video | Root SystemAudio | Normal Root-only Host |
+| --- | --- | --- | --- | --- | --- | --- |
+| Warpnect_Root_API25 | 25 / AOSP-default x86_64 r1 | ADB-root environment qualified; app helper not tested | NOT_TESTED; minSdk26 blocks APK | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Unavailable; API25 is not supported by the app |
+| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab; 3/3 final-APK cycles, owned-target key/touch/pointer/joystick and reset | NOT_IMPLEMENTED | NOT_IMPLEMENTED | INCOMPLETE; Input alone is insufficient |
+
+API26 fingerprint:
+`Android/sdk_phone_x86_64/generic_x86_64:8.0.0/OSR1.180418.004/4931640:userdebug/test-keys`.
+2026-09-27 Input artifact SHA-256:
+`713A775E7350ECADB77D9C368C90DAB4B0845044CF60E1C09DAC54F7E82F33E1`.
+Provenance is LABORATORY_EXTERNAL_ROOT, not production Root-manager approval.
+The app cannot invoke the image's AOSP su; the explicitly verified emulator-only
+harness launches the helper. No API25 installation floor change was made.
+
+A separate active-key/touch owner-connection loss passed 1/1 with target-observed
+KEY_UP/TOUCH_CANCEL. Stale Input gateway and wrong-HMAC typed request were
+rejected; helper loss removed volatile readiness without deleting the scoped
+Input cache. Process restart loaded one Root Input record with runtime absent,
+not falsely READY. Final helpers/listeners/bootstrap files were 0; adbd returned
+to UID2000 and API26 was stopped. Earlier exploratory and reset-fixture failures
+are retained in `../phase6_5/DirectRootInputQualification.md`, including the
+0/1 counted pre-final-artifact failure, not silently retried.
+
+The exact-build A41/API31 non-Root control loaded advisory SINGLE / DIRECT_SHELL,
+but its one live admission failed 0/1 at WIRELESS_DEBUGGING_ENDPOINT_UNAVAILABLE
+before feature qualification. Root was not selected, no Warpnect privileged
+process remained and no fallback ran. This does not establish a new successful
+physical regression or extend the historical modern media evidence.

@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
 import io.warpnect.platform.privileged.planning.CapabilityQualificationState
@@ -375,7 +376,9 @@ internal class AndroidHostReadinessWork(
             TAG,
             "direct_root_runtime_observed state=${observed.directRoot.state} " +
                 "foundation=${observed.directRoot.rootFoundation?.state} " +
-                "provenance=${observed.directRoot.rootFoundation?.provenance} host_capabilities=NOT_IMPLEMENTED",
+                "provenance=${observed.directRoot.rootFoundation?.provenance} " +
+                "root_video=NOT_IMPLEMENTED root_audio=NOT_IMPLEMENTED " +
+                "root_input=${DirectRootInputCapability.qualification().state}",
         )
         return observed
     }

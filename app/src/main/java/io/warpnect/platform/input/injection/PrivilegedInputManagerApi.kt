@@ -69,7 +69,7 @@ internal class ReflectivePrivilegedInputManagerApi(
             resolve()
             resolved
         } ?: return InputInjectionServiceResult.InputApiUnavailable
-        if (!api.displayTargetingSupported) {
+        if (!inputDisplaySupported(displayId, api.displayIdSetter != null)) {
             return InputInjectionServiceResult.DisplayTargetingUnsupported
         }
         targetUidUnsupportedResult(targetUid, api.targetUidInjectionSupported)?.let { return it }
@@ -78,7 +78,7 @@ internal class ReflectivePrivilegedInputManagerApi(
             InputInjectionMode.WaitForResultDiagnostics -> api.waitForResultMode
         } ?: return InputInjectionServiceResult.InputApiUnavailable
         return try {
-            api.displayIdSetter.invoke(event, displayId)
+            api.displayIdSetter?.invoke(event, displayId)
             if (actionButton != null && actionButton != 0) {
                 val setter = api.motionActionButtonSetter
                     ?: return InputInjectionServiceResult.InputApiUnavailable
@@ -116,6 +116,10 @@ internal fun targetUidUnsupportedResult(
 ): InputInjectionServiceResult? = InputInjectionServiceResult.TargetUidUnsupported.takeIf {
     targetUid >= 0 && !targetUidInjectionSupported
 }
+
+/** Frameworks without per-event display IDs can address only the default display. */
+internal fun inputDisplaySupported(displayId: Int, hasDisplaySetter: Boolean): Boolean =
+    displayId >= 0 && (hasDisplaySetter || displayId == 0)
 
 internal interface InputManagerReflection {
     fun resolve(): InputManagerReflectionResult
@@ -210,7 +214,7 @@ internal data class ResolvedInputManagerApi(
     val instance: Any,
     val inject: Method,
     val injectWithTargetUid: Method?,
-    val displayIdSetter: Method,
+    val displayIdSetter: Method?,
     val motionActionButtonSetter: Method?,
     val asyncMode: Int?,
     val waitForResultMode: Int?,
@@ -262,10 +266,14 @@ internal class AndroidInputManagerReflection : InputManagerReflection {
                     Int::class.javaPrimitiveType,
                 ).apply { isAccessible = true }
             }.getOrNull()
-            val displaySetter = inputEventClass.getDeclaredMethod(
-                "setDisplayId",
-                Int::class.javaPrimitiveType,
-            ).apply { isAccessible = true }
+            val displaySetter = try {
+                inputEventClass.getDeclaredMethod(
+                    "setDisplayId",
+                    Int::class.javaPrimitiveType,
+                ).apply { isAccessible = true }
+            } catch (_: NoSuchMethodException) {
+                null
+            }
             val actionButtonSetter = runCatching {
                 MotionEvent::class.java.getDeclaredMethod(
                     "setActionButton",

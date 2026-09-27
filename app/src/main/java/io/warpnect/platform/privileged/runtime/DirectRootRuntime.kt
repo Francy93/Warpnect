@@ -1,5 +1,6 @@
 package io.warpnect.platform.privileged.runtime
 
+import io.warpnect.platform.input.injection.RootInputControl
 import java.util.concurrent.CopyOnWriteArrayList
 
 enum class RootBootstrapProvenance {
@@ -125,6 +126,18 @@ class DirectRootRuntime(
     }
 
     @Synchronized
+    internal fun inputControl(generation: Long): RootInputControl? =
+        (session as? RootInputControl).takeIf { !closed && snapshot.ready && snapshot.generation == generation }
+
+    @Synchronized
+    internal fun inputConnectionLost() {
+        runCatching { session?.close() }
+        session = null
+        bootstrap.cancel()
+        update(DirectRootState.HELPER_LOST, "authenticated_input_connection_lost")
+    }
+
+    @Synchronized
     override fun close() {
         if (closed) return
         closed = true
@@ -144,8 +157,8 @@ class DirectRootRuntime(
     }
 
     companion object {
-        const val PROTOCOL_VERSION = 1
-        const val IMPLEMENTATION = "warpnect-root-foundation-v1"
+        const val PROTOCOL_VERSION = 2
+        const val IMPLEMENTATION = "warpnect-root-input-v1"
     }
 }
 

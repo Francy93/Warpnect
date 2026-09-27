@@ -4,6 +4,8 @@ import android.os.Process
 import android.os.SystemClock
 import android.system.Os
 import android.util.Log
+import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.input.injection.PrivilegedUidKind
 import io.warpnect.platform.privileged.runtime.DirectRootRuntime
 import io.warpnect.platform.privileged.runtime.RootBootstrapProvenance
 import java.io.File
@@ -16,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.system.exitProcess
 import org.json.JSONObject
 
-/** DEBUG/lab entry point. No media, injection, settings or arbitrary privileged operations. */
+/** DEBUG/lab entry point. Typed Input only; no media, settings or arbitrary privileged operations. */
 object WarpnectRootHelper {
     @JvmStatic
     fun main(args: Array<String>) {
@@ -54,7 +56,7 @@ object WarpnectRootHelper {
                 put("implementation", DirectRootRuntime.IMPLEMENTATION)
                 put("sha256", hash)
                 put("provenance", provenance.name)
-                put("capabilities", "NONE")
+                put("capabilities", "INPUT")
             }.toString()
             serve(generation, port, expires, secret, identity)
         } catch (error: Exception) {
@@ -68,6 +70,13 @@ object WarpnectRootHelper {
     }
 
     private fun serve(generation: Long, port: Int, expires: Long, secret: ByteArray, identity: String) {
+        val inputBridge = DirectShellInputSessionBridge(
+            generation,
+            InputInjectionBackend.DirectRoot,
+            PrivilegedUidKind.Root,
+        )
+        val releaseHook = Thread({ inputBridge.shutdown() }, "WarpnectRootInputRelease")
+        Runtime.getRuntime().addShutdownHook(releaseHook)
         val listener = DirectShellProbeIpv4Socket.bindListener(port)
         val running = AtomicBoolean(true)
         val owned = AtomicBoolean(false)
@@ -125,21 +134,34 @@ object WarpnectRootHelper {
                                 if (!socket.awaitReadable(200)) continue
                                 val request = DirectShellProbeProtocol.readRequest(input, secret)
                                 require(
-                                    lease.accept(
-                                        request.requestId,
-                                        String(request.payload, StandardCharsets.UTF_8),
-                                        SystemClock.elapsedRealtime(),
-                                    ),
+                                    if (RootControlLease.inputCommand(request.command)) {
+                                        lease.acceptInput(
+                                            request.requestId,
+                                            request.payload,
+                                            SystemClock.elapsedRealtime(),
+                                        )
+                                    } else {
+                                        lease.accept(
+                                            request.requestId,
+                                            String(request.payload, StandardCharsets.UTF_8),
+                                            SystemClock.elapsedRealtime(),
+                                        )
+                                    },
                                 ) {
                                     "root_generation_order_or_expiry_rejected"
                                 }
                                 lastActivity.set(SystemClock.elapsedRealtime())
                                 val supported = RootControlLease.supported(request.command)
+                                val inputReply = if (RootControlLease.inputCommand(request.command)) {
+                                    inputBridge.dispatch(request.command, request.payload)
+                                } else {
+                                    null
+                                }
                                 val payload = when (request.command) {
                                     DirectShellProbeProtocol.Command.GET_RUNTIME_INFO -> identity
                                     DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ->
                                         "video=NOT_IMPLEMENTED;system_audio=NOT_IMPLEMENTED;" +
-                                            "input=NOT_IMPLEMENTED;remediation=NONE"
+                                            "input=IMPLEMENTED;remediation=NONE"
                                     DirectShellProbeProtocol.Command.PING -> "PONG"
                                     DirectShellProbeProtocol.Command.SHUTDOWN -> "SHUTDOWN_ACCEPTED"
                                     else -> "UNSUPPORTED"
@@ -147,17 +169,18 @@ object WarpnectRootHelper {
                                 DirectShellProbeProtocol.writeResponse(
                                     output,
                                     request.requestId,
-                                    if (supported) {
+                                    inputReply?.status ?: if (supported) {
                                         DirectShellProbeProtocol.Status.OK
                                     } else {
                                         DirectShellProbeProtocol.Status.UNSUPPORTED
                                     },
-                                    payload.toByteArray(),
+                                    inputReply?.payload ?: payload.toByteArray(),
                                     secret,
                                 )
                                 diagnostic(
                                     "direct_root_request id=${request.requestId} " +
-                                        "command=${request.command} supported=$supported",
+                                        "command=${request.command} supported=$supported " +
+                                        "result=${inputReply?.classification ?: "CONTROL"}",
                                 )
                                 if (request.command == DirectShellProbeProtocol.Command.SHUTDOWN) break
                             }
@@ -183,6 +206,8 @@ object WarpnectRootHelper {
             running.set(false)
             DirectShellProbeIpv4Socket.closeListener(listener)
             handlers.forEach { it.join(4_000) }
+            inputBridge.shutdown()
+            Runtime.getRuntime().removeShutdownHook(releaseHook)
             diagnostic("direct_root_shutdown endpoint_released=true generation=$generation")
         }
     }

@@ -8,6 +8,43 @@ import org.junit.Test
 
 class PrivilegedCapabilityPlannerTest {
     @Test
+    fun `Root Input alone cannot produce a partial Host`() {
+        val result = select(usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT))
+        assertTrue(result is PrivilegedCapabilityPlanResult.HostIncompatible)
+    }
+
+    @Test
+    fun `Root Input completes otherwise incomplete DirectShell without Root media`() {
+        assertPlan(
+            select(
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.SYSTEM_AUDIO),
+            ),
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapabilityPlanShape.COMPOSITE,
+        )
+    }
+
+    @Test
+    fun `complete DirectShell avoids unnecessary Root Input composite`() {
+        assertPlan(
+            select(
+                usable(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.SYSTEM_AUDIO),
+                usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.INPUT),
+            ),
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedProvider.DIRECT_SHELL,
+            PrivilegedCapabilityPlanShape.SINGLE,
+        )
+    }
+
+    @Test
     fun `A DirectShell-only complete plan is selected`() {
         val result = select(
             usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO),

@@ -4,6 +4,7 @@ import android.util.Log
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.readiness.CachedCapabilityEvidenceMatrixBuilder
 import io.warpnect.platform.privileged.readiness.LateRevalidatedCapabilityEvidence
 import io.warpnect.platform.privileged.readiness.PersistentCapabilityEvidenceRecord
@@ -157,7 +158,13 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                 if (!applyFrozenFeatureSelection(runtime, admission.plan)) {
                     admission.lease.close()
                     val failedMatrix = admission.matrix.invalidateProvider(
-                        PrivilegedProvider.DIRECT_SHELL,
+                        if (admission.plan.inputProvider == PrivilegedProvider.DIRECT_ROOT &&
+                            !DirectRootInputCapability.retainForHost()
+                        ) {
+                            PrivilegedProvider.DIRECT_ROOT
+                        } else {
+                            PrivilegedProvider.DIRECT_SHELL
+                        },
                         "directshell_feature_selection_failed",
                     )
                     val selection = PrivilegedCapabilityPlanner.select(failedMatrix)
@@ -269,14 +276,20 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                     ?: PrivilegedProviderAcquisition.Failed("shizuku_not_staged_for_current_attempt")
             }
 
-            PrivilegedProvider.DIRECT_ROOT -> PrivilegedProviderAcquisition.Failed("root_not_implemented")
+            PrivilegedProvider.DIRECT_ROOT -> if (DirectRootInputCapability.retainForHost()) {
+                PrivilegedProviderAcquisition.Retained
+            } else {
+                PrivilegedProviderAcquisition.Failed("root_input_runtime_not_qualified")
+            }
         }
 
         override fun release(provider: PrivilegedProvider) {
             when (provider) {
                 PrivilegedProvider.DIRECT_SHELL -> PrivilegedRuntimeRegistry.releaseForHost()
                 PrivilegedProvider.SHIZUKU -> optionalProvider?.release()
-                PrivilegedProvider.DIRECT_ROOT -> Unit
+                PrivilegedProvider.DIRECT_ROOT -> DirectRootInputCapability.selectForHost(
+                    false,
+                )
             }
         }
 
@@ -292,13 +305,18 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         runtime: PrivilegedRuntimeSnapshot,
         plan: PrivilegedCapabilityPlan,
     ): Boolean {
-        if (runtime.kind != PrivilegedRuntimeKind.DIRECT_SHELL) return true
+        if (runtime.kind != PrivilegedRuntimeKind.DIRECT_SHELL) {
+            return DirectRootInputCapability.selectForHost(
+                plan.inputProvider == PrivilegedProvider.DIRECT_ROOT,
+            )
+        }
         val selected = mapOf(
             PrivilegedRuntimeCapability.VIDEO to plan.videoProvider.runtimeKind(),
             PrivilegedRuntimeCapability.SYSTEM_AUDIO to plan.systemAudioProvider.runtimeKind(),
             PrivilegedRuntimeCapability.INPUT to plan.inputProvider.runtimeKind(),
         )
-        return PrivilegedRuntimeRegistry.applyHostFeatureSelection(selected)
+        return PrivilegedRuntimeRegistry.applyHostFeatureSelection(selected) &&
+            DirectRootInputCapability.selectForHost(plan.inputProvider == PrivilegedProvider.DIRECT_ROOT)
     }
 
     private fun PrivilegedProvider.runtimeKind(): PrivilegedRuntimeKind = when (this) {
@@ -320,13 +338,17 @@ internal object AndroidPrivilegedCapabilityMatrixAdapter {
         directShellSuppressed: PrivilegedCapability? = null,
     ): PrivilegedCapabilityMatrix = PrivilegedCapabilityMatrix.complete { provider, capability ->
         when (provider) {
-            PrivilegedProvider.DIRECT_ROOT -> unavailable(
-                provider,
-                capability,
-                CapabilityQualificationState.NOT_IMPLEMENTED,
-                "direct_root_not_implemented",
-                runtime,
-            )
+            PrivilegedProvider.DIRECT_ROOT -> if (capability == PrivilegedCapability.INPUT) {
+                DirectRootInputCapability.qualification()
+            } else {
+                unavailable(
+                    provider,
+                    capability,
+                    CapabilityQualificationState.NOT_IMPLEMENTED,
+                    "direct_root_not_implemented",
+                    runtime,
+                )
+            }
 
             PrivilegedProvider.DIRECT_SHELL -> directShellQualification(
                 runtime,

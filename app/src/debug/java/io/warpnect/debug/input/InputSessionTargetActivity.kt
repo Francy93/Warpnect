@@ -132,12 +132,14 @@ internal object InputSessionTargetProbeState {
     private var readyGeneration = 0L
     private var touchTarget: TouchTarget? = null
     private val eventKinds = linkedSetOf<String>()
+    private val orderedEvents = mutableListOf<String>()
 
     fun begin(): Long = synchronized(lock) {
         activeGeneration += 1L
         readyGeneration = 0L
         touchTarget = null
         eventKinds.clear()
+        orderedEvents.clear()
         activeGeneration
     }
 
@@ -152,6 +154,7 @@ internal object InputSessionTargetProbeState {
     fun record(kind: String) = synchronized(lock) {
         if (activeGeneration > 0L) {
             eventKinds += kind
+            if (orderedEvents.size < 256) orderedEvents += kind
             lock.notifyAll()
         }
     }
@@ -169,6 +172,17 @@ internal object InputSessionTargetProbeState {
     fun awaitEvents(generation: Long, expected: Set<String>, timeoutMillis: Long): Set<String> = synchronized(lock) {
         await(generation, timeoutMillis) { expected.all(eventKinds::contains) }
         return expected - eventKinds
+    }
+
+    fun awaitOrdered(
+        generation: Long,
+        expected: List<String>,
+        timeoutMillis: Long,
+        ignoredKinds: Set<String> = emptySet(),
+    ): Boolean = synchronized(lock) {
+        fun relevant() = orderedEvents.filterNot { it in ignoredKinds }
+        await(generation, timeoutMillis) { relevant().size >= expected.size }
+        generation == activeGeneration && relevant().take(expected.size) == expected
     }
 
     private fun await(generation: Long, timeoutMillis: Long, complete: () -> Boolean) {

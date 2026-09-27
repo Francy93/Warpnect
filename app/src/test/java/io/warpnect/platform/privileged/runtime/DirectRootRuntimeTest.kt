@@ -66,7 +66,9 @@ class DirectRootRuntimeTest {
     fun `wrong APK hash is rejected`() = rejects(identity().copy(artifactSha256 = "b".repeat(64)))
 
     @Test
-    fun `protocol mismatch is rejected`() = rejects(identity().copy(protocolVersion = 2))
+    fun `protocol mismatch is rejected`() = rejects(
+        identity().copy(protocolVersion = DirectRootRuntime.PROTOCOL_VERSION + 1),
+    )
 
     @Test
     fun `failed bootstrap does not become READY`() {
@@ -126,10 +128,12 @@ class DirectRootRuntimeTest {
         assertFalse(observed.directRoot.candidateForHostAcquisition)
         val matrix = AndroidPrivilegedCapabilityMatrixAdapter.build(shell, null)
         PrivilegedCapability.entries.forEach {
-            assertEquals(
-                CapabilityQualificationState.NOT_IMPLEMENTED,
-                matrix.qualification(PrivilegedProvider.DIRECT_ROOT, it).state,
-            )
+            val cell = matrix.qualification(PrivilegedProvider.DIRECT_ROOT, it)
+            if (it == PrivilegedCapability.INPUT) {
+                assertFalse(cell.state.isUsable)
+            } else {
+                assertEquals(CapabilityQualificationState.NOT_IMPLEMENTED, cell.state)
+            }
         }
         assertTrue(PrivilegedCapabilityPlanner.select(matrix) is PrivilegedCapabilityPlanResult.HostIncompatible)
     }
@@ -231,7 +235,10 @@ class DirectRootRuntimeTest {
 
     companion object {
         private fun identity() = RootHelperIdentity(
-            123, 0, 0, "u:r:su:s0", 26, 10, 1, DirectRootRuntime.IMPLEMENTATION, "a".repeat(64),
+            123, 0, 0, "u:r:su:s0", 26, 10, DirectRootRuntime.PROTOCOL_VERSION, DirectRootRuntime.IMPLEMENTATION,
+            "a".repeat(
+                64,
+            ),
         )
     }
 }

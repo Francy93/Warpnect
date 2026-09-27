@@ -300,8 +300,9 @@ The next milestones are:
 - RFC-006J - Privileged Runtime Orchestration and Host Readiness [Step 1 lifecycle-validated; Step 2 process-restart/cache-to-freeze validated on A41/API31 and Tablet/API33]
 - Runtime State Model and Background Host Readiness Coordinator [implemented: passive volatile observation, single-flight admission, generation-safe cleanup, and late RFC-006I plan freeze]
 - Persistent Capability Evidence and Prepared Plan Reuse [implemented, JVM-tested, hardware-validated: bounded app-private positive evidence, exact compatibility keys, selective invalidation, advisory cache reconstruction, and mandatory late revalidation]
-- DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization and capability providers not implemented]
-- DirectRoot Per-Capability Qualification [next; no Root capability is implemented yet]
+- DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization not implemented]
+- DirectRoot Input Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 final-artifact cycles plus 1/1 active disconnect reset; 807-test gated; not physical Root validation]
+- DirectRoot Video Capability [next; Root Video/SystemAudio remain NOT_IMPLEMENTED]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
@@ -318,14 +319,26 @@ UserServices; user Host admission re-observes runtime state, performs the
 existing bounded RFC-006I admission, and freezes a plan only before Host
 availability and discovery.
 
-The following laboratory foundation slice separates Root authority from Root
-capability provision. A purpose-specific authenticated UID0 helper may expose
-volatile authority availability, but Root Video/SystemAudio/Input remain
-NOT_IMPLEMENTED and cannot participate in a Complete Host plan. Production
+The laboratory foundation slice separates Root authority from Root capability
+provision. It exposed volatile authenticated UID0 authority with no capabilities
+at its original checkpoint. Production
 Root-manager consent, physical Root validation and actual remediation remain
 deferred. The lab authority passed 8/8 formal cases plus 2/2 resource cycles;
 this does not qualify a physical Root device or product Root manager. See
 `phase6_5/DirectRootBootstrapFoundation.md` for exact lab evidence.
+
+The subsequent Input-only slice supplies typed, generation-owned Root Input
+through the existing Android resolver/factory/tracker. AOSP/API26 observed real
+key/touch/pointer/joystick delivery, complete reset and connection-loss release;
+the exact final APK passed 3/3 qualifications without retries. The earlier
+0/1 reset-fixture attempt remains recorded, not hidden. Positive cache evidence
+is Input-only and explicitly LABORATORY_EXTERNAL_ROOT scoped; helper liveness
+stays volatile. Root Video/SystemAudio remain NOT_IMPLEMENTED, so Root-only
+Host admission remains incomplete. Synthetic DirectShell media plus Root Input
+COMPOSITE and preference for a complete DirectShell SINGLE plan are JVM-tested,
+not a manufactured API26 hardware composite. See
+`phase6_5/DirectRootInputQualification.md` for 807-test gates, exact environment,
+resources, cleanup and the bounded A41 endpoint-unavailable regression attempt.
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

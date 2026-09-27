@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid')]
+    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid', 'QualifyInput', 'InputStatus', 'StaleInput', 'HoldInput', 'DropInput')]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$Serial,
@@ -97,6 +97,11 @@ if ($Action -eq 'Invalidate') { Invoke-AppAction 'invalidate' }
 if ($Action -eq 'NegativeAuth') { Invoke-AppAction 'negative-auth' }
 if ($Action -eq 'NegativeGeneration') { Invoke-AppAction 'negative-generation' }
 if ($Action -eq 'Duplicate') { Invoke-AppAction 'duplicate' }
+if ($Action -eq 'QualifyInput') { Invoke-AppAction 'qualify-input' }
+if ($Action -eq 'InputStatus') { Invoke-AppAction 'input-status' }
+if ($Action -eq 'StaleInput') { Invoke-AppAction 'stale-input' }
+if ($Action -eq 'HoldInput') { Invoke-AppAction 'hold-input' }
+if ($Action -eq 'DropInput') { Invoke-AppAction 'drop-input' }
 if ($Action -eq 'NegativeUid') {
     if ((Invoke-RootLabAdb 'shell id') -notmatch '^uid=2000\(shell\) gid=2000\(shell\)') { throw 'Negative UID test requires unrooted adbd.' }
     $request = (Invoke-RootLabAdb 'shell run-as io.warpnect cat files/root-lab/request.json') | ConvertFrom-Json

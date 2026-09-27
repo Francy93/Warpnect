@@ -22,6 +22,7 @@ internal class DirectShellRuntimeAutoRegistrationProvider : ContentProvider() {
             return false
         }
         DirectRootLabController.clearAbandonedFiles(applicationContext)
+        io.warpnect.platform.input.injection.DirectRootInputCapability.registerLaboratoryImplementation()
         val registered = PrivilegedRuntimeRegistry.registerAutomaticDirectShell(
             PrivilegedRuntimeFactory { DirectShellRuntime(applicationContext) },
         )

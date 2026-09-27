@@ -10,6 +10,15 @@ import org.junit.Test
 
 class InputManagerBackendSelectorTest {
     @Test
+    fun `framework without display setter accepts only the default display`() {
+        assertTrue(inputDisplaySupported(0, false))
+        assertFalse(inputDisplaySupported(1, false))
+        assertFalse(inputDisplaySupported(-1, false))
+        assertTrue(inputDisplaySupported(1, true))
+        assertFalse(inputDisplaySupported(-1, true))
+    }
+
+    @Test
     fun modernFullyQualifiedPathIsPreferredWithoutLegacyLookup() {
         var legacyLookups = 0
 

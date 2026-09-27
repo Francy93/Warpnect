@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import io.warpnect.BuildConfig
+import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.planning.CapabilityQualification
 import io.warpnect.platform.privileged.planning.CapabilityQualificationProvenance
 import io.warpnect.platform.privileged.planning.CapabilityQualificationSource
@@ -13,7 +14,9 @@ import io.warpnect.platform.privileged.planning.PrivilegedCapabilityMatrix
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanner
 import io.warpnect.platform.privileged.planning.PrivilegedProvider
+import io.warpnect.platform.privileged.runtime.DirectRootRuntime
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
+import io.warpnect.platform.privileged.runtime.RootBootstrapProvenance
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Base64
@@ -84,7 +87,13 @@ internal data class PersistentCapabilityEvidenceRecord(
             "capability_evidence_schema_invalid"
         }
         require(state.isUsable) { "capability_evidence_state_not_persistable" }
-        require(provider != PrivilegedProvider.DIRECT_ROOT) { "capability_evidence_root_not_implemented" }
+        require(
+            provider != PrivilegedProvider.DIRECT_ROOT ||
+                (
+                    capability == PrivilegedCapability.INPUT && compatibilityKey.providerRuntimeVersion in
+                        RootBootstrapProvenance.entries.map { it.name }
+                    ),
+        ) { "capability_evidence_root_domain_invalid" }
         require(originalSource != CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE) {
             "capability_evidence_cached_source_not_persistable"
         }
@@ -125,19 +134,30 @@ internal fun interface PersistentCapabilityEvidenceKeyFactory {
 
 /**
  * Android compatibility-key source. Revisions are explicit invalidation controls rather than
- * inferred device names. DirectRoot deliberately has no positive evidence key.
+ * inferred device names. DirectRoot keys are Input-only and explicitly bootstrap-provenance scoped.
  */
 internal class AndroidPersistentCapabilityEvidenceKeyFactory(
     private val apiLevel: () -> Int = { Build.VERSION.SDK_INT },
     private val buildFingerprint: () -> String = { Build.FINGERPRINT.orEmpty() },
     private val warpnectVersionCode: () -> Int = { BuildConfig.VERSION_CODE },
     private val shizukuRuntimeVersion: () -> String?,
+    private val rootBootstrapProvenance: () -> RootBootstrapProvenance? = {
+        DirectRootInputCapability.bootstrapProvenance
+    },
 ) : PersistentCapabilityEvidenceKeyFactory {
     override fun expectationFor(
         provider: PrivilegedProvider,
         capability: PrivilegedCapability,
     ): PersistentCapabilityEvidenceKeyExpectation = when (provider) {
-        PrivilegedProvider.DIRECT_ROOT -> PersistentCapabilityEvidenceKeyExpectation.Unsupported
+        PrivilegedProvider.DIRECT_ROOT -> rootBootstrapProvenance()?.takeIf { capability == PrivilegedCapability.INPUT }
+            ?.let { provenance ->
+                PersistentCapabilityEvidenceKeyExpectation.Known(
+                    keyFor(
+                        provider, capability,
+                        DirectRootRuntime.IMPLEMENTATION, provenance.name, DirectRootInputCapability.BACKEND_REVISION,
+                    ),
+                )
+            } ?: PersistentCapabilityEvidenceKeyExpectation.Unsupported
         PrivilegedProvider.DIRECT_SHELL -> PersistentCapabilityEvidenceKeyExpectation.Known(
             keyFor(
                 provider = provider,
@@ -587,15 +607,16 @@ internal object CachedCapabilityEvidenceMatrixBuilder {
         return PrivilegedCapabilityMatrix.complete { provider, capability ->
             val record = byCoordinate[PersistentCapabilityEvidenceCoordinate(provider, capability)]
             when {
-                provider == PrivilegedProvider.DIRECT_ROOT -> CapabilityQualification.unavailable(
-                    provider = provider,
-                    capability = capability,
-                    state = CapabilityQualificationState.NOT_IMPLEMENTED,
-                    reason = "direct_root_not_implemented",
-                    provenance = CapabilityQualificationProvenance(
-                        CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE,
-                    ),
-                )
+                provider == PrivilegedProvider.DIRECT_ROOT && capability != PrivilegedCapability.INPUT ->
+                    CapabilityQualification.unavailable(
+                        provider = provider,
+                        capability = capability,
+                        state = CapabilityQualificationState.NOT_IMPLEMENTED,
+                        reason = "direct_root_not_implemented",
+                        provenance = CapabilityQualificationProvenance(
+                            CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE,
+                        ),
+                    )
 
                 record != null -> CapabilityQualification.usable(
                     provider = provider,
@@ -658,7 +679,7 @@ internal object CachedPreparedPlanBuilder {
     ): CachedPreparedPlanResult {
         val durableMatrix = CachedCapabilityEvidenceMatrixBuilder.build(records)
         val matrix = durableMatrix.withQualifications(
-            durableMatrix.entries().filter { it.state.isUsable && !providerIsUsable(it.provider, runtimeState) }
+            durableMatrix.entries().filter { it.state.isUsable && !providerIsUsable(it, runtimeState) }
                 .map { cell ->
                     cell.copy(
                         state = CapabilityQualificationState.NOT_AVAILABLE,
@@ -686,9 +707,11 @@ internal object CachedPreparedPlanBuilder {
         return CachedPreparedPlanResult(matrix, prepared, records.size)
     }
 
-    private fun providerIsUsable(provider: PrivilegedProvider, runtimeState: PrivilegedRuntimeStateSnapshot): Boolean =
-        when (provider) {
-            PrivilegedProvider.DIRECT_ROOT -> false
+    private fun providerIsUsable(cell: CapabilityQualification, runtimeState: PrivilegedRuntimeStateSnapshot): Boolean =
+        when (cell.provider) {
+            PrivilegedProvider.DIRECT_ROOT ->
+                runtimeState.directRoot.state == PrivilegedRuntimeAvailabilityState.READY &&
+                    runtimeState.directRoot.rootFoundation?.provenance?.name == cell.provenance.providerVersion
             PrivilegedProvider.DIRECT_SHELL -> runtimeState.directShell.isCachedPlanCandidate
             PrivilegedProvider.SHIZUKU -> runtimeState.shizuku.state == PrivilegedRuntimeAvailabilityState.READY
         }

@@ -22,6 +22,9 @@ enum class InputInjectionBackend {
 
     /** Explicit DEBUG-only DirectShell execution path; it does not alter Input Payload V1. */
     DirectShell,
+
+    /** Generation-owned authenticated Root helper; authorization provenance is runtime-specific. */
+    DirectRoot,
 }
 
 /** Cold-path `/dev/uhid` availability only; RFC-004G does not create a virtual HID device. */

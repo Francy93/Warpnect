@@ -323,3 +323,22 @@ Physical Root validation: NOT VALIDATED.
 
 The emulator cannot qualify OEM policy, real root-manager lifecycle, vendor
 SurfaceFlinger/codecs/audio HAL or physical thermal behavior.
+
+## Input Follow-up
+
+The foundation above is historical evidence and was locally checkpointed as
+`e762a1a` before the next slice. Its original no-capability statements describe
+that checkpoint, not the subsequent Input implementation.
+`DirectRootInputQualification.md` records the new typed Root Input gateway and
+version-2 helper identity (`warpnect-root-input-v1`), retaining the foundation's
+HMAC envelope, generation ownership and launch trust boundary. The exact
+AOSP/API26 lab now has target-observed Input `QUALIFIED` evidence: 3/3 final-APK
+cycles plus 1/1 active connection-loss reset, with 807 passing JVM tests.
+The new Input work remains uncommitted for review; master/upstream are unchanged.
+
+Only Input is superseded. Root Video/SystemAudio, production Root-manager
+authorization and actual remediation remain NOT_IMPLEMENTED. Lab provenance
+cannot satisfy future physical/Magisk qualification, helper liveness is not
+persisted, and Input alone cannot make a normal Host available. The historical
+8/8 foundation and A41 PASS above remain separate from the Input slice's attempt
+accounting and its A41 live-admission endpoint failure.

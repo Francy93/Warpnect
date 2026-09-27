@@ -2,7 +2,12 @@ package io.warpnect.debug.directshell
 
 import android.os.Process
 import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.input.injection.InputInjectionCapabilities
 import io.warpnect.input.injection.InputInjectionError
+import io.warpnect.input.injection.InputInjectionMode
+import io.warpnect.input.injection.InputResetScope
+import io.warpnect.input.injection.PrivilegedUidKind
+import io.warpnect.platform.input.injection.RootInputRequestBounds
 import io.warpnect.platform.input.injection.privileged.PrivilegedInputInjectionContract
 import io.warpnect.platform.input.injection.privileged.PrivilegedInputInjectionUserService
 import io.warpnect.platform.input.injection.privileged.toInputInjectionCapabilities
@@ -16,6 +21,8 @@ import io.warpnect.platform.input.injection.privileged.toInputInjectionSnapshot
  */
 internal class DirectShellInputSessionBridge(
     private val generationId: Long,
+    private val backend: InputInjectionBackend = InputInjectionBackend.DirectShell,
+    private val uidKind: PrivilegedUidKind = PrivilegedUidKind.Shell,
 ) {
     private val service = PrivilegedInputInjectionUserService()
 
@@ -47,16 +54,16 @@ internal class DirectShellInputSessionBridge(
         if (!request.isSuccess) return rejected(request.error)
         val capabilities = runCatching {
             service.capabilities.toInputInjectionCapabilities().copy(
-                backend = InputInjectionBackend.DirectShell,
+                backend = backend,
                 privilegedUid = Process.myUid(),
-                privilegedUidKind = io.warpnect.input.injection.PrivilegedUidKind.Shell,
+                privilegedUidKind = uidKind,
             )
         }.getOrElse {
             return Reply.ok(
                 "INPUT_SESSION_CAPABILITIES_ERROR",
                 DirectShellInputSessionCodec.encodeCapabilities(
                     generationId,
-                    io.warpnect.input.injection.InputInjectionCapabilities(
+                    InputInjectionCapabilities(
                         lastError = InputInjectionError.RemoteFailure,
                     ),
                 ),
@@ -90,6 +97,11 @@ internal class DirectShellInputSessionBridge(
     private fun key(payload: ByteArray): Reply {
         val event = DirectShellInputSessionCodec.decodeKey(payload, generationId).value
             ?: return rejected("key")
+        if (backend == InputInjectionBackend.DirectRoot && !RootInputRequestBounds.valid(event)) {
+            return rejected(
+                "bounds",
+            )
+        }
         return serviceResult(
             "INPUT_SESSION_KEY",
             call {
@@ -113,6 +125,11 @@ internal class DirectShellInputSessionBridge(
     private fun touch(payload: ByteArray): Reply {
         val event = DirectShellInputSessionCodec.decodeTouch(payload, generationId).value
             ?: return rejected("touch")
+        if (backend == InputInjectionBackend.DirectRoot && !RootInputRequestBounds.valid(event)) {
+            return rejected(
+                "bounds",
+            )
+        }
         return serviceResult(
             "INPUT_SESSION_TOUCH",
             call {
@@ -142,6 +159,11 @@ internal class DirectShellInputSessionBridge(
     private fun pointer(payload: ByteArray): Reply {
         val event = DirectShellInputSessionCodec.decodePointer(payload, generationId).value
             ?: return rejected("pointer")
+        if (backend == InputInjectionBackend.DirectRoot && !RootInputRequestBounds.valid(event)) {
+            return rejected(
+                "bounds",
+            )
+        }
         return serviceResult(
             "INPUT_SESSION_POINTER",
             call {
@@ -171,6 +193,11 @@ internal class DirectShellInputSessionBridge(
     private fun joystick(payload: ByteArray): Reply {
         val event = DirectShellInputSessionCodec.decodeJoystick(payload, generationId).value
             ?: return rejected("joystick")
+        if (backend == InputInjectionBackend.DirectRoot && !RootInputRequestBounds.valid(event)) {
+            return rejected(
+                "bounds",
+            )
+        }
         return serviceResult(
             "INPUT_SESSION_JOYSTICK",
             call {
@@ -219,9 +246,9 @@ internal class DirectShellInputSessionBridge(
         if (!generationOnly(payload)) return rejected("generation")
         val snapshot = runCatching {
             service.snapshot.toInputInjectionSnapshot().copy(
-                backend = InputInjectionBackend.DirectShell,
+                backend = backend,
                 privilegedUid = Process.myUid(),
-                privilegedUidKind = io.warpnect.input.injection.PrivilegedUidKind.Shell,
+                privilegedUidKind = uidKind,
             )
         }.getOrElse {
             return serviceResult("INPUT_SESSION_SNAPSHOT_ERROR", InputInjectionError.RemoteFailure.code)
@@ -247,15 +274,15 @@ internal class DirectShellInputSessionBridge(
         "reason=${reason ?: "invalid"}".encodeToByteArray(),
     )
 
-    private fun io.warpnect.input.injection.InputInjectionMode.toWireMode(): Int = when (this) {
-        io.warpnect.input.injection.InputInjectionMode.AsyncLowLatency -> PrivilegedInputInjectionContract.MODE_ASYNC
-        io.warpnect.input.injection.InputInjectionMode.WaitForResultDiagnostics ->
+    private fun InputInjectionMode.toWireMode(): Int = when (this) {
+        InputInjectionMode.AsyncLowLatency -> PrivilegedInputInjectionContract.MODE_ASYNC
+        InputInjectionMode.WaitForResultDiagnostics ->
             PrivilegedInputInjectionContract.MODE_WAIT_FOR_RESULT
     }
 
-    private fun io.warpnect.input.injection.InputResetScope.toWireScope(): Int = when (this) {
-        io.warpnect.input.injection.InputResetScope.ThisSlot -> PrivilegedInputInjectionContract.RESET_THIS_SLOT
-        io.warpnect.input.injection.InputResetScope.AllSlots -> PrivilegedInputInjectionContract.RESET_ALL_SLOTS
+    private fun InputResetScope.toWireScope(): Int = when (this) {
+        InputResetScope.ThisSlot -> PrivilegedInputInjectionContract.RESET_THIS_SLOT
+        InputResetScope.AllSlots -> PrivilegedInputInjectionContract.RESET_ALL_SLOTS
     }
 
     internal data class Reply(

@@ -11,6 +11,7 @@ import io.warpnect.platform.privileged.planning.PrivilegedProvider
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeState
+import io.warpnect.platform.privileged.runtime.RootBootstrapProvenance
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -20,6 +21,166 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PersistentCapabilityEvidenceTest {
+    @Test
+    fun `Root Input evidence round trips with laboratory provenance`() {
+        val root = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.INPUT,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        val decoded = PersistentCapabilityEvidenceCodec.decode(PersistentCapabilityEvidenceCodec.encode(listOf(root)))
+        assertEquals(listOf(root), decoded.records)
+        val matrix = CachedCapabilityEvidenceMatrixBuilder.build(decoded.records)
+        assertEquals(
+            CapabilityQualificationState.VALIDATED,
+            matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT).state,
+        )
+        assertEquals(
+            CapabilityQualificationState.NOT_IMPLEMENTED,
+            matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO).state,
+        )
+        assertEquals(
+            CapabilityQualificationState.NOT_IMPLEMENTED,
+            matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO).state,
+        )
+    }
+
+    @Test
+    fun `laboratory evidence cannot satisfy production root manager compatibility`() {
+        val root = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.INPUT,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        val shell = record(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO)
+        val store = MemoryStore(listOf(root, shell))
+        val production = root.compatibilityKey.copy(providerRuntimeVersion = "PRODUCTION_ROOT_MANAGER")
+        val repository =
+            repository(store, mapOf(root.coordinate to PersistentCapabilityEvidenceKeyExpectation.Known(production)))
+        assertEquals(listOf(shell), repository.loadReusableEvidence().reusableRecords)
+    }
+
+    @Test
+    fun `Root helper outage retains durable Input evidence`() {
+        val root = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.INPUT,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        val store = MemoryStore(listOf(root))
+        val repository =
+            repository(
+                store,
+                mapOf(root.coordinate to PersistentCapabilityEvidenceKeyExpectation.Known(root.compatibilityKey)),
+            )
+        repository.reconcileAuthoritativeMatrix(
+            matrix { provider, capability ->
+                unavailable(provider, capability, CapabilityQualificationState.NOT_AVAILABLE, "root_helper_lost")
+            },
+        )
+        assertEquals(listOf(root), repository.loadReusableEvidence().reusableRecords)
+    }
+
+    @Test
+    fun `authoritative Root Input contradiction affects only Root Input`() {
+        val root = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.INPUT,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        val shell = record(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.INPUT)
+        val store = MemoryStore(listOf(root, shell))
+        val repository =
+            repository(
+                store,
+                mapOf(root.coordinate to PersistentCapabilityEvidenceKeyExpectation.Known(root.compatibilityKey)),
+            )
+        repository.reconcileAuthoritativeMatrix(
+            matrix { provider, capability ->
+                if (provider == PrivilegedProvider.DIRECT_ROOT && capability == PrivilegedCapability.INPUT) {
+                    unavailable(
+                        provider,
+                        capability,
+                        CapabilityQualificationState.QUALIFICATION_FAILED,
+                        "input_InputApiUnavailable",
+                    )
+                } else {
+                    unavailable(provider, capability, CapabilityQualificationState.DEFERRED)
+                }
+            },
+        )
+        assertEquals(listOf(shell), repository.loadReusableEvidence().reusableRecords)
+    }
+
+    @Test
+    fun `Root positive media or missing bootstrap provenance cannot be persisted`() {
+        assertTrue(
+            runCatching {
+                record(
+                    PrivilegedProvider.DIRECT_ROOT,
+                    PrivilegedCapability.VIDEO,
+                    runtime = "LABORATORY_EXTERNAL_ROOT",
+                )
+            }.isFailure,
+        )
+        assertTrue(
+            runCatching {
+                record(
+                    PrivilegedProvider.DIRECT_ROOT,
+                    PrivilegedCapability.SYSTEM_AUDIO,
+                    runtime = "LABORATORY_EXTERNAL_ROOT",
+                )
+            }.isFailure,
+        )
+        assertTrue(runCatching { record(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT) }.isFailure)
+    }
+
+    @Test
+    fun `cached Root Input does not make absent runtime ready or a complete Host`() {
+        val root = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.INPUT,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        val result = CachedPreparedPlanBuilder.build(runtimeState(false), idleDirectShellRuntime(), listOf(root), 1)
+        assertNull(result.preparedPlan)
+        assertEquals(
+            CapabilityQualificationState.NOT_AVAILABLE,
+            result.matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT).state,
+        )
+    }
+
+    @Test
+    fun `Root compatibility key distinguishes provenance and supports only Input`() {
+        fun factory(provenance: RootBootstrapProvenance?) = AndroidPersistentCapabilityEvidenceKeyFactory(
+            { 26 },
+            { "aosp-x86_64-lab" },
+            { 1 },
+            { null },
+            { provenance },
+        )
+        val lab = factory(RootBootstrapProvenance.LABORATORY_EXTERNAL_ROOT)
+        val production =
+            factory(RootBootstrapProvenance.PRODUCTION_ROOT_MANAGER)
+        val labKey = (
+            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT) as
+                PersistentCapabilityEvidenceKeyExpectation.Known
+            ).key
+        val prodKey = (
+            production.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT) as
+                PersistentCapabilityEvidenceKeyExpectation.Known
+            ).key
+        assertTrue(labKey.stableId != prodKey.stableId)
+        assertEquals(
+            PersistentCapabilityEvidenceKeyExpectation.Unsupported,
+            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO),
+        )
+        assertEquals(
+            PersistentCapabilityEvidenceKeyExpectation.Unsupported,
+            factory(null).expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
+        )
+    }
+
     @Test
     fun `empty cache has no reusable capability evidence`() {
         val repository = repository(MemoryStore())

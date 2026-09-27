@@ -41,7 +41,7 @@ internal object DebugInputInjectionControllerOverrideRegistry {
 
 /** Keeps Shizuku as the default Input backend until an explicit production migration is approved. */
 internal object InputInjectionControllerSelector {
-    fun create(context: Context): InputInjectionController =
-        DebugInputInjectionControllerOverrideRegistry.createController(context)
-            ?: AndroidInputInjectionController(context)
+    fun create(context: Context): InputInjectionController = DirectRootInputCapability.createSelectedController()
+        ?: DebugInputInjectionControllerOverrideRegistry.createController(context)
+        ?: AndroidInputInjectionController(context)
 }
