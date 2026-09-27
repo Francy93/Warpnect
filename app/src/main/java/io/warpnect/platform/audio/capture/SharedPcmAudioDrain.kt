@@ -6,6 +6,8 @@ import android.os.SharedMemory
 import io.warpnect.audio.capture.AudioCaptureError
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.platform.audio.capture.shared.JavaSharedPcmMemory
+import io.warpnect.platform.audio.capture.shared.PcmMemoryRegion
 import io.warpnect.platform.audio.capture.shared.PcmRingSignalRecord
 import io.warpnect.platform.audio.capture.shared.SharedPcmAudioRingLayout
 import java.io.InputStream
@@ -15,7 +17,7 @@ import java.nio.ByteOrder
 
 @SuppressLint("NewApi")
 internal class SharedPcmAudioDrain(
-    private val sharedMemory: SharedMemory,
+    private val sharedMemory: PcmMemoryRegion,
     private val notifyReadFd: ParcelFileDescriptor,
     private val ackWriteFd: ParcelFileDescriptor,
     private val sink: PcmAudioSink,
@@ -29,6 +31,24 @@ internal class SharedPcmAudioDrain(
         timestampQuality: AudioTimestampQuality,
     ) -> Unit = { _, _, _, _, _ -> },
 ) : AutoCloseable {
+    constructor(
+        sharedMemory: SharedMemory,
+        notifyReadFd: ParcelFileDescriptor,
+        ackWriteFd: ParcelFileDescriptor,
+        sink: PcmAudioSink,
+        onError: (AudioCaptureError) -> Unit,
+        onRingState: (Int, Int, Int) -> Unit,
+        onPcmAccepted: (Int, Int, Long, Long, AudioTimestampQuality) -> Unit = { _, _, _, _, _ -> },
+    ) : this(
+        JavaSharedPcmMemory(sharedMemory),
+        notifyReadFd,
+        ackWriteFd,
+        sink,
+        onError,
+        onRingState,
+        onPcmAccepted,
+    )
+
     @Volatile
     private var running = false
 
@@ -47,7 +67,7 @@ internal class SharedPcmAudioDrain(
             return AudioCaptureError.SharedMemoryMappingFailed
         }
         if (!SharedPcmAudioRingLayout.validate(mapped)) {
-            SharedMemory.unmap(mapped)
+            sharedMemory.unmap(mapped)
             return AudioCaptureError.SharedRingCorrupt
         }
         mappedMemory = mapped
@@ -68,7 +88,7 @@ internal class SharedPcmAudioDrain(
         }
         runCatching { notifyInput?.close() }
         runCatching { ackOutput?.close() }
-        mappedMemory?.let { buffer -> runCatching { SharedMemory.unmap(buffer) } }
+        mappedMemory?.let { buffer -> runCatching { sharedMemory.unmap(buffer) } }
         mappedMemory = null
         runCatching { sharedMemory.close() }
     }

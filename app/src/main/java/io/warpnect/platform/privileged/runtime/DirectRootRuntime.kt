@@ -1,5 +1,6 @@
 package io.warpnect.platform.privileged.runtime
 
+import io.warpnect.platform.audio.capture.RootAudioControl
 import io.warpnect.platform.capture.RootVideoControl
 import io.warpnect.platform.input.injection.RootInputControl
 import java.util.concurrent.CopyOnWriteArrayList
@@ -140,6 +141,13 @@ class DirectRootRuntime(
     @Synchronized
     internal fun videoConnectionLost() = inputConnectionLost()
 
+    @Synchronized
+    internal fun audioControl(generation: Long): RootAudioControl? =
+        (session as? RootAudioControl).takeIf { !closed && snapshot.ready && snapshot.generation == generation }
+
+    @Synchronized
+    internal fun audioConnectionLost() = inputConnectionLost()
+
     internal fun observe(observer: () -> Unit): AutoCloseable {
         observers += observer
         return AutoCloseable { observers -= observer }
@@ -175,8 +183,8 @@ class DirectRootRuntime(
     }
 
     companion object {
-        const val PROTOCOL_VERSION = 3
-        const val IMPLEMENTATION = "warpnect-root-video-input-v1"
+        const val PROTOCOL_VERSION = 4
+        const val IMPLEMENTATION = "warpnect-root-video-audio-input-v1"
     }
 }
 

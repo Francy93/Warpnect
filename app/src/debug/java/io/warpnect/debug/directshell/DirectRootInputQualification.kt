@@ -91,9 +91,10 @@ internal object DirectRootInputQualification {
 
     fun observeDisconnectRelease(observation: Long) {
         check(
-            InputSessionTargetProbeState.awaitOrdered(
+            InputSessionTargetProbeState.awaitReset(
                 observation,
-                listOf("KEY_DOWN", "TOUCH_DOWN", "KEY_UP", "TOUCH_CANCEL"),
+                listOf("KEY_DOWN", "TOUCH_DOWN"),
+                setOf("KEY_UP", "TOUCH_CANCEL"),
                 3_000,
             ),
         ) { "DISCONNECT_RESET_NOT_OBSERVED" }
@@ -184,10 +185,10 @@ internal object DirectRootInputQualification {
                     InputInjectionServiceResult.ResetComplete.code,
             ) { "RESET_FAILED" }
             check(
-                InputSessionTargetProbeState.awaitOrdered(
+                InputSessionTargetProbeState.awaitReset(
                     observation,
-                    // AllSlots follows allocated tracker slots, not logical slot identifiers.
-                    ordered + listOf("KEY_DOWN", "TOUCH_DOWN", "JOYSTICK", "KEY_UP", "TOUCH_CANCEL"),
+                    ordered + listOf("KEY_DOWN", "TOUCH_DOWN"),
+                    setOf("JOYSTICK", "KEY_UP", "TOUCH_CANCEL"),
                     3_000,
                     setOf("POINTER"),
                 ),

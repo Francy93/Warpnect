@@ -303,7 +303,8 @@ The next milestones are:
 - DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization not implemented]
 - DirectRoot Input Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 final-artifact cycles plus 1/1 active disconnect reset; 807-test gated; not physical Root validation]
 - DirectRoot Video Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 frozen-artifact decoded-content cycles plus two active-loss cases; 841-test gated; no physical Root claim]
-- DirectRoot SystemAudio Capability [next; NOT_IMPLEMENTED; final missing Root-only Complete Host capability]
+- DirectRoot SystemAudio Capability [implemented; exact AOSP/API26 lab QUALIFIED, 3/3 frozen-artifact OFF/ON PCM/ring cycles and actual Root-only plan freeze; 904-test gated; ordinary Root Host UI/network admission not validated]
+- Physical Root Device Qualification [next evidence boundary; no physical Root or production root-manager claim follows from the AOSP lab]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
 - Final privileged-runtime acceptance [planned]
@@ -334,8 +335,8 @@ key/touch/pointer/joystick delivery, complete reset and connection-loss release;
 the exact final APK passed 3/3 qualifications without retries. The earlier
 0/1 reset-fixture attempt remains recorded, not hidden. Positive cache evidence
 is Input-only and explicitly LABORATORY_EXTERNAL_ROOT scoped; helper liveness
-stays volatile. Root Video/SystemAudio remain NOT_IMPLEMENTED, so Root-only
-Host admission remains incomplete. Synthetic DirectShell media plus Root Input
+stays volatile. At that Input checkpoint Root Video/SystemAudio remained
+NOT_IMPLEMENTED, so Root-only Host admission was incomplete. Synthetic DirectShell media plus Root Input
 COMPOSITE and preference for a complete DirectShell SINGLE plan are JVM-tested,
 not a manufactured API26 hardware composite. See
 `phase6_5/DirectRootInputQualification.md` for 807-test gates, exact environment,
@@ -347,10 +348,29 @@ provider/UID/PID/generation/HMAC-bound Binder lease, not TCP. Exact AOSP/API26
 frozen-artifact qualification passed 3/3 with decoded white-circle/checkerboard
 content and two active-loss cleanup cases. Root Video/Input cache is scoped to
 LABORATORY_EXTERNAL_ROOT; runtime stays volatile and startup stays passive.
-Root-only Host is still incomplete because SystemAudio is NOT_IMPLEMENTED.
+At that Video checkpoint Root-only Host was incomplete because SystemAudio was NOT_IMPLEMENTED.
 See `phase6_5/DirectRootVideoQualification.md` for exact artifacts, 841-test gates,
 graphics-FD sampling limits and the optional Tablet admission accounting (1/2,
 second attempt failed at runtime preparation, not a Root capture boundary).
+
+The subsequent SystemAudio slice preserves the existing PCM Ring V1/drain/Opus
+contract and adds only a provider-independent API26 ashmem ownership adapter and
+finite authenticated Root audio control/descriptor handoff. The final APK passed
+3/3 same-generation Input, decoded Video A/B and machine-verified silent/997Hz
+Audio qualifications, then actual SINGLE/DIRECT_ROOT preparation, late
+revalidation and freeze. Three isolated audio resource cycles also passed with
+stable app FD samples. The earlier2/3 combined campaign remains recorded: its
+third attempt stopped before Audio because the DEBUG reset observer incorrectly
+assumed cross-source delivery order. Only that observer was corrected.
+
+All three cells are QUALIFIED for the exact LABORATORY_EXTERNAL_ROOT key. This
+does not validate ordinary product Host Available/discovery/network admission:
+the product Root bootstrap adapter is absent and AOSP Video qualification uses
+the explicit DEBUG software encoder, not a bypass of the hardware-codec policy.
+Production authorization/Magisk, physical Root validation, actual remediation,
+same-provider recovery and live migration remain deferred. See
+`phase6_5/DirectRootSystemAudioQualification.md` for exact artifact, attempts,
+904-test gates, loss/cleanup evidence and complete-plan versus Host boundaries.
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

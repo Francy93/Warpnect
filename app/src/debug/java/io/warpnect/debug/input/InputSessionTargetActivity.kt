@@ -185,6 +185,18 @@ internal object InputSessionTargetProbeState {
         generation == activeGeneration && relevant().take(expected.size) == expected
     }
 
+    fun awaitReset(
+        generation: Long,
+        orderedPrefix: List<String>,
+        releases: Set<String>,
+        timeoutMillis: Long,
+        ignoredKinds: Set<String> = emptySet(),
+    ): Boolean = synchronized(lock) {
+        fun relevant() = orderedEvents.filterNot { it in ignoredKinds }
+        await(generation, timeoutMillis) { relevant().size >= orderedPrefix.size + releases.size }
+        generation == activeGeneration && matchesResetObservation(relevant(), orderedPrefix, releases)
+    }
+
     private fun await(generation: Long, timeoutMillis: Long, complete: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         while (generation == activeGeneration && !complete()) {
@@ -199,3 +211,12 @@ internal object InputSessionTargetProbeState {
         }
     }
 }
+
+/** Android may deliver independent source resets in either order; every release is still required. */
+internal fun matchesResetObservation(
+    observed: List<String>,
+    orderedPrefix: List<String>,
+    releases: Set<String>,
+): Boolean = observed.size == orderedPrefix.size + releases.size &&
+    observed.take(orderedPrefix.size) == orderedPrefix &&
+    observed.drop(orderedPrefix.size).toSet() == releases

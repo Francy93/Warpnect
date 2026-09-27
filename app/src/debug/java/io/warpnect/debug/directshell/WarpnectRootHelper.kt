@@ -56,7 +56,7 @@ object WarpnectRootHelper {
                 put("implementation", DirectRootRuntime.IMPLEMENTATION)
                 put("sha256", hash)
                 put("provenance", provenance.name)
-                put("capabilities", "INPUT,VIDEO")
+                put("capabilities", "INPUT,VIDEO,SYSTEM_AUDIO")
             }.toString()
             serve(generation, port, expires, secret, identity)
         } catch (error: Exception) {
@@ -76,7 +76,9 @@ object WarpnectRootHelper {
             PrivilegedUidKind.Root,
         )
         val videoBridge = RootVideoBridge(generation, secret)
+        val audioBridge = RootAudioBridge(generation, secret)
         val releaseHook = Thread({
+            audioBridge.close()
             videoBridge.close()
             inputBridge.shutdown()
         }, "WarpnectRootRelease")
@@ -138,7 +140,13 @@ object WarpnectRootHelper {
                                 if (!socket.awaitReadable(200)) continue
                                 val request = DirectShellProbeProtocol.readRequest(input, secret)
                                 require(
-                                    if (RootControlLease.videoCommand(request.command)) {
+                                    if (RootControlLease.audioCommand(request.command)) {
+                                        lease.acceptAudio(
+                                            request.requestId,
+                                            request.payload,
+                                            SystemClock.elapsedRealtime(),
+                                        )
+                                    } else if (RootControlLease.videoCommand(request.command)) {
                                         lease.acceptVideo(
                                             request.requestId,
                                             request.payload,
@@ -172,10 +180,15 @@ object WarpnectRootHelper {
                                 } else {
                                     null
                                 }
+                                val audioReply = if (RootControlLease.audioCommand(request.command)) {
+                                    audioBridge.dispatch(request.command, request.payload)
+                                } else {
+                                    null
+                                }
                                 val payload = when (request.command) {
                                     DirectShellProbeProtocol.Command.GET_RUNTIME_INFO -> identity
                                     DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ->
-                                        "video=IMPLEMENTED;system_audio=NOT_IMPLEMENTED;" +
+                                        "video=IMPLEMENTED;system_audio=IMPLEMENTED;" +
                                             "input=IMPLEMENTED;remediation=NONE"
                                     DirectShellProbeProtocol.Command.PING -> "PONG"
                                     DirectShellProbeProtocol.Command.SHUTDOWN -> "SHUTDOWN_ACCEPTED"
@@ -189,7 +202,7 @@ object WarpnectRootHelper {
                                     } else {
                                         DirectShellProbeProtocol.Status.UNSUPPORTED
                                     },
-                                    videoReply ?: inputReply?.payload ?: payload.toByteArray(),
+                                    audioReply ?: videoReply ?: inputReply?.payload ?: payload.toByteArray(),
                                     secret,
                                 )
                                 diagnostic(
@@ -221,6 +234,7 @@ object WarpnectRootHelper {
             running.set(false)
             DirectShellProbeIpv4Socket.closeListener(listener)
             handlers.forEach { it.join(4_000) }
+            audioBridge.close()
             videoBridge.close()
             inputBridge.shutdown()
             Runtime.getRuntime().removeShutdownHook(releaseHook)

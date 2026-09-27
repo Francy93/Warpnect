@@ -59,7 +59,7 @@ public final class RootControlLeaseTest {
                     command == DirectShellProbeProtocol.Command.GET_RUNTIME_INFO ||
                     command == DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ||
                     command == DirectShellProbeProtocol.Command.SHUTDOWN || RootControlLease.inputCommand(command) ||
-                    RootControlLease.videoCommand(command), RootControlLease.supported(command));
+                    RootControlLease.videoCommand(command) || RootControlLease.audioCommand(command), RootControlLease.supported(command));
         }
     }
 
@@ -117,6 +117,40 @@ public final class RootControlLeaseTest {
     private static byte[] video(long generation) {
         return java.nio.ByteBuffer.allocate(40).putInt(0x574e5652).putInt(1).putLong(generation)
                 .putLong(20).putInt(0).putInt(640).putInt(360).putInt(1).array();
+    }
+    private static byte[] audio(long generation) {
+        return java.nio.ByteBuffer.allocate(24).putInt(0x574e5241).putInt(1).putLong(generation).putLong(20).array();
+    }
+    @Test public void audioRequiresAuthentication() {
+        assertFalse(lease().acceptAudio(2, audio(10), 1));
+    }
+    @Test public void audioBindsGenerationOrderAndExpiry() {
+        RootControlLease lease = lease(); lease.hello(1, "10|" + NONCE, 1);
+        assertFalse(lease.acceptAudio(2, audio(11), 2));
+        assertTrue(lease.acceptAudio(2, audio(10), 2));
+        assertFalse(lease.acceptAudio(2, audio(10), 2));
+        assertFalse(lease.acceptAudio(3, audio(10), 100));
+    }
+    @Test public void malformedAudioFailsClosed() {
+        RootControlLease lease = lease(); lease.hello(1, "10|" + NONCE, 1);
+        assertFalse(lease.acceptAudio(2, new byte[4000], 2));
+        assertFalse(lease.acceptAudio(2, new byte[23], 2));
+        byte[] wrong = audio(10); wrong[7] = 2;
+        assertFalse(lease.acceptAudio(2, wrong, 2));
+        byte[] zero = audio(10); Arrays.fill(zero, 16, 24, (byte) 0);
+        assertFalse(lease.acceptAudio(2, zero, 2));
+    }
+    @Test public void audioUsesExistingAuthenticatedEnvelope() throws Exception {
+        byte[] wrong = new byte[32]; Arrays.fill(wrong, (byte) 1);
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        DirectShellProbeProtocol.writeRequest(new DataOutputStream(encoded), 2,
+                DirectShellProbeProtocol.Command.PCM_RING_AUDIO_START, audio(10), wrong);
+        try {
+            DirectShellProbeProtocol.readRequest(new DataInputStream(new ByteArrayInputStream(encoded.toByteArray())), new byte[32]);
+            fail("Unauthenticated audio accepted");
+        } catch (DirectShellProbeProtocol.ProtocolException expected) {
+            assertEquals(DirectShellProbeProtocol.ProtocolException.Kind.UNAUTHENTICATED, expected.kind);
+        }
     }
     @Test public void videoRequiresAuthentication() {
         assertFalse(lease().acceptVideo(2, video(10), 1));

@@ -22,6 +22,10 @@ import io.warpnect.input.injection.InputInjectionSnapshot
 import io.warpnect.input.injection.InputResetReason
 import io.warpnect.input.injection.InputResetScope
 import io.warpnect.input.injection.PrivilegedUidKind
+import io.warpnect.platform.audio.capture.DirectRootSystemAudioCapability
+import io.warpnect.platform.audio.capture.RootAudioControl
+import io.warpnect.platform.audio.capture.RootAudioRequest
+import io.warpnect.platform.audio.capture.RootAudioRequestCodec
 import io.warpnect.platform.capture.DirectRootVideoCapability
 import io.warpnect.platform.capture.RootVideoControl
 import io.warpnect.platform.capture.RootVideoRequest
@@ -96,6 +100,7 @@ internal object DirectRootLabController {
                 runtime = DirectRootRuntime(prepared, DirectRootRuntimeRegistry::publish)
                 DirectRootInputCapability.bindRuntime(runtime)
                 DirectRootVideoCapability.bindRuntime(runtime)
+                DirectRootSystemAudioCapability.bindRuntime(runtime)
                 DirectRootRuntimeRegistry.publish(requireNotNull(runtime).snapshot)
                 monitor = Executors.newSingleThreadScheduledExecutor().also { executor ->
                     executor.schedule({
@@ -113,7 +118,10 @@ internal object DirectRootLabController {
                         val current = runtime
                         if (current != null && !current.checkLiveness()) {
                             synchronized(this) {
-                                if (runtime === current) DirectRootVideoQualification.release()
+                                if (runtime === current) {
+                                    DirectRootVideoQualification.release()
+                                    DirectRootSystemAudioQualification.release()
+                                }
                             }
                         }
                     }, 1, 1, TimeUnit.SECONDS)
@@ -128,6 +136,12 @@ internal object DirectRootLabController {
             "confirm-video" -> DirectRootVideoQualification.confirmContent(context, requireNotNull(runtime))
             "hold-video" -> DirectRootVideoQualification.hold(context, requireNotNull(runtime))
             "video-status" -> DirectRootVideoQualification.status(context, runtime)
+            "qualify-audio" -> DirectRootSystemAudioQualification.run(context, requireNotNull(runtime))
+            "hold-audio" -> DirectRootSystemAudioQualification.hold(requireNotNull(runtime))
+            "stop-audio" -> DirectRootSystemAudioQualification.release()
+            "negative-audio-ring" -> DirectRootSystemAudioQualification.rejectBadRing(requireNotNull(runtime))
+            "audio-status" -> DirectRootSystemAudioQualification.status(context, runtime)
+            "complete-plan" -> DirectRootCompletePlanProbe.run(context, requireNotNull(runtime))
             "hold-input" -> heldObservation = DirectRootInputQualification.hold(context, requireNotNull(inputGateway))
             "drop-input" -> {
                 requireNotNull(runtime).inputConnectionLost()
@@ -178,11 +192,15 @@ internal object DirectRootLabController {
                 "generation=${observed.generation} provenance=${observed.provenance} " +
                 "root_recovery_authority_state=${authority.available} actions=NONE " +
                 "video=${DirectRootVideoCapability.qualification().state} " +
-                "system_audio=NOT_IMPLEMENTED input=${DirectRootInputCapability.qualification().state}",
+                "system_audio=${DirectRootSystemAudioCapability.qualification().state} " +
+                "input=${DirectRootInputCapability.qualification().state}",
         )
     }
 
     private fun release(retainStale: Boolean) {
+        DirectRootCompletePlanProbe.release()
+        DirectRootSystemAudioQualification.release()
+        DirectRootSystemAudioCapability.bindRuntime(null)
         DirectRootVideoQualification.release()
         DirectRootVideoCapability.bindRuntime(null)
         DirectRootInputCapability.bindRuntime(null)
@@ -314,11 +332,32 @@ private class RootLocalControl(
     private val socket: DirectShellProbeIpv4Socket,
     private val secret: ByteArray,
     override val identity: RootHelperIdentity,
-) : RootControlSession, RootInputControl, RootVideoControl {
+) : RootControlSession, RootInputControl, RootVideoControl, RootAudioControl {
     private var nextId = 2L
     private var surfaceGeneration = 1L
     private var videoRequest = CaptureRequest(0, 640, 360)
     private var videoLatest = CaptureSessionSnapshot()
+
+    override fun prepareAudio(request: RootAudioRequest): String {
+        DirectRootPcmHandoff.arm(identity, secret, request)
+        DirectRootPcmHandoff.verifyAppCallerRejected(request, secret)
+        return String(
+            request(DirectShellProbeProtocol.Command.PCM_RING_AUDIO_PREPARE, RootAudioRequestCodec.encode(request)),
+        )
+    }
+
+    override fun startAudio(request: RootAudioRequest): String =
+        String(request(DirectShellProbeProtocol.Command.PCM_RING_AUDIO_START, RootAudioRequestCodec.encode(request)))
+
+    override fun audioStatus(request: RootAudioRequest): String = String(
+        request(DirectShellProbeProtocol.Command.GET_PCM_RING_DIAGNOSTICS, RootAudioRequestCodec.encode(request)),
+    )
+
+    override fun stopAudio(request: RootAudioRequest): String =
+        String(request(DirectShellProbeProtocol.Command.PCM_RING_AUDIO_STOP, RootAudioRequestCodec.encode(request)))
+
+    override fun closeAudio(request: RootAudioRequest): String =
+        String(request(DirectShellProbeProtocol.Command.PCM_RING_CLOSE, RootAudioRequestCodec.encode(request)))
 
     private fun video(command: DirectShellProbeProtocol.Command): JSONObject {
         val bytes = RootVideoRequestCodec.encode(RootVideoRequest(identity.generation, surfaceGeneration, videoRequest))
@@ -489,7 +528,7 @@ private class RootLocalControl(
                 val client = RootLocalControl(socket, secret.clone(), identity)
                 check(
                     client.call(DirectShellProbeProtocol.Command.ROOT_CAPABILITIES) ==
-                        "video=IMPLEMENTED;system_audio=NOT_IMPLEMENTED;input=IMPLEMENTED;remediation=NONE",
+                        "video=IMPLEMENTED;system_audio=IMPLEMENTED;input=IMPLEMENTED;remediation=NONE",
                 )
                 Log.i("WarpnectDirectRoot", "direct_root_app_identity $info")
                 return client

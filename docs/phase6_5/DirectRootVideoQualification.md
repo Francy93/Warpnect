@@ -389,3 +389,23 @@ Decision: **DIRECTROOT_VIDEO_CAPABILITY_VALIDATED_IN_AOSP_LAB**.
 Capability evidence is conservatively QUALIFIED for the exact lab, not universal
 VALIDATED/physical or production Root support. Root-only Host remains incomplete
 because SystemAudio is NOT_IMPLEMENTED.
+
+## SystemAudio Follow-up
+
+This historical Video slice was checkpointed locally as `84f79dd`. The later
+`DirectRootSystemAudioQualification.md` supersedes only the missing Audio cell
+for its exact API26 AOSP laboratory. Helper version4 changes the compatibility
+key, so the new campaign requalifies Input and decoded Video content on every
+fresh Audio helper generation; old version3 evidence is not silently reused.
+The original software-encoder DEBUG boundary, production hardware-codec policy,
+no physical Root claim and production Root-authorization deferral remain.
+
+The final Audio artifact requalified decoded Video3/3 on those fresh version4
+generations: fixtureA center253/253/253, fixtureB0/0/254, app-owned640x360 AVC.
+After actual current-generation Input and Audio also qualified, the real
+prepared-plan builder and late admission freeze returned SINGLE/DIRECT_ROOT3/3.
+That scoped plan proof is not ordinary product Host Available/discovery/network
+admission. The full visual fixture's app FD samples65/68/70 remain a recorded
+resource-observability limitation; the isolated Audio samples60/60/60 do not
+establish indefinite graphics leak-freedom. No Video implementation or hardware-
+codec policy was changed to force ordinary Host readiness.

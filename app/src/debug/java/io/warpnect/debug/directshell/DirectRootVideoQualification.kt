@@ -96,7 +96,8 @@ internal object DirectRootVideoQualification {
         Log.i(
             "WarpnectDirectRoot",
             "direct_root_video_qualification result=PASS generation=${runtime.snapshot.generation} " +
-                "content=OFFLINE_DECODED_FIXTURE_AB audio=NOT_IMPLEMENTED",
+                "content=OFFLINE_DECODED_FIXTURE_AB " +
+                "audio=${io.warpnect.platform.audio.capture.DirectRootSystemAudioCapability.qualification().state}",
         )
     }
 

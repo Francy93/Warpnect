@@ -419,6 +419,39 @@ real owned-target key/touch/pointer/joystick receipt and reset. The final exact
 APK passed 3/3 fresh-generation qualifications and a separate 1/1 active
 connection-loss release test. Root Input is QUALIFIED only for that exact lab
 compatibility key; Root Video/SystemAudio remain NOT_IMPLEMENTED.
+
+## Subsequent Root SystemAudio Investigation
+
+The environment is unchanged by `DirectRootSystemAudioQualification.md`:
+minSdk26, API26 AOSP/default x86_64, natural Enforcing policy and explicit
+LABORATORY_EXTERNAL_ROOT bootstrap. Only `emulator-5556` / Warpnect_Root_API26
+receives Root operations; API25 and connected physical devices are untouched.
+The new `tools/root-lab/Test-RootAudio.ps1` rejects physical serials and verifies
+AVD/qemu/API/policy before invoking the hash-verifying RootHelper harness.
+It creates no emulator-specific production logic or root-manager authorization.
+
+After building the exact debug APK, start the AVD and install without clearing
+app data, then run:
+
+```powershell
+./tools/root-lab/RootLab.ps1 -Action Start -Api 26 -Port 5556
+& "$env:ANDROID_SDK_ROOT/platform-tools/adb.exe" -s emulator-5556 install -r ./app/build/outputs/apk/debug/app-debug.apk
+./tools/root-lab/Test-RootAudio.ps1 -Serial emulator-5556 -Cycles 3
+# Optional same-generation Video/Input/complete-plan proof:
+./tools/root-lab/Test-RootAudio.ps1 -Serial emulator-5556 -Cycles 3 -FfmpegPath <local-decoder.exe>
+# After all helpers are stopped and the emulator identity has been checked:
+& "$env:ANDROID_SDK_ROOT/platform-tools/adb.exe" -s emulator-5556 unroot
+./tools/root-lab/RootLab.ps1 -Action Stop -Api 26 -Port 5556
+```
+
+The optional decoder observes saved AVC; it is not a screen capture source.
+Reports, logs, decoded frames and temporary formatters remain generated evidence,
+not tracked tooling dependencies. Ordinary-app su access remains denied.
+The final SystemAudio report records3/3 same-generation Input/Video/Audio
+qualifications and actual Root-only planner freezes, plus3/3 isolated Audio
+resource cycles,904 JVM tests and exact failure accounting. A real complete
+capability set in this AOSP laboratory is not physical Root, Magisk consent or
+ordinary product Host admission through UI/discovery/network.
 Final helpers/listeners/private bootstrap files were 0, adbd was unrooted to
 UID2000, and RootLab stopped API26. Neither AVD configuration nor minSdk26 was
 changed; API25 was not booted by the Input slice. No production root-manager,

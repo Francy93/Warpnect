@@ -7,6 +7,8 @@ import io.warpnect.audio.capture.AudioCaptureSnapshot
 import io.warpnect.platform.audio.capture.privileged.PrivilegedSystemAudioSetup
 
 internal interface PrivilegedAudioCaptureGateway : AutoCloseable {
+    fun supportsSharedPcm(api: Int): Boolean = api >= 27
+
     suspend fun querySystemAudioCapabilities(request: AudioCaptureRequest): AudioCaptureCapabilities
 
     suspend fun prepareSystemAudioCapture(request: AudioCaptureRequest): PrivilegedSystemAudioSetup

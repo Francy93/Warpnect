@@ -3,8 +3,8 @@ package io.warpnect.platform.privileged.runtime
 /**
  * The finite privileged execution environments Warpnect may select for Host capabilities.
  *
- * DirectRoot capability provision is deliberately not implemented. The separate authority
- * foundation does not register a Host provider or change this resolver's admission policy.
+ * DirectRoot capabilities have explicit laboratory adapters. Production Root acquisition is
+ * not implemented; laboratory authority does not register itself with the product resolver.
  */
 enum class PrivilegedRuntimeKind {
     DIRECT_ROOT,

@@ -30,7 +30,7 @@ class PersistentCapabilityEvidenceTest {
         val matrix = CachedCapabilityEvidenceMatrixBuilder.build(decoded.records)
         assertTrue(matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO).state.isUsable)
         assertEquals(
-            CapabilityQualificationState.NOT_IMPLEMENTED,
+            CapabilityQualificationState.DEFERRED,
             matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO).state,
         )
         assertNull(
@@ -88,7 +88,7 @@ class PersistentCapabilityEvidenceTest {
             matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.VIDEO).state,
         )
         assertEquals(
-            CapabilityQualificationState.NOT_IMPLEMENTED,
+            CapabilityQualificationState.DEFERRED,
             matrix.qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO).state,
         )
     }
@@ -161,26 +161,62 @@ class PersistentCapabilityEvidenceTest {
     }
 
     @Test
-    fun `Root positive audio or missing bootstrap provenance cannot be persisted`() {
-        assertTrue(
-            runCatching {
-                record(
-                    PrivilegedProvider.DIRECT_ROOT,
-                    PrivilegedCapability.SYSTEM_AUDIO,
-                    runtime = "LABORATORY_EXTERNAL_ROOT",
-                )
-            }.isFailure,
+    fun `Root Audio evidence round trips but missing bootstrap provenance is rejected`() {
+        val audio = record(
+            PrivilegedProvider.DIRECT_ROOT,
+            PrivilegedCapability.SYSTEM_AUDIO,
+            runtime = "LABORATORY_EXTERNAL_ROOT",
+        )
+        assertEquals(
+            listOf(audio),
+            PersistentCapabilityEvidenceCodec.decode(
+                PersistentCapabilityEvidenceCodec.encode(listOf(audio)),
+            ).records,
         )
         assertTrue(
-            runCatching {
-                record(
-                    PrivilegedProvider.DIRECT_ROOT,
-                    PrivilegedCapability.SYSTEM_AUDIO,
-                    runtime = "LABORATORY_EXTERNAL_ROOT",
-                )
-            }.isFailure,
+            CachedCapabilityEvidenceMatrixBuilder.build(listOf(audio))
+                .qualification(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO).state.isUsable,
         )
+        assertTrue(runCatching { record(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO) }.isFailure)
         assertTrue(runCatching { record(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT) }.isFailure)
+    }
+
+    @Test fun `Root Audio contradiction invalidates only Audio and outage retains all evidence`() {
+        val records = PrivilegedCapability.canonicalOrder.map {
+            record(PrivilegedProvider.DIRECT_ROOT, it, runtime = "LABORATORY_EXTERNAL_ROOT")
+        }
+        val store = MemoryStore(records)
+        val repo = repository(
+            store,
+            records.associate {
+                it.coordinate to
+                    PersistentCapabilityEvidenceKeyExpectation.Known(it.compatibilityKey)
+            },
+        )
+        repo.reconcileAuthoritativeMatrix(
+            matrix { p, c ->
+                unavailable(p, c, CapabilityQualificationState.NOT_AVAILABLE, "root_helper_lost")
+            },
+        )
+        assertEquals(records.toSet(), repo.loadReusableEvidence().reusableRecords.toSet())
+        repo.reconcileAuthoritativeMatrix(
+            matrix { p, c ->
+                unavailable(
+                    p,
+                    c,
+                    if (p == PrivilegedProvider.DIRECT_ROOT && c == PrivilegedCapability.SYSTEM_AUDIO) {
+                        CapabilityQualificationState.QUALIFICATION_FAILED
+                    } else {
+                        CapabilityQualificationState.DEFERRED
+                    },
+                    "system_audio_UnsupportedFormat",
+                )
+            },
+        )
+        assertEquals(
+            records.filter { it.capability != PrivilegedCapability.SYSTEM_AUDIO }.toSet(),
+            repo.loadReusableEvidence().reusableRecords.toSet(),
+        )
     }
 
     @Test
@@ -199,7 +235,7 @@ class PersistentCapabilityEvidenceTest {
     }
 
     @Test
-    fun `Root compatibility key distinguishes provenance and supports Video and Input only`() {
+    fun `Root compatibility key distinguishes provenance for all implemented capabilities`() {
         fun factory(provenance: RootBootstrapProvenance?) = AndroidPersistentCapabilityEvidenceKeyFactory(
             { 26 },
             { "aosp-x86_64-lab" },
@@ -219,14 +255,50 @@ class PersistentCapabilityEvidenceTest {
                 PersistentCapabilityEvidenceKeyExpectation.Known
             ).key
         assertTrue(labKey.stableId != prodKey.stableId)
-        assertEquals(
-            PersistentCapabilityEvidenceKeyExpectation.Unsupported,
-            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO),
+        assertTrue(
+            lab.expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.SYSTEM_AUDIO)
+                is PersistentCapabilityEvidenceKeyExpectation.Known,
         )
         assertEquals(
             PersistentCapabilityEvidenceKeyExpectation.Unsupported,
             factory(null).expectationFor(PrivilegedProvider.DIRECT_ROOT, PrivilegedCapability.INPUT),
         )
+    }
+
+    @Test fun `complete Root cache prepares only with matching live laboratory runtime`() {
+        val records = PrivilegedCapability.canonicalOrder.map {
+            record(PrivilegedProvider.DIRECT_ROOT, it, runtime = "LABORATORY_EXTERNAL_ROOT")
+        }
+        assertNull(
+            CachedPreparedPlanBuilder.build(runtimeState(false), idleDirectShellRuntime(), records, 1).preparedPlan,
+        )
+        val foundation = io.warpnect.platform.privileged.runtime.DirectRootSnapshot(
+            state = io.warpnect.platform.privileged.runtime.DirectRootState.HELPER_READY,
+            generation = 10,
+            provenance = RootBootstrapProvenance.LABORATORY_EXTERNAL_ROOT,
+            identity = io.warpnect.platform.privileged.runtime.RootHelperIdentity(
+                1, 0, 0, "u:r:su:s0", 26, 10,
+                io.warpnect.platform.privileged.runtime.DirectRootRuntime.PROTOCOL_VERSION,
+                io.warpnect.platform.privileged.runtime.DirectRootRuntime.IMPLEMENTATION, "a".repeat(64),
+            ),
+        )
+        val live = runtimeState(false).copy(
+            directRoot = PrivilegedRuntimeAvailability(
+                PrivilegedRuntimeKind.DIRECT_ROOT,
+                PrivilegedRuntimeAvailabilityState.READY,
+                rootFoundation = foundation,
+            ),
+        )
+        val prepared = CachedPreparedPlanBuilder.build(live, idleDirectShellRuntime(), records, 1).preparedPlan!!
+        assertEquals(PrivilegedCapabilityPlanShape.SINGLE, prepared.plan.shape)
+        assertEquals(listOf(PrivilegedProvider.DIRECT_ROOT), prepared.plan.participatingProviders)
+        assertEquals(HostReadinessPlanCommitState.ADVISORY, prepared.commitState)
+        val wrong = live.copy(
+            directRoot = live.directRoot.copy(
+                rootFoundation = foundation.copy(provenance = RootBootstrapProvenance.PRODUCTION_ROOT_MANAGER),
+            ),
+        )
+        assertNull(CachedPreparedPlanBuilder.build(wrong, idleDirectShellRuntime(), records, 1).preparedPlan)
     }
 
     @Test

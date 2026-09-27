@@ -60,7 +60,7 @@ final class RootControlLease {
     }
 
     static boolean supported(DirectShellProbeProtocol.Command command) {
-        return videoCommand(command) || inputCommand(command) || command == DirectShellProbeProtocol.Command.PING ||
+        return audioCommand(command) || videoCommand(command) || inputCommand(command) || command == DirectShellProbeProtocol.Command.PING ||
                 command == DirectShellProbeProtocol.Command.GET_RUNTIME_INFO ||
                 command == DirectShellProbeProtocol.Command.ROOT_CAPABILITIES ||
                 command == DirectShellProbeProtocol.Command.SHUTDOWN;
@@ -81,6 +81,23 @@ final class RootControlLease {
         switch (command) {
             case VIDEO_QUALIFY: case VIDEO_START: case VIDEO_UPDATE: case VIDEO_STOP: case GET_VIDEO_DIAGNOSTICS:
                 return true;
+            default: return false;
+        }
+    }
+
+    synchronized boolean acceptAudio(long requestId, byte[] payload, long now) {
+        if (!authenticated || closed || now >= expiresAt) return false;
+        try {
+            io.warpnect.platform.audio.capture.RootAudioRequest request =
+                    io.warpnect.platform.audio.capture.RootAudioRequestCodec.INSTANCE.decode(payload);
+            return request.getGeneration() == generation && order.accept(requestId);
+        } catch (IllegalArgumentException error) { return false; }
+    }
+
+    static boolean audioCommand(DirectShellProbeProtocol.Command command) {
+        switch (command) {
+            case PCM_RING_AUDIO_PREPARE: case PCM_RING_AUDIO_START: case PCM_RING_AUDIO_STOP:
+            case GET_PCM_RING_DIAGNOSTICS: case PCM_RING_CLOSE: return true;
             default: return false;
         }
     }

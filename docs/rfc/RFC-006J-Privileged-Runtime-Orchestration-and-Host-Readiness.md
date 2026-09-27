@@ -882,3 +882,48 @@ same-provider recovery and live migration remain deferred.
 ```text
 DIRECTROOT_VIDEO_CAPABILITY_VALIDATED_IN_AOSP_LAB
 ```
+
+## DirectRoot SystemAudio Laboratory Extension
+
+Video checkpoint `84f79dd` precedes the new, uncommitted Audio slice. See
+`../phase6_5/DirectRootSystemAudioQualification.md` for exact artifact/run evidence.
+Finite Root Audio control binds runtime and Audio generations under the existing
+HMAC/challenge/order/expiry lease; the helper remains UID0, LABORATORY_EXTERNAL_ROOT.
+The app-created API26 ashmem region and two real pipes cross a single-use Binder
+descriptor lease. The existing PCM Ring V1 and normal-process drain remain the
+contract; no continuous PCM or arbitrary descriptor passes over control TCP.
+
+Only machine-observed OFF/ON PCM in that normal drain may create positive Root
+Audio evidence. The cache key includes tested fingerprint/API/ABI, backend and
+helper revisions and laboratory bootstrap provenance. It cannot qualify future
+Magisk/physical Root. Helper availability, AudioRecord, descriptors and secrets
+remain volatile. Outage preserves stable compatibility evidence but removes
+current usability; contradictory format qualification affects only Audio.
+
+With all three genuine cells and matching current UID0 authority, the advisory
+builder can prepare SINGLE/DIRECT_ROOT without media/Input side effects. The
+explicit laboratory admission probe rechecks actual current-generation
+Video/Audio/Input, retains the helper and uses the unchanged planner freeze.
+No partial Host, forced provider ranking, generic Root action or remediation.
+Ordinary product Host publication and production Root bootstrap are not supplied
+by this laboratory composition and must not be inferred from its frozen plan.
+
+Final AOSP/API26 evidence:3/3 same-generation, current observations for all three
+cells, followed by actual SINGLE/DIRECT_ROOT cached preparation, late volatile
+revalidation and freeze. The unchanged normal audio controller/Opus smoke passed
+3/3; an isolated Audio resource campaign passed3/3 with stable FD samples. Warm
+app restart reloaded VIDEO/SYSTEM_AUDIO/INPUT compatibility evidence but left
+Root runtime/capture/ring/mirror/Input inactive. No positive liveness is persisted.
+
+The final exact APK passed904 JVM tests and every requested software gate.
+The earlier2/3 combined campaign stopped before Audio at the DEBUG observer's
+cross-source reset-order assumption; all releases had actually arrived. Only
+that observer changed, with eight pure tests; production Input order is unchanged.
+The failure and observer-only loss-test timeouts are preserved in the report.
+Root SystemAudio is QUALIFIED for the exact laboratory key, not all API26/OEMs.
+Production Root authorization/Magisk, physical Root, remediation, recovery and
+live migration remain deferred. Ordinary Host admission is not claimed.
+
+```text
+DIRECTROOT_SYSTEMAUDIO_CAPABILITY_VALIDATED_IN_AOSP_LAB
+```

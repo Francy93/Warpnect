@@ -508,7 +508,7 @@ SurfaceFlinger/codecs/audio HAL or production Root acquisition.
 | Target | API / image | Root runtime | Root Input | Root Video | Root SystemAudio | Normal Root-only Host |
 | --- | --- | --- | --- | --- | --- | --- |
 | Warpnect_Root_API25 | 25 / AOSP-default x86_64 r1 | ADB-root environment qualified; app helper not tested | NOT_TESTED; minSdk26 blocks APK | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Unavailable; API25 is not supported by the app |
-| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab; prior3/3 Input cycles plus1/1 regression on Video APK | QUALIFIED for exact lab;3/3 frozen-APK decoded fixture A/B cycles | NOT_IMPLEMENTED | INCOMPLETE; missing SYSTEM_AUDIO |
+| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab;3/3 same-generation requalifications on final Audio APK | QUALIFIED for exact lab;3/3 same-generation decoded fixture A/B requalifications | QUALIFIED for exact lab;3/3 OFF/ON ring/drain cycles, plus3/3 isolated audio resource cycles | NOT_TESTED through ordinary UI/network; actual Root-only preparation/late plan freeze3/3 |
 
 API26 fingerprint:
 `Android/sdk_phone_x86_64/generic_x86_64:8.0.0/OSR1.180418.004/4931640:userdebug/test-keys`.
@@ -540,7 +540,7 @@ SurfaceControlDisplay mirror, existing app MediaCodec AVC and offline decoded
 circle/checkerboard content. All helpers observed UID/GID0, u:r:su:s0;
 Enforcing unchanged. Two additional active helper/app-loss cases cleaned up
 mirror/helper/listener/lease/bootstrap files; cache restored VIDEO+INPUT with
-runtime/capture absent. Root audio remains NOT_IMPLEMENTED. The earlier
+runtime/capture absent. At that Video checkpoint Root audio was NOT_IMPLEMENTED. The earlier
 diagnostic codec-metadata failure is preserved separately, not a hidden retry.
 
 No native or physical Root claim follows. App graphics FD samples varied
@@ -552,3 +552,35 @@ privileged runtime preparation. Exact plan telemetry was unavailable; no new
 complete physical media regression is claimed. All physical devices remained
 unrooted/unflashed/unwiped, no tone was played; final adbd was UID2000 and the
 API26 AVD stopped.
+
+The subsequent SystemAudio artifact has SHA-256
+`d3af77d3ed000b02bb6d0402cb15b4ffe161a428bc18bec176c5cfe79aaa43b6`.
+Every final combined cycle requalified all three cells on its own authenticated
+UID0/helper-version4 generation. API26 ashmem uses the unchanged PCM Ring V1,
+true Binder-transferred memory/notify/ACK descriptors and the original drain.
+App-side silence RMS0 contrasts with997Hz tone RMS2463.721-2463.755, peak3485
+and143502-145422 nonzero samples. Ring HWM7/8 and10 intentionally induced drops
+were bounded; final occupancy0 and notify=ACK in each cycle. Existing common
+controller/Opus smoke produced93/85/93 units with0 encoder errors.
+
+The real cached-plan builder, late revalidation and admission freeze returned
+SINGLE/DIRECT_ROOT3/3 using current-generation observations, not synthetic cells.
+This is not ordinary product Host Available/discovery/network admission: the
+product Root-manager adapter is absent and normal hardware-codec policy was
+not bypassed for AOSP's DEBUG software Video fixture. No partial Host was added.
+The first combined campaign2/3 is retained separately: cycle3 stopped before
+Audio because the DEBUG observer required a global order for independent reset
+sources. Only that observation rule changed; every release is still required.
+
+The isolated audio resource campaign passed3/3 with app FD60/60/60 and helper
+FD30-before/33-after per generation; complete visual fixture samples65/68/70
+are recorded as broader graphics/resource-observability debt, not proof of
+indefinite whole-app leak freedom. PCM maps/leases/helpers/listeners/bootstrap
+files were checked at teardown. Three compatibility records reload after app
+restart while runtime/audio/leases stay absent. Full loss/cleanup accounting,
+904-test gates and exact per-cycle metrics are in
+`../phase6_5/DirectRootSystemAudioQualification.md`.
+
+No physical devices were modified or newly Root-qualified by this campaign.
+Routing/human audibility remain UNKNOWN/NOT_TESTED in the no-audio AVD. Magisk,
+production Root authorization, remediation, recovery and migration remain deferred.

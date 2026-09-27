@@ -419,3 +419,22 @@ is still NOT_IMPLEMENTED, so no Root-only Complete Host is admitted. The new
 Video report supersedes only the earlier deferred Video status/next-step
 recommendation; production authorization, remediation and physical Root
 remain deferred. The next independently scoped capability is SystemAudio.
+
+## SystemAudio Follow-up
+
+`DirectRootSystemAudioQualification.md` adds the third Root capability using
+the same UID0 authority and unchanged Input backend/protocol. Its explicit
+complete-plan laboratory test requires current-generation real Input receipt
+as well as decoded Video content and normal-app OFF/ON PCM evidence. It does
+not treat the old Input cache or helper liveness as a new qualification, and
+does not imply production Root authorization or a physical Root Host Session.
+
+The final Audio APK requalified Input3/3 on fresh version4 helper generations,
+with actual target key/touch/pointer/joystick receipt and zero active tracked
+state after reset. An earlier combined campaign failed at its third Input
+fixture before Audio: TOUCH_CANCEL and KEY_UP both arrived but in the reverse
+cross-source order from the observer's assumption. Only the DEBUG observation
+was corrected to require every release while retaining the strict ordinary
+event prefix. Eight pure observer tests cover missing/duplicate/extra releases
+and ordinary ordering; production injector/tracker/Input Payload V1 are unchanged.
+The failed2/3 campaign remains in the Audio report, not relabeled as a pass.

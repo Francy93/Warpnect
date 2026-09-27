@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import io.warpnect.BuildConfig
+import io.warpnect.platform.audio.capture.DirectRootSystemAudioCapability
 import io.warpnect.platform.capture.DirectRootVideoCapability
 import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.planning.CapabilityQualification
@@ -91,7 +92,7 @@ internal data class PersistentCapabilityEvidenceRecord(
         require(
             provider != PrivilegedProvider.DIRECT_ROOT ||
                 (
-                    capability != PrivilegedCapability.SYSTEM_AUDIO && compatibilityKey.providerRuntimeVersion in
+                    compatibilityKey.providerRuntimeVersion in
                         RootBootstrapProvenance.entries.map { it.name }
                     ),
         ) { "capability_evidence_root_domain_invalid" }
@@ -151,16 +152,15 @@ internal class AndroidPersistentCapabilityEvidenceKeyFactory(
         capability: PrivilegedCapability,
     ): PersistentCapabilityEvidenceKeyExpectation = when (provider) {
         PrivilegedProvider.DIRECT_ROOT -> rootBootstrapProvenance()
-            ?.takeIf { capability != PrivilegedCapability.SYSTEM_AUDIO }
             ?.let { provenance ->
                 PersistentCapabilityEvidenceKeyExpectation.Known(
                     keyFor(
                         provider, capability,
                         DirectRootRuntime.IMPLEMENTATION, provenance.name,
-                        if (capability == PrivilegedCapability.INPUT) {
-                            DirectRootInputCapability.BACKEND_REVISION
-                        } else {
-                            DirectRootVideoCapability.BACKEND_REVISION
+                        when (capability) {
+                            PrivilegedCapability.INPUT -> DirectRootInputCapability.BACKEND_REVISION
+                            PrivilegedCapability.VIDEO -> DirectRootVideoCapability.BACKEND_REVISION
+                            PrivilegedCapability.SYSTEM_AUDIO -> DirectRootSystemAudioCapability.BACKEND_REVISION
                         },
                     ),
                 )
@@ -614,17 +614,6 @@ internal object CachedCapabilityEvidenceMatrixBuilder {
         return PrivilegedCapabilityMatrix.complete { provider, capability ->
             val record = byCoordinate[PersistentCapabilityEvidenceCoordinate(provider, capability)]
             when {
-                provider == PrivilegedProvider.DIRECT_ROOT && capability == PrivilegedCapability.SYSTEM_AUDIO ->
-                    CapabilityQualification.unavailable(
-                        provider = provider,
-                        capability = capability,
-                        state = CapabilityQualificationState.NOT_IMPLEMENTED,
-                        reason = "direct_root_not_implemented",
-                        provenance = CapabilityQualificationProvenance(
-                            CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE,
-                        ),
-                    )
-
                 record != null -> CapabilityQualification.usable(
                     provider = provider,
                     capability = capability,
@@ -718,6 +707,7 @@ internal object CachedPreparedPlanBuilder {
         when (cell.provider) {
             PrivilegedProvider.DIRECT_ROOT ->
                 runtimeState.directRoot.state == PrivilegedRuntimeAvailabilityState.READY &&
+                    runtimeState.directRoot.rootFoundation?.ready == true &&
                     runtimeState.directRoot.rootFoundation?.provenance?.name == cell.provenance.providerVersion
             PrivilegedProvider.DIRECT_SHELL -> runtimeState.directShell.isCachedPlanCandidate
             PrivilegedProvider.SHIZUKU -> runtimeState.shizuku.state == PrivilegedRuntimeAvailabilityState.READY

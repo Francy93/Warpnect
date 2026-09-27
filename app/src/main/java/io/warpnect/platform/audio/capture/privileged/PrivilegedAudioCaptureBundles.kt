@@ -11,6 +11,7 @@ import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.capture.AudioCaptureState
 import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampQuality
+import io.warpnect.platform.audio.capture.shared.PcmMemoryRegion
 
 internal data class PrivilegedSystemAudioSetup(
     val error: AudioCaptureError,
@@ -20,6 +21,7 @@ internal data class PrivilegedSystemAudioSetup(
     val sharedMemory: SharedMemory?,
     val notifyReadFd: ParcelFileDescriptor?,
     val ackWriteFd: ParcelFileDescriptor?,
+    val memoryRegion: PcmMemoryRegion? = null,
 )
 
 internal fun AudioCaptureCapabilities.toBundle(): Bundle = Bundle().apply {

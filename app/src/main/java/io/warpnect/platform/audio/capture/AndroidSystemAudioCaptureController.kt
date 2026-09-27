@@ -10,6 +10,7 @@ import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureResult
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.platform.audio.capture.shared.JavaSharedPcmMemory
 import io.warpnect.telemetry.AudioSenderTelemetry
 
 internal class AndroidSystemAudioCaptureController(
@@ -17,7 +18,8 @@ internal class AndroidSystemAudioCaptureController(
     gatewayFactory: (
         onServiceDied: () -> Unit,
     ) -> PrivilegedAudioCaptureGateway = { onServiceDied ->
-        ShizukuAudioCaptureGateway(context, onServiceDied)
+        DirectRootSystemAudioCapability.createSelectedGateway(onServiceDied)
+            ?: ShizukuAudioCaptureGateway(context, onServiceDied)
     },
     private val telemetry: AudioSenderTelemetry? = null,
 ) : AudioCaptureController {
@@ -40,7 +42,7 @@ internal class AndroidSystemAudioCaptureController(
                 lastError = AudioCaptureError.InvalidRequest,
             )
         }
-        if (!supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT)) {
+        if (!gateway.supportsSharedPcm(Build.VERSION.SDK_INT)) {
             return unavailableCapabilities(AudioCaptureError.UnsupportedPlatform)
         }
         return kotlinx.coroutines.runBlocking {
@@ -57,7 +59,7 @@ internal class AndroidSystemAudioCaptureController(
                 core.fail(AudioCaptureError.InvalidRequest)
                 return@synchronized AudioCaptureResult(AudioCaptureError.InvalidRequest, core.snapshot())
             }
-            if (!supportsSystemAudioSharedMemory(Build.VERSION.SDK_INT)) {
+            if (!gateway.supportsSharedPcm(Build.VERSION.SDK_INT)) {
                 core.fail(AudioCaptureError.UnsupportedPlatform)
                 return@synchronized AudioCaptureResult(AudioCaptureError.UnsupportedPlatform, core.snapshot())
             }
@@ -70,7 +72,7 @@ internal class AndroidSystemAudioCaptureController(
             }
             if (setup.error != AudioCaptureError.None ||
                 setup.format == null ||
-                setup.sharedMemory == null ||
+                (setup.sharedMemory == null && setup.memoryRegion == null) ||
                 setup.notifyReadFd == null ||
                 setup.ackWriteFd == null
             ) {
@@ -86,7 +88,7 @@ internal class AndroidSystemAudioCaptureController(
                 sink.onFormatChanged(setup.format)
                 this.sink = sink
                 drain = SharedPcmAudioDrain(
-                    sharedMemory = setup.sharedMemory,
+                    sharedMemory = setup.memoryRegion ?: JavaSharedPcmMemory(requireNotNull(setup.sharedMemory)),
                     notifyReadFd = setup.notifyReadFd,
                     ackWriteFd = setup.ackWriteFd,
                     sink = sink,

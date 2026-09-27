@@ -362,5 +362,25 @@ above is unchanged historical evidence, not relabeled as Video qualification.
 Root SystemAudio, production Root-manager authorization, actual remediation,
 same-provider recovery and live migration remain NOT_IMPLEMENTED. Root-only
 Complete Host remains incomplete, missing SystemAudio. No physical Root claim.
+
+## SystemAudio Follow-up
+
+The later SystemAudio slice is recorded in `DirectRootSystemAudioQualification.md`.
+Root identity version4 / `warpnect-root-video-audio-input-v1` extends the same
+finite authenticated authority with purpose-specific Audio prepare/start/status/
+stop/close. Actual descriptor delivery is Binder-mediated, UID0/PID/generation/
+provider/HMAC scoped; continuous PCM remains in the original ring, not TCP.
+CAPABILITIES now explicitly reports all three implemented features and recovery
+actions NONE. Qualification is still independent from implementation or UID0.
+Production Root authorization/Magisk, remediation and physical Root remain
+unimplemented/unvalidated; no emulator launcher is registered as product Root
+authorization. The unchanged Root lease cleans active audio on owner EOF/loss.
+
+The final Audio APK passed3/3 three-capability same-generation qualifications
+and actual Root-only late plan freezes, plus3/3 isolated Audio resource cycles.
+All904 JVM tests and requested gates pass. The authority still exposes no
+remediation actions, and the laboratory Root foundation is not production Root
+authorization. Ordinary product Host UI/network admission is not inferred from
+the explicit lab plan probe; complete qualification is scoped to the tested lab.
 See the focused report for exact generations, artifact, resource sampling
 limitations and the optional physical admission observations.

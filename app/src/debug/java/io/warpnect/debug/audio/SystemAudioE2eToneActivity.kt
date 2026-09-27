@@ -68,7 +68,7 @@ class SystemAudioE2eToneActivity : Activity() {
         )
     }
 
-    private class ValidationTone {
+    internal class ValidationTone(private val continuousPhase: Boolean = false) {
         val framesWritten = AtomicLong(0)
         private val writing = AtomicBoolean(false)
         private lateinit var track: AudioTrack
@@ -122,8 +122,10 @@ class SystemAudioE2eToneActivity : Activity() {
             runCatching { track.release() }
         }
 
-        private fun samples(): ShortArray = ShortArray(TONE_FRAME_COUNT * CHANNEL_COUNT).also { output ->
-            for (frame in 0 until TONE_FRAME_COUNT) {
+        private fun samples(): ShortArray = ShortArray(
+            (if (continuousPhase) SAMPLE_RATE_HZ else TONE_FRAME_COUNT) * CHANNEL_COUNT,
+        ).also { output ->
+            for (frame in 0 until output.size / CHANNEL_COUNT) {
                 val sample = (sin(2.0 * PI * FREQUENCY_HZ * frame / SAMPLE_RATE_HZ) * AMPLITUDE)
                     .toInt()
                     .toShort()

@@ -57,10 +57,28 @@ The subsequent Video slice is now AOSP/API26 emulator-qualified:
 `DirectRootVideoQualification.md` records 3/3 frozen-artifact qualifications,
 authenticated UID0 Binder Surface handoff, reused mirror/projection and app-owned
 encoder, offline decoded fixture A/B proof, two active-loss cases and 841 passing
-JVM tests. Input checkpoint `ae431d9` is local; new Video work is uncommitted.
+JVM tests. Input checkpoint `ae431d9` and Video checkpoint `84f79dd` are local.
 Root Video/Input evidence remains QUALIFIED for the exact LABORATORY_EXTERNAL_ROOT
 compatibility key. Root SystemAudio and production authorization/remediation are
-NOT_IMPLEMENTED; Root-only Host remains incomplete, missing SystemAudio.
+NOT_IMPLEMENTED at that Video checkpoint; Root-only Host was incomplete.
+
+The subsequent SystemAudio slice is described separately in
+`DirectRootSystemAudioQualification.md`. It adds a bounded API26 ashmem adapter,
+the existing PCM Ring V1/notify/ACK/drain contract, authenticated UID0
+REMOTE_SUBMIX and a machine-verified silence/997Hz fixture. Its explicit lab
+probe requalifies all three capabilities on the same helper generation before
+using the real prepared-plan builder, late revalidation and planner freeze.
+Product Root authorization/Host UI and physical Root are separate boundaries;
+no cached evidence or lab-only freeze publishes an ordinary Host capability.
+
+    DIRECTROOT_SYSTEMAUDIO_CAPABILITY_VALIDATED_IN_AOSP_LAB
+
+The final APK passed3/3 fresh-generation, three-capability qualifications and
+actual SINGLE/DIRECT_ROOT plan freezes, plus3/3 isolated audio resource cycles.
+All904 JVM tests and requested software gates pass. The first combined campaign
+remains recorded as2/3, stopped before Audio by a DEBUG cross-source reset-order
+assumption; production Input behavior was not changed to hide it. Complete Root
+Host admission through the ordinary UI/network is not yet claimed.
 
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
@@ -119,9 +137,11 @@ The follow-up `DirectRootBootstrapFoundation.md` adds a DEBUG/laboratory UID0
 authority foundation, locally checkpointed as `e762a1a`. The subsequent
 `DirectRootInputQualification.md` adds the first capability, Input, through that
 authenticated helper. `DirectRootVideoQualification.md` now adds mirror control
-and authenticated Surface handoff to the existing app encoder. Root SystemAudio,
-production Root authorization and Root-assisted Remediation remain
-**NOT IMPLEMENTED**. ADB-root acquisition
+and authenticated Surface handoff to the existing app encoder. The subsequent
+`DirectRootSystemAudioQualification.md` adds API26 ashmem, REMOTE_SUBMIX and
+normal-app PCM/ring/Opus proof. All three capabilities are now QUALIFIED for
+the exact AOSP lab. Production Root authorization and Root-assisted Remediation
+remain **NOT IMPLEMENTED**. ADB-root acquisition
 still requires the explicit laboratory harness, not app-accessible AOSP `su`.
 
 ## Report Roles
@@ -141,6 +161,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * AndroidRootLab.md and DirectRootBootstrapFoundation.md - AOSP lab and authenticated laboratory Root authority.
 * DirectRootInputQualification.md - Input-only Root provider, exact emulator target proof and scoped evidence.
 * DirectRootVideoQualification.md - Root mirror/Surface provider, app-owned AVC and decoded-content AOSP lab proof.
+* DirectRootSystemAudioQualification.md - API26 ashmem, Root REMOTE_SUBMIX, normal-app PCM signal proof and scoped complete-plan evidence.
 
 ## Roadmap
 
@@ -172,11 +193,15 @@ Completed:
   lab-provenance cache and unchanged complete-plan policy.
 * DirectRoot Video implementation and AOSP/API26 qualification: existing mirror/
   geometry/encoder contract, provider-isolated Binder lease, real A/B decoded
-  content, generation teardown and volatile liveness. No Root SystemAudio.
+  content, generation teardown and volatile liveness.
+* DirectRoot SystemAudio implementation and AOSP/API26 qualification: original
+  PCM Ring V1, real descriptor/notify/ACK/drain path, silence/997Hz proof,
+  three-cell same-generation qualification and actual Root-only late plan freeze.
+  Ordinary product Root Host UI/network admission remains unvalidated.
 
 Next architecture milestones:
 
-1. DirectRoot SystemAudio Capability, with independent feasibility/qualification evidence.
+1. Physical Root Device Qualification, before generalizing the AOSP Root capability evidence.
 2. Write the dedicated In-Session Privileged Capability Provider Migration RFC.
 3. Implement and hardware-validate provider migration only after that RFC is
    accepted.
@@ -217,9 +242,9 @@ evidence are recorded in RFC-006J's Step 2 verification section.
 Deferred by RFC-006J Steps 1 and 2: Root-assisted Remediation, DirectRoot,
 Same-provider Recovery, and Live Provider Migration are all NOT IMPLEMENTED.
 The subsequent foundation slice superseded only the laboratory authority part
-of that historical statement. The Input and Video slices now supersede those
-two capability implementations/qualifications in the exact AOSP lab; Root
-SystemAudio, production authorization and remediation remain deferred.
+of that historical statement. The Input, Video and SystemAudio slices now
+supersede those three capability implementations/qualifications in the exact
+AOSP lab; production authorization and remediation remain deferred.
 
 No partial normal Host mode is planned. Video, SystemAudio, and Input remain
 jointly required for Host availability.

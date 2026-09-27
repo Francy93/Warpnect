@@ -4,6 +4,7 @@ import android.util.Log
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CapturePrivilegeState
 import io.warpnect.input.injection.InputInjectionBackend
+import io.warpnect.platform.audio.capture.DirectRootSystemAudioCapability
 import io.warpnect.platform.capture.DirectRootVideoCapability
 import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.readiness.CachedCapabilityEvidenceMatrixBuilder
@@ -166,6 +167,10 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                             (
                                 admission.plan.videoProvider == PrivilegedProvider.DIRECT_ROOT &&
                                     !DirectRootVideoCapability.retainForHost()
+                                ) ||
+                            (
+                                admission.plan.systemAudioProvider == PrivilegedProvider.DIRECT_ROOT &&
+                                    !DirectRootSystemAudioCapability.retainForHost()
                                 )
                         ) {
                             PrivilegedProvider.DIRECT_ROOT
@@ -284,7 +289,8 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
             }
 
             PrivilegedProvider.DIRECT_ROOT -> if (
-                DirectRootInputCapability.retainForHost() || DirectRootVideoCapability.retainForHost()
+                DirectRootInputCapability.retainForHost() || DirectRootVideoCapability.retainForHost() ||
+                DirectRootSystemAudioCapability.retainForHost()
             ) {
                 PrivilegedProviderAcquisition.Retained
             } else {
@@ -299,6 +305,7 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                 PrivilegedProvider.DIRECT_ROOT -> {
                     DirectRootInputCapability.selectForHost(false)
                     DirectRootVideoCapability.selectForHost(false)
+                    DirectRootSystemAudioCapability.selectForHost(false)
                 }
             }
         }
@@ -318,7 +325,10 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         if (runtime.kind != PrivilegedRuntimeKind.DIRECT_SHELL) {
             return DirectRootInputCapability.selectForHost(
                 plan.inputProvider == PrivilegedProvider.DIRECT_ROOT,
-            ) && DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT)
+            ) && DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT) &&
+                DirectRootSystemAudioCapability.selectForHost(
+                    plan.systemAudioProvider == PrivilegedProvider.DIRECT_ROOT,
+                )
         }
         val selected = mapOf(
             PrivilegedRuntimeCapability.VIDEO to plan.videoProvider.runtimeKind(),
@@ -327,7 +337,8 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         )
         return PrivilegedRuntimeRegistry.applyHostFeatureSelection(selected) &&
             DirectRootInputCapability.selectForHost(plan.inputProvider == PrivilegedProvider.DIRECT_ROOT) &&
-            DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT)
+            DirectRootVideoCapability.selectForHost(plan.videoProvider == PrivilegedProvider.DIRECT_ROOT) &&
+            DirectRootSystemAudioCapability.selectForHost(plan.systemAudioProvider == PrivilegedProvider.DIRECT_ROOT)
     }
 
     private fun PrivilegedProvider.runtimeKind(): PrivilegedRuntimeKind = when (this) {
@@ -352,13 +363,7 @@ internal object AndroidPrivilegedCapabilityMatrixAdapter {
             PrivilegedProvider.DIRECT_ROOT -> when (capability) {
                 PrivilegedCapability.INPUT -> DirectRootInputCapability.qualification()
                 PrivilegedCapability.VIDEO -> DirectRootVideoCapability.qualification()
-                PrivilegedCapability.SYSTEM_AUDIO -> unavailable(
-                    provider,
-                    capability,
-                    CapabilityQualificationState.NOT_IMPLEMENTED,
-                    "direct_root_not_implemented",
-                    runtime,
-                )
+                PrivilegedCapability.SYSTEM_AUDIO -> DirectRootSystemAudioCapability.qualification()
             }
 
             PrivilegedProvider.DIRECT_SHELL -> directShellQualification(

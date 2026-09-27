@@ -23,6 +23,39 @@ internal class RootVideoProviderClient private constructor(
 
     fun surface(request: RootVideoRequest, key: ByteArray): Surface = receive(request, key)
 
+    enum class PcmNegative { BAD_MAGIC, BAD_VERSION, OVERSIZE_REGION, WRONG_PROVIDER }
+
+    fun pcm(
+        request: io.warpnect.platform.audio.capture.RootAudioRequest,
+        key: ByteArray,
+        negative: PcmNegative? = null,
+    ): Bundle {
+        check(!closed && Process.myUid() == 0)
+        val bytes = io.warpnect.platform.audio.capture.RootAudioRequestCodec.encode(request)
+        if (negative == PcmNegative.BAD_MAGIC) bytes[0] = 0
+        if (negative == PcmNegative.BAD_VERSION) bytes[7] = 2
+        val proof = io.warpnect.platform.audio.capture.RootPcmDescriptorLease.proof(key, request)
+        try {
+            val extras = Bundle().apply {
+                putString("provider", if (negative == PcmNegative.WRONG_PROVIDER) "DIRECT_SHELL" else "DIRECT_ROOT")
+                putByteArray("request", bytes)
+                putByteArray("proof", proof)
+                putInt(
+                    "region_bytes",
+                    if (negative == PcmNegative.OVERSIZE_REGION) {
+                        Int.MAX_VALUE
+                    } else {
+                        io.warpnect.platform.audio.capture.RootPcmDescriptorLease.REGION_BYTES
+                    },
+                )
+            }
+            return call.invoke(provider, null, DirectRootPcmHandoff.METHOD, null, extras) as? Bundle
+                ?: error("root_pcm_reply_absent")
+        } finally {
+            proof.fill(0)
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun receive(
         request: RootVideoRequest,

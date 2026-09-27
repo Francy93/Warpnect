@@ -19,7 +19,7 @@ class PrivilegedCapabilityPlannerTest {
         )
     }
 
-    @Test fun `synthetic complete Root fixture selects single Root not actual Audio implementation`() {
+    @Test fun `qualified complete Root matrix selects single Root without ranking change`() {
         assertPlan(
             select(
                 *PrivilegedCapability.canonicalOrder.map {

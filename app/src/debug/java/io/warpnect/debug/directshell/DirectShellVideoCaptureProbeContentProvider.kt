@@ -23,6 +23,7 @@ class DirectShellVideoCaptureProbeContentProvider : ContentProvider() {
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        if (method == DirectRootPcmHandoff.METHOD) return DirectRootPcmHandoff.call(extras)
         if (method == DirectRootSurfaceHandoff.METHOD) {
             return DirectRootSurfaceHandoff.issue(Binder.getCallingUid(), Binder.getCallingPid(), extras)
         }
