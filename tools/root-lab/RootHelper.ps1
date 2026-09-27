@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid', 'QualifyInput', 'InputStatus', 'StaleInput', 'HoldInput', 'DropInput', 'QualifyVideo', 'ConfirmVideo', 'HoldVideo', 'VideoStatus', 'QualifyAudio', 'HoldAudio', 'StopAudio', 'AudioStatus', 'CompletePlan', 'NegativeAudioRing')]
+    [ValidateSet('Prepare', 'Start', 'Acquire', 'Inspect', 'Stop', 'Invalidate', 'NegativeAuth', 'NegativeGeneration', 'Duplicate', 'LoseHelper', 'NegativeUid', 'QualifyInput', 'InputStatus', 'StaleInput', 'HoldInput', 'DropInput', 'QualifyVideo', 'ConfirmVideo', 'HoldVideo', 'VideoStatus', 'QualifyAudio', 'HoldAudio', 'StopAudio', 'AudioStatus', 'CompletePlan', 'NegativeAudioRing', 'EnableHost', 'DisableHost', 'HostStatus')]
     [string]$Action,
     [Parameter(Mandatory = $true)]
     [string]$Serial,
@@ -112,6 +112,9 @@ if ($Action -eq 'StopAudio') { Invoke-AppAction 'stop-audio' }
 if ($Action -eq 'NegativeAudioRing') { Invoke-AppAction 'negative-audio-ring' }
 if ($Action -eq 'AudioStatus') { Invoke-AppAction 'audio-status' }
 if ($Action -eq 'CompletePlan') { Invoke-AppAction 'complete-plan' }
+if ($Action -eq 'EnableHost') { Invoke-AppAction 'enable-host' }
+if ($Action -eq 'DisableHost') { Invoke-AppAction 'disable-host' }
+if ($Action -eq 'HostStatus') { Invoke-AppAction 'host-status' }
 if ($Action -eq 'NegativeUid') {
     if ((Invoke-RootLabAdb 'shell id') -notmatch '^uid=2000\(shell\) gid=2000\(shell\)') { throw 'Negative UID test requires unrooted adbd.' }
     $request = (Invoke-RootLabAdb 'shell run-as io.warpnect cat files/root-lab/request.json') | ConvertFrom-Json

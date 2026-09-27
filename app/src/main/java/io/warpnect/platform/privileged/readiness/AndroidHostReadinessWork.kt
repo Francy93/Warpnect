@@ -15,6 +15,7 @@ import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityA
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmissionResult
 import io.warpnect.platform.privileged.planning.CapabilityQualificationState
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
+import io.warpnect.platform.privileged.runtime.DirectRootHostOwnership
 import io.warpnect.platform.privileged.runtime.DirectRootRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.DirectRootSnapshot
 import io.warpnect.platform.privileged.runtime.DirectRootState
@@ -280,7 +281,7 @@ internal class AndroidHostReadinessWork(
      * never calls [acquireRuntime], binds Shizuku UserServices, or starts a capture feature.
      */
     override fun observeBackgroundReadiness(generation: Long): BackgroundHostReadinessObservation {
-        val runtime = runtimeSnapshot()
+        val runtime = DirectRootHostOwnership.passiveSnapshot() ?: runtimeSnapshot()
         val volatile = observe(generation, runtime)
         val evidence = evidenceRepository.loadReusableEvidence()
         val cached = CachedPreparedPlanBuilder.build(
@@ -310,7 +311,23 @@ internal class AndroidHostReadinessWork(
     override fun prepareForHost(generation: Long, runtimeState: PrivilegedRuntimeStateSnapshot): HostReadinessState {
         val evidence = evidenceRepository.loadReusableEvidence()
         Log.i(TAG, "prepared_plan_late_revalidation generation=$generation reusable=${evidence.reusableRecords.size}")
-        val acquired = acquireRuntime()
+        val root = runtimeState.directRoot.rootFoundation
+        val acquired = if (root != null &&
+            RootHostEvidence.hasCompleteEvidence(evidence.reusableRecords, root.provenance)
+        ) {
+            if (!root.ready) {
+                return HostReadinessState.Failed(
+                    generation,
+                    observeVolatileRuntime(generation),
+                    PrivilegedRuntimeFailureReason.ROOT_HELPER_UNAVAILABLE,
+                )
+            }
+            DirectRootHostOwnership.revalidate(requireNotNull(root.generation)) ?: return HostReadinessState.Failed(
+                generation, observeVolatileRuntime(generation), PrivilegedRuntimeFailureReason.ROOT_HELPER_UNAVAILABLE,
+            )
+        } else {
+            acquireRuntime()
+        }
         val currentRuntimeState = observe(generation, acquired)
         if (!acquired.ready) return unavailableRuntimeState(generation, currentRuntimeState, acquired)
         if (acquired.kind == PrivilegedRuntimeKind.DIRECT_SHELL &&
@@ -349,8 +366,10 @@ internal class AndroidHostReadinessWork(
                     )
                 }
             }
-        } catch (_: RuntimeException) {
+        } catch (error: RuntimeException) {
+            Log.w(TAG, "host_admission_failed runtime=${acquired.kind} boundary=${error.javaClass.simpleName}")
             admission.release()
+            if (acquired.kind == PrivilegedRuntimeKind.DIRECT_ROOT) DirectRootHostOwnership.release()
             if (acquired.kind == PrivilegedRuntimeKind.DIRECT_SHELL) {
                 PrivilegedRuntimeRegistry.releaseForHost()
             }

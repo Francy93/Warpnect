@@ -384,3 +384,18 @@ authorization. Ordinary product Host UI/network admission is not inferred from
 the explicit lab plan probe; complete qualification is scoped to the tested lab.
 See the focused report for exact generations, artifact, resource sampling
 limitations and the optional physical admission observations.
+
+## Normal Host Admission Follow-up
+
+The validated SystemAudio slice was checkpointed locally as `022ba4d`.
+`DirectRootHostAdmissionValidation.md` subsequently validates the normal
+application Enable/Disable Host boundary with the same authenticated version4
+UID0 authority and LABORATORY_EXTERNAL_ROOT provenance. The DEBUG lab registers
+a finite resource factory; main code gains no desktop-ADB/AVD dependency.
+Eight consecutive Root-only admissions reached Host Available (8/9 counted
+attempts; ninth failed at an inconclusive ADB observation precondition).
+Restart admission passed1/1 and controlled helper-loss cases2/2. Helper health
+remains volatile, cached compatibility evidence is unchanged, and no recovery
+action or post-freeze provider migration is available. This supersedes only
+the earlier unvalidated normal Host boundary, not production Root authorization
+or physical Root. All931 JVM tests and requested software gates pass.

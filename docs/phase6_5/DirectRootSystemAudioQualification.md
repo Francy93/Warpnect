@@ -486,3 +486,23 @@ Host-admission token is deliberately not used. Next recommended task, not
 implemented here: **Physical Root Device Qualification**, to establish the
 OEM/root-manager/audio-HAL/codec/SELinux boundary before generalizing this lab
 evidence or claiming production Root readiness.
+
+## Normal Host Admission Follow-up
+
+This validated SystemAudio slice was checkpointed locally as `022ba4d` before
+the next task. `DirectRootHostAdmissionValidation.md` closes the previously
+unvalidated normal application Enable Host boundary: eight consecutive normal
+Enable/Disable Host passes on its exact APK,8/9 counted attempts with an
+inconclusive ADB observation failure before the ninth acquisition, restart1/1
+and controlled helper-loss cases2/2. No retry rewrites the original accounting.
+
+Host admission uses the existing Root audio gateway, PCM Ring V1, controller
+and drain; silent PCM progression verifies active ownership before freeze.
+No tone or new signal qualification is credited to that admission campaign.
+All three cached cells remain byte-identical, QUALIFIED for the exact lab;
+liveness and capture stay volatile. After late authenticated acquisition,
+SINGLE/DIRECT_ROOT freeze and normal controller start, Host Available and LAN
+registration are observed. This now supports the bounded normal Host milestone,
+not Magisk, physical Root, peer discovery reachability or remote Root E2E.
+The follow-up passes931 JVM tests and all software gates; production Root
+authorization, remediation, recovery and migration remain deferred.

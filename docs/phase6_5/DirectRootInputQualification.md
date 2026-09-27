@@ -438,3 +438,16 @@ was corrected to require every release while retaining the strict ordinary
 event prefix. Eight pure observer tests cover missing/duplicate/extra releases
 and ordinary ordering; production injector/tracker/Input Payload V1 are unchanged.
 The failed2/3 campaign remains in the Audio report, not relabeled as a pass.
+
+## Normal Host Admission Follow-up
+
+`DirectRootHostAdmissionValidation.md` now exercises the real normal Host
+controller using compatible cached Video/SystemAudio/Input evidence and one
+authenticated current Root generation. Host-owned Input uses the existing
+controller and typed gateway; no Input is emitted by passive readiness or the
+silent admission fixture. Normal disable resets/releases it; controlled loss
+withdraws the frozen Host without migration. The three capability cells remain
+QUALIFIED for the exact lab, not new physical/general validation. Eight
+consecutive admissions passed (8/9 counted attempts with one ADB observation
+anomaly preserved), restart1/1 and controlled loss2/2;931 JVM tests pass.
+Earlier target-observation/reset evidence above remains its original campaign.

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
+import io.warpnect.WarpnectApplication
 import io.warpnect.capture.CaptureCapabilities
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CaptureRequest
@@ -37,6 +38,7 @@ import io.warpnect.platform.privileged.planning.PrivilegedProvider
 import io.warpnect.platform.privileged.readiness.AndroidPersistentCapabilityEvidenceKeyFactory
 import io.warpnect.platform.privileged.readiness.PersistentCapabilityEvidenceRepository
 import io.warpnect.platform.privileged.readiness.SharedPreferencesPersistentCapabilityEvidenceStore
+import io.warpnect.platform.privileged.runtime.DirectRootHostOwnership
 import io.warpnect.platform.privileged.runtime.DirectRootRuntime
 import io.warpnect.platform.privileged.runtime.DirectRootRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.RootBootstrapProvenance
@@ -101,6 +103,11 @@ internal object DirectRootLabController {
                 DirectRootInputCapability.bindRuntime(runtime)
                 DirectRootVideoCapability.bindRuntime(runtime)
                 DirectRootSystemAudioCapability.bindRuntime(runtime)
+                DirectRootHostOwnership.register(
+                    requireNotNull(runtime),
+                    { owner, evidence -> LaboratoryDirectRootHostResources.acquire(context, owner, evidence) },
+                    { synchronized(this) { release(retainStale = false) } },
+                )
                 DirectRootRuntimeRegistry.publish(requireNotNull(runtime).snapshot)
                 monitor = Executors.newSingleThreadScheduledExecutor().also { executor ->
                     executor.schedule({
@@ -142,6 +149,24 @@ internal object DirectRootLabController {
             "negative-audio-ring" -> DirectRootSystemAudioQualification.rejectBadRing(requireNotNull(runtime))
             "audio-status" -> DirectRootSystemAudioQualification.status(context, runtime)
             "complete-plan" -> DirectRootCompletePlanProbe.run(context, requireNotNull(runtime))
+            "enable-host" -> (context as WarpnectApplication).secureSessionComposition?.startHostFromUi()
+                ?: error("normal_host_composition_unavailable")
+            "disable-host" -> (context as WarpnectApplication).secureSessionComposition?.stopHostFromUi()
+                ?: error("normal_host_composition_unavailable")
+            "host-status" -> {
+                val composition = requireNotNull((context as WarpnectApplication).secureSessionComposition)
+                val application = composition.applicationController.snapshot.value
+                val readiness = composition.hostReadinessUiState.value.readiness
+                Log.i(
+                    "WarpnectDirectRoot",
+                    "direct_root_normal_host_status " +
+                        "role=${application.activeRole} host=${application.host.state} " +
+                        "advertising=${application.host.discovery?.advertising} " +
+                        "lan=${application.host.discovery?.lanBackend?.state} " +
+                        "readiness=${readiness.javaClass.simpleName} " +
+                        "ui=${composition.uiResources.hostCapability.value}",
+                )
+            }
             "hold-input" -> heldObservation = DirectRootInputQualification.hold(context, requireNotNull(inputGateway))
             "drop-input" -> {
                 requireNotNull(runtime).inputConnectionLost()
@@ -198,6 +223,7 @@ internal object DirectRootLabController {
     }
 
     private fun release(retainStale: Boolean) {
+        DirectRootHostOwnership.clear(runtime)
         DirectRootCompletePlanProbe.release()
         DirectRootSystemAudioQualification.release()
         DirectRootSystemAudioCapability.bindRuntime(null)

@@ -38,6 +38,20 @@ internal object DirectRootSystemAudioCapability {
         owner = runtime
     }
 
+    fun restoreForHost(evidence: CapabilityQualification) {
+        check(
+            evidence.provider == PrivilegedProvider.DIRECT_ROOT &&
+                evidence.capability == PrivilegedCapability.SYSTEM_AUDIO,
+        )
+        check(
+            evidence.state.isUsable &&
+                evidence.provenance.source == CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE,
+        )
+        check(owner?.snapshot?.ready == true && evidence.provenance.runtimeGeneration == owner?.snapshot?.generation)
+        check(evidence.provenance.providerVersion == bootstrapProvenance?.name)
+        observed = evidence
+    }
+
     fun retainForHost(): Boolean = owner?.snapshot?.let { it.ready && qualification(it).state.isUsable } == true
 
     fun selectForHost(enabled: Boolean): Boolean {

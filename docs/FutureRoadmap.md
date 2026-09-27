@@ -303,7 +303,8 @@ The next milestones are:
 - DirectRoot Bootstrap + Root Recovery Authority Foundation [DEBUG/laboratory implemented, 783-test gated and AOSP/API26 emulator-validated; production Root authorization not implemented]
 - DirectRoot Input Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 final-artifact cycles plus 1/1 active disconnect reset; 807-test gated; not physical Root validation]
 - DirectRoot Video Capability [implemented; exact AOSP/API26 laboratory QUALIFIED, 3/3 frozen-artifact decoded-content cycles plus two active-loss cases; 841-test gated; no physical Root claim]
-- DirectRoot SystemAudio Capability [implemented; exact AOSP/API26 lab QUALIFIED, 3/3 frozen-artifact OFF/ON PCM/ring cycles and actual Root-only plan freeze; 904-test gated; ordinary Root Host UI/network admission not validated]
+- DirectRoot SystemAudio Capability [implemented; exact AOSP/API26 lab QUALIFIED, 3/3 frozen-artifact OFF/ON PCM/ring cycles and actual Root-only plan freeze; 904-test gated; normal Host admission was a separate boundary]
+- Complete DirectRoot Host Admission [normal application Enable/Disable Host and publication validated in exact AOSP/API26 lab; eight consecutive passes, 8/9 counted attempts with ninth ADB observation anomaly preserved; restart 1/1, loss 2/2, 931-test gated; no production/physical Root claim]
 - Physical Root Device Qualification [next evidence boundary; no physical Root or production root-manager claim follows from the AOSP lab]
 - In-Session Privileged Capability Provider Migration RFC [planned; live migration not implemented]
 - In-Session Privileged Capability Provider Migration implementation [planned]
@@ -363,14 +364,32 @@ stable app FD samples. The earlier2/3 combined campaign remains recorded: its
 third attempt stopped before Audio because the DEBUG reset observer incorrectly
 assumed cross-source delivery order. Only that observer was corrected.
 
-All three cells are QUALIFIED for the exact LABORATORY_EXTERNAL_ROOT key. This
-does not validate ordinary product Host Available/discovery/network admission:
+All three cells are QUALIFIED for the exact LABORATORY_EXTERNAL_ROOT key. At
+the SystemAudio checkpoint this did not validate ordinary product Host admission:
 the product Root bootstrap adapter is absent and AOSP Video qualification uses
 the explicit DEBUG software encoder, not a bypass of the hardware-codec policy.
 Production authorization/Magisk, physical Root validation, actual remediation,
 same-provider recovery and live migration remain deferred. See
 `phase6_5/DirectRootSystemAudioQualification.md` for exact artifact, attempts,
 904-test gates, loss/cleanup evidence and complete-plan versus Host boundaries.
+
+The subsequent normal Host slice closes application admission, not production
+Root acquisition. A DEBUG/lab adapter registers a genuinely authenticated UID0
+authority and finite capability-resource factory with the existing readiness/
+admission owner. The same UI/controller action as normal Enable Host performs
+late PING/generation checks, real acquisition and unchanged RFC-006I freeze
+before the normal Host controller publishes Host Available and LAN discovery.
+Freeze alone cannot publish. The lab's real Surface software codec is explicit
+and does not assert the hardware-encode flag or alter release codec policy.
+
+Eight consecutive normal Host cycles passed; the requested ten-cycle campaign
+stopped on attempt9 at an inconclusive ADB inspection precondition (8/9, no
+hidden retry). Cache evidence stayed byte-identical, categorized app descriptors
+stabilized after emulator graphics warmup, restart admission passed1/1 and two
+controlled helper-loss tests converged to teardown or truthful pre-freeze failure
+without provider migration. See `phase6_5/DirectRootHostAdmissionValidation.md`.
+Physical DirectRoot Device Qualification is the next evidence boundary; no
+Magisk, remediation, same-provider recovery or live migration is implemented.
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

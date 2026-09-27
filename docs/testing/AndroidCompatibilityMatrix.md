@@ -508,7 +508,7 @@ SurfaceFlinger/codecs/audio HAL or production Root acquisition.
 | Target | API / image | Root runtime | Root Input | Root Video | Root SystemAudio | Normal Root-only Host |
 | --- | --- | --- | --- | --- | --- | --- |
 | Warpnect_Root_API25 | 25 / AOSP-default x86_64 r1 | ADB-root environment qualified; app helper not tested | NOT_TESTED; minSdk26 blocks APK | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Unavailable; API25 is not supported by the app |
-| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab;3/3 same-generation requalifications on final Audio APK | QUALIFIED for exact lab;3/3 same-generation decoded fixture A/B requalifications | QUALIFIED for exact lab;3/3 OFF/ON ring/drain cycles, plus3/3 isolated audio resource cycles | NOT_TESTED through ordinary UI/network; actual Root-only preparation/late plan freeze3/3 |
+| Warpnect_Root_API26 | 26 / AOSP-default x86_64 r1 | Authenticated DEBUG/lab UID0 helper, Enforcing u:r:su:s0 | QUALIFIED for exact lab;3/3 same-generation requalifications on final Audio APK | QUALIFIED for exact lab;3/3 same-generation decoded fixture A/B requalifications | QUALIFIED for exact lab;3/3 OFF/ON ring/drain cycles, plus3/3 isolated audio resource cycles | Normal Enable/Disable Host: eight consecutive PASS, 8/9 counted attempts; SINGLE/DIRECT_ROOT, Host Available and LAN registration; restart1/1, controlled loss2/2; physical-peer visibility/remote Session NOT_TESTED |
 
 API26 fingerprint:
 `Android/sdk_phone_x86_64/generic_x86_64:8.0.0/OSR1.180418.004/4931640:userdebug/test-keys`.
@@ -584,3 +584,20 @@ restart while runtime/audio/leases stay absent. Full loss/cleanup accounting,
 No physical devices were modified or newly Root-qualified by this campaign.
 Routing/human audibility remain UNKNOWN/NOT_TESTED in the no-audio AVD. Magisk,
 production Root authorization, remediation, recovery and migration remain deferred.
+
+The later normal Host artifact SHA-256 is
+`5ccd6dfe064b8c785c65b3c6d77d17e7db76147c044baa78a7db012f67c3a70a`.
+Its real application Enable/Disable path reached SINGLE/DIRECT_ROOT and Host
+Available for eight consecutive cycles. Formal accounting is8/9: attempt9
+failed at an inconclusive ADB inspection precondition before Root acquisition;
+it was not retried or reclassified as PASS. Normal LAN registration was active;
+direct discovery is unsupported in this AVD. Physical-peer visibility and a
+remote Root Session were NOT_TESTED. App restart admission passed1/1 and
+controlled pre-/post-freeze helper loss2/2 without provider migration.
+
+Categorized app FDs stabilized at62 for cycles2-8 after emulator graphics warmup,
+with no observed monotonic Warpnect-owned control/PCM/pipe growth. Compatibility
+cache bytes stayed unchanged; runtime/capture/input availability stayed volatile.
+This is normal Host admission validated in the AOSP lab, not physical Root or
+production authorization. See `../phase6_5/DirectRootHostAdmissionValidation.md`
+for every attempt, anomaly, generation, ownership metric and931-test gates.

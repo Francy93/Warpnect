@@ -8,6 +8,37 @@ import org.junit.Test
 
 class PrivilegedCapabilityPlanAdmissionTest {
     @Test
+    fun `Root loss before freeze invalidates Root and uses only bounded complete alternative`() {
+        val matrix = matrix(
+            *PrivilegedCapability.canonicalOrder.flatMap {
+                listOf(usable(PrivilegedProvider.DIRECT_ROOT, it), usable(PrivilegedProvider.DIRECT_SHELL, it))
+            }.toTypedArray(),
+        )
+        val acquirer = FakeAcquirer(
+            PrivilegedProvider.DIRECT_ROOT to listOf(failed("root_helper_lost_before_freeze")),
+            PrivilegedProvider.DIRECT_SHELL to listOf(PrivilegedProviderAcquisition.Acquired),
+        )
+        val frozen = requireFrozen(PrivilegedCapabilityPlanAdmission().admit(matrix, acquirer))
+        assertEquals(PrivilegedProvider.DIRECT_ROOT, frozen.attempts.first().failedProvider)
+        assertEquals(listOf(PrivilegedProvider.DIRECT_SHELL), frozen.plan.participatingProviders)
+        assertEquals(1, acquirer.acquireCount(PrivilegedProvider.DIRECT_ROOT))
+        frozen.lease.close()
+    }
+
+    @Test
+    fun `Root only loss before freeze cannot create a partial Host`() {
+        val matrix = matrix(
+            *PrivilegedCapability.canonicalOrder.map {
+                usable(PrivilegedProvider.DIRECT_ROOT, it)
+            }.toTypedArray(),
+        )
+        val acquirer = FakeAcquirer(PrivilegedProvider.DIRECT_ROOT to listOf(failed("root_helper_lost")))
+        val result = PrivilegedCapabilityPlanAdmission().admit(matrix, acquirer)
+        assertTrue(result is PrivilegedCapabilityPlanAdmissionResult.Incompatible)
+        assertEquals(1, acquirer.acquireCount(PrivilegedProvider.DIRECT_ROOT))
+    }
+
+    @Test
     fun `selected DirectShell acquisition failure replans to complete Shizuku alternative`() {
         val matrix = matrix(
             usable(PrivilegedProvider.DIRECT_SHELL, PrivilegedCapability.VIDEO, CapabilityQualificationState.VALIDATED),

@@ -13,11 +13,38 @@ import io.warpnect.video.decoder.VideoDecoderError
 import io.warpnect.video.decoder.VideoDecoderHardwareAcceleration
 import io.warpnect.video.decoder.VideoDecoderQualification
 import io.warpnect.video.decoder.VideoDecoderSupport
+import io.warpnect.video.encoder.VideoEncoderCapabilities
+import io.warpnect.video.encoder.VideoEncoderCodecInfo
+import io.warpnect.video.encoder.VideoEncoderHardwareAcceleration
+import io.warpnect.video.encoder.VideoEncoderRequest
+import io.warpnect.video.encoder.VideoEncoderSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidLocalCapabilityCollectorTest {
+    @Test fun `explicit acquired lab Surface codec is never advertised as hardware`() {
+        val encoder = VideoEncoderCapabilities(
+            VideoEncoderRequest(
+                width = 640,
+                height = 360,
+                frameRate = 30,
+                bitrateBps = 1_000_000,
+                iFrameIntervalSeconds = 1f,
+            ),
+            VideoEncoderCodecInfo("lab-avc", null, VideoEncoderHardwareAcceleration.Unknown, null, null, null),
+            VideoEncoderSupport(true, true, true, true, true, true, true, 2, 2, 2, 640, 2, 360, 1, 1_000_000),
+        )
+        val raw = AndroidCapabilityProbeSnapshot(lanSecurePathAvailable = true, videoEncoder = encoder)
+        val ordinary = raw.toLocalSnapshot(SessionRole.Host, 1)
+        assertEquals(LocalCapabilityAvailability.SupportedButUnavailable, ordinary.localAvailability["video"])
+        val lab = raw.copy(laboratorySurfaceEncoderQualified = true).toLocalSnapshot(SessionRole.Host, 1)
+        assertEquals(LocalCapabilityAvailability.Available, lab.localAvailability["video"])
+        assertEquals(0, lab.video.videoFlags and CapabilityBits.VIDEO_HARDWARE_ENCODE)
+        assertTrue(lab.video.videoFlags and CapabilityBits.VIDEO_SURFACE_INPUT_ENCODE != 0)
+        assertEquals(1, lab.video.videoPayloadVersion)
+    }
+
     @Test
     fun directDiscoveryDoesNotAdvertiseAPathWithoutProductionBackend() {
         val snapshot = AndroidCapabilityProbeSnapshot(

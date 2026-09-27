@@ -10,6 +10,7 @@ import io.warpnect.platform.input.injection.DirectRootInputCapability
 import io.warpnect.platform.privileged.readiness.CachedCapabilityEvidenceMatrixBuilder
 import io.warpnect.platform.privileged.readiness.LateRevalidatedCapabilityEvidence
 import io.warpnect.platform.privileged.readiness.PersistentCapabilityEvidenceRecord
+import io.warpnect.platform.privileged.runtime.DirectRootHostOwnership
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeCapability
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
@@ -42,9 +43,8 @@ internal sealed interface AndroidHostPrivilegedCapabilityAdmissionResult {
 
 /**
  * Adapts the existing cold Android subsystem probes to RFC-006I's immutable matrix. It does not
- * add a new provider implementation: a DirectShell attempt qualifies only DirectShell, while a
- * legacy Shizuku attempt retains the already selected legacy composition without creating a new
- * fallback path.
+ * change provider ranking: DirectRoot acquires its authenticated Host resource adapter, DirectShell
+ * qualifies its current generation, and legacy Shizuku retains the existing composition.
  */
 internal class AndroidHostPrivilegedCapabilityAdmission(
     private val androidCollector: AndroidLocalCapabilityCollector,
@@ -63,7 +63,12 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
     ): AndroidHostPrivilegedCapabilityAdmissionResult {
         synchronized(lock) { activeResult }?.let { return it }
 
-        val snapshot = androidCollector.probeSnapshot(SessionRole.Host)
+        val rootResources = if (runtime.kind == PrivilegedRuntimeKind.DIRECT_ROOT) {
+            DirectRootHostOwnership.acquire(requireNotNull(runtime.generation), reusableEvidence)
+        } else {
+            null
+        }
+        val snapshot = rootResources?.snapshot ?: androidCollector.probeSnapshot(SessionRole.Host)
         val suppressed = if (runtime.kind == PrivilegedRuntimeKind.DIRECT_SHELL) {
             DebugDirectShellCapabilitySuppression.consume()
         } else {
@@ -72,7 +77,7 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
         suppressed?.let {
             Log.w(TAG, "DIRECT_SHELL_CAPABILITY_DEBUG_SUPPRESSED capability=${it.name} one_shot=true")
         }
-        val initialMatrix = AndroidPrivilegedCapabilityMatrixAdapter.build(
+        val initialMatrix = rootResources?.matrix ?: AndroidPrivilegedCapabilityMatrixAdapter.build(
             runtime = runtime,
             snapshot = snapshot,
             directShellSuppressed = suppressed,
@@ -102,10 +107,9 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
             )
             logMatrixBuilt(runtime, staged.matrix)
         } else {
-            Log.i(TAG, "privileged_shizuku_deferred reason=directshell_complete shizuku_started=false")
+            Log.i(TAG, "privileged_shizuku_deferred reason=primary_provider_complete shizuku_started=false")
         }
-        // Fresh controller/codec queries remain necessary for this new runtime generation and
-        // WNCP's detailed local snapshot. They do not start media or repeat a capture soak.
+        // Detailed WNCP snapshots reflect current provider ownership; cached cells alone cannot publish Host.
         val revalidated = LateRevalidatedCapabilityEvidence.combine(
             staged.matrix,
             CachedCapabilityEvidenceMatrixBuilder.build(reusableEvidence),
@@ -220,6 +224,7 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
     }
 
     private fun releaseUnfrozenRuntime(runtime: PrivilegedRuntimeSnapshot) {
+        if (runtime.kind == PrivilegedRuntimeKind.DIRECT_ROOT) DirectRootHostOwnership.release()
         if (runtime.kind == PrivilegedRuntimeKind.DIRECT_SHELL) {
             PrivilegedRuntimeRegistry.releaseForHost()
         }
@@ -289,8 +294,11 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
             }
 
             PrivilegedProvider.DIRECT_ROOT -> if (
-                DirectRootInputCapability.retainForHost() || DirectRootVideoCapability.retainForHost() ||
-                DirectRootSystemAudioCapability.retainForHost()
+                runtime.generation?.let { DirectRootHostOwnership.revalidate(it)?.ready } == true &&
+                (
+                    DirectRootInputCapability.retainForHost() || DirectRootVideoCapability.retainForHost() ||
+                        DirectRootSystemAudioCapability.retainForHost()
+                    )
             ) {
                 PrivilegedProviderAcquisition.Retained
             } else {
@@ -306,6 +314,7 @@ internal class AndroidHostPrivilegedCapabilityAdmission(
                     DirectRootInputCapability.selectForHost(false)
                     DirectRootVideoCapability.selectForHost(false)
                     DirectRootSystemAudioCapability.selectForHost(false)
+                    DirectRootHostOwnership.release()
                 }
             }
         }

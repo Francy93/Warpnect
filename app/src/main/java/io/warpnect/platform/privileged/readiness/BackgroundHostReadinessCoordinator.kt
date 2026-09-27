@@ -295,6 +295,15 @@ internal class BackgroundHostReadinessCoordinator(
         preparedPlan: PreparedPrivilegedCapabilityPlan?,
         evidenceSource: HostReadinessEvidenceSource,
     ): HostReadinessState {
+        if (runtimeState.directRoot.rootFoundation?.ready == true) {
+            return preparedPlan?.let(HostReadinessState::Ready)
+                ?: HostReadinessState.Stale(runtimeState.generation, runtimeState, evidenceSource = evidenceSource)
+        }
+        if (runtimeState.directRoot.rootFoundation?.provenance != null &&
+            runtimeState.directRoot.state == PrivilegedRuntimeAvailabilityState.TEMPORARILY_UNAVAILABLE
+        ) {
+            return HostReadinessState.Stale(runtimeState.generation, runtimeState, evidenceSource = evidenceSource)
+        }
         val directShell = runtimeState.directShell
         return when (directShell.state) {
             PrivilegedRuntimeAvailabilityState.DISABLED_RECOVERABLE -> HostReadinessState.UserActionRequired(

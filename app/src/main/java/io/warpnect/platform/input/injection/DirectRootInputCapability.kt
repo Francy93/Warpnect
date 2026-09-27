@@ -30,6 +30,20 @@ internal object DirectRootInputCapability {
         runtimeOwner = runtime
     }
 
+    fun restoreForHost(evidence: CapabilityQualification) {
+        check(evidence.provider == PrivilegedProvider.DIRECT_ROOT && evidence.capability == PrivilegedCapability.INPUT)
+        check(
+            evidence.state.isUsable &&
+                evidence.provenance.source == CapabilityQualificationSource.EXISTING_COMPATIBILITY_CACHE,
+        )
+        check(
+            runtimeOwner?.snapshot?.ready == true &&
+                evidence.provenance.runtimeGeneration == runtimeOwner?.snapshot?.generation,
+        )
+        check(evidence.provenance.providerVersion == bootstrapProvenance?.name)
+        observed = evidence
+    }
+
     fun retainForHost(): Boolean = runtimeOwner?.snapshot?.let { it.ready && qualification(it).state.isUsable } == true
 
     fun selectForHost(selected: Boolean): Boolean {

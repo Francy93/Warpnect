@@ -34,11 +34,12 @@ import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityA
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
 import io.warpnect.platform.privileged.readiness.AndroidHostReadinessWork
 import io.warpnect.platform.privileged.readiness.BackgroundHostReadinessCoordinator
+import io.warpnect.platform.privileged.readiness.HostAdmissionPublicationGate
 import io.warpnect.platform.privileged.readiness.HostReadinessDispatcher
-import io.warpnect.platform.privileged.readiness.HostReadinessPlanCommitState
 import io.warpnect.platform.privileged.readiness.HostReadinessState
 import io.warpnect.platform.privileged.readiness.HostReadinessUiState
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeFailureReason
+import io.warpnect.platform.privileged.runtime.DirectRootRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.session.capability.AndroidCapabilityProbe
@@ -205,6 +206,7 @@ class AndroidSecureSessionComposition private constructor(
     private val hostPrivilegedAdmission: AndroidHostPrivilegedCapabilityAdmission,
     private val hostReadinessCoordinator: BackgroundHostReadinessCoordinator,
     private val hostReadinessObservation: AutoCloseable,
+    private val hostPublication: HostAdmissionPublicationGate,
 ) : AutoCloseable {
     internal val hostReadinessUiState: StateFlow<HostReadinessUiState>
         get() = hostReadinessCoordinator.uiState
@@ -212,9 +214,14 @@ class AndroidSecureSessionComposition private constructor(
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
         hostReadinessCoordinator.requestHostPreparation {
-            uiResources.publishHostPlanAdmitted()
-            val start = applicationController.startHost()
-            if (!start.isSuccess) {
+            if (hostPublication.publish(it) { applicationController.startHost().isSuccess }) {
+                uiResources.publishHostPlanAdmitted()
+                Log.i(
+                    TAG,
+                    "HOST_PUBLICATION state=AVAILABLE readiness_generation=${it.generation} " +
+                        "root_generation=${it.runtimeState.directRoot.rootFoundation?.generation} providers=${it.plan.participatingProviders}",
+                )
+            } else {
                 hostReadinessCoordinator.abandonPreparedHost()
                 uiResources.clearHostCapability()
             }
@@ -271,6 +278,7 @@ class AndroidSecureSessionComposition private constructor(
                 initialPolicy = SessionBehaviorPolicy(maxConcurrentClients = 1),
             ),
         )
+        private val hostPublication = HostAdmissionPublicationGate()
         private val crypto = JcaPairingCryptoProvider()
         private val routeLocalAddressResolver = AndroidRouteLocalAddressResolver()
         private val discoveryDebugLog = AndroidDiscoveryDebugLog(context)
@@ -638,6 +646,7 @@ class AndroidSecureSessionComposition private constructor(
                 },
                 onHostReadinessStarted = discoveryDebugLog::hostLifecycleStarted,
                 onHostReadinessStopped = {
+                    hostPublication.clear()
                     // The readiness coordinator owns the admitted plan and releases it once.
                     hostReadinessCoordinator.invalidate()
                     uiResources.clearHostCapability()
@@ -690,10 +699,21 @@ class AndroidSecureSessionComposition private constructor(
                 hostPrivilegedAdmission,
                 hostReadinessCoordinator,
                 hostReadinessWork.observeWirelessDebuggingChanges(context) {
-                    if (hostReadinessCoordinator.refreshBackgroundReadiness()) {
-                        Log.i(TAG, "prepared_plan_invalidated reason=wireless_debugging_changed")
+                    controlScheduler.dispatch {
+                        if (hostPublication.rootOwnershipLost(DirectRootRuntimeRegistry.runtimeSnapshot())) {
+                            Log.w(
+                                TAG,
+                                "HOST_PUBLICATION state=WITHDRAWN reason=ROOT_HELPER_UNAVAILABLE migration=false",
+                            )
+                            application.stopHost()
+                            hostReadinessCoordinator.abandonPreparedHost()
+                            uiResources.publishHostPlanUnavailable("Host unavailable: Root helper connection was lost")
+                        } else if (hostReadinessCoordinator.refreshBackgroundReadiness()) {
+                            Log.i(TAG, "prepared_plan_invalidated reason=wireless_debugging_changed")
+                        }
                     }
                 },
+                hostPublication,
             ).also { composition ->
                 composition.startBackgroundHostReadiness()
             }
@@ -1268,10 +1288,7 @@ class AndroidSessionUiResources(
             -> DeviceRoleCapability.NotChecked
 
             is HostReadinessState.Checking -> DeviceRoleCapability.Checking
-            is HostReadinessState.Ready -> when (state.prepared.commitState) {
-                HostReadinessPlanCommitState.ADVISORY -> DeviceRoleCapability.NotChecked
-                HostReadinessPlanCommitState.FROZEN_AT_HOST_ADMISSION -> DeviceRoleCapability.Available
-            }
+            is HostReadinessState.Ready -> DeviceRoleCapability.NotChecked
             is HostReadinessState.AuthorizationRequired -> DeviceRoleCapability.SetupRequired(
                 hostReadinessFailureMessage(state.reason),
             )
@@ -1452,6 +1469,8 @@ internal fun hostReadinessFailureMessage(reason: PrivilegedRuntimeFailureReason)
         "Host unavailable: privileged runtime is unsupported on this platform"
     PrivilegedRuntimeFailureReason.PROVIDER_BOOTSTRAP_FAILED ->
         "Host unavailable: privileged runtime preparation failed"
+    PrivilegedRuntimeFailureReason.ROOT_HELPER_UNAVAILABLE ->
+        "Host unavailable: Root helper connection was lost"
     PrivilegedRuntimeFailureReason.UNKNOWN ->
         "Host unavailable: privileged runtime state is unknown"
 }

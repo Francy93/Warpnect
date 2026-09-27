@@ -457,6 +457,42 @@ UID2000, and RootLab stopped API26. Neither AVD configuration nor minSdk26 was
 changed; API25 was not booted by the Input slice. No production root-manager,
 physical Root or Complete Host support is inferred from these observations.
 
+## Normal Root Host Admission Follow-up
+
+`DirectRootHostAdmissionValidation.md` records the later real application
+Enable/Disable Host boundary on the unchanged API26 AOSP lab. The SystemAudio
+source/test/tool/doc slice was checkpointed locally as `022ba4d` before that
+work. New Host integration remains uncommitted; generated evidence stays under
+`app/build/reports/root-lab`, not in tracked laboratory assets.
+
+The exact final APK passed eight consecutive normal Host cycles. Accounting is
+8/9, not10/10: the ninth stopped during ADB identity observation before Root
+prepare or Enable Host; the numeric child status was unavailable and the one
+bounded read-only reproduction succeeded. This remains INCONCLUSIVE observation
+debt. A separate app-restart admission passed1/1; controlled frozen and
+pre-freeze helper-loss tests passed2/2 with cache unchanged and no migration.
+The ordinary controller reached Host Available and registered LAN discovery.
+Physical-peer discovery visibility and remote Root Sessions were NOT_TESTED.
+
+After genuine qualification has populated the compatible three-cell cache:
+
+```powershell
+./tools/root-lab/RootLab.ps1 -Action Start -Api 26 -Port 5556
+& "$env:ANDROID_SDK_ROOT/platform-tools/adb.exe" -s emulator-5556 install -r ./app/build/outputs/apk/debug/app-debug.apk
+./tools/root-lab/Test-RootHostAdmission.ps1 -Serial emulator-5556 -Cycles 5
+./tools/root-lab/Test-RootHostLifetime.ps1 -Serial emulator-5556
+# Verify the expected emulator/AVD/qemu/API identity and semantic cleanup first.
+& "$env:ANDROID_SDK_ROOT/platform-tools/adb.exe" -s emulator-5556 unroot
+./tools/root-lab/RootLab.ps1 -Action Stop -Api 26 -Port 5556
+```
+
+Both new tools reject physical serials, verify AVD/API/qemu/package/hash and
+stop on the first failed attempt. Their finite DEBUG Host actions invoke the
+same application composition as the UI, not internal qualification or freeze.
+No synthetic evidence, automatic wipe, Root remediation or production adapter
+is introduced. The campaign is silent. minSdk26, API25 and AVD configuration
+remain unchanged; production Root authorization and physical Root are deferred.
+
 ## References
 
 * [Android emulator command-line lifecycle](https://developer.android.com/studio/run/emulator-commandline).

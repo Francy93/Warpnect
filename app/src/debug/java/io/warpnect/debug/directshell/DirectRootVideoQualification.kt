@@ -3,8 +3,6 @@ package io.warpnect.debug.directshell
 import android.content.Context
 import android.content.Intent
 import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
 import android.util.Log
 import io.warpnect.capture.CaptureError
 import io.warpnect.capture.CaptureRequest
@@ -15,15 +13,9 @@ import io.warpnect.platform.privileged.readiness.AndroidPersistentCapabilityEvid
 import io.warpnect.platform.privileged.readiness.PersistentCapabilityEvidenceRepository
 import io.warpnect.platform.privileged.readiness.SharedPreferencesPersistentCapabilityEvidenceStore
 import io.warpnect.platform.privileged.runtime.DirectRootRuntime
-import io.warpnect.platform.video.encoder.AndroidExactVideoEncoderCapabilityProbe
 import io.warpnect.platform.video.encoder.AndroidMediaCodecVideoEncoder
-import io.warpnect.platform.video.encoder.ExactVideoEncoderCapabilityKey
-import io.warpnect.platform.video.encoder.VideoEncoderDiscovery
 import io.warpnect.video.encoder.EncodedVideoSink
-import io.warpnect.video.encoder.VideoEncoderCapabilities
-import io.warpnect.video.encoder.VideoEncoderCodecInfo
 import io.warpnect.video.encoder.VideoEncoderError
-import io.warpnect.video.encoder.VideoEncoderHardwareAcceleration
 import io.warpnect.video.encoder.VideoEncoderOutputFormat
 import io.warpnect.video.encoder.VideoEncoderRequest
 import java.io.File
@@ -112,55 +104,7 @@ internal object DirectRootVideoQualification {
         release()
         fixture(context, "a")
         val metrics = Metrics()
-        val encoder = AndroidMediaCodecVideoEncoder(object : VideoEncoderDiscovery {
-            override fun query(value: VideoEncoderRequest): VideoEncoderCapabilities {
-                // AOSP lab software Surface encoding is an explicit test boundary, not production HW qualification.
-                val candidate = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull { codec ->
-                    codec.isEncoder && codec.supportedTypes.contains("video/avc") && runCatching {
-                        val caps = codec.getCapabilitiesForType("video/avc")
-                        val surface = caps.colorFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                        val cbr = caps.encoderCapabilities.isBitrateModeSupported(
-                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR,
-                        )
-                        Log.i(
-                            "WarpnectDirectRoot",
-                            "direct_root_lab_codec_metadata codec=${codec.name} surface=$surface cbr=$cbr",
-                        )
-                        val formatSupported = surface &&
-                            caps.videoCapabilities.areSizeAndRateSupported(
-                                value.width, value.height, value.frameRate.toDouble(),
-                            ) &&
-                            caps.videoCapabilities.bitrateRange.contains(value.bitrateBps)
-                        formatSupported && (
-                            cbr || AndroidExactVideoEncoderCapabilityProbe().probe(
-                                ExactVideoEncoderCapabilityKey.from(codec.name, value),
-                            ).also {
-                                Log.i("WarpnectDirectRoot", "direct_root_lab_exact_cbr codec=${codec.name} result=$it")
-                            }.supported
-                            )
-                    }.getOrDefault(false)
-                } ?: return VideoEncoderCapabilities(
-                    value, null, null, error = VideoEncoderError.UnsupportedBitrateMode,
-                )
-                Log.i(
-                    "WarpnectDirectRoot",
-                    "direct_root_video_encoder codec=${candidate.name} resolution=${value.width}x${value.height} " +
-                        "mode=CBR lab_discovery=true",
-                )
-                return VideoEncoderCapabilities(
-                    value,
-                    VideoEncoderCodecInfo(
-                        candidate.name,
-                        null,
-                        VideoEncoderHardwareAcceleration.Unknown,
-                        null,
-                        null,
-                        null,
-                    ),
-                    null,
-                )
-            }
-        })
+        val encoder = AndroidMediaCodecVideoEncoder(LaboratoryRootVideoEncoderDiscovery())
         val gateway = DirectRootVideoCaptureGateway(runtime, onServiceDied = { encoder.close() })
         val prepared = Active(encoder, gateway, metrics)
         active = prepared

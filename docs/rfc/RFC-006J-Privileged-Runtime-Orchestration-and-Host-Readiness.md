@@ -712,7 +712,8 @@ DirectRoot Runtime Foundation: IMPLEMENTED / TESTED / EMULATOR-VALIDATED (AOSP/A
 Production Root Authorization: NOT IMPLEMENTED
 DirectRoot Input: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; no physical claim)
 DirectRoot Video: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; app-owned encoder, real decoded content)
-DirectRoot SystemAudio: NOT IMPLEMENTED (`NOT_IMPLEMENTED` in the capability model)
+DirectRoot SystemAudio: IMPLEMENTED / TESTED / QUALIFIED (exact AOSP/API26 LABORATORY_EXTERNAL_ROOT; original PCM Ring V1/drain)
+Normal complete DirectRoot Host admission: VALIDATED IN AOSP LAB; no production/physical Root claim
 Root Recovery Authority availability: IMPLEMENTED / TESTED / EMULATOR-VALIDATED; no executable remediation actions
 Physical Root Validation: NOT VALIDATED
 Same-provider Recovery: NOT IMPLEMENTED
@@ -721,10 +722,11 @@ Live Provider Migration: NOT IMPLEMENTED
 
 ## Next Implementation Step
 
-DirectRoot SystemAudio Capability, after independently qualified laboratory Input and Video slices.
+Physical DirectRoot Device Qualification, after independently qualified laboratory
+Input/Video/SystemAudio and normal complete Host admission.
 
 That work must not infer capability support from UID0 authority: it requires
-separate capability implementation/qualification. Production acquisition still
+independent per-capability qualification on the physical target. Production acquisition still
 requires explicit root-manager authorization; actual remediation requires a
 separately reviewed finite action policy. Same-provider recovery and live
 provider migration remain out of scope.
@@ -926,4 +928,54 @@ live migration remain deferred. Ordinary Host admission is not claimed.
 
 ```text
 DIRECTROOT_SYSTEMAUDIO_CAPABILITY_VALIDATED_IN_AOSP_LAB
+```
+
+## Normal DirectRoot Host Admission Extension
+
+SystemAudio checkpoint `022ba4d` precedes this normal-admission slice. See
+`../phase6_5/DirectRootHostAdmissionValidation.md` for exact source/artifact/
+attempt accounting. The laboratory supplies genuinely authenticated UID0
+authority through the existing DEBUG boundary, not an injected READY flag or
+production Root-manager adapter. `DirectRootHostOwnership` registers the
+finite resource factory and current runtime; `RootHostEvidence` requires exact
+compatible cached cells and matching provenance. All active feature owners
+retain one current Root generation; Surface/ring sub-generations remain fresh.
+
+Startup restores the three compatibility records without helper acquisition,
+encoder/mirror, AudioRecord/ring or Input injection. Once explicit laboratory
+authority exists, passive readiness may prepare ADVISORY SINGLE/DIRECT_ROOT.
+Enable Host joins the existing single flight, performs late authenticated
+liveness/generation checks and real capability-resource acquisition, then uses
+unchanged bounded RFC-006I admission/freeze. Transient failure never poisons
+durable qualification evidence.
+
+The normal UI/composition action reaches the existing application Host owner.
+`HostAdmissionPublicationGate` prevents freeze-only readiness from displaying
+Host Available or publishing. Only successful normal application Host start
+publishes the complete frozen profile and starts discovery. DEBUG automation
+may call this same public action; it may not substitute internal freeze or
+standalone qualification. A finite real Surface software encoder is explicit
+in the AOSP adapter, without a false hardware-encode flag or release policy change.
+
+Normal disable stops publication and semantically releases Input, Audio/ring/
+pipes, Video/Surface/encoder and Root authority. Post-freeze Root loss withdraws
+publication and queues ordinary teardown, without switching providers.
+Pre-freeze loss produces ROOT_HELPER_UNAVAILABLE and no Host; the ordinary
+bounded replan policy remains unchanged. No real alternative exists in API26.
+Controlled loss currently converges to Stale/NotChecked; its reason is logged,
+not claimed as a sticky error banner. A subsequent Enable Host request shows
+the structured Root-connection failure. UI must not falsely remain Available.
+
+Final exact-APK evidence: eight consecutive normal Enable/Disable cycles passed
+(8/9 counted attempts; ninth inconclusive ADB observation failure before any
+Root/Host acquisition), separate restart admission1/1 and loss cases2/2.
+Host Available and normal LAN registration were observed, not physical-peer
+discovery visibility or a remote Root Session. Categorized FDs stabilized after
+emulator graphics warmup; cache bytes were unchanged across admissions/outages.
+All931 JVM tests and requested gates pass. Production Root authorization,
+physical Root, remediation, same-provider recovery and live migration remain
+unimplemented/unvalidated. No protocol, planner policy or native source change.
+
+```text
+SINGLE_DIRECT_ROOT_HOST_ADMISSION_VALIDATED_IN_AOSP_LAB
 ```

@@ -32,6 +32,7 @@ internal enum class PrivilegedRuntimeFailureReason {
     SHIZUKU_AUTHORIZATION_REQUIRED,
     PLATFORM_UNSUPPORTED,
     PROVIDER_BOOTSTRAP_FAILED,
+    ROOT_HELPER_UNAVAILABLE,
     UNKNOWN,
 }
 

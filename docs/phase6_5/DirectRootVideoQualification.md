@@ -409,3 +409,17 @@ admission. The full visual fixture's app FD samples65/68/70 remain a recorded
 resource-observability limitation; the isolated Audio samples60/60/60 do not
 establish indefinite graphics leak-freedom. No Video implementation or hardware-
 codec policy was changed to force ordinary Host readiness.
+
+## Normal Host Admission Follow-up
+
+`DirectRootHostAdmissionValidation.md` subsequently validates ordinary
+Enable/Disable Host with the actual Root capture controller and app-owned
+Surface encoder. The finite DEBUG codec discovery is extracted from this
+accepted laboratory implementation; real Surface acceptance is recorded
+without asserting VIDEO_HARDWARE_ENCODE or altering production codec policy.
+Eight consecutive normal admissions reached Host Available (8/9 counted
+attempts with one ADB observation anomaly), with restart1/1 and loss2/2.
+Categorized app FDs stabilized at62 for cycles2-8: graphics goldfish descriptors
+warmed up, while PCM/control/pipe categories returned to baseline. This is
+bounded ownership evidence, not an indefinite graphics leak-free claim or a
+retroactive dismissal of65/68/70. No new visual/physical Root Session is claimed.

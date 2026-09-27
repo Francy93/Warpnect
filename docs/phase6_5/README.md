@@ -78,7 +78,21 @@ actual SINGLE/DIRECT_ROOT plan freezes, plus3/3 isolated audio resource cycles.
 All904 JVM tests and requested software gates pass. The first combined campaign
 remains recorded as2/3, stopped before Audio by a DEBUG cross-source reset-order
 assumption; production Input behavior was not changed to hide it. Complete Root
-Host admission through the ordinary UI/network is not yet claimed.
+Host admission through the ordinary UI/network was not claimed at that checkpoint.
+
+The subsequent normal application admission slice now closes that boundary:
+
+    SINGLE_DIRECT_ROOT_HOST_ADMISSION_VALIDATED_IN_AOSP_LAB
+
+`DirectRootHostAdmissionValidation.md` records eight consecutive normal
+Enable/Disable Host passes on the exact API26 APK (8/9 counted attempts; the
+ninth stopped at an inconclusive ADB observation precondition), a separate
+restart admission 1/1, and controlled pre-/post-freeze helper-loss tests 2/2.
+The real controller reaches Host Available and registers normal LAN discovery
+only after authenticated same-generation acquisition and freeze. Background
+readiness stays passive; cached evidence is unchanged by admission/outage.
+All 931 JVM tests and requested gates pass. No remote Root Session, physical
+peer visibility, production Root authorization or physical Root is claimed.
 
 This status is supported by the Phase 6.5 reports and the current
 DirectShell integration checkpoint. It is a validated engineering baseline,
@@ -143,6 +157,9 @@ normal-app PCM/ring/Opus proof. All three capabilities are now QUALIFIED for
 the exact AOSP lab. Production Root authorization and Root-assisted Remediation
 remain **NOT IMPLEMENTED**. ADB-root acquisition
 still requires the explicit laboratory harness, not app-accessible AOSP `su`.
+`DirectRootHostAdmissionValidation.md` now validates the ordinary Enable Host
+controller and publication using that explicitly authenticated lab authority.
+It does not replace the missing production Root bootstrap adapter.
 
 ## Report Roles
 
@@ -162,6 +179,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectRootInputQualification.md - Input-only Root provider, exact emulator target proof and scoped evidence.
 * DirectRootVideoQualification.md - Root mirror/Surface provider, app-owned AVC and decoded-content AOSP lab proof.
 * DirectRootSystemAudioQualification.md - API26 ashmem, Root REMOTE_SUBMIX, normal-app PCM signal proof and scoped complete-plan evidence.
+* DirectRootHostAdmissionValidation.md - normal Enable/Disable Host, Root-only acquisition/freeze/publication, restart, controlled loss and categorized FD evidence in AOSP/API26.
 
 ## Roadmap
 
@@ -197,7 +215,11 @@ Completed:
 * DirectRoot SystemAudio implementation and AOSP/API26 qualification: original
   PCM Ring V1, real descriptor/notify/ACK/drain path, silence/997Hz proof,
   three-cell same-generation qualification and actual Root-only late plan freeze.
-  Ordinary product Root Host UI/network admission remains unvalidated.
+* Complete normal Root Host admission in AOSP/API26: real application Enable
+  Host, passive prepared evidence, authenticated current ownership, ordinary
+  Host Available/LAN publication, disable, restart and loss teardown. The
+  bounded campaign observed no monotonic Warpnect-owned FD growth; physical
+  multicast reachability and remote Root Sessions remain untested.
 
 Next architecture milestones:
 
