@@ -12,7 +12,7 @@ interface VideoRenderDebugObserver {
 
     fun onDecoderPrepared(surfaceGeneration: Long) = Unit
 
-    fun onRemoteFrameRendered(surfaceGeneration: Long) = Unit
+    fun onRemoteCodecRenderCallback(surfaceGeneration: Long) = Unit
 
     fun onControllerAttached(surfaceWasValid: Boolean) = Unit
 

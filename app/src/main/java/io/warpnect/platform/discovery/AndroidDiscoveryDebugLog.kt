@@ -474,7 +474,7 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
 
     fun clientRemoteFrameRendered(surfaceGeneration: Long) {
         if (!enabled) return
-        Log.i(TAG, "event=client_remote_frame_rendered generation=$surfaceGeneration")
+        Log.i(TAG, "event=client_remote_codec_render_callback generation=$surfaceGeneration")
     }
 
     fun clientRenderSurfaceAttached(rendererAvailable: Boolean) {
@@ -716,7 +716,8 @@ private val VideoDecoderDebugEvent.logName: String
         VideoDecoderDebugEvent.DecoderStarted -> "decoder_started"
         VideoDecoderDebugEvent.FirstAccessUnitSubmitted -> "first_video_access_unit_submitted_to_decoder"
         VideoDecoderDebugEvent.FirstOutputAvailable -> "first_frame_decoded"
-        VideoDecoderDebugEvent.FirstFrameRendered -> "first_frame_rendered"
+        VideoDecoderDebugEvent.FirstOutputReleasedForSurface -> "first_output_released_for_surface"
+        VideoDecoderDebugEvent.FirstCodecRenderCallback -> "first_codec_render_callback"
     }
 
 private val SessionSetupDebugEventKind.logName: String

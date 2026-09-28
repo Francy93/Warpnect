@@ -277,7 +277,7 @@ object TelemetryMetricIds {
     val TransportInvalid = TelemetryMetricId(0x0623)
     val VideoDecoderInputToOutput = TelemetryMetricId(0x0630)
     val VideoDecoderOutputToRelease = TelemetryMetricId(0x0631)
-    val VideoReleaseToRender = TelemetryMetricId(0x0632)
+    val VideoReleaseToCodecCallbackReceipt = TelemetryMetricId(0x0632)
     val VideoSourceToDecoderInput = TelemetryMetricId(0x0633)
     val VideoSourceToRender = TelemetryMetricId(0x0634)
     val VideoCorrelationUnmatched = TelemetryMetricId(0x0635)
@@ -1104,11 +1104,12 @@ object TelemetryDescriptorCatalog {
             localLatencyHistogramBoundaries(),
         ),
         descriptor(
-            TelemetryMetricIds.VideoReleaseToRender,
-            "warpnect.latency.video.release_to_render",
+            TelemetryMetricIds.VideoReleaseToCodecCallbackReceipt,
+            "warpnect.diagnostic.video.release_to_codec_callback_receipt",
             TelemetryMetricKind.HistogramU64,
             TelemetryUnit.Microseconds,
-            "Local Surface-release-to-Android-render-notification duration.",
+            "Diagnostic local interval from Surface release to MediaCodec callback receipt; " +
+                "not physical presentation latency or a callback-completeness measure.",
             localLatencyHistogramBoundaries(),
         ),
         descriptor(

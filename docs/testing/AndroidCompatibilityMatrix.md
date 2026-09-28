@@ -2,6 +2,23 @@
 
 This matrix records bounded physical-device observations. It is not a guarantee for every device with the same Android version, SoC, or model family.
 
+## 2026-09-28 rendered-frame observability qualification
+
+This is a measurement-only addendum; it does not replace older visible-video
+or Client compatibility decisions. [Detailed Phase 6.5 report](../phase6_5/LegacyRenderedFrameObservability.md).
+Older rows that say "rendered" record their original decoder/callback milestone
+or separate human-visible proof; they must not be read as millisecond-accurate
+physical-display timing.
+
+| Target | Video observation | Interpretation |
+| --- | --- | --- |
+| S7/API26, `OMX.Exynos.avc.dec` | Local fixture: 64/64 PTS-matched release/callback observations, median 87.7 ms to callback receipt; 63 PTS-matched ADB SurfaceFlinger rows | Fixture visible; callback and layer rows are diagnostics, not photon timestamps. New remote Session not completed because SAS confirmation timed out. |
+| S9/API29, `OMX.Exynos.avc.dec` | Local fixture: 64/64, median 85.1 ms; Tablet-hosted protected Session: 64/64 bounded PTS sample, median 281 ms, p95 57.45 s, max 70.705 s from release to callback receipt | Host UI visibly streamed; sparse-content callback delay is not display delay. SurfaceFlinger layer rows are ADB-only diagnostics. |
+| A41/API31, `c2.mtk.avc.decoder` | Local fixture: 64/64; callback `nanoTime` = PTS ns on the bounded sample | Supplied callback time is not qualified as local MONOTONIC, even though callback delivery itself was prompt. |
+| Tablet/API33 | DirectShell Host for S9 remote sample; no Tablet Client callback campaign | Host role only here. |
+| S22/API36 | NOT TESTED IN THIS TASK - temporarily unavailable | Prior accepted S22 results are unchanged. |
+
+
 ## Batch 1: Modern Host and Legacy Clients
 
 Test artifact: debug APK built from `99b83049671f43a026e8f446f005c944b996368c`, SHA-256 `768550E2DA5784218AF0DCE71F212ACB0F468283B637A0352D44C8DC11CF4E60`, ABI set `arm64-v8a`, `armeabi-v7a`, `x86_64`, `minSdk 26`, `targetSdk 35`.

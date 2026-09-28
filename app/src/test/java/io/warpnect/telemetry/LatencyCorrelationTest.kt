@@ -39,7 +39,7 @@ class LatencyCorrelationTest {
     }
 
     @Test
-    fun videoCorrelatesByPresentationTimestampAndUsesProvidedRenderTime() {
+    fun videoCorrelatesByPresentationTimestampAndUsesLocalCallbackReceipt() {
         val hub = TelemetryHub()
         val telemetry = VideoDecoderTelemetry.register(hub, videoScope())
 
@@ -49,15 +49,50 @@ class LatencyCorrelationTest {
         telemetry.decoderOutput(100L, 5_000_000L)
         telemetry.surfaceReleased(200L, 4_500_000L)
         telemetry.surfaceReleased(100L, 5_500_000L)
-        telemetry.frameRendered(200L, 6_000_000L)
-        telemetry.frameRendered(100L, 7_000_000L)
+        telemetry.codecRenderCallbackReceived(200L, 6_000_000L)
+        telemetry.codecRenderCallbackReceived(100L, 7_000_000L)
 
         val snapshot = hub.snapshot()
         assertHistogram(snapshot, TelemetryMetricIds.VideoDecoderInputToOutput, 2u, 6_000u)
         assertHistogram(snapshot, TelemetryMetricIds.VideoDecoderOutputToRelease, 2u, 1_000u)
-        assertHistogram(snapshot, TelemetryMetricIds.VideoReleaseToRender, 2u, 3_000u)
+        assertHistogram(snapshot, TelemetryMetricIds.VideoReleaseToCodecCallbackReceipt, 2u, 3_000u)
         assertCounter(snapshot, TelemetryMetricIds.LatencyTraceCompleted, 2u)
         assertFalse(snapshot.records.any { it.metricId == TelemetryMetricIds.VideoSourceToRender })
+        telemetry.close()
+    }
+
+    @Test
+    fun completedCollisionDoesNotHideALaterOutOfOrderFrame() {
+        for (first in 0L..15L) {
+            for (second in 0L..15L) {
+                if (first == second) continue
+                val table = LatencyCorrelationTable(capacity = 2, maxProbe = 2)
+                assertEquals(LatencyCorrelationOutcome.Started, table.start(first, 100L))
+                assertEquals(LatencyCorrelationOutcome.Started, table.start(second, 101L))
+                assertEquals(LatencyCorrelationOutcome.Matched, table.markSecond(first, 102L))
+                assertEquals(LatencyCorrelationOutcome.Matched, table.markThird(first, 103L))
+                assertEquals(LatencyCorrelationOutcome.Completed, table.complete(first, 104L))
+                assertEquals(LatencyCorrelationOutcome.CapacityRejected, table.start(second, 105L))
+                assertEquals(LatencyCorrelationOutcome.Matched, table.markSecond(second, 106L))
+                assertEquals(LatencyCorrelationOutcome.Matched, table.markThird(second, 107L))
+                assertEquals(LatencyCorrelationOutcome.Completed, table.complete(second, 108L))
+            }
+        }
+    }
+
+    @Test
+    fun missingRenderCallbackRemainsAnOpenTraceAndDoesNotClaimPresentation() {
+        val hub = TelemetryHub()
+        val telemetry = VideoDecoderTelemetry.register(hub, videoScope())
+        telemetry.decoderInput(10L, 1_000L)
+        telemetry.decoderOutput(10L, 2_000L)
+        telemetry.surfaceReleased(10L, 3_000L)
+
+        val snapshot = hub.snapshot()
+        val render = snapshot.records.single { it.metricId == TelemetryMetricIds.VideoReleaseToCodecCallbackReceipt }
+            .value as TelemetryMetricValue.Histogram
+        assertEquals(0uL, render.count)
+        assertCounter(snapshot, TelemetryMetricIds.LatencyTraceCompleted, 0u)
         telemetry.close()
     }
 

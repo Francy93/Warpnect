@@ -3,6 +3,11 @@
 ## Current Status
 
 The current non-Root debt source of truth is [CurrentNonRootDebt.md](CurrentNonRootDebt.md).
+Legacy rendered-frame callback timing and its Phase 7 measurement boundary are
+classified in [LegacyRenderedFrameObservability.md](LegacyRenderedFrameObservability.md):
+S7/S9 local decoder fixtures were prompt, an S9 remote Session showed callbacks
+delayed by up to 70.7 s after Surface handoff, and A41 returned an unqualified
+codec `nanoTime`. None is treated as a physical-display timestamp.
 The physical Tablet DirectShell preparation follow-up is
 [TabletDirectShellRuntimeReliability.md](TabletDirectShellRuntimeReliability.md):
 the exact final APK passed 10/10 normal Host admissions on 2026-09-28; two

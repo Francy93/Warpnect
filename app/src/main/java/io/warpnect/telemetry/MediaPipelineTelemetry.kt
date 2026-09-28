@@ -41,7 +41,8 @@ class VideoDecoderTelemetry private constructor(private val source: TelemetrySou
     val resyncRequested = source.counter(TelemetryMetricIds.VideoResyncRequested)
     private val decoderInputToOutput = source.histogram(TelemetryMetricIds.VideoDecoderInputToOutput)
     private val decoderOutputToRelease = source.histogram(TelemetryMetricIds.VideoDecoderOutputToRelease)
-    private val releaseToRender = source.histogram(TelemetryMetricIds.VideoReleaseToRender)
+    private val releaseToCodecCallbackReceipt =
+        source.histogram(TelemetryMetricIds.VideoReleaseToCodecCallbackReceipt)
     private val correlationUnmatched = source.counter(TelemetryMetricIds.VideoCorrelationUnmatched)
     private val correlationExpired = source.counter(TelemetryMetricIds.VideoCorrelationExpired)
     private val traceStarted = source.counter(TelemetryMetricIds.LatencyTraceStarted)
@@ -52,7 +53,7 @@ class VideoDecoderTelemetry private constructor(private val source: TelemetrySou
     private val traceInvalidDuration = source.counter(TelemetryMetricIds.LatencyTraceInvalidDuration)
     private val trace = LatencyCorrelationTable()
 
-    /** All calls use Android MONOTONIC; render uses MediaCodec's supplied render timestamp. */
+    /** All interval inputs use the local Android MONOTONIC clock. */
     fun decoderInput(presentationTimeUs: Long, nowNs: Long) {
         recordOutcome(trace.start(presentationTimeUs, nowNs))
     }
@@ -73,11 +74,11 @@ class VideoDecoderTelemetry private constructor(private val source: TelemetrySou
         }
     }
 
-    fun frameRendered(presentationTimeUs: Long, renderNs: Long) {
-        val releaseNs = trace.thirdAt(presentationTimeUs, renderNs)
-        val outcome = trace.complete(presentationTimeUs, renderNs)
+    fun codecRenderCallbackReceived(presentationTimeUs: Long, receiptNs: Long) {
+        val releaseNs = trace.thirdAt(presentationTimeUs, receiptNs)
+        val outcome = trace.complete(presentationTimeUs, receiptNs)
         if (outcome == LatencyCorrelationOutcome.Completed && releaseNs != null) {
-            releaseToRender.record(((renderNs - releaseNs) / 1_000L).toULong())
+            releaseToCodecCallbackReceipt.record(((receiptNs - releaseNs) / 1_000L).toULong())
         }
         recordOutcome(outcome)
     }
@@ -98,7 +99,7 @@ class VideoDecoderTelemetry private constructor(private val source: TelemetrySou
                 TelemetryMetricIds.VideoResyncRequested,
                 TelemetryMetricIds.VideoDecoderInputToOutput,
                 TelemetryMetricIds.VideoDecoderOutputToRelease,
-                TelemetryMetricIds.VideoReleaseToRender,
+                TelemetryMetricIds.VideoReleaseToCodecCallbackReceipt,
                 TelemetryMetricIds.VideoCorrelationUnmatched,
                 TelemetryMetricIds.VideoCorrelationExpired,
                 TelemetryMetricIds.LatencyTraceStarted,

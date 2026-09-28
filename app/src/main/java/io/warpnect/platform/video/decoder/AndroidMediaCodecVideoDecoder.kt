@@ -55,6 +55,7 @@ class AndroidMediaCodecVideoDecoder(
     private var eosRequested = false
     private var firstAccessUnitSubmittedObserved = false
     private var firstOutputAvailableObserved = false
+    private var firstOutputReleasedForSurfaceObserved = false
     private var firstFrameRenderedObserved = false
     private val presentationObservationCounts = IntArray(VideoDecoderPresentationStage.entries.size)
 
@@ -149,6 +150,7 @@ class AndroidMediaCodecVideoDecoder(
         }
         firstAccessUnitSubmittedObserved = false
         firstOutputAvailableObserved = false
+        firstOutputReleasedForSurfaceObserved = false
         firstFrameRenderedObserved = false
         presentationObservationCounts.fill(0)
         if (!outputSurface.isValid) {
@@ -351,23 +353,27 @@ class AndroidMediaCodecVideoDecoder(
         }
     }
 
-    private val frameRenderedListener = MediaCodec.OnFrameRenderedListener { _, presentationTimeUs, nanoTime ->
-        observePresentation(
-            stage = VideoDecoderPresentationStage.FrameRendered,
-            presentationTimeUs = presentationTimeUs,
-            codecCallbackNanoTime = nanoTime,
-        )
-        val event = VideoDecoderFrameRenderedEvent(presentationTimeUs, nanoTime)
-        core.recordFrameRendered(event)
-        telemetry?.renderNotifications?.increment()
-        telemetry?.frameRendered(presentationTimeUs, nanoTime)
-        publishSnapshot()
-        runCatching { outputSink?.onFrameRendered(event) }
-        if (!firstFrameRenderedObserved) {
-            firstFrameRenderedObserved = true
-            runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstFrameRendered) }
+    private val frameRenderedListener =
+        MediaCodec.OnFrameRenderedListener { callbackCodec, presentationTimeUs, nanoTime ->
+            if (!isCurrentDecoderRenderCallback(callbackCodec, codec, latestSnapshot.state)) {
+                return@OnFrameRenderedListener
+            }
+            observePresentation(
+                stage = VideoDecoderPresentationStage.CodecRenderCallback,
+                presentationTimeUs = presentationTimeUs,
+                codecCallbackNanoTime = nanoTime,
+            )
+            val event = VideoDecoderFrameRenderedEvent(presentationTimeUs, nanoTime)
+            core.recordFrameRendered(event)
+            telemetry?.renderNotifications?.increment()
+            telemetry?.codecRenderCallbackReceived(presentationTimeUs, System.nanoTime())
+            publishSnapshot()
+            runCatching { outputSink?.onFrameRendered(event) }
+            if (!firstFrameRenderedObserved) {
+                firstFrameRenderedObserved = true
+                runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstCodecRenderCallback) }
+            }
         }
-    }
 
     private fun handleInputBuffer(codec: MediaCodec, index: Int) {
         if (latestSnapshot.state != VideoDecoderState.Running &&
@@ -539,6 +545,10 @@ class AndroidMediaCodecVideoDecoder(
                 -> {
                     telemetry?.releasedToSurface?.increment()
                     telemetry?.surfaceReleased(presentationTimeUs, System.nanoTime())
+                    if (!firstOutputReleasedForSurfaceObserved) {
+                        firstOutputReleasedForSurfaceObserved = true
+                        runCatching { debugObserver.onEvent(VideoDecoderDebugEvent.FirstOutputReleasedForSurface) }
+                    }
                 }
             }
             observePresentation(
@@ -576,7 +586,7 @@ class AndroidMediaCodecVideoDecoder(
                 VideoDecoderPresentationObservation(
                     stage = stage,
                     presentationTimeUs = presentationTimeUs,
-                    localMonotonicNs = VideoDecoderClock.monotonicNs(),
+                    localMonotonicNs = System.nanoTime(),
                     renderedToSurface = renderedToSurface,
                     scheduledRenderTimestampNs = scheduledRenderTimestampNs,
                     codecCallbackNanoTime = codecCallbackNanoTime,
@@ -609,6 +619,6 @@ class AndroidMediaCodecVideoDecoder(
     private companion object {
         const val THREAD_NAME = "WarpnectVideoDecoder"
         const val DEFAULT_DRAIN_TIMEOUT_MS = 2_000L
-        const val MAX_PRESENTATION_OBSERVATIONS_PER_STAGE = 3
+        const val MAX_PRESENTATION_OBSERVATIONS_PER_STAGE = 64
     }
 }

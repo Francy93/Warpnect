@@ -418,6 +418,13 @@ endpoint attempt remains separately recorded in RFC-006J.
 
 ## Phase 7 - Optimization
 
+The [Phase 6.5 rendered-frame observability report](phase6_5/LegacyRenderedFrameObservability.md)
+defines the measurement precondition: local decoder and Surface-handoff
+durations are measurable, but `OnFrameRendered` is diagnostic only and
+cross-device/photon latency is not established by app clocks or callback time.
+Qualify external display instrumentation and clock provenance before freezing
+physical-display latency baselines.
+
 Optimize:
 
 - CPU usage.

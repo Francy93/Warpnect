@@ -68,6 +68,7 @@ import io.warpnect.platform.video.decoder.AndroidVideoDecoderDiscovery
 import io.warpnect.platform.video.decoder.LegacyDecoderQualificationDebugObserver
 import io.warpnect.platform.video.decoder.VideoDecoderDebugEvent
 import io.warpnect.platform.video.decoder.VideoDecoderDebugObserver
+import io.warpnect.platform.video.decoder.shouldMarkClientVideoStreaming
 import io.warpnect.platform.video.encoder.AndroidCodecProbeServiceCaller
 import io.warpnect.platform.video.encoder.AndroidVideoEncoderDiscovery
 import io.warpnect.platform.video.encoder.CachedExactVideoEncoderCapabilityProbe
@@ -371,7 +372,7 @@ class AndroidSecureSessionComposition private constructor(
                 object : VideoDecoderDebugObserver {
                     override fun onEvent(event: VideoDecoderDebugEvent) {
                         discoveryDebugLog.videoDecoder(event)
-                        if (event == VideoDecoderDebugEvent.FirstFrameRendered) {
+                        if (shouldMarkClientVideoStreaming(event)) {
                             uiResources.markClientVideoStreaming()
                         }
                     }
@@ -399,7 +400,7 @@ class AndroidSecureSessionComposition private constructor(
                         discoveryDebugLog.clientDecoderPreparedForRenderTarget(surfaceGeneration)
                     }
 
-                    override fun onRemoteFrameRendered(surfaceGeneration: Long) {
+                    override fun onRemoteCodecRenderCallback(surfaceGeneration: Long) {
                         discoveryDebugLog.clientRemoteFrameRendered(surfaceGeneration)
                     }
                 },

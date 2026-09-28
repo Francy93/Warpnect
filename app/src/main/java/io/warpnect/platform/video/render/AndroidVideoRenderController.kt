@@ -59,7 +59,7 @@ class AndroidVideoRenderController(
                 return
             }
             observedRenderedSurfaceGeneration = generation
-            runCatching { debugObserver.onRemoteFrameRendered(generation) }
+            runCatching { debugObserver.onRemoteCodecRenderCallback(generation) }
         }
     }
 

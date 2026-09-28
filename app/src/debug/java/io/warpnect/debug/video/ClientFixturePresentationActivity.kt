@@ -3,6 +3,8 @@ package io.warpnect.debug.video
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
@@ -32,6 +34,7 @@ import java.io.ByteArrayInputStream
 import java.io.DataInputStream
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Debug-only visual check for the exact RFC-002I fixture on the normal Compose/SurfaceView stack.
@@ -97,6 +100,7 @@ private class FixturePlayback(
     private var worker: Thread? = null
     private var queuedInputs = 0
     private var releasedOutputs = 0
+    private val renderCallbacks = AtomicInteger()
 
     fun start(surface: Surface) {
         if (!running.compareAndSet(false, true)) return
@@ -122,11 +126,27 @@ private class FixturePlayback(
             running.set(false)
             return
         }
+        val callbackThread = HandlerThread("WarpnectFixtureRenderCallbacks").apply { start() }
         try {
+            codec.setOnFrameRenderedListener(
+                MediaCodec.OnFrameRenderedListener { callbackCodec, ptsUs, renderNs ->
+                    if (callbackCodec !== codec || !running.get()) return@OnFrameRenderedListener
+                    val count = renderCallbacks.incrementAndGet()
+                    if (count <= DEBUG_FRAME_COUNT) {
+                        Log.i(
+                            TAG,
+                            "FIXTURE_CODEC_RENDER_CALLBACK count=$count pts_us=$ptsUs " +
+                                "callback_ns=$renderNs receipt_ns=${System.nanoTime()}",
+                        )
+                    }
+                },
+                Handler(callbackThread.looper),
+            )
             codec.configure(fixture.format(), surface, null, 0)
             codec.start()
             queuedInputs = 0
             releasedOutputs = 0
+            renderCallbacks.set(0)
             publish("playing with ${codec.name}")
             Log.i(TAG, "FIXTURE_PRESENTATION_STARTED codec=${codec.name}")
             var cycle = 0L
@@ -134,11 +154,20 @@ private class FixturePlayback(
                 playCycle(codec, fixture, cycle++)
             }
         } catch (throwable: Throwable) {
-            publish("decoder failed")
-            Log.e(TAG, "FIXTURE_PRESENTATION_FAILED", throwable)
+            if (throwable !is InterruptedException || running.get()) {
+                publish("decoder failed")
+                Log.e(TAG, "FIXTURE_PRESENTATION_FAILED", throwable)
+            }
         } finally {
+            runCatching { codec.setOnFrameRenderedListener(null, null) }
             runCatching { codec.stop() }
             codec.release()
+            callbackThread.quitSafely()
+            Log.i(
+                TAG,
+                "FIXTURE_PRESENTATION_SUMMARY queued=$queuedInputs released=$releasedOutputs " +
+                    "callbacks=${renderCallbacks.get()}",
+            )
             running.set(false)
         }
     }
@@ -161,7 +190,11 @@ private class FixturePlayback(
             )
             queuedInputs += 1
             if (queuedInputs <= DEBUG_FRAME_COUNT) {
-                Log.i(TAG, "FIXTURE_PRESENTATION_INPUT_QUEUED count=$queuedInputs pts_us=${unit.presentationTimeUs}")
+                Log.i(
+                    TAG,
+                    "FIXTURE_PRESENTATION_INPUT_QUEUED count=$queuedInputs " +
+                        "pts_us=${unit.presentationTimeUs + cycle * CYCLE_DURATION_US}",
+                )
             }
             drain(codec)
             val targetMs = startedAtMs + (index + 1L) * 1_000L / FRAME_RATE
@@ -195,7 +228,8 @@ private class FixturePlayback(
                         Log.i(
                             TAG,
                             "FIXTURE_PRESENTATION_OUTPUT_RELEASED count=$releasedOutputs " +
-                                "pts_us=${info.presentationTimeUs} render=${info.size > 0}",
+                                "pts_us=${info.presentationTimeUs} render=${info.size > 0} " +
+                                "release_ns=${System.nanoTime()}",
                         )
                     }
                 }
@@ -266,7 +300,7 @@ private class FixturePlayback(
         const val ACCESS_UNIT_COUNT = 360
         const val CYCLE_DURATION_US = 6_000_000L
         const val INPUT_WAIT_US = 10_000L
-        const val DEBUG_FRAME_COUNT = 3
+        const val DEBUG_FRAME_COUNT = 64
         const val MAGIC = 0x574E4932
         const val VERSION = 2
         const val MAX_ENTRY_BYTES = 1_048_576

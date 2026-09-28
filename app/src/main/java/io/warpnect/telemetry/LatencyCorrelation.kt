@@ -33,21 +33,21 @@ class LatencyCorrelationTable(
     fun start(key: Long, timestampNs: Long): LatencyCorrelationOutcome {
         if (timestampNs < 0L) return LatencyCorrelationOutcome.InvalidDuration
         val base = slotFor(key)
+        var vacant = -1
         for (offset in 0 until maxProbe) {
             val index = (base + offset) and (capacity - 1)
             expireIfNeeded(index, timestampNs)
-            if (!occupied[index]) {
-                occupied[index] = true
-                keys[index] = key
-                firstNs[index] = timestampNs
-                secondNs[index] = NOT_RECORDED
-                thirdNs[index] = NOT_RECORDED
-                touchedNs[index] = timestampNs
-                return LatencyCorrelationOutcome.Started
-            }
-            if (keys[index] == key) return LatencyCorrelationOutcome.CapacityRejected
+            if (!occupied[index] && vacant < 0) vacant = index
+            if (occupied[index] && keys[index] == key) return LatencyCorrelationOutcome.CapacityRejected
         }
-        return LatencyCorrelationOutcome.CapacityRejected
+        if (vacant < 0) return LatencyCorrelationOutcome.CapacityRejected
+        occupied[vacant] = true
+        keys[vacant] = key
+        firstNs[vacant] = timestampNs
+        secondNs[vacant] = NOT_RECORDED
+        thirdNs[vacant] = NOT_RECORDED
+        touchedNs[vacant] = timestampNs
+        return LatencyCorrelationOutcome.Started
     }
 
     fun markSecond(key: Long, timestampNs: Long): LatencyCorrelationOutcome = markStage(key, timestampNs, 2)
@@ -117,8 +117,7 @@ class LatencyCorrelationTable(
         for (offset in 0 until maxProbe) {
             val index = (base + offset) and (capacity - 1)
             if (nowNs != Long.MAX_VALUE) expireIfNeeded(index, nowNs)
-            if (!occupied[index]) return -1
-            if (keys[index] == key) return index
+            if (occupied[index] && keys[index] == key) return index
         }
         return -1
     }

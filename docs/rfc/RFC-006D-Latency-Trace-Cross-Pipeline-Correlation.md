@@ -2,8 +2,10 @@
 
 ## Status
 
-Implementation complete. RFC-006D extends Runtime Telemetry Model V1 locally. Current host, JVM,
-and Android build verification is complete; real-device latency validation remains explicitly not run.
+Implementation complete. RFC-006D extends Runtime Telemetry Model V1 locally. The original
+implementation had host, JVM, and Android build verification without real-device latency
+qualification; the later physical callback/clock findings are documented in the 2026-09-28
+[legacy observability report](../phase6_5/LegacyRenderedFrameObservability.md).
 It
 does not activate `PayloadType.Telemetry` or change PacketHeader V1, Video Payload V1, Audio Payload
 V1, Input Payload V1, ClockSync, WNSD, WNCP, WNSN, or WNSL.
@@ -16,7 +18,7 @@ V1, Input Payload V1, ClockSync, WNSD, WNCP, WNSN, or WNSL.
 | Audio `PacketHeader.timestamp_us` | existing capture time, microseconds | capture/native source domain | yes | no peer mapping to remote native clock |
 | Input `PacketHeader.timestamp_us` | Android source event time, microseconds | Android uptime | yes | no peer uptime-to-native mapping |
 | MediaCodec input/output PTS | access-unit presentation time, microseconds | media identity | receiver-local | exact local decoder key while unchanged |
-| `OnFrameRenderedListener.nanoTime` | Android render observation, nanoseconds | Android MONOTONIC | local | matched to Surface release by PTS |
+| `OnFrameRenderedListener.nanoTime` | Codec-supplied callback value, nanoseconds | Unqualified on physical devices (A41 returned PTS ns) | local | diagnostic raw value only; not subtracted from Surface release |
 | `System.nanoTime()` | local duration timestamp, nanoseconds | Android MONOTONIC | no | local Video and Opus durations |
 | `elapsedRealtimeNanos()` | capture/source helper time, nanoseconds | Android BOOTTIME | no implicit native mapping | never mixed with MONOTONIC |
 | `AudioRecord.getTimestamp(TIMEBASE_MONOTONIC)` | PCM timestamp, nanoseconds | Android MONOTONIC | source metadata only | no cross-device sample without peer bridge |
@@ -53,7 +55,7 @@ The catalog grows from 101 to 138 descriptors. RFC-006D adds these 37 local IDs:
 0620 latency.transport.one_way              0621 latency.transport.sampled
 0622 latency.transport.clock_unqualified    0623 latency.transport.invalid
 0630 video.decoder_input_to_output           0631 video.decoder_output_to_release
-0632 video.release_to_render                 0633 video.source_to_decoder_input
+0632 diagnostic.video.release_to_codec_callback_receipt  0633 video.source_to_decoder_input
 0634 video.source_to_render                  0635 video.correlation_unmatched
 0636 video.correlation_expired
 0640 audio.source_to_decoder_input           0641 audio.decoder_input_to_output
@@ -75,10 +77,12 @@ boundaries remain reserved until a future provenance audit passes.
 
 ## Implemented Measurements
 
-Video records decoder-input to output, output to Surface release, and release to the supplied
-MediaCodec render `nanoTime`. Correlation is by PTS, never FIFO order. Missing render callbacks
-expire; they are not treated as drops. A codec PTS transformation leaves local output/release/render
-measurements valid only where the output PTS remains an exact local key.
+Video records decoder-input to output, output to Surface release, and the diagnostic interval
+from release to the local receipt of a MediaCodec render callback. It does not subtract the
+codec-supplied `nanoTime`, whose clock provenance is not reliable on all tested devices.
+Correlation is by PTS, never FIFO order. Missing callbacks expire; they are not treated as drops.
+A codec PTS transformation leaves local output/release/callback correlation valid only where
+the output PTS remains an exact local key. This does not measure physical presentation.
 
 Audio records sampled one-in-eight synchronous native Opus decoder input-to-output work. The Oboe
 output estimate comes only from existing cold `queryPresentationTimestamp`, which requests
@@ -126,8 +130,10 @@ security, path choice, A/V sync, codec, audio, or recovery behavior.
 
 ## Verification Scope
 
-JVM coverage verifies clock-domain rejection, bounded expiry, out-of-order PTS matching, supplied
-render-time use, and deterministic Audio/Input sampling. Native coverage verifies the pre-bound
+JVM coverage verifies clock-domain rejection, bounded expiry, out-of-order PTS matching, local
+callback-receipt use, and deterministic Audio/Input sampling. Native coverage verifies the pre-bound
 ClockSync counter/gauge/histogram source. Full Gradle, ABI, native Debug/Release, and adb results
 are recorded only after final verification. Android render timing, Oboe estimate, and two-device
-ClockSync accuracy remain hardware-runtime validation work.
+ClockSync accuracy remain hardware-runtime validation work. The 2026-09-28
+[legacy observability report](../phase6_5/LegacyRenderedFrameObservability.md) supersedes any
+interpretation of callback time as physical presentation or a universally comparable local clock.

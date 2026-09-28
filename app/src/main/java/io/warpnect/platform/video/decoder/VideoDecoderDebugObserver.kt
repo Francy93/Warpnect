@@ -1,6 +1,8 @@
 package io.warpnect.platform.video.decoder
 
-/** DEBUG-only, one-shot observations of remote decoder progression with no frame data. */
+import io.warpnect.video.decoder.VideoDecoderState
+
+/** Decoder milestones for UI state plus bounded diagnostics; no frame data. */
 fun interface VideoDecoderDebugObserver {
     fun onEvent(event: VideoDecoderDebugEvent)
 
@@ -16,7 +18,7 @@ enum class VideoDecoderPresentationStage {
     InputQueued,
     OutputAvailable,
     OutputReleasedForSurface,
-    FrameRendered,
+    CodecRenderCallback,
 }
 
 data class VideoDecoderPresentationObservation(
@@ -32,5 +34,12 @@ enum class VideoDecoderDebugEvent {
     DecoderStarted,
     FirstAccessUnitSubmitted,
     FirstOutputAvailable,
-    FirstFrameRendered,
+    FirstOutputReleasedForSurface,
+    FirstCodecRenderCallback,
 }
+
+internal fun isCurrentDecoderRenderCallback(callbackCodec: Any, activeCodec: Any?, state: VideoDecoderState): Boolean =
+    callbackCodec === activeCodec && (state == VideoDecoderState.Running || state == VideoDecoderState.Draining)
+
+internal fun shouldMarkClientVideoStreaming(event: VideoDecoderDebugEvent): Boolean =
+    event == VideoDecoderDebugEvent.FirstOutputReleasedForSurface

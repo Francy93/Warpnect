@@ -18,3 +18,10 @@ enum class VideoTransportDebugEvent {
     FirstStreamConfigAvailable,
     FirstVideoAccessUnitReceived,
 }
+
+internal data class VideoAccessUnitDebugKey(val configGeneration: Long, val frameId: Long)
+
+internal fun isDistinctVideoAccessUnitDebugKey(
+    previous: VideoAccessUnitDebugKey?,
+    current: VideoAccessUnitDebugKey,
+): Boolean = previous != current
