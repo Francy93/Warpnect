@@ -3,6 +3,11 @@
 ## Current Status
 
 The current non-Root debt source of truth is [CurrentNonRootDebt.md](CurrentNonRootDebt.md).
+Normal DirectShell SystemAudio routing is scoped in
+[SystemAudioRoutingSemantics.md](SystemAudioRoutingSemantics.md): Tablet, A41
+and S22 normal Host Sessions routed the test tone to S9 only and restored
+Host speaker playback after Disconnect. This validates `REMOTE_ONLY` for the
+tested modern DirectShell built-in-speaker tier, not untested output routes.
 Legacy rendered-frame callback timing and its Phase 7 measurement boundary are
 classified in [LegacyRenderedFrameObservability.md](LegacyRenderedFrameObservability.md):
 S7/S9 local decoder fixtures were prompt, an S9 remote Session showed callbacks
@@ -184,6 +189,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectShellFdSharedMemoryProbe.md - framework-mediated FD-backed memory handoff.
 * DirectShellPcmSharedRingIntegration.md - existing PCM ring and notify/ack reuse.
 * DirectShellSystemAudioRemoteE2E.md - downstream audio transport spike.
+* SystemAudioRoutingSemantics.md - normal DirectShell Session Host/Client speaker routing and bounded physical observations.
 * DirectShellInputInjectionProbe.md and DirectShellInputSessionIntegration.md - input feasibility and Host integration.
 * DirectShellVideoCaptureIntegration.md - surface handoff and visible video.
 * DirectShellProductionBootstrapFeasibility.md and DirectShellProductionRuntimeIntegration.md - app-owned Wireless Debugging acquisition and complete modern runtime.

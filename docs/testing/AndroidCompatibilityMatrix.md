@@ -2,6 +2,27 @@
 
 This matrix records bounded physical-device observations. It is not a guarantee for every device with the same Android version, SoC, or model family.
 
+## 2026-09-28 normal-Session SystemAudio routing
+
+This records Host-speaker behavior separately from capture and Client playback.
+[Detailed routing report](../phase6_5/SystemAudioRoutingSemantics.md).
+
+| Host / Client | Normal Session tone | After Disconnect | Local-output classification |
+| --- | --- | --- | --- |
+| Tablet X700_EEA/API33 -> S9/API29 | 3/3 operator-confirmed S9 only; Host `STREAM_MUSIC` route `remote_submix` | 3/3 operator-confirmed Tablet only; route `speaker` | `REMOTE_ONLY` in tested Sessions, local restoration PASS |
+| A41 SM-A415F/API31 -> S9/API29 | 2/2 returned listening reports S9 only; a third technical Session had `remote_submix` and real captured PCM but no listening answer | 2/2 normal Disconnect reports A41 only; third Client force-stop returned route to `speaker` in bounded observation | `REMOTE_ONLY` for human-confirmed Sessions; abnormal route restoration observed |
+| S22 SM-S901B/API36 -> S9/API29 | 3/3 operator-confirmed S9 only; Host `STREAM_MUSIC` route `remote_submix`, three DirectShell source generations with `shizuku_audio_producer=false`, real ring PCM and Client playback | 3/3 operator-confirmed S22 only; route `speaker` | `REMOTE_ONLY` in tested Sessions, local restoration PASS |
+
+The separate older A41 standalone-probe report observed local speaker playback
+during capture. It is not overwritten or promoted to a normal-Session promise.
+The A41 first admission attempt in this task failed before audio because
+`_adb-tls-connect` was absent; the operator's manual Wireless Debugging
+restart restored publication. No Shizuku audio producer was selected in the
+counted DirectShell Sessions. S22 first local baseline at volume 3/15 was not
+audible; at 7/15 it was audible before Host activation, and 3/15 was restored
+after the campaign. This routing result concerns built-in speakers, not
+Bluetooth, wired or USB playback.
+
 ## 2026-09-28 rendered-frame observability qualification
 
 This is a measurement-only addendum; it does not replace older visible-video

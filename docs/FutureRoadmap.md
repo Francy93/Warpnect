@@ -418,6 +418,17 @@ endpoint attempt remains separately recorded in RFC-006J.
 
 ## Phase 7 - Optimization
 
+The [Phase 6.5 SystemAudio routing campaign](phase6_5/SystemAudioRoutingSemantics.md)
+observed Client-only playback during normal DirectShell Sessions and restored
+Host speaker playback after Disconnect on Tablet/API33 (3/3 human-confirmed),
+A41/API31 (2/2 human-confirmed, plus a third technical Session) and S22/API36
+(3/3 human-confirmed after it became available). The current supported
+built-in-speaker semantic for this tested modern tier is `REMOTE_ONLY`, not a
+universal Android guarantee or proof that the historical standalone A41
+local-audio observation was wrong. Supported Host+Client duplication and
+untested output routes are not qualified. The campaign also preserved a
+separate post-Disconnect Session/discovery anomaly for focused investigation.
+
 The [Phase 6.5 rendered-frame observability report](phase6_5/LegacyRenderedFrameObservability.md)
 defines the measurement precondition: local decoder and Surface-handoff
 durations are measurable, but `OnFrameRendered` is diagnostic only and
