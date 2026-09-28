@@ -2,6 +2,7 @@ package io.warpnect.debug.directshell
 
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import io.warpnect.audio.capture.AudioCaptureCapabilities
@@ -111,7 +112,16 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                 detail = "direct_root=ROOT_NOT_IMPLEMENTED direct_shell=self_adb_feature_qualification",
             )
         }
-        val initial = launchInitialFeatureServers()
+        val attempt = preparationAttemptCounter.incrementAndGet()
+        val startedAt = SystemClock.elapsedRealtime()
+        Log.i(TAG, "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=BEGIN")
+        val initial = launchInitialFeatureServers(attempt)
+        Log.i(
+            TAG,
+            "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=FEATURE_SERVERS_DONE " +
+                "candidates=${initial.candidates.size} failures=${initial.failures.size} " +
+                "elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}",
+        )
         if (initial.candidates.isEmpty()) {
             val detail = initial.failures.values.firstOrNull() ?: "directshell_no_feature_server"
             val failure = if (detail.startsWith("bootstrap_")) {
@@ -119,6 +129,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             } else {
                 PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED
             }
+            Log.w(TAG, "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=FAIL failure=$failure detail=$detail")
             return updateUnavailable(failure, detail)
         }
 
@@ -130,6 +141,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             DebugInputInjectionControllerOverrideRegistry.clear(inputOverride)
             DebugCaptureGatewayOverrideRegistry.clear(videoOverride)
             initial.candidates.forEach { (role, server) -> closeFeatureServer(role, server) }
+            Log.w(TAG, "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=FAIL reason=override_install_rejected")
             return updateUnavailable(
                 PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
                 "debug_feature_override_install_rejected",
@@ -163,7 +175,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                     "direct_shell=self_adb_ready " +
                     "unavailable_features=${initial.failures.keys.joinToString { it.name }}",
             )
-            Log.i(TAG, "DIRECT_SHELL_RUNTIME_READY ${runtimeSnapshot.detail}")
+            Log.i(TAG, "DIRECT_SHELL_RUNTIME_READY attempt=$attempt ${runtimeSnapshot.detail}")
             runtimeSnapshot
         }
     }
@@ -204,7 +216,8 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
         Log.i(
             TAG,
-            "DIRECT_SHELL_RUNTIME_RELEASED leases=${released.first.size} warm=${released.second.size}",
+            "DIRECT_SHELL_RUNTIME_RELEASED generation=${runtimeGeneration ?: "none"} " +
+                "leases=${released.first.size} warm=${released.second.size}",
         )
     }
 
@@ -298,22 +311,31 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
      * A failure to start or probe one feature server is capability evidence for this admission.
      * The self-ADB/runtime boundary is already independently proven by any surviving server.
      */
-    private fun launchInitialFeatureServers(): InitialFeatureServers {
+    private fun launchInitialFeatureServers(attempt: Long): InitialFeatureServers {
         val candidates = linkedMapOf<DirectShellFeatureRole, DirectShellFeatureServer>()
         val failures = linkedMapOf<DirectShellFeatureRole, String>()
         var identityDetail: String? = null
         val suppressedRole = DebugDirectShellCapabilitySuppression.peek()?.featureRole()
         DirectShellSelfBootstrapController(applicationContext).use { controller ->
             hostFeatureRoles.forEach { role ->
+                Log.i(TAG, "DIRECT_SHELL_RUNTIME_FEATURE_PREPARATION attempt=$attempt role=${role.name} result=BEGIN")
                 if (role == suppressedRole) {
                     failures[role] = "debug_directshell_${role.name.lowercase()}_suppressed"
                     Log.i(TAG, "DIRECT_SHELL_RUNTIME_FEATURE_SUPPRESSED role=${role.name}")
                     return@forEach
                 }
-                val launch = controller.bootstrapPreviouslyAuthorizedFeatureServer(role)
+                val launch = controller.bootstrapPreviouslyAuthorizedFeatureServer(
+                    role,
+                    keepAdbConnectedForNextFeature = true,
+                )
                 if (!launch.successful) {
                     val detail = "bootstrap_${launch.result.classification}_${launch.result.detail}"
                     failures[role] = detail.take(160)
+                    Log.w(
+                        TAG,
+                        "DIRECT_SHELL_RUNTIME_FEATURE_PREPARATION attempt=$attempt role=${role.name} " +
+                            "result=FAIL stage=${launch.result.stage} classification=${launch.result.classification}",
+                    )
                     return@forEach
                 }
                 val server = requireNotNull(launch.server)
@@ -323,8 +345,18 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                 if (qualificationFailure != null) {
                     closeFeatureServer(role, server)
                     failures[role] = qualificationFailure.take(160)
+                    Log.w(
+                        TAG,
+                        "DIRECT_SHELL_RUNTIME_FEATURE_PREPARATION attempt=$attempt role=${role.name} " +
+                            "result=FAIL stage=QUALIFY reason=$qualificationFailure",
+                    )
                 } else {
                     candidates[role] = server
+                    Log.i(
+                        TAG,
+                        "DIRECT_SHELL_RUNTIME_FEATURE_PREPARATION attempt=$attempt role=${role.name} " +
+                            "result=PASS generation=${server.launch.generation}",
+                    )
                 }
             }
         }
@@ -870,6 +902,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
     private companion object {
         const val TAG = "WarpnectDirectShellRuntime"
         val runtimeGenerationCounter = AtomicLong(0L)
+        val preparationAttemptCounter = AtomicLong(0L)
         val hostFeatureRoles = listOf(
             DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing,
             DirectShellSelfBootstrapContract.ServerRole.InputSession,

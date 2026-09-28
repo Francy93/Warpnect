@@ -390,6 +390,17 @@ controlled helper-loss tests converged to teardown or truthful pre-freeze failur
 without provider migration. See `phase6_5/DirectRootHostAdmissionValidation.md`.
 Physical DirectRoot Device Qualification is the next evidence boundary; no
 Magisk, remediation, same-provider recovery or live migration is implemented.
+Because no already-rooted physical device is currently available, that
+qualification is externally blocked. The non-Root priority queue and its
+current closure evidence are tracked in
+`phase6_5/CurrentNonRootDebt.md`. The Tablet's historical 1/2 DirectShell
+preparation result was followed on 2026-09-28 by an exact-final-APK 10/10
+normal Enable/Disable Host campaign, two earlier diagnostic 10/10 campaigns,
+and a separate plan audit; its historical first failing stage
+remains inconclusive because the old application trace was not captured. See
+`phase6_5/TabletDirectShellRuntimeReliability.md`. Do not infer a product fix
+or re-open closed video/cold-qualification/helper-lifecycle work from that old
+high-level error.
 
 RFC-006J Step 2 extends that passive path with a versioned, non-secret,
 provider/capability evidence cache. Exact compatible records may create an

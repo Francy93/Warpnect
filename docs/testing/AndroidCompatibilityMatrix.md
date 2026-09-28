@@ -553,6 +553,18 @@ complete physical media regression is claimed. All physical devices remained
 unrooted/unflashed/unwiped, no tone was played; final adbd was UID2000 and the
 API26 AVD stopped.
 
+The later 2026-09-28 physical Tablet/API33 non-Root follow-up passed 10/10
+normal UI Enable/Disable Host cycles on the exact final APK (SHA-256
+`87531FE0D250D9963FAA7ECFF9AD6A45D468A313627045F4F06A436CAE72E1B0`).
+An earlier diagnostic APK passed two separate 10/10 campaigns. A
+further 1/1 plan audit logged `SINGLE` with Video, SystemAudio and Input all
+`DIRECT_SHELL` and `shizuku_started=false`. Each counted teardown found zero
+Warpnect `app_process` helpers and bootstrap secret files. The old 1/2 failure
+remains historical and its first failing stage is inconclusive; the new runs
+do not retroactively explain it. This was Host-only admission, not a new
+remote-media E2E. Exact per-cycle evidence and harness anomalies are in
+`../phase6_5/TabletDirectShellRuntimeReliability.md`.
+
 The subsequent SystemAudio artifact has SHA-256
 `d3af77d3ed000b02bb6d0402cb15b4ffe161a428bc18bec176c5cfe79aaa43b6`.
 Every final combined cycle requalified all three cells on its own authenticated

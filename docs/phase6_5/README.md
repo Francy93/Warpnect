@@ -2,6 +2,14 @@
 
 ## Current Status
 
+The current non-Root debt source of truth is [CurrentNonRootDebt.md](CurrentNonRootDebt.md).
+The physical Tablet DirectShell preparation follow-up is
+[TabletDirectShellRuntimeReliability.md](TabletDirectShellRuntimeReliability.md):
+the exact final APK passed 10/10 normal Host admissions on 2026-09-28; two
+earlier diagnostic campaigns also passed 10/10 each, while the
+earlier 1/2 failure's precise cause remains inconclusive because its app log
+was not captured. This result does not add a media Session claim.
+
 The validated modern DirectShell Host baseline is:
 
     DIRECTSHELL_PRODUCTION_RUNTIME_INTEGRATION_VALIDATED
@@ -180,6 +188,8 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectRootVideoQualification.md - Root mirror/Surface provider, app-owned AVC and decoded-content AOSP lab proof.
 * DirectRootSystemAudioQualification.md - API26 ashmem, Root REMOTE_SUBMIX, normal-app PCM signal proof and scoped complete-plan evidence.
 * DirectRootHostAdmissionValidation.md - normal Enable/Disable Host, Root-only acquisition/freeze/publication, restart, controlled loss and categorized FD evidence in AOSP/API26.
+* TabletDirectShellRuntimeReliability.md - physical Tablet repeated DirectShell Host admission, stage diagnostics and historical-failure classification.
+* CurrentNonRootDebt.md - superseded/closed versus genuinely open Phase 6.5 non-Root concerns.
 
 ## Roadmap
 

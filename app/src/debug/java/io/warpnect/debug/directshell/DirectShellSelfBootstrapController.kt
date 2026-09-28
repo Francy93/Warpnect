@@ -252,6 +252,7 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
     /** Launches exactly one fixed DirectShell feature server through app-originated local ADB. */
     internal fun bootstrapPreviouslyAuthorizedFeatureServer(
         serverRole: DirectShellSelfBootstrapContract.ServerRole,
+        keepAdbConnectedForNextFeature: Boolean = false,
     ): DirectShellFeatureServerLaunch {
         require(
             serverRole in setOf(
@@ -260,25 +261,29 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
                 DirectShellSelfBootstrapContract.ServerRole.VideoCapture,
             ),
         ) { "invalid_feature_server_role" }
+        val stagePrefix = "FEATURE_${serverRole.name.uppercase()}"
         var launched: DirectShellLaunchedServer? = null
         return try {
-            requireModernWirelessDebugging()
-            val endpoint = discoverAndConnectConnectionEndpoint("FEATURE_${serverRole.name.uppercase()}")
-            trace("FEATURE_${serverRole.name.uppercase()}_SHELL_IDENTITY")
-            inspectShellIdentity().requireSuccess()
-            trace("FEATURE_${serverRole.name.uppercase()}_ARTIFACT_VERIFY")
-            verifyInstalledArtifact().requireSuccess()
-            trace("FEATURE_${serverRole.name.uppercase()}_APP_PROCESS_LAUNCH")
-            launched = launchAndAuthenticateInternal(
-                serverRole,
-                DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
-            )
-            disconnectTransport()
+            traced("${stagePrefix}_WIRELESS_DEBUGGING") { requireModernWirelessDebugging() }
+            val port = if (keepAdbConnectedForNextFeature && connectionManager?.isConnected == true) {
+                traced("${stagePrefix}_REUSE_CONNECTION") { checkNotNull(connectionPort) }
+            } else {
+                discoverAndConnectConnectionEndpoint(stagePrefix).port
+            }
+            traced("${stagePrefix}_SHELL_IDENTITY") { inspectShellIdentity().requireSuccess() }
+            traced("${stagePrefix}_ARTIFACT_VERIFY") { verifyInstalledArtifact().requireSuccess() }
+            launched = traced("${stagePrefix}_APP_PROCESS_LAUNCH") {
+                launchAndAuthenticateInternal(
+                    serverRole,
+                    DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
+                )
+            }
+            if (!keepAdbConnectedForNextFeature) disconnectTransport()
             DirectShellFeatureServerLaunch(
                 Result(
-                    "FEATURE_${serverRole.name.uppercase()}",
+                    stagePrefix,
                     "PASS_SELF_BOOTSTRAPPED_DIRECTSHELL_FEATURE_SERVER",
-                    "role=${serverRole.name} connection_port=${endpoint.port} " +
+                    "role=${serverRole.name} connection_port=$port " +
                         "generation=${launched.launch.generation} shell_uid=2000",
                 ),
                 launched,
@@ -286,7 +291,7 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
         } catch (error: Throwable) {
             launched?.let { server -> runCatching { stopRuntime(server) } }
             disconnectTransport()
-            val result = Result("FEATURE_${serverRole.name.uppercase()}", classify(error), safeDetail(error))
+            val result = Result(stagePrefix, classify(error), safeDetail(error))
             Log.w(
                 TAG,
                 "DIRECT_SHELL_SELF_BOOTSTRAP stage=${result.stage} result=${result.classification} " +
@@ -414,15 +419,30 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
         var shellProcessId: Int? = null
         var launched = false
         try {
-            provisionLaunchSecret(launch)
+            traced("${serverRole.name.uppercase()}_SECRET_PROVISION", launch.generation) {
+                provisionLaunchSecret(launch)
+            }
             secretProvisioned = true
             launchAttempted = true
-            shellProcessId = DirectShellSelfBootstrapContract.parseLaunchProcessId(executeLaunch(launch.command))
-            val preliminary = awaitAuthenticatedRuntime(launch)
-            val negative = DirectShellProbeClient.verifyUnauthenticatedRequestRejected(launch.port, launch.secret)
-            check(negative == DirectShellProbeClient.NegativeAuthResult.REJECTED) { "unauthenticated_control_accepted" }
-            val final = authenticatedRuntime(launch)
-            check(final["uid"] == "2000" && final["uid_kind"] == "SHELL") { "runtime_not_shell_uid" }
+            shellProcessId = traced("${serverRole.name.uppercase()}_WRAPPER_START", launch.generation) {
+                DirectShellSelfBootstrapContract.parseLaunchProcessId(executeLaunch(launch.command))
+            }
+            val preliminary = traced("${serverRole.name.uppercase()}_HMAC_READY", launch.generation) {
+                awaitAuthenticatedRuntime(launch)
+            }
+            traced("${serverRole.name.uppercase()}_NEGATIVE_AUTH", launch.generation) {
+                val negative = DirectShellProbeClient.verifyUnauthenticatedRequestRejected(launch.port, launch.secret)
+                check(negative == DirectShellProbeClient.NegativeAuthResult.REJECTED) {
+                    "unauthenticated_control_accepted"
+                }
+            }
+            val final = traced("${serverRole.name.uppercase()}_FINAL_IDENTITY", launch.generation) {
+                authenticatedRuntime(launch).also { identity ->
+                    check(identity["uid"] == "2000" && identity["uid_kind"] == "SHELL") {
+                        "runtime_not_shell_uid"
+                    }
+                }
+            }
             launched = true
             return DirectShellLaunchedServer(launch, preliminary + final)
         } catch (error: Throwable) {
@@ -678,18 +698,20 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
     private fun discoverAndConnectConnectionEndpoint(
         tracePrefix: String,
     ): DirectShellSelfAdbEndpointDiscovery.Endpoint {
-        trace("${tracePrefix}_DISCOVER_CONNECTION")
-        val trustedServiceName = keyStore.trustedConnectionServiceName()
-            ?: throw DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
-                DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_IDENTITY_REQUIRED,
+        val trustedServiceName = traced("${tracePrefix}_TRUSTED_IDENTITY") {
+            keyStore.trustedConnectionServiceName()
+                ?: throw DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
+                    DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_IDENTITY_REQUIRED,
+                )
+        }
+        val initial = traced("${tracePrefix}_DISCOVER_CONNECTION") {
+            DirectShellSelfAdbEndpointDiscovery.discoverConnection(
+                context = applicationContext,
+                trustedServiceName = trustedServiceName,
             )
-        val initial = DirectShellSelfAdbEndpointDiscovery.discoverConnection(
-            context = applicationContext,
-            trustedServiceName = trustedServiceName,
-        )
+        }
         try {
-            trace("${tracePrefix}_CONNECT")
-            connectEndpoint(initial.host, initial.port).requireSuccess()
+            traced("${tracePrefix}_CONNECT") { connectEndpoint(initial.host, initial.port).requireSuccess() }
             return initial
         } catch (error: IOException) {
             if (!hasConnectionRefusedCause(error)) throw error
@@ -699,14 +721,14 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
                     "failed_port=${initial.port}",
             )
             releaseConnectionManager()
-            trace("${tracePrefix}_REDISCOVER_CONNECTION")
-            val replacement = DirectShellSelfAdbEndpointDiscovery.discoverConnection(
-                context = applicationContext,
-                trustedServiceName = trustedServiceName,
-                excludedEndpoint = initial,
-            )
-            trace("${tracePrefix}_RECONNECT")
-            connectEndpoint(replacement.host, replacement.port).requireSuccess()
+            val replacement = traced("${tracePrefix}_REDISCOVER_CONNECTION") {
+                DirectShellSelfAdbEndpointDiscovery.discoverConnection(
+                    context = applicationContext,
+                    trustedServiceName = trustedServiceName,
+                    excludedEndpoint = initial,
+                )
+            }
+            traced("${tracePrefix}_RECONNECT") { connectEndpoint(replacement.host, replacement.port).requireSuccess() }
             return replacement
         }
     }
@@ -773,6 +795,28 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
 
     private fun trace(stage: String) {
         Log.i(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=$stage result=BEGIN")
+    }
+
+    private inline fun <T> traced(stage: String, generation: Long? = null, operation: () -> T): T {
+        val startedAt = SystemClock.elapsedRealtime()
+        val identity = generation?.let { " generation=$it" }.orEmpty()
+        Log.i(TAG, "DIRECT_SHELL_PREPARATION stage=$stage result=BEGIN$identity")
+        return try {
+            operation().also {
+                Log.i(
+                    TAG,
+                    "DIRECT_SHELL_PREPARATION stage=$stage result=PASS$identity " +
+                        "elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
+            }
+        } catch (error: Throwable) {
+            Log.w(
+                TAG,
+                "DIRECT_SHELL_PREPARATION stage=$stage result=FAIL$identity " +
+                    "error=${error.javaClass.simpleName} elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}",
+            )
+            throw error
+        }
     }
 
     private fun parseRuntimeInfo(payload: String): Map<String, String> = buildMap {

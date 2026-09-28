@@ -1,0 +1,40 @@
+# Current Phase 6.5 Non-Root Debt (2026-09-28)
+
+This is the current debt index, not a rewrite of historical experiment reports.
+Evidence order: repository/runtime, current Phase 6.5 reports and compatibility
+matrix, accepted RFC-006I/J, then older reports/checklists. Implementation,
+hardware qualification, and product policy are distinct states.
+
+| Concern | Historical status | Current status and evidence | Next boundary |
+| --- | --- | --- | --- |
+| Black Client SurfaceView / visible video | Open during Shizuku Tablet failure | **CLOSED** for tested modern DirectShell paths: Surface stacking fix and synchronized visible A41/Tablet/S22 -> S9 proof; see [compatibility matrix](../testing/AndroidCompatibilityMatrix.md). The old Tablet Shizuku failure remains historical. | No repeat of the old black-frame investigation. |
+| Cold Host capability qualification versus Session timeout | Historical timeout | **CLOSED** by pre-discovery qualification and cold A41 -> S7 first-attempt Session, documented in [FutureRoadmap](../FutureRoadmap.md). | Do not raise protocol timeouts for this closed cause. |
+| Privileged Shizuku UserService helper leakage | Historical orphan risk | **CLOSED** for the tested non-daemon Shizuku path by destroy/close ownership and four A41 -> S7 cycles in [FutureRoadmap](../FutureRoadmap.md). | Normal lifecycle regression only when that provider is selected. |
+| A41 `_adb-tls-connect` discovery starvation | Historical blocked bootstrap | **CLOSED** for the tested A41 by trusted DNS-SD identity and serialized resolver lifecycle in [DirectShellA41NsdResolutionFix.md](DirectShellA41NsdResolutionFix.md). | Normal cross-device regression. |
+| Tablet Shizuku 13.6 UserService bootstrap | External provider incompatibility | **SUPERSEDED for primary modern Host** by Tablet DirectShell Video/SystemAudio/Input and visible/audible E2E; Shizuku remains an optional capability provider, so its own upstream defect is not claimed fixed. | Revisit only for an explicitly selected Shizuku compatibility plan. |
+| S22 Shizuku SystemAudio attribution | Historical AudioRecord uninitialized | **SUPERSEDED for primary modern Host** by real-shell DirectShell capture and S22 -> S9 audible E2E. The Shizuku backend itself was not repaired. | Preserve the distinction in provider-specific qualification. |
+| Modern S9 SystemAudio human audibility | Earlier NOT_CONFIRMED | **CLOSED for A41, Tablet and S22 -> S9** by the later operator confirmations indexed in [Phase 6.5 README](README.md) and [compatibility matrix](../testing/AndroidCompatibilityMatrix.md). | New topologies require their own listening proof. |
+| Tablet DirectShell Host preparation 1/2 | `FAIL_PRIVILEGED_RUNTIME_PREPARATION` with no app trace | **STABLE NOW, HISTORICAL CAUSE INCONCLUSIVE**: exact final APK 10/10 UI admissions with per-cycle frozen-plan traces; prior diagnostic APK two 10/10 campaigns plus 1/1 plan audit. See [Tablet reliability report](TabletDirectShellRuntimeReliability.md). Current Wireless Debugging was initially OFF but does not explain the old failure. | If it recurs, use first failed `DIRECT_SHELL_PREPARATION` stage; do not infer a cause from the high-level code. |
+| Legacy `OnFrameRendered` observability | Delayed/weak callback concern | **CLASSIFIED_PHASE7_DEBT** for Session presentation/latency measurement: Session success uses decoded output and physical visual proof, not the callback. The separate exact-key decoder qualification fixture does require presentation counts and passed on S7 (358/360); no demonstrated current admission regression. | Phase 7 measurement review should keep the qualification-vs-Session distinction explicit. |
+| Host-local versus Client SystemAudio routing | Duplication/mute policy unresolved | **STILL_OPEN**: A41 local speaker was observed audible during REMOTE_SUBMIX; Tablet/S22 local routing and a product duplication policy are not established. [Audio report](DirectShellSystemAudioRemoteE2E.md). | Explicit routing-semantics decision and synchronized Host-local/Client observation; no policy inferred from capture counters. |
+| Final reverse-input coverage | Some early matrices NOT_TESTED | **PARTLY CLOSED**: physical human S7 -> A41 reverse Input and approximately 5-6 S9 physical interactions yielding 26 protocol events through the controlled Shizuku composite are proven; DirectShell Client-to-Host payload path also has technical E2E evidence in [runtime integration](DirectShellProductionRuntimeIntegration.md). The 26 events are not 26 human taps. | Deliberate human DirectShell reverse-input and broad final topology regression when an operator is present. |
+| Normal-user Host/Client and SAS pairing UX | Engineering flows validated, user journey incomplete | **STILL_OPEN**; no current broad normal-user acceptance campaign is documented. | Operator-led end-to-end UX validation with explicit SAS/pairing results. |
+| Wi-Fi Direct E2E | Discovery/control pieces exist | **STILL_OPEN** for physical Direct-path group, authenticated Session and media; [FutureRoadmap](../FutureRoadmap.md) does not claim that campaign. | Separately scoped Wi-Fi Direct hardware E2E. |
+| Three Wireless Debugging notifications per Host preparation | Newly observed Tablet UX churn | **CLOSED for initial Host preparation on Tablet**: one local ADB/TLS connection now launches the three separately authenticated feature servers. Android system notification enqueues fell from 3 to 1; three silent normal Host Enable/Disable cycles passed. See [connection-notification investigation](DirectShellConnectionNotifications.md). | A new Host enable still needs one system warning; later individual feature replacement may open another connection and remains outside this bounded result. |
+| Physical DirectRoot and production root-manager authorization | AOSP API26 lab qualified | **BLOCKED_ON_ROOT_HARDWARE** for physical/OEM and root-manager evidence; laboratory `SINGLE / DIRECT_ROOT` does not imply Magisk or production readiness. [Root Host report](DirectRootHostAdmissionValidation.md). | Obtain an already-rooted physical test device before physical claims. |
+| Root-assisted remediation, same-provider recovery, live migration | RFC-006J future design | **PLANNED_FUTURE_RFC / NOT IMPLEMENTED**; no automatic setting changes or post-freeze switch. [RFC-006J](../rfc/RFC-006J-Privileged-Runtime-Orchestration-and-Host-Readiness.md). | Separate design/implementation tasks; no opportunistic rollout. |
+| RFC-005J / RFC-005K | Historical roadmap items | **PLANNED_FUTURE_RFC**, not started by this stabilization task. | Re-evaluate prerequisites when those RFCs are explicitly scheduled. |
+| Ring pressure, codec/presentation latency and performance | Bounded technical evidence | **PHASE7** measurement/optimization debt, not an excuse to redesign the working media pipeline now. | Dedicated Phase 7 telemetry/performance work. |
+
+Current Shizuku policy is **optional, lazy, per-capability compatibility
+provider** under [RFC-006I](../rfc/RFC-006I-Privileged-Capability-Planning-and-Composite-Runtime.md).
+It is not the default modern DirectShell provider, not an invisible post-freeze
+fallback, and not scheduled for unconditional deletion by an old roadmap line.
+
+## Prioritized queue
+
+- **READY_NOW:** normal-user Host/Client/SAS UX acceptance; Wi-Fi Direct hardware E2E; routing-semantics decision. The Tablet historical failure stays monitored, not assigned a speculative fix.
+- **ROOT_HARDWARE_BLOCKED:** physical DirectRoot bootstrap, Video, SystemAudio, Input, complete Host and production root-manager authorization evidence.
+- **HUMAN_VALIDATION_BLOCKED:** final human DirectShell reverse-input/topology matrix and Host-local audio routing observation; modern S9 audibility is already confirmed, not pending.
+- **PLANNED_RFC:** RFC-005J, RFC-005K, root-assisted remediation, same-provider recovery and live provider migration.
+- **PHASE7:** authoritative presentation/latency measurement, long-running media resource/pressure analysis and optimization.
