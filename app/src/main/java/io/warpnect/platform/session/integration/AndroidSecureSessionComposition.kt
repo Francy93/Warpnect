@@ -1078,6 +1078,12 @@ class AndroidSecureSessionComposition private constructor(
                     },
                     object : SessionContinuityParticipant {
                         override fun onSessionSuspended() = listener.onRecovering()
+
+                        override fun onSessionTerminated() {
+                            if (bootstrap.localRole == io.warpnect.session.SessionRole.Host) {
+                                controlDispatcher.dispatch { listener.onClosed() }
+                            }
+                        }
                     },
                 ),
                 telemetry = SessionLifecycleTelemetry.register(

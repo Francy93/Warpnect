@@ -111,6 +111,7 @@ class DirectShellSelfBootstrapContractTest {
     @Test
     fun launchProcessIdRequiresTheClosedLaunchOutputFormat() {
         assertEquals(42_001, DirectShellSelfBootstrapContract.parseLaunchProcessId("pid=42001\n"))
+        assertFails { DirectShellSelfBootstrapContract.parseLaunchProcessId("pid=42001") }
         assertFails { DirectShellSelfBootstrapContract.parseLaunchProcessId("pid=0") }
         assertFails {
             DirectShellSelfBootstrapContract.parseLaunchProcessId(
@@ -118,6 +119,20 @@ class DirectShellSelfBootstrapContractTest {
             )
         }
         assertFails { DirectShellSelfBootstrapContract.parseLaunchProcessId("42001") }
+    }
+
+    @Test
+    fun fragmentedLaunchResponseIsNotAcceptedBeforeItsLineTerminator() {
+        val output = StringBuilder()
+        listOf("p", "id=", "42", "001").forEach { fragment ->
+            output.append(fragment)
+            assertFalse(DirectShellSelfBootstrapContract.hasCompleteLaunchResponse(output.toString()))
+        }
+        output.append('\n')
+        assertTrue(DirectShellSelfBootstrapContract.hasCompleteLaunchResponse(output.toString()))
+        assertEquals(42_001, DirectShellSelfBootstrapContract.parseLaunchProcessId(output.toString()))
+        assertFalse(DirectShellSelfBootstrapContract.hasCompleteLaunchResponse("launch_failure=wrapper_exited"))
+        assertTrue(DirectShellSelfBootstrapContract.hasCompleteLaunchResponse("launch_failure=wrapper_exited\n"))
     }
 
     private fun assertFails(block: () -> Unit) {

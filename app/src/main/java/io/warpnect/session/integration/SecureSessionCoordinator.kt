@@ -571,17 +571,23 @@ class SecureSessionCoordinator(
             override fun onClosed() {
                 val owned = synchronized(lock) {
                     if (!isCurrentLocked(token)) return
+                    reconnectingRuntime = null
                     runtime.also { runtime = null }
                 }
                 owned?.let { hostRegistry?.remove(it.sessionId, it.generation) }
                 owned?.pipeline?.close()
                 synchronized(lock) {
                     if (!isCurrentLocked(token)) return
+                    ++currentToken
+                    selectedRequest = null
+                    pairingVerificationPrompt = null
                     state = if (localRole == SessionRole.Host) {
                         SecureSessionCoordinatorState.Discovering
                     } else {
                         SecureSessionCoordinatorState.Closed
                     }
+                    lastStage = SecureSessionIntegrationStage.Lifecycle
+                    lastError = SecureSessionIntegrationError.None
                     publishLocked()
                 }
                 phaseDriver.cancel()

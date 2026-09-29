@@ -620,11 +620,7 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
             if (count < 0) break
             check(output.length + count <= MAX_SHELL_OUTPUT_BYTES) { "shell_output_exceeds_bound" }
             output.append(buffer.decodeToString(0, count))
-            if (output.lineSequence().any {
-                    val line = it.trim()
-                    line.startsWith("pid=") || line.startsWith("launch_failure=")
-                }
-            ) {
+            if (DirectShellSelfBootstrapContract.hasCompleteLaunchResponse(output.toString())) {
                 return output.toString()
             }
         }

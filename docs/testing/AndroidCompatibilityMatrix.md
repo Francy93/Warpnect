@@ -2,6 +2,36 @@
 
 This matrix records bounded physical-device observations. It is not a guarantee for every device with the same Android version, SoC, or model family.
 
+## 2026-09-28 post-Disconnect Host lifecycle
+
+[Detailed Phase 6.5 report](../phase6_5/PostDisconnectHostLifecycleReliability.md).
+The final APK was `A3FD45535FD1C74417A11C6E43EED979198ED816B32245519EC1D6928D3DA884`.
+
+| Host / Client | Normal Session under one Host enable | After Disconnect | Scope |
+| --- | --- | --- | --- |
+| A41 SM-A415F/API31 -> S9/API29 | 10/10 discovery, Streaming, Disconnect, repeat; `SINGLE / DIRECT_SHELL` | 10/10 A41 `Waiting for clients`, S9 `Ready`; no Host toggle | Final APK, normal Disconnect, no tone |
+| A41 SM-A415F/API31 -> S7/API26 | 1/1 alternate-Client discovery and Streaming after the S9 campaign | A41 returned to waiting | Technical Session, no visible/audible claim |
+| A41 SM-A415F/API31 -> S9/API29 after Host app restart | 2/2 Session/Disconnect under a new Host enable | Waiting restored; Disable Host left zero feature helpers/secrets | Separate restart control |
+| Tablet/API33 and S22/API36 | NOT TESTED in this campaign | Earlier stale-Running observations remain historical | Devices unavailable |
+
+The prior APK's A41 cycle 5 failed at Host `InputConfigurationUnavailable`
+because a fragmented `pid=` self-ADB launch response was parsed before its
+newline. That failed attempt was retained, fixed, and excluded from the new
+final-APK count; it is not a pass. No Root or Shizuku fallback was selected.
+
+## 2026-09-29 Tablet post-Disconnect regression gate
+
+The same final APK passed Tablet X700_EEA/API33 -> S9/API29 `5/5` normal
+discovery, Streaming, Disconnect, S9 `Ready`, Tablet `Waiting for clients`,
+and rediscovery under one Host enable. DirectShell supplied Input,
+SystemAudio and Video; no Shizuku producer was active. Normal Disable Host
+left zero matching feature helpers and temporary bootstrap secret files.
+An earlier exploratory Tablet check falsely failed by observing `Running`
+before the bounded, serial feature-server teardown finished; the later
+`host_registration_active` and waiting state were observed. That check is
+classified as a harness timing defect, not folded into the counted `5/5`.
+S22 was not tested in this gate.
+
 ## 2026-09-28 normal-Session SystemAudio routing
 
 This records Host-speaker behavior separately from capture and Client playback.

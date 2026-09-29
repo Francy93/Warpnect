@@ -254,6 +254,57 @@ class SecureSessionCoordinatorTest {
     }
 
     @Test
+    fun remoteSessionCloseRestoresHostAvailabilityWithoutStoppingItsResponder() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events)
+        val lifecycleFactory = RecordingLifecycleFactory(events)
+        val registry = HostSessionRuntimeRegistry(maxRuntimes = 1)
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Host,
+            driver,
+            RecordingPipelineFactory(events),
+            lifecycleFactory,
+            registry,
+        )
+        fun bootstrap(id: ULong) = preparedBootstrap(
+            NegotiatedSessionBootstrap(
+                session(id),
+                SessionGeneration.Initial,
+                device(10u),
+                device(11u),
+                SessionRole.Host,
+                SessionRole.Client,
+                videoProfile(),
+                ByteArray(32),
+                TestProtectionRuntime(session(id)),
+                TestControl(),
+                endpoint(),
+            ),
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.startDiscovery().error)
+        assertEquals(SecureSessionIntegrationError.None, coordinator.acceptPreparedHostSession(bootstrap(50u)).error)
+        val first = requireNotNull(lifecycleFactory.lastListener)
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+        assertEquals(0, registry.snapshotCount())
+        assertEquals(0, driver.stopDiscoveryCalls)
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.acceptPreparedHostSession(bootstrap(51u)).error)
+        val second = requireNotNull(lifecycleFactory.lastListener)
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        assertEquals(1, registry.snapshotCount())
+        second.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Discovering, coordinator.snapshot.value.state)
+        assertEquals(0, registry.snapshotCount())
+        assertEquals(0, driver.stopDiscoveryCalls)
+        assertEquals(4, driver.refreshAvailabilityCalls)
+    }
+
+    @Test
     fun hostPreparedBootstrapDoesNotStartPipelineOnTheSetupCallbackThread() {
         val events = mutableListOf<String>()
         val dispatcher = QueuedDispatcher()
@@ -400,6 +451,7 @@ class SecureSessionCoordinatorTest {
         var pairingStarts = 0
         var cancelCalls = 0
         var stopDiscoveryCalls = 0
+        var refreshAvailabilityCalls = 0
         var discoveryFailure = SecureSessionIntegrationError.None
         var legacyManualTransportStarts = 0
         var hostPairingApprovals = 0
@@ -531,7 +583,9 @@ class SecureSessionCoordinatorTest {
             cancelCalls += 1
         }
 
-        override fun refreshHostAvailability() = Unit
+        override fun refreshHostAvailability() {
+            refreshAvailabilityCalls += 1
+        }
         override fun close() = Unit
     }
 
@@ -553,6 +607,7 @@ class SecureSessionCoordinatorTest {
         private val events: MutableList<String>,
     ) : SessionLifecycleSessionFactory {
         var last: TestLifecycle? = null
+        var lastListener: SessionLifecycleRuntimeListener? = null
 
         override fun create(
             bootstrap: PreparedSessionBootstrap,
@@ -561,6 +616,7 @@ class SecureSessionCoordinatorTest {
         ): SessionLifecycleFactoryResult {
             val lifecycle = TestLifecycle(bootstrap.sessionId, bootstrap.generation, events)
             last = lifecycle
+            lastListener = listener
             return SessionLifecycleFactoryResult(SecureSessionIntegrationError.None, lifecycle)
         }
     }

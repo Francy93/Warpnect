@@ -426,8 +426,17 @@ A41/API31 (2/2 human-confirmed, plus a third technical Session) and S22/API36
 built-in-speaker semantic for this tested modern tier is `REMOTE_ONLY`, not a
 universal Android guarantee or proof that the historical standalone A41
 local-audio observation was wrong. Supported Host+Client duplication and
-untested output routes are not qualified. The campaign also preserved a
-separate post-Disconnect Session/discovery anomaly for focused investigation.
+untested output routes are not qualified. The separate post-Disconnect
+Session/discovery anomaly was reproduced on A41/API31 and fixed at the Session
+terminal notification/Host availability boundary. The
+[lifecycle report](phase6_5/PostDisconnectHostLifecycleReliability.md) records
+10/10 A41 -> S9 reconnects under one Host enable and a separate fragmented
+DirectShell launch PID fix. A later Tablet/API33 -> S9 gate passed 5/5
+post-Disconnect Sessions under one Host enable; S22 confirmation remains
+pending. The
+future `HOST_AND_REMOTE` user choice and Host display `KEEP_ON`,
+`PRIVACY_BLANK`, or true `SCREEN_OFF` policy are not implemented;
+screen-policy feasibility should be evaluated before or during RFC-005K.
 
 The [Phase 6.5 rendered-frame observability report](phase6_5/LegacyRenderedFrameObservability.md)
 defines the measurement precondition: local decoder and Surface-handoff

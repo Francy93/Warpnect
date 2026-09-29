@@ -3,6 +3,12 @@
 ## Current Status
 
 The current non-Root debt source of truth is [CurrentNonRootDebt.md](CurrentNonRootDebt.md).
+The [post-Disconnect lifecycle report](PostDisconnectHostLifecycleReliability.md)
+reproduces the stale Host `Running`/lost rediscovery path on A41, fixes terminal
+Session-to-Host notification and a fragmented DirectShell launch PID response,
+and records 10/10 A41 -> S9 reconnects without a Host toggle. A later
+Tablet/API33 -> S9 regression passed 5/5 under one Host enable with the same
+APK; S22 post-Disconnect confirmation remains untested.
 Normal DirectShell SystemAudio routing is scoped in
 [SystemAudioRoutingSemantics.md](SystemAudioRoutingSemantics.md): Tablet, A41
 and S22 normal Host Sessions routed the test tone to S9 only and restored
@@ -190,6 +196,7 @@ scope. This index is the current Phase 6.5 status and mini-roadmap:
 * DirectShellPcmSharedRingIntegration.md - existing PCM ring and notify/ack reuse.
 * DirectShellSystemAudioRemoteE2E.md - downstream audio transport spike.
 * SystemAudioRoutingSemantics.md - normal DirectShell Session Host/Client speaker routing and bounded physical observations.
+* PostDisconnectHostLifecycleReliability.md - terminal Host ownership, rediscovery and same-Host reconnect reliability.
 * DirectShellInputInjectionProbe.md and DirectShellInputSessionIntegration.md - input feasibility and Host integration.
 * DirectShellVideoCaptureIntegration.md - surface handoff and visible video.
 * DirectShellProductionBootstrapFeasibility.md and DirectShellProductionRuntimeIntegration.md - app-owned Wireless Debugging acquisition and complete modern runtime.

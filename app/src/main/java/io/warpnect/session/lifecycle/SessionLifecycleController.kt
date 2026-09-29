@@ -37,6 +37,7 @@ interface SessionContinuityParticipant {
     fun onSessionSuspended() = Unit
     fun onSessionReconnected() = Unit
     fun onSessionClosing() = Unit
+    fun onSessionTerminated() = Unit
 
     /** Target-side input integration clears AllSlots/ResetState; no new Input wire format is used. */
     fun onInputSafetyReset(reason: LifecycleInputSafetyResetReason) = Unit
@@ -344,7 +345,7 @@ class SessionLifecycleController(
         // The old generation is terminal. The caller owns the new bootstrap and creates a new controller.
         continuityParticipants.forEach(SessionContinuityParticipant::onSessionReconnected)
         capacityOwner?.handoffToFreshGeneration()
-        finishClose(notifyContinuityClosing = false)
+        finishClose(notifyContinuityClosing = false, notifyTerminal = false)
         SessionLifecycleError.None
     }
 
@@ -372,7 +373,7 @@ class SessionLifecycleController(
     }
 
     override fun close() {
-        synchronized(lock) { finishClose() }
+        synchronized(lock) { finishClose(notifyTerminal = false) }
     }
 
     private fun receiveActivePayload(payload: ByteArray) = synchronized(lock) {
@@ -825,6 +826,7 @@ class SessionLifecycleController(
     private fun finishClose(
         markClosed: Boolean = true,
         notifyContinuityClosing: Boolean = true,
+        notifyTerminal: Boolean = true,
     ): SessionLifecycleError {
         if (closed) return SessionLifecycleError.None
         closed = true
@@ -843,6 +845,7 @@ class SessionLifecycleController(
         capacityOwner?.close()
         telemetry?.close()
         pathTelemetry.values.forEach(SessionPathTelemetry::close)
+        if (notifyTerminal) continuityParticipants.forEach(SessionContinuityParticipant::onSessionTerminated)
         return SessionLifecycleError.None
     }
 

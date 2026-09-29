@@ -489,6 +489,7 @@ class SessionLifecycleControllerTest {
 
         assertEquals(SessionLifecycleError.None, controller.onFreshGenerationPrepared(fresh))
         assertEquals(listOf("suspended", "reconnected"), continuity.events)
+        assertEquals(0, continuity.terminatedCount)
         controller.onPlatformPathLoss(directPath, hard = true)
         controller.advance()
         assertEquals(1, reconnect.calls)
@@ -531,7 +532,30 @@ class SessionLifecycleControllerTest {
         assertEquals(0, reconnect.calls)
         assertEquals(1, capacity.closeCount)
         assertEquals(listOf("closing"), continuity.events)
+        assertEquals(1, continuity.terminatedCount)
         assertEquals(listOf(LifecycleInputSafetyResetReason.SessionClosing), continuity.inputSafetyResets)
+    }
+
+    @Test
+    fun ownerCloseDoesNotReportAnAutonomousTerminalSession() {
+        val clock = TestClock(100)
+        val control = TestControl()
+        val continuity = TestContinuityParticipant()
+        val fixture = fixture(SessionRole.Host, control, contextBase = 61)
+        val controller = controller(
+            fixture,
+            TestMigrationAdapter(fixture.channelIds),
+            clock,
+            listOf(continuity),
+            capacityOwner = TestCapacityOwner(),
+        )
+        assertEquals(SessionLifecycleError.None, controller.start())
+
+        controller.close()
+        controller.close()
+
+        assertEquals(listOf("closing"), continuity.events)
+        assertEquals(0, continuity.terminatedCount)
     }
 
     private fun controller(
@@ -877,6 +901,7 @@ class SessionLifecycleControllerTest {
     private class TestContinuityParticipant : SessionContinuityParticipant {
         val events = mutableListOf<String>()
         val inputSafetyResets = mutableListOf<LifecycleInputSafetyResetReason>()
+        var terminatedCount = 0
         override fun onPathMigrationStarting() {
             events += "migration-start"
         }
@@ -895,6 +920,10 @@ class SessionLifecycleControllerTest {
 
         override fun onSessionClosing() {
             events += "closing"
+        }
+
+        override fun onSessionTerminated() {
+            terminatedCount += 1
         }
 
         override fun onInputSafetyReset(reason: LifecycleInputSafetyResetReason) {

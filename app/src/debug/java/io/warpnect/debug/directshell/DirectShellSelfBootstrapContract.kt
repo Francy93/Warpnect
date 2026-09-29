@@ -178,16 +178,22 @@ internal object DirectShellSelfBootstrapContract {
     }
 
     fun parseLaunchProcessId(output: String): Int {
-        val failure = output.lineSequence()
-            .map(String::trim)
+        val failure = completeLaunchLines(output)
             .firstOrNull { it.startsWith("launch_failure=") }
         require(failure == null) { failure ?: "launch_failure" }
-        val match = output.lineSequence()
-            .map(String::trim)
+        val match = completeLaunchLines(output)
             .mapNotNull { shellProcessId.matchEntire(it) }
             .lastOrNull()
             ?: throw IllegalArgumentException("invalid_launch_process_id")
         return match.groupValues[1].toInt()
+    }
+
+    fun hasCompleteLaunchResponse(output: String): Boolean = completeLaunchLines(output)
+        .any { it.startsWith("pid=") || it.startsWith("launch_failure=") }
+
+    private fun completeLaunchLines(output: String): Sequence<String> {
+        val end = output.lastIndexOf('\n')
+        return if (end < 0) emptySequence() else output.substring(0, end + 1).lineSequence().map(String::trim)
     }
 
     /**
