@@ -105,6 +105,18 @@ class AndroidExactStreamConfigurationValidatorTest {
     }
 
     @Test
+    fun microphoneReceiverValidatesTheActualMonoPlaybackConfiguration() {
+        val configuration = listOf(
+            SetupConfiguration.MicrophoneAudio(channelId(1), AudioStreamMode(48_000, 5_000, 1, 64_000)),
+        )
+
+        assertEquals(
+            SessionSetupError.None,
+            validator().validate(SessionRole.Host, profile(CapabilityBits.CHANNEL_MICROPHONE_AUDIO), configuration),
+        )
+    }
+
+    @Test
     fun systemAudioUsesHostCaptureAndClientPlaybackForTheExactStereoProfile() {
         var hostCaptureQueries = 0
         val mode = AudioStreamMode(48_000, 5_000, 2, 128_000)

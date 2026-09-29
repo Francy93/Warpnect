@@ -350,15 +350,21 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         )
     }
 
-    /** Low-cadence local sender counters for DEBUG SystemAudio end-to-end validation. */
+    /** Low-cadence local audio sender counters for DEBUG end-to-end validation. */
     fun audioPipelineSenderRuntime(snapshot: AudioTransmitterSessionSnapshot) {
         if (!enabled) return
         val capture = snapshot.capture
         val encoder = snapshot.encoder
         val transport = snapshot.transport
+        val role = if (snapshot.source == io.warpnect.audio.capture.AudioCaptureSource.MicrophoneAudio) {
+            "client"
+        } else {
+            "host"
+        }
         Log.i(
             TAG,
-            "event=audio_runtime role=host local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+            "event=audio_runtime role=$role " +
+                "local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
                 "session_state=${snapshot.state} source=${snapshot.source} " +
                 "capture_state=${capture?.state} capture_frames=${snapshot.pcmFramesCaptured} " +
                 "capture_chunks=${capture?.chunksCaptured} capture_ring_occupancy=${capture?.ringOccupancy} " +
@@ -373,15 +379,21 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         )
     }
 
-    /** Low-cadence local receiver and playback counters for DEBUG SystemAudio end-to-end validation. */
+    /** Low-cadence local audio receiver and playback counters for DEBUG end-to-end validation. */
     fun audioPipelineReceiverRuntime(snapshot: AudioReceiverSessionSnapshot) {
         if (!enabled) return
         val receiver = snapshot.receiver
         val decoder = snapshot.decoder
         val playback = snapshot.playback
+        val role = if (snapshot.source == io.warpnect.audio.capture.AudioCaptureSource.MicrophoneAudio) {
+            "host"
+        } else {
+            "client"
+        }
         Log.i(
             TAG,
-            "event=audio_runtime role=client local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
+            "event=audio_runtime role=$role " +
+                "local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
                 "session_state=${snapshot.state} source=${snapshot.source} receiver_state=${receiver?.state} " +
                 "datagrams_received=${receiver?.datagramsReceived} " +
                 "audio_datagrams_received=${receiver?.audioDatagramsReceived} " +

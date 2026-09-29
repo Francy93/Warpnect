@@ -1,5 +1,7 @@
 package io.warpnect
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
@@ -62,6 +64,30 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
     val discoveryEnvironment = remember(context) { AndroidDiscoveryEnvironmentProvider(context) }
     var pendingDiscoveryRole by remember { mutableStateOf<SessionRole?>(null) }
     var discoveryPermissionNotice by remember { mutableStateOf<String?>(null) }
+    var debugMicrophoneRequested by remember { mutableStateOf(false) }
+    var microphonePermissionNotice by remember { mutableStateOf<String?>(null) }
+
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        debugMicrophoneRequested = granted && BuildConfig.DEBUG
+        composition?.setDebugMicrophoneAudioRequested(debugMicrophoneRequested)
+        microphonePermissionNotice = if (granted) null else "Microphone permission denied"
+    }
+
+    val onDebugMicrophoneRequested: (Boolean) -> Unit = { requested ->
+        if (!requested) {
+            debugMicrophoneRequested = false
+            microphonePermissionNotice = null
+            composition?.setDebugMicrophoneAudioRequested(false)
+        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            debugMicrophoneRequested = true
+            microphonePermissionNotice = null
+            composition?.setDebugMicrophoneAudioRequested(true)
+        } else {
+            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     val startDiscoveryNow: (SessionRole) -> Unit = { role ->
         when (role) {
@@ -143,6 +169,9 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                     onDisableHost = composition::stopHostFromUi,
                     onFindHosts = { requestDiscoveryStart(SessionRole.Client) },
                     discoveryPermissionNotice = discoveryPermissionNotice,
+                    debugMicrophoneRequested = debugMicrophoneRequested,
+                    microphonePermissionNotice = microphonePermissionNotice,
+                    onDebugMicrophoneRequested = onDebugMicrophoneRequested,
                     clientVideoRendererBound = clientVideoRendererBound,
                     clientVideoStreaming = clientVideoStreaming,
                     clientCapability = clientCapability,

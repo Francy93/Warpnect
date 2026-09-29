@@ -433,7 +433,14 @@ terminal notification/Host availability boundary. The
 10/10 A41 -> S9 reconnects under one Host enable and a separate fragmented
 DirectShell launch PID fix. A later Tablet/API33 -> S9 gate passed 5/5
 post-Disconnect Sessions under one Host enable; S22 confirmation remains
-pending. The
+pending. The later
+[MicrophoneAudio qualification](phase6_5/MicrophoneAudioE2EQualification.md)
+reused Phase 3 Client-microphone -> Host Opus/Oboe infrastructure in three
+S9/API29 -> Tablet/API33 protected technical Sessions plus one final-APK
+spot-check. It did not establish
+human-audible Tablet output. A separate long-idle control found Host Available
+while its DirectShell helpers had expired, so truthful Host liveness after
+15-minute helper idle is the next bounded product defect to address. The
 future `HOST_AND_REMOTE` user choice and Host display `KEEP_ON`,
 `PRIVACY_BLANK`, or true `SCREEN_OFF` policy are not implemented;
 screen-policy feasibility should be evaluated before or during RFC-005K.

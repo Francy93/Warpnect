@@ -387,7 +387,8 @@ object CapabilityNegotiator {
     private fun supportsMicrophone(client: AudioCapabilities, host: AudioCapabilities): Boolean =
         commonAudio(client, host) && client.audioFlags and (CapabilityBits.AUDIO_MICROPHONE_CAPTURE or CapabilityBits.AUDIO_OPUS_ENCODE) ==
             (CapabilityBits.AUDIO_MICROPHONE_CAPTURE or CapabilityBits.AUDIO_OPUS_ENCODE) &&
-            host.audioFlags and CapabilityBits.AUDIO_OPUS_DECODE != 0 &&
+            host.audioFlags and (CapabilityBits.AUDIO_OPUS_DECODE or CapabilityBits.AUDIO_LOW_LATENCY_PLAYBACK) ==
+            (CapabilityBits.AUDIO_OPUS_DECODE or CapabilityBits.AUDIO_LOW_LATENCY_PLAYBACK) &&
             minOf(client.maxSendChannels, host.maxReceiveChannels) > 0
 
     private fun commonAudio(client: AudioCapabilities, host: AudioCapabilities): Boolean =

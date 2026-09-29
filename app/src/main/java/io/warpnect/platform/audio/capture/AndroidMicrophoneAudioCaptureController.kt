@@ -9,6 +9,8 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
+import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.audio.capture.AudioCaptureCapabilities
 import io.warpnect.audio.capture.AudioCaptureController
 import io.warpnect.audio.capture.AudioCaptureControllerCore
@@ -151,6 +153,14 @@ class AndroidMicrophoneAudioCaptureController(
                 captureThread = thread
                 thread.start()
                 core.completeStart(AudioCaptureError.None)
+                if (BuildConfig.DEBUG) {
+                    Log.i(
+                        MICROPHONE_LOG_TAG,
+                        "MIC_CAPTURE_STARTED source=MicrophoneAudio routed_device_type=${record.routedDevice?.type} " +
+                            "sample_rate=${record.sampleRate} channels=${record.channelCount} " +
+                            "buffer_frames=${record.bufferSizeInFrames}",
+                    )
+                }
                 AudioCaptureResult(AudioCaptureError.None, core.snapshot())
             }
         } catch (_: RuntimeException) {
@@ -174,6 +184,7 @@ class AndroidMicrophoneAudioCaptureController(
         val stopped = joinCaptureThread(thread)
         synchronized(lock) {
             releasePreparedResources()
+            if (BuildConfig.DEBUG) Log.i(MICROPHONE_LOG_TAG, "MIC_CAPTURE_STOPPED")
             return core.completeStop(if (stopped) AudioCaptureError.None else AudioCaptureError.ThreadStopFailed)
         }
     }
@@ -197,6 +208,7 @@ class AndroidMicrophoneAudioCaptureController(
         synchronized(lock) {
             releasePreparedResources()
             core.close()
+            if (BuildConfig.DEBUG) Log.i(MICROPHONE_LOG_TAG, "MIC_CAPTURE_CLOSED")
         }
     }
 
@@ -422,6 +434,7 @@ class AndroidMicrophoneAudioCaptureController(
     )
 
     companion object {
+        private const val MICROPHONE_LOG_TAG = "WarpnectMicrophone"
         private const val MICROPHONE_THREAD_NAME = "WarpnectMicrophoneCapture"
         private const val MICROPHONE_BUFFER_COUNT = 3
         private const val STOP_JOIN_TIMEOUT_MS = 500L

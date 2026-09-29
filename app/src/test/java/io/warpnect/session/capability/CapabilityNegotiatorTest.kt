@@ -141,6 +141,30 @@ class CapabilityNegotiatorTest {
     }
 
     @Test
+    fun microphoneRequiresARealHostPlaybackSink() {
+        val micRequest = request(
+            required = CapabilityBits.CHANNEL_MICROPHONE_AUDIO,
+            preferred = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
+            disabled = CapabilityBits.CHANNEL_SYSTEM_AUDIO or CapabilityBits.CHANNEL_TELEMETRY,
+        )
+        val noPlayback = host().copy(
+            audio = host().audio.copy(
+                audioFlags = host().audio.audioFlags and CapabilityBits.AUDIO_LOW_LATENCY_PLAYBACK.inv(),
+            ),
+        )
+
+        assertEquals(
+            CapabilityNegotiationError.RequiredChannelUnavailable,
+            CapabilityNegotiator.negotiate(client(), micRequest, noPlayback, HostCapabilityPolicy()).error,
+        )
+        val withPlayback = CapabilityNegotiator.negotiate(client(), micRequest, host(), HostCapabilityPolicy())
+        assertTrue(withPlayback.isSuccess)
+        assertTrue(
+            requireNotNull(withPlayback.profile).selectedChannels and CapabilityBits.CHANNEL_MICROPHONE_AUDIO != 0,
+        )
+    }
+
+    @Test
     fun gamepadIdentityAndStablePresenceNeedARealTargetBackend() {
         val distinctRequired = request(distinctGamepad = FeatureRequirement.Required)
         assertEquals(CapabilityNegotiationError.RequiredBehaviorUnavailable, negotiate(distinctRequired).error)

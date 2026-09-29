@@ -1,5 +1,28 @@
 # Android Compatibility Matrix
 
+## 2026-09-29 MicrophoneAudio Client-to-Host technical E2E
+
+[Detailed report](../phase6_5/MicrophoneAudioE2EQualification.md).
+The three-cycle DEBUG APK SHA-256 was
+`243AB3026EEF21A1C06A38A9A62B4ABEF30F59AC9003E1DFFEB497A932C3E5D5`;
+the full-gate rebuild SHA-256 was
+`B4D186D836428FE7C03808703C814A8589827E87ED56BA04C353D19CE1A2A376`
+and passed a separate 1/1 normal microphone technical Session.
+
+| Client / Host | Physical capture | Protected remote pipeline | Human Host audibility | Lifecycle |
+| --- | --- | --- | --- | --- |
+| S9 SM-G960F/API29 -> Tablet X700_EEA/API33 | Built-in mic, VOICE_RECOGNITION, 48 kHz mono PCM16; local numeric probe 2/2 | 3/3 normal MicrophoneAudio Sessions plus 1/1 final APK: Client Opus/datagrams, Host receive/decode/Oboe consumption | NOT CONFIRMED | 3/3 plus 1/1 normal Disconnect to Client Ready/Host Waiting; restart and abnormal Client loss control passed |
+
+MicrophoneAudio is separate from the Complete Host Video/SystemAudio/Input set.
+Its physical speaker audibility and other input/output routes are not qualified.
+During a later mic-disabled SystemAudio control after hours of Host idle, the
+Tablet still advertised Host Available with zero DirectShell helpers and setup
+failed `ExactAudioConfigurationUnavailable`; this is retained as a distinct
+pre-existing Host liveness defect. Normal Disable/Enable Host restored the
+three helpers and SystemAudio Streaming in one comparison run. This does not
+erase the failed first attempt or imply a microphone defect. Nonzero Oboe
+playback rejection/underrun counters are recorded in the focused report.
+
 This matrix records bounded physical-device observations. It is not a guarantee for every device with the same Android version, SoC, or model family.
 
 ## 2026-09-28 post-Disconnect Host lifecycle

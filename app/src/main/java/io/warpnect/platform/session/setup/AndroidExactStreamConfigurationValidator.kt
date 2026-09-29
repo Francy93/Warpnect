@@ -194,9 +194,6 @@ class AndroidExactStreamConfigurationValidator(
             ),
         )
         if (decoder != AudioDecoderError.None) return SessionSetupError.ExactAudioConfigurationUnavailable
-        if (source == AudioCaptureSource.MicrophoneAudio) {
-            return SessionSetupError.None
-        }
         val frames = AudioPlaybackValidation.samplesPerFrame(mode.sampleRateHz, mode.frameDurationUs)
         val playback = AudioPlaybackValidation.validate(
             AudioPlaybackConfig(

@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.CoreOrchestrator
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
@@ -184,6 +185,7 @@ import io.warpnect.video.encoder.VideoEncoderRequest
 import io.warpnect.video.render.VideoViewportGeometry
 import io.warpnect.video.render.VideoViewportGeometryProvider
 import java.net.InetAddress
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -208,9 +210,14 @@ class AndroidSecureSessionComposition private constructor(
     private val hostReadinessCoordinator: BackgroundHostReadinessCoordinator,
     private val hostReadinessObservation: AutoCloseable,
     private val hostPublication: HostAdmissionPublicationGate,
+    private val debugMicrophoneAudioRequested: AtomicBoolean,
 ) : AutoCloseable {
     internal val hostReadinessUiState: StateFlow<HostReadinessUiState>
         get() = hostReadinessCoordinator.uiState
+
+    fun setDebugMicrophoneAudioRequested(requested: Boolean) {
+        if (BuildConfig.DEBUG) debugMicrophoneAudioRequested.set(requested)
+    }
 
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
@@ -280,6 +287,7 @@ class AndroidSecureSessionComposition private constructor(
             ),
         )
         private val hostPublication = HostAdmissionPublicationGate()
+        private val debugMicrophoneAudioRequested = AtomicBoolean(false)
         private val crypto = JcaPairingCryptoProvider()
         private val routeLocalAddressResolver = AndroidRouteLocalAddressResolver()
         private val discoveryDebugLog = AndroidDiscoveryDebugLog(context)
@@ -668,10 +676,14 @@ class AndroidSecureSessionComposition private constructor(
                 client = client,
                 host = host,
                 requestFactory = SecureSessionConnectRequestFactory { presence ->
+                    val microphoneRequested = debugMicrophoneAudioRequested.get()
                     SecureSessionConnectRequest(
                         presence = presence,
-                        capabilityRequest = productionCapabilityRequest(),
-                        setupPreferences = productionSetupPreferences(),
+                        capabilityRequest = productionCapabilityRequest(microphoneRequested),
+                        setupPreferences = productionSetupPreferences(
+                            microphoneAudio = microphoneRequested,
+                            systemAudio = !microphoneRequested,
+                        ),
                     )
                 },
                 onClientDiscoverySnapshotPublished = discoveryDebugLog::snapshotPublished,
@@ -715,6 +727,7 @@ class AndroidSecureSessionComposition private constructor(
                     }
                 },
                 hostPublication,
+                debugMicrophoneAudioRequested,
             ).also { composition ->
                 composition.startBackgroundHostReadiness()
             }
@@ -867,7 +880,8 @@ class AndroidSecureSessionComposition private constructor(
                     inputInjection = injection,
                     implementedCaptureKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
                         CapabilityBits.INPUT_TOUCHSCREEN or CapabilityBits.INPUT_TOUCHPAD or CapabilityBits.INPUT_STYLUS,
-                    separateMicrophonePerPeerAvailable = false,
+                    // DEBUG only: one Client microphone can use the Host's existing Oboe speaker sink.
+                    separateMicrophonePerPeerAvailable = BuildConfig.DEBUG,
                 )
                 val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
                 val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available
@@ -1054,8 +1068,19 @@ class AndroidSecureSessionComposition private constructor(
                 recoveryIntent = SessionRecoveryIntent(
                     PathPreferencePolicy.PreferDirectThenLan,
                     SecondaryPathPolicy.KeepValidatedStandby,
-                    productionCapabilityRequest(),
-                    productionSetupPreferences(),
+                    productionCapabilityRequest(
+                        bootstrap.channels.any {
+                            it.descriptor.kind == io.warpnect.session.SessionChannelKind.MicrophoneAudio
+                        },
+                    ),
+                    productionSetupPreferences(
+                        microphoneAudio = bootstrap.channels.any {
+                            it.descriptor.kind == io.warpnect.session.SessionChannelKind.MicrophoneAudio
+                        },
+                        systemAudio = bootstrap.channels.none {
+                            it.descriptor.kind == io.warpnect.session.SessionChannelKind.MicrophoneAudio
+                        },
+                    ),
                 ),
                 capacityOwner = if (bootstrap.localRole == SessionRole.Host) {
                     SessionManagerLifecycleCapacityOwner(sessionManager)
@@ -1172,24 +1197,31 @@ class AndroidSecureSessionComposition private constructor(
             }
         }.getOrNull()
 
-        private fun productionCapabilityRequest(): CapabilityRequest = CapabilityRequest(
-            requiredChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
-            preferredChannels = CapabilityBits.CHANNEL_SYSTEM_AUDIO,
-            disabledChannels = CapabilityBits.CHANNEL_MICROPHONE_AUDIO or CapabilityBits.CHANNEL_TELEMETRY,
-            requiredInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
-            preferredInputKinds = CapabilityBits.INPUT_TOUCHSCREEN,
-            microphonePolicyPrimary = MicrophoneRoutingSelection.NotApplicable,
-            microphonePolicyFallback = MicrophoneRoutingSelection.NotApplicable,
-            stablePresenceRequiredKinds = 0,
-            stablePresencePreferredKinds = 0,
-            videoLowLatencyRequirement = FeatureRequirement.Preferred,
-            distinctGamepadIdentityRequirement = FeatureRequirement.Disabled,
-            requiredRecoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,
-        )
+        private fun productionCapabilityRequest(microphoneAudio: Boolean = false): CapabilityRequest =
+            CapabilityRequest(
+                requiredChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT or
+                    (if (BuildConfig.DEBUG && microphoneAudio) CapabilityBits.CHANNEL_MICROPHONE_AUDIO else 0),
+                preferredChannels = if (BuildConfig.DEBUG && microphoneAudio) 0 else CapabilityBits.CHANNEL_SYSTEM_AUDIO,
+                disabledChannels = CapabilityBits.CHANNEL_TELEMETRY or
+                    (if (BuildConfig.DEBUG && microphoneAudio) CapabilityBits.CHANNEL_SYSTEM_AUDIO else CapabilityBits.CHANNEL_MICROPHONE_AUDIO),
+                requiredInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
+                preferredInputKinds = CapabilityBits.INPUT_TOUCHSCREEN,
+                microphonePolicyPrimary = if (BuildConfig.DEBUG && microphoneAudio) {
+                    MicrophoneRoutingSelection.SeparatePerPeer
+                } else {
+                    MicrophoneRoutingSelection.NotApplicable
+                },
+                microphonePolicyFallback = MicrophoneRoutingSelection.NotApplicable,
+                stablePresenceRequiredKinds = 0,
+                stablePresencePreferredKinds = 0,
+                videoLowLatencyRequirement = FeatureRequirement.Preferred,
+                distinctGamepadIdentityRequirement = FeatureRequirement.Disabled,
+                requiredRecoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,
+            )
 
         private fun productionHostCapabilityPolicy(): HostCapabilityPolicy = HostCapabilityPolicy(
             allowedChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_SYSTEM_AUDIO or
-                CapabilityBits.CHANNEL_INPUT,
+                CapabilityBits.CHANNEL_INPUT or (if (BuildConfig.DEBUG) CapabilityBits.CHANNEL_MICROPHONE_AUDIO else 0),
             mandatoryChannels = CapabilityBits.CHANNEL_VIDEO or CapabilityBits.CHANNEL_INPUT,
             // Availability still comes from WNCP snapshots; this policy merely permits the
             // production RFC-005G backend when Android currently makes it usable.
@@ -1197,12 +1229,15 @@ class AndroidSecureSessionComposition private constructor(
             allowedRecoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,
             allowedInputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
                 CapabilityBits.INPUT_TOUCHSCREEN,
-            allowedMicrophoneRoutingMask = 0,
+            allowedMicrophoneRoutingMask = if (BuildConfig.DEBUG) CapabilityBits.MICROPHONE_SEPARATE_PER_PEER else 0,
             allowDistinctGamepadIdentity = false,
             allowedStablePresenceKinds = 0,
         )
 
-        private fun productionSetupPreferences(): SessionSetupPreferences = SessionSetupPreferences(
+        private fun productionSetupPreferences(
+            microphoneAudio: Boolean = false,
+            systemAudio: Boolean = true,
+        ): SessionSetupPreferences = SessionSetupPreferences(
             pathPreference = PathPreferencePolicy.PreferDirectThenLan,
             secondaryPathPolicy = SecondaryPathPolicy.KeepValidatedStandby,
             video = VideoStreamPreference(
@@ -1217,16 +1252,34 @@ class AndroidSecureSessionComposition private constructor(
                     ),
                 ),
             ),
-            systemAudio = AudioStreamPreference(
-                listOf(
-                    AudioStreamMode(
-                        sampleRateHz = 48_000,
-                        frameDurationUs = 5_000,
-                        channelCount = 2,
-                        bitrateBps = 128_000,
+            systemAudio = if (systemAudio) {
+                AudioStreamPreference(
+                    listOf(
+                        AudioStreamMode(
+                            sampleRateHz = 48_000,
+                            frameDurationUs = 5_000,
+                            channelCount = 2,
+                            bitrateBps = 128_000,
+                        ),
                     ),
-                ),
-            ),
+                )
+            } else {
+                null
+            },
+            microphoneAudio = if (BuildConfig.DEBUG && microphoneAudio) {
+                AudioStreamPreference(
+                    listOf(
+                        AudioStreamMode(
+                            sampleRateHz = 48_000,
+                            frameDurationUs = 5_000,
+                            channelCount = 1,
+                            bitrateBps = 64_000,
+                        ),
+                    ),
+                )
+            } else {
+                null
+            },
             input = io.warpnect.session.setup.InputStreamConfiguration(
                 inputKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE,
                 stablePresenceKinds = 0,
@@ -1240,7 +1293,7 @@ class AndroidSecureSessionComposition private constructor(
          * the one-slot no-policy fallback.
          */
         private fun productionHostSetupPolicy(): HostSessionSetupPolicy = HostSessionSetupPolicy(
-            streamPreferences = productionSetupPreferences(),
+            streamPreferences = productionSetupPreferences(microphoneAudio = BuildConfig.DEBUG),
             recoveryPolicy = SessionRecoveryPolicy(
                 video = RecoveryConfigurationTemplate(
                     recoveryFlags = CapabilityBits.RECOVERY_NACK or CapabilityBits.RECOVERY_VIDEO_RESYNC,

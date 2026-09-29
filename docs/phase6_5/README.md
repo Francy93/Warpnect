@@ -9,6 +9,14 @@ Session-to-Host notification and a fragmented DirectShell launch PID response,
 and records 10/10 A41 -> S9 reconnects without a Host toggle. A later
 Tablet/API33 -> S9 regression passed 5/5 under one Host enable with the same
 APK; S22 post-Disconnect confirmation remains untested.
+The separate [MicrophoneAudio E2E qualification](MicrophoneAudioE2EQualification.md)
+used the existing Client-microphone-to-Host-speaker pipeline after that Tablet
+gate. S9 -> Tablet passed three normal protected technical Sessions plus one
+separate full-gate-APK spot-check, a local
+physical microphone probe, permission-denial control, and restart/abnormal-loss
+controls. Human audibility at the Tablet was not confirmed. A long-idle
+DirectShell Host liveness defect was also exposed: the UI remained Available
+after feature helpers expired; see the report and current debt index.
 Normal DirectShell SystemAudio routing is scoped in
 [SystemAudioRoutingSemantics.md](SystemAudioRoutingSemantics.md): Tablet, A41
 and S22 normal Host Sessions routed the test tone to S9 only and restored

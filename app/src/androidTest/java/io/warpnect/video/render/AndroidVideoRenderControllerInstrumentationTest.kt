@@ -156,8 +156,8 @@ class AndroidVideoRenderControllerInstrumentationTest {
                     events += "prepared:$surfaceGeneration"
                 }
 
-                override fun onRemoteFrameRendered(surfaceGeneration: Long) {
-                    events += "rendered:$surfaceGeneration"
+                override fun onRemoteCodecRenderCallback(surfaceGeneration: Long) {
+                    events += "codec-callback:$surfaceGeneration"
                     if (surfaceGeneration == 2L) secondFrame.countDown()
                 }
             },
@@ -202,16 +202,16 @@ class AndroidVideoRenderControllerInstrumentationTest {
             renderController.onDecoderPreparedForSurfaceGeneration(2L)
             renderController.decodedVideoSink.onFrameRendered(VideoDecoderFrameRenderedEvent(1L, 1L))
         }
-        assertTrue("Second-generation rendered frame was not observed", secondFrame.await(5, TimeUnit.SECONDS))
+        assertTrue("Second-generation codec callback was not observed", secondFrame.await(5, TimeUnit.SECONDS))
         assertEquals(
             listOf(
                 "available:1",
                 "prepared:1",
-                "rendered:1",
+                "codec-callback:1",
                 "destroyed:1",
                 "available:2",
                 "prepared:2",
-                "rendered:2",
+                "codec-callback:2",
             ),
             events.toList(),
         )

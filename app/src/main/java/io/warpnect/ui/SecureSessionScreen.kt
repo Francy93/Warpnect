@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import io.warpnect.BuildConfig
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.privileged.readiness.HostReadinessPhase
@@ -58,6 +60,9 @@ internal fun SecureSessionScreen(
     onDisableHost: () -> Unit,
     onFindHosts: () -> Unit,
     discoveryPermissionNotice: String?,
+    debugMicrophoneRequested: Boolean,
+    microphonePermissionNotice: String?,
+    onDebugMicrophoneRequested: (Boolean) -> Unit,
     clientVideoRendererBound: Boolean,
     clientVideoStreaming: Boolean,
     clientCapability: DeviceRoleCapability,
@@ -131,6 +136,23 @@ internal fun SecureSessionScreen(
             Text("Client: ${roleCapabilityText(clientCapability)}")
             Text("Host: ${roleCapabilityText(hostCapability)}")
             discoveryDetail(active?.discovery, discoveryPermissionNotice)?.let { detail -> Text(detail) }
+            if (BuildConfig.DEBUG && uiModel.activeRole != SessionRole.Host) {
+                val canChangeMicrophone = active?.state == null || active.state in setOf(
+                    SecureSessionCoordinatorState.Idle,
+                    SecureSessionCoordinatorState.Discovering,
+                    SecureSessionCoordinatorState.Closed,
+                    SecureSessionCoordinatorState.Failed,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Checkbox(
+                        checked = debugMicrophoneRequested,
+                        onCheckedChange = onDebugMicrophoneRequested,
+                        enabled = canChangeMicrophone,
+                    )
+                    Text("Microphone to Host")
+                }
+                microphonePermissionNotice?.let { Text(it) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (uiModel.activeRole == SessionRole.Host) {
                     Button(onClick = onDisableHost) { Text("Disable Host") }
