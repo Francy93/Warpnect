@@ -1,5 +1,25 @@
 # Android Compatibility Matrix
 
+## 2026-09-30 owner liveness and microphone quality follow-up
+
+[Exact artifacts, anomalies and counters](../phase6_5/DirectShellIdleLivenessAndAudioPlaybackQuality.md).
+These are non-Root physical controls, not a universal API/model qualification.
+
+| Target / path | Observed result | Boundary / limitation |
+| --- | --- | --- |
+| A41/API31 DirectShell Host -> S9/API29 | Same app/helper PIDs across almost 18 hours idle; first normal post-idle Session Streaming; Disconnect restored waiting | Liveness APK `3B6EBB...`; helper-loss publication withdrawal and app-death cleanup also tested separately |
+| Tablet/API33 DirectShell Host -> S9/API29 | Same app/helper PIDs across approximately 18 minutes idle; first normal post-idle Session Streaming; normal disable left helpers/secrets zero | Same liveness APK; Video/SystemAudio startup and Input preparation/lifecycle, not a new human Input proof or zero-loss audio claim |
+| S9/API29 microphone -> Tablet/API33 | Physical capture, Opus, protected receiver and Oboe consumption progressed; two later human controls reported Tablet silent | Persistent steady-state ring rejection/zero-fill; physical output NOT CONFIRMED; actual track EARPIECE |
+| A41/API31 microphone -> same Tablet/API33 | Same diagnostic APK/configuration; decoded PCM progressed with additional resets and burst delivery; normal Disconnect restored waiting | Quality PARTIAL; no human listening answer received before the operator became unavailable |
+| S9 built-in speaker -> acoustic A41 microphone -> protected Tablet receiver | Eight-second fixture: A41 ambient RMS about 55-59, ON window 637, OFF about 54; decoded ON RMS about 650-657 versus ambient about 60-90 | Acoustic capture/transport control only; not digital injection, synchronized latency, exact spectral correlation or proof of Tablet speaker emission |
+| S7/API26 source candidate | Connected but credential-locked; not used for the acoustic fixture | No unlock bypass or manual intervention; S9 used instead |
+| S22/API36 | Disconnected in the final acoustic control | Historical accepted evidence preserved; no dependency on S22 |
+
+No microphone source/format, ring capacity, priming, output route or protocol
+was changed to obtain these results. Source volume was temporarily moderated
+and restored. Later software gates passed 950 JVM tests on a distinct final
+diagnostic rebuild; the report records its hash and physical-test boundary.
+
 ## 2026-09-29 MicrophoneAudio Client-to-Host technical E2E
 
 [Detailed report](../phase6_5/MicrophoneAudioE2EQualification.md).

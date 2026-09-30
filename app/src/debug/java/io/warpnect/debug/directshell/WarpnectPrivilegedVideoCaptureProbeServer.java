@@ -34,8 +34,7 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
     private static final String TAG = "WarpnectDirectShellVideo";
     private static final long DEFAULT_IDLE_TIMEOUT_MILLIS = 30_000L;
     private static final long MIN_IDLE_TIMEOUT_MILLIS = 3_000L;
-    // A Host-owned feature server may remain inactive between Sessions, but must not outlive
-    // the bounded DirectShell Host runtime lease.
+    // The timeout bounds pre-owner bootstrap; an attached Host owner has no idle expiry.
     private static final long MAX_IDLE_TIMEOUT_MILLIS = 900_000L;
     private static final int CONTROL_ACCEPT_TIMEOUT_MILLIS = 250;
 
@@ -68,6 +67,7 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
         private final AtomicBoolean endpointReleased = new AtomicBoolean(false);
         private final AtomicLong lastAuthenticatedActivityMillis =
                 new AtomicLong(SystemClock.elapsedRealtime());
+        private final DirectShellOwnerLease ownerLease = new DirectShellOwnerLease();
         private final DirectShellDisplayCapture capture;
         private volatile FileDescriptor listenerDescriptor;
         private Thread idleWatchdog;
@@ -105,6 +105,7 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
                 }
             } finally {
                 capture.stopForShutdown();
+                ownerLease.close();
                 releaseEndpoint();
                 joinWatchdog();
             }
@@ -112,7 +113,8 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
 
         private void handleControl(DirectShellProbeIpv4Socket client) {
             DirectShellProbeProtocol.RequestOrder order = new DirectShellProbeProtocol.RequestOrder();
-            try (DirectShellProbeIpv4Socket ignored = client) {
+            boolean ownerTransferred = false;
+            try {
                 DataInputStream input = client.input();
                 DataOutputStream output = client.output();
                 while (running.get()) {
@@ -131,6 +133,13 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
                         continue;
                     }
                     lastAuthenticatedActivityMillis.set(SystemClock.elapsedRealtime());
+                    if (request.command == DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH) {
+                        ownerTransferred = ownerLease.attach(client, request, output, arguments.secret,
+                                arguments.generationId, () -> requestShutdown("owner_connection_lost"));
+                        log("HOST_OWNER result=" + (ownerTransferred ? "ATTACHED" : "REJECTED") +
+                                " generation=" + arguments.generationId);
+                        return;
+                    }
                     if (dispatch(request, output)) {
                         requestShutdown("authenticated_shutdown");
                         return;
@@ -141,6 +150,14 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
                     String result = exception instanceof EOFException ? "NORMAL_EOF" : "IO_FAILURE";
                     log("CLIENT_DISCONNECTED result=" + result + " type=" +
                             exception.getClass().getSimpleName());
+                }
+            } finally {
+                if (!ownerTransferred) {
+                    try {
+                        client.close();
+                    } catch (IOException ignored) {
+                        // Preserve the authenticated operation result.
+                    }
                 }
             }
         }
@@ -259,9 +276,10 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
                         Thread.currentThread().interrupt();
                         return;
                     }
-                    if (SystemClock.elapsedRealtime() - lastAuthenticatedActivityMillis.get() >=
-                            arguments.idleTimeoutMillis) {
-                        requestShutdown("idle_timeout");
+                    if (DirectShellOwnerLease.bootstrapExpired(SystemClock.elapsedRealtime(),
+                            lastAuthenticatedActivityMillis.get(), arguments.idleTimeoutMillis,
+                            ownerLease.attached())) {
+                        requestShutdown("bootstrap_owner_timeout");
                         return;
                     }
                 }
@@ -273,6 +291,7 @@ public final class WarpnectPrivilegedVideoCaptureProbeServer {
         private void requestShutdown(String reason) {
             if (!running.compareAndSet(true, false)) return;
             capture.stopForShutdown();
+            ownerLease.close();
             log("SHUTDOWN result=REQUESTED reason=" + reason);
             releaseEndpoint();
         }

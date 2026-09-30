@@ -49,6 +49,15 @@ internal class DirectShellSystemAudioRemoteE2eSource private constructor(
         )
     }
 
+    fun createHostOwnedController(telemetry: AudioSenderTelemetry?): AudioCaptureController =
+        DirectShellSystemAudioRemoteE2eCaptureController(
+            port = port,
+            generationId = generationId,
+            secret = copySecret(),
+            telemetry = telemetry,
+            shutdownOnStop = false,
+        )
+
     fun probe(): RuntimeProbe = probeServer(port, copySecret())
 
     fun describe(): String = "generation=$generationId port=$port cleared=$cleared"
@@ -160,6 +169,7 @@ internal class DirectShellSystemAudioRemoteE2eCaptureController(
     private val generationId: Long,
     secret: ByteArray,
     private val telemetry: AudioSenderTelemetry?,
+    private val shutdownOnStop: Boolean = true,
 ) : AudioCaptureController {
     private val lock = Any()
     private val controlLock = Any()
@@ -283,8 +293,10 @@ internal class DirectShellSystemAudioRemoteE2eCaptureController(
             val finish = DirectShellPcmRingProbeSession.finish(generationId)
             if (!finish.success && error == AudioCaptureError.None) error = mapRingFailure(finish.payload)
             ringArmed = false
-            val shutdown = control(DirectShellProbeProtocol.Command.SHUTDOWN)
-            if (!shutdown.success && error == AudioCaptureError.None) error = mapControlFailure(shutdown.payload)
+            if (shutdownOnStop) {
+                val shutdown = control(DirectShellProbeProtocol.Command.SHUTDOWN)
+                if (!shutdown.success && error == AudioCaptureError.None) error = mapControlFailure(shutdown.payload)
+            }
         }
         synchronized(lock) {
             sink = null
@@ -321,7 +333,7 @@ internal class DirectShellSystemAudioRemoteE2eCaptureController(
             DirectShellPcmRingProbeSession.finish(generationId)
             ringArmed = false
         }
-        control(DirectShellProbeProtocol.Command.SHUTDOWN)
+        if (shutdownOnStop) control(DirectShellProbeProtocol.Command.SHUTDOWN)
         sink = null
         core.completePrepare(error, null)
         return AudioCaptureResult(error, core.snapshot())

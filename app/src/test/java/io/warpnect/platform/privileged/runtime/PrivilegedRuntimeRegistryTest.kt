@@ -68,6 +68,72 @@ class PrivilegedRuntimeRegistryTest {
         assertEquals(2, runtime.acquireCalls)
     }
 
+    @Test
+    fun `registered runtime owner loss updates snapshot and notifies observers without fallback`() {
+        val runtime = FakeRuntime(readySnapshot())
+        assertTrue(PrivilegedRuntimeRegistry.installDirectShell(runtime))
+        assertTrue(PrivilegedRuntimeRegistry.acquireForHost().ready)
+        val observed = mutableListOf<PrivilegedRuntimeSnapshot>()
+        val observation = PrivilegedRuntimeRegistry.observeHealth { observed += it }
+        val lost = readySnapshot().copy(
+            state = PrivilegedRuntimeState.UNAVAILABLE,
+            phase = PrivilegedRuntimePhase.FAILED,
+            failure = PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
+        )
+
+        PrivilegedRuntimeRegistry.reportHealth(runtime, lost)
+
+        assertEquals(lost, PrivilegedRuntimeRegistry.snapshot())
+        assertEquals(listOf(lost), observed)
+        assertEquals(PrivilegedRuntimeKind.DIRECT_SHELL, PrivilegedRuntimeRegistry.acquireForHost().kind)
+        assertFalse(PrivilegedRuntimeRegistry.acquireForHost().ready)
+        observation.close()
+    }
+
+    @Test
+    fun `stale runtime generation cannot withdraw current runtime`() {
+        val runtime = FakeRuntime(readySnapshot())
+        assertTrue(PrivilegedRuntimeRegistry.installDirectShell(runtime))
+        assertTrue(PrivilegedRuntimeRegistry.acquireForHost().ready)
+        var events = 0
+        val observation = PrivilegedRuntimeRegistry.observeHealth { events++ }
+
+        PrivilegedRuntimeRegistry.reportHealth(
+            runtime,
+            readySnapshot().copy(
+                generation = 6L,
+                state = PrivilegedRuntimeState.UNAVAILABLE,
+                failure = PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
+            ),
+        )
+
+        assertTrue(PrivilegedRuntimeRegistry.snapshot().ready)
+        assertEquals(0, events)
+        observation.close()
+    }
+
+    @Test
+    fun `late owner loss after normal Host release cannot revive runtime health`() {
+        val runtime = FakeRuntime(readySnapshot())
+        assertTrue(PrivilegedRuntimeRegistry.installDirectShell(runtime))
+        assertTrue(PrivilegedRuntimeRegistry.acquireForHost().ready)
+        PrivilegedRuntimeRegistry.releaseForHost()
+
+        PrivilegedRuntimeRegistry.reportHealth(
+            runtime,
+            readySnapshot().copy(
+                state = PrivilegedRuntimeState.UNAVAILABLE,
+                failure = PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
+            ),
+        )
+
+        assertEquals(PrivilegedRuntimeState.RELEASED, PrivilegedRuntimeRegistry.snapshot().state)
+        assertEquals(
+            PrivilegedRuntimeFailure.DIRECTSHELL_RUNTIME_RELEASED,
+            PrivilegedRuntimeRegistry.snapshot().failure,
+        )
+    }
+
     private fun readySnapshot() = PrivilegedRuntimeSnapshot(
         kind = PrivilegedRuntimeKind.DIRECT_SHELL,
         state = PrivilegedRuntimeState.READY,

@@ -17,6 +17,17 @@ physical microphone probe, permission-denial control, and restart/abnormal-loss
 controls. Human audibility at the Tablet was not confirmed. A long-idle
 DirectShell Host liveness defect was also exposed: the UI remained Available
 after feature helpers expired; see the report and current debt index.
+The 2026-09-30 [owner-liveness and playback-quality follow-up](DirectShellIdleLivenessAndAudioPlaybackQuality.md)
+replaces post-owner idle expiry with authenticated generation-bound ownership.
+A41 crossed almost 18 hours and Tablet approximately 18 minutes with the same
+helpers before successful first post-idle Sessions; unexpected loss withdraws
+publication. Full background policy remains deferred. MicrophoneAudio quality
+is still PARTIAL: S9 listening controls reported a silent Tablet, and the A41
+comparison showed additional playback resets. A physical S9 speaker fixture
+was captured by the A41 mic and reached Tablet decoded PCM, but that is not
+proof of Tablet speaker emission. The actual sink routed to EARPIECE.
+All requested software gates passed with 950 JVM tests; the report distinguishes
+the physical APKs from the later final diagnostic rebuild.
 Normal DirectShell SystemAudio routing is scoped in
 [SystemAudioRoutingSemantics.md](SystemAudioRoutingSemantics.md): Tablet, A41
 and S22 normal Host Sessions routed the test tone to S9 only and restored

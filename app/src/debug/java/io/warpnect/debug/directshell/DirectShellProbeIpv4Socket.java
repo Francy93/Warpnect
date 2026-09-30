@@ -103,6 +103,20 @@ final class DirectShellProbeIpv4Socket implements AutoCloseable {
         }
     }
 
+    /** An owner channel carries no data after its authenticated attach. */
+    boolean awaitOwnerEnd(int timeoutMillis) throws IOException {
+        try {
+            StructPollfd pollfd = new StructPollfd();
+            pollfd.fd = descriptor;
+            pollfd.events = (short) (OsConstants.POLLIN | OsConstants.POLLHUP | OsConstants.POLLERR);
+            int ready = Os.poll(new StructPollfd[] {pollfd}, timeoutMillis);
+            return ready != 0 && (pollfd.revents &
+                    (OsConstants.POLLIN | OsConstants.POLLHUP | OsConstants.POLLERR | OsConstants.POLLNVAL)) != 0;
+        } catch (ErrnoException exception) {
+            throw asIOException("DirectShell owner socket poll failed", exception);
+        }
+    }
+
     @Override
     public void close() throws IOException {
         if (!closed.compareAndSet(false, true)) return;

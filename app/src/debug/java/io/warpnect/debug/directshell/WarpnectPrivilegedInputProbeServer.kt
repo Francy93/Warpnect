@@ -50,6 +50,7 @@ object WarpnectPrivilegedInputProbeServer {
         private val running = AtomicBoolean(true)
         private val endpointReleased = AtomicBoolean(false)
         private val lastAuthenticatedActivityMillis = AtomicLong(SystemClock.elapsedRealtime())
+        private val ownerLease = DirectShellOwnerLease()
         private val engine = DirectShellInputProbeEngine(arguments.displayId)
         private val sessionBridge = arguments.generationId.takeIf { it > 0L }?.let(::DirectShellInputSessionBridge)
         private val shellContext = DirectShellShellAudioContext.create()
@@ -88,6 +89,7 @@ object WarpnectPrivilegedInputProbeServer {
                 }
             } finally {
                 shutdownEngines()
+                ownerLease.close()
                 releaseEndpoint()
                 joinWatchdog()
             }
@@ -95,7 +97,8 @@ object WarpnectPrivilegedInputProbeServer {
 
         private fun handleControl(client: DirectShellProbeIpv4Socket) {
             val order = DirectShellProbeProtocol.RequestOrder()
-            client.use {
+            var ownerTransferred = false
+            try {
                 val input = client.input()
                 val output = client.output()
                 while (running.get()) {
@@ -123,11 +126,27 @@ object WarpnectPrivilegedInputProbeServer {
                     }
                     lastAuthenticatedActivityMillis.set(SystemClock.elapsedRealtime())
                     log("AUTH result=SUCCESS request_id=${request.requestId}")
+                    if (request.command == DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH) {
+                        ownerTransferred = ownerLease.attach(
+                            client,
+                            request,
+                            output,
+                            arguments.secret,
+                            arguments.generationId,
+                        ) { requestShutdown("owner_connection_lost") }
+                        log(
+                            "HOST_OWNER result=${if (ownerTransferred) "ATTACHED" else "REJECTED"} " +
+                                "generation=${arguments.generationId}",
+                        )
+                        return
+                    }
                     if (dispatch(request, output)) {
                         requestShutdown("authenticated_shutdown")
                         return
                     }
                 }
+            } finally {
+                if (!ownerTransferred) runCatching { client.close() }
             }
         }
 
@@ -271,10 +290,14 @@ object WarpnectPrivilegedInputProbeServer {
                             Thread.currentThread().interrupt()
                             return@Thread
                         }
-                        val idleElapsedMillis =
-                            SystemClock.elapsedRealtime() - lastAuthenticatedActivityMillis.get()
-                        if (idleElapsedMillis >= arguments.idleTimeoutMillis) {
-                            requestShutdown("idle_timeout")
+                        if (DirectShellOwnerLease.bootstrapExpired(
+                                SystemClock.elapsedRealtime(),
+                                lastAuthenticatedActivityMillis.get(),
+                                arguments.idleTimeoutMillis,
+                                ownerLease.attached(),
+                            )
+                        ) {
+                            requestShutdown("bootstrap_owner_timeout")
                             return@Thread
                         }
                     }
@@ -289,6 +312,7 @@ object WarpnectPrivilegedInputProbeServer {
         private fun requestShutdown(reason: String) {
             if (!running.compareAndSet(true, false)) return
             shutdownEngines()
+            ownerLease.close()
             log("SHUTDOWN result=REQUESTED reason=$reason")
             releaseEndpoint()
         }

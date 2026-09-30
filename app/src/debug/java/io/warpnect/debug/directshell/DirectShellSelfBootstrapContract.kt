@@ -22,7 +22,8 @@ internal object DirectShellSelfBootstrapContract {
     private const val MIN_PORT = 1_024
     private const val MAX_PORT = 65_535
     private const val SERVER_IDLE_TIMEOUT_MILLIS = 60_000L
-    const val HOST_RUNTIME_IDLE_TIMEOUT_MILLIS = 900_000L
+    const val HOST_OWNER_ACQUISITION_TIMEOUT_MILLIS = 60_000L
+    private const val MAX_PROBE_IDLE_TIMEOUT_MILLIS = 900_000L
     private const val STARTUP_LOG_PREFIX = "/data/local/tmp/warpnect-directshell-bootstrap-"
     private const val STARTUP_LOG_SUFFIX = ".log"
     private const val SECRET_FILE_PREFIX = "/data/local/tmp/warpnect-directshell-secret-"
@@ -95,7 +96,7 @@ internal object DirectShellSelfBootstrapContract {
         serverRole: ServerRole = ServerRole.Control,
         idleTimeoutMillis: Long = SERVER_IDLE_TIMEOUT_MILLIS,
     ): Launch {
-        require(idleTimeoutMillis in 3_000L..HOST_RUNTIME_IDLE_TIMEOUT_MILLIS) {
+        require(idleTimeoutMillis in 3_000L..MAX_PROBE_IDLE_TIMEOUT_MILLIS) {
             "invalid_idle_timeout"
         }
         val secret = ByteArray(DirectShellProbeProtocol.SECRET_BYTES)

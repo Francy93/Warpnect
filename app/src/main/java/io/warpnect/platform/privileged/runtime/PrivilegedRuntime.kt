@@ -65,6 +65,7 @@ enum class PrivilegedRuntimeFailure {
     DIRECTSHELL_IDENTITY_INVALID,
     DIRECTSHELL_AUTHENTICATION_FAILED,
     DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
+    DIRECTSHELL_OWNER_LOST,
     DIRECTSHELL_RUNTIME_RELEASED,
     SHIZUKU_LEGACY_FALLBACK,
 }
@@ -165,6 +166,27 @@ object PrivilegedRuntimeRegistry {
     private var automaticDirectShellFactory: PrivilegedRuntimeFactory? = null
     private var directShellRequiredForHost = false
     private var latest = PrivilegedRuntimeSnapshot.shizukuFallback()
+    private val healthObservers = LinkedHashSet<(PrivilegedRuntimeSnapshot) -> Unit>()
+
+    /** A registered runtime may report a lost authenticated owner without reacquiring anything. */
+    fun reportHealth(runtime: PrivilegedRuntime, snapshot: PrivilegedRuntimeSnapshot) {
+        val observers = synchronized(lock) {
+            if (directShellRuntime !== runtime ||
+                (latest.generation != null && latest.generation != snapshot.generation) ||
+                latest.state == PrivilegedRuntimeState.RELEASED
+            ) {
+                return
+            }
+            latest = snapshot
+            healthObservers.toList()
+        }
+        observers.forEach { it(snapshot) }
+    }
+
+    fun observeHealth(observer: (PrivilegedRuntimeSnapshot) -> Unit): AutoCloseable {
+        synchronized(lock) { healthObservers += observer }
+        return AutoCloseable { synchronized(lock) { healthObservers -= observer } }
+    }
 
     /**
      * Registers a lazy DirectShell runtime for ordinary Host activation.
@@ -212,8 +234,16 @@ object PrivilegedRuntimeRegistry {
             directShellRuntime = selection.runtime,
             allowShizukuFallback = !selection.directShellRequired,
         ).acquireForHost()
-        synchronized(lock) { latest = result }
-        return result
+        return synchronized(lock) {
+            if (latest.failure == PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST &&
+                latest.generation == result.generation
+            ) {
+                latest
+            } else {
+                latest = result
+                result
+            }
+        }
     }
 
     fun releaseForHost() {
@@ -256,6 +286,7 @@ object PrivilegedRuntimeRegistry {
             automaticDirectShellFactory = null
             directShellRequiredForHost = false
             latest = PrivilegedRuntimeSnapshot.shizukuFallback()
+            healthObservers.clear()
             current
         }
         runtime?.releaseForHost()

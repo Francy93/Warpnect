@@ -88,7 +88,8 @@ final class DirectShellProbeProtocol {
         VIDEO_UPDATE(82),
         VIDEO_STOP(83),
         GET_VIDEO_DIAGNOSTICS(84),
-        ROOT_CAPABILITIES(90);
+        ROOT_CAPABILITIES(90),
+        HOST_OWNER_ATTACH(91);
 
         final int code;
 

@@ -33,6 +33,7 @@ import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.InputInjectionControllerSelector
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
+import io.warpnect.platform.privileged.planning.PrivilegedProvider
 import io.warpnect.platform.privileged.readiness.AndroidHostReadinessWork
 import io.warpnect.platform.privileged.readiness.BackgroundHostReadinessCoordinator
 import io.warpnect.platform.privileged.readiness.HostAdmissionPublicationGate
@@ -42,6 +43,7 @@ import io.warpnect.platform.privileged.readiness.HostReadinessUiState
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeFailureReason
 import io.warpnect.platform.privileged.runtime.DirectRootRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeFailure
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeRegistry
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.session.capability.AndroidCapabilityProbe
 import io.warpnect.platform.session.capability.AndroidCapabilityProbeSnapshot
@@ -222,7 +224,20 @@ class AndroidSecureSessionComposition private constructor(
     /** Starts bounded Host readiness on the existing non-Main Session control owner. */
     fun startHostFromUi() {
         hostReadinessCoordinator.requestHostPreparation {
+            val directShellSnapshot = PrivilegedRuntimeRegistry.snapshot()
+            if (PrivilegedProvider.DIRECT_SHELL in it.plan.participatingProviders &&
+                (!directShellSnapshot.ready || directShellSnapshot.generation != it.runtimeSnapshot.generation)
+            ) {
+                hostReadinessCoordinator.abandonPreparedHost()
+                uiResources.publishHostPlanUnavailable("Host unavailable: DirectShell owner connection was lost")
+                return@requestHostPreparation
+            }
             if (hostPublication.publish(it) { applicationController.startHost().isSuccess }) {
+                if (hostPublication.directShellOwnershipLost(PrivilegedRuntimeRegistry.snapshot())) {
+                    applicationController.stopHost()
+                    uiResources.publishHostPlanUnavailable("Host unavailable: DirectShell owner connection was lost")
+                    return@requestHostPreparation
+                }
                 uiResources.publishHostPlanAdmitted()
                 Log.i(
                     TAG,
@@ -699,6 +714,33 @@ class AndroidSecureSessionComposition private constructor(
                 secureSessionApplicationController = application,
                 telemetryHub = telemetryHub,
             )
+            val wirelessObservation = hostReadinessWork.observeWirelessDebuggingChanges(context) {
+                controlScheduler.dispatch {
+                    if (hostPublication.rootOwnershipLost(DirectRootRuntimeRegistry.runtimeSnapshot())) {
+                        Log.w(TAG, "HOST_PUBLICATION state=WITHDRAWN reason=ROOT_HELPER_UNAVAILABLE migration=false")
+                        application.stopHost()
+                        hostReadinessCoordinator.abandonPreparedHost()
+                        uiResources.publishHostPlanUnavailable("Host unavailable: Root helper connection was lost")
+                    } else if (hostReadinessCoordinator.refreshBackgroundReadiness()) {
+                        Log.i(TAG, "prepared_plan_invalidated reason=wireless_debugging_changed")
+                    }
+                }
+            }
+            val directShellObservation = PrivilegedRuntimeRegistry.observeHealth { runtime ->
+                controlScheduler.dispatch {
+                    if (hostPublication.directShellOwnershipLost(runtime)) {
+                        Log.w(
+                            TAG,
+                            "HOST_PUBLICATION state=WITHDRAWN reason=DIRECTSHELL_OWNER_LOST migration=false",
+                        )
+                        application.stopHost()
+                        hostReadinessCoordinator.abandonPreparedHost()
+                        uiResources.publishHostPlanUnavailable(
+                            "Host unavailable: DirectShell owner connection was lost",
+                        )
+                    }
+                }
+            }
             return AndroidSecureSessionComposition(
                 orchestrator,
                 application,
@@ -711,20 +753,9 @@ class AndroidSecureSessionComposition private constructor(
                 directPathBackend,
                 hostPrivilegedAdmission,
                 hostReadinessCoordinator,
-                hostReadinessWork.observeWirelessDebuggingChanges(context) {
-                    controlScheduler.dispatch {
-                        if (hostPublication.rootOwnershipLost(DirectRootRuntimeRegistry.runtimeSnapshot())) {
-                            Log.w(
-                                TAG,
-                                "HOST_PUBLICATION state=WITHDRAWN reason=ROOT_HELPER_UNAVAILABLE migration=false",
-                            )
-                            application.stopHost()
-                            hostReadinessCoordinator.abandonPreparedHost()
-                            uiResources.publishHostPlanUnavailable("Host unavailable: Root helper connection was lost")
-                        } else if (hostReadinessCoordinator.refreshBackgroundReadiness()) {
-                            Log.i(TAG, "prepared_plan_invalidated reason=wireless_debugging_changed")
-                        }
-                    }
+                AutoCloseable {
+                    directShellObservation.close()
+                    wirelessObservation.close()
                 },
                 hostPublication,
                 debugMicrophoneAudioRequested,
@@ -1504,6 +1535,8 @@ internal fun hostRuntimeFailureMessage(failure: PrivilegedRuntimeFailure): Strin
         "Host unavailable: DirectShell authentication failed"
     PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED ->
         "Host unavailable: DirectShell feature qualification failed"
+    PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST ->
+        "Host unavailable: DirectShell owner connection was lost"
     PrivilegedRuntimeFailure.DIRECTSHELL_NOT_ARMED,
     PrivilegedRuntimeFailure.DIRECTSHELL_RUNTIME_RELEASED,
     PrivilegedRuntimeFailure.ROOT_NOT_IMPLEMENTED,

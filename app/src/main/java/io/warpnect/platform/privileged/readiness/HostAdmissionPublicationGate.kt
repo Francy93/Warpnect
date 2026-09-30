@@ -2,6 +2,8 @@ package io.warpnect.platform.privileged.readiness
 
 import io.warpnect.platform.privileged.planning.PrivilegedProvider
 import io.warpnect.platform.privileged.runtime.DirectRootSnapshot
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
+import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 
 /** Freeze authorizes publication; only a successful normal Host start actually owns it. */
 internal class HostAdmissionPublicationGate {
@@ -22,6 +24,13 @@ internal class HostAdmissionPublicationGate {
         val expected = current.runtimeState.directRoot.rootFoundation
         return !runtime.ready || runtime.generation != expected?.generation ||
             runtime.provenance != expected?.provenance
+    }
+
+    fun directShellOwnershipLost(runtime: PrivilegedRuntimeSnapshot): Boolean {
+        val current = published ?: return false
+        if (PrivilegedProvider.DIRECT_SHELL !in current.plan.participatingProviders) return false
+        return runtime.kind != PrivilegedRuntimeKind.DIRECT_SHELL || !runtime.ready ||
+            runtime.generation != current.runtimeSnapshot.generation
     }
 
     fun clear() {

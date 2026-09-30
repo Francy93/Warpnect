@@ -208,19 +208,19 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
             trace("HOST_RUNTIME_AUDIO_LAUNCH")
             val audio = launchAndAuthenticateInternal(
                 DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing,
-                DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
+                DirectShellSelfBootstrapContract.HOST_OWNER_ACQUISITION_TIMEOUT_MILLIS,
             )
             launched += audio
             trace("HOST_RUNTIME_INPUT_LAUNCH")
             val input = launchAndAuthenticateInternal(
                 DirectShellSelfBootstrapContract.ServerRole.InputSession,
-                DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
+                DirectShellSelfBootstrapContract.HOST_OWNER_ACQUISITION_TIMEOUT_MILLIS,
             )
             launched += input
             trace("HOST_RUNTIME_VIDEO_LAUNCH")
             val video = launchAndAuthenticateInternal(
                 DirectShellSelfBootstrapContract.ServerRole.VideoCapture,
-                DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
+                DirectShellSelfBootstrapContract.HOST_OWNER_ACQUISITION_TIMEOUT_MILLIS,
             )
             launched += video
             disconnectTransport()
@@ -275,7 +275,7 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
             launched = traced("${stagePrefix}_APP_PROCESS_LAUNCH") {
                 launchAndAuthenticateInternal(
                     serverRole,
-                    DirectShellSelfBootstrapContract.HOST_RUNTIME_IDLE_TIMEOUT_MILLIS,
+                    DirectShellSelfBootstrapContract.HOST_OWNER_ACQUISITION_TIMEOUT_MILLIS,
                 )
             }
             if (!keepAdbConnectedForNextFeature) disconnectTransport()

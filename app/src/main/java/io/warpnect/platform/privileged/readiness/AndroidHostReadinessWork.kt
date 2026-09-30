@@ -173,6 +173,12 @@ internal object PrivilegedRuntimeStateMapper {
             detail,
         )
 
+        PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST -> availability(
+            PrivilegedRuntimeAvailabilityState.TEMPORARILY_UNAVAILABLE,
+            PrivilegedRuntimeFailureReason.PROVIDER_BOOTSTRAP_FAILED,
+            detail,
+        )
+
         PrivilegedRuntimeFailure.DIRECTSHELL_NOT_ARMED,
         PrivilegedRuntimeFailure.ROOT_NOT_IMPLEMENTED,
         PrivilegedRuntimeFailure.SHIZUKU_LEGACY_FALLBACK,
@@ -488,6 +494,7 @@ internal class AndroidHostReadinessWork(
         PrivilegedRuntimeFailure.DIRECTSHELL_IDENTITY_INVALID,
         PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
         PrivilegedRuntimeFailure.DIRECTSHELL_RUNTIME_RELEASED,
+        PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
         PrivilegedRuntimeFailure.SHIZUKU_LEGACY_FALLBACK,
         -> PrivilegedRuntimeFailureReason.PROVIDER_BOOTSTRAP_FAILED
     }

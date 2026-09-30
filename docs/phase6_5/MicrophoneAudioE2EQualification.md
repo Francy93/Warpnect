@@ -173,3 +173,30 @@ zero failures/errors/skips. The local microphone AndroidTest passed 2/2 runs.
 Native source was unchanged, so CTest was not rerun. New MicrophoneAudio work
 remains uncommitted for review. No push, merge, Root, physical modification,
 production Magisk, remediation, provider migration, or protocol redesign.
+
+## 2026-09-30 superseding liveness / quality follow-up
+
+The preceding implementation and technical campaign remain historical. The
+slice was checkpointed locally as `809b7ddd48e9db192a86de17b59abdfd607916fd`.
+The [owner-liveness and playback-quality report](DirectShellIdleLivenessAndAudioPlaybackQuality.md)
+is the current source for the two exposed debts. Its authenticated owner-socket
+change crossed the former idle boundary on A41 and Tablet and withdraws Host
+publication on unexpected helper loss; it is not full RFC-005K background work.
+
+Later S9 -> Tablet controls explicitly reported no audible Tablet output despite
+nonzero capture/decode energy and progressing consumption. Rejection/zero-fill
+continued at steady state. A user-requested A41 -> the same Tablet comparison
+also reached decoded PCM but added frequent playback resets; no listening answer
+was received for that topology before the operator became unavailable.
+
+An unattended eight-second S9 speaker fixture was then captured acoustically by
+the A41 built-in mic and transported through the normal protected Session.
+Capture RMS rose from about 55-59 to 637, Tablet decoded RMS reached about
+650-657, and OFF windows returned toward ambient. This is not digital PCM
+injection, intelligible-voice proof, a cross-device latency measurement or
+physical Tablet speaker confirmation. AudioFlinger placed the microphone sink
+on EARPIECE while the speaker output was standby. No route or buffering fix has
+yet been validated. Quality/physical-output status remains PARTIAL.
+
+The follow-up software gates pass with 950 JVM tests, zero failures/errors/skips;
+native source is unchanged. New owner-liveness/diagnostic work remains uncommitted.

@@ -73,6 +73,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
     private val lock = Any()
     private val activeLeases = LinkedHashSet<FeatureLease<*>>()
     private val prewarmedServers = LinkedHashMap<DirectShellFeatureRole, DirectShellFeatureServer>()
+    private val ownerConnections = LinkedHashMap<Long, DirectShellOwnerConnection>()
 
     /** A feature-local failure is evidence for the current Host admission, not a runtime-wide failure. */
     private val featureFailures = LinkedHashMap<DirectShellFeatureRole, String>()
@@ -98,6 +99,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
     override fun acquireForHost(): PrivilegedRuntimeSnapshot {
         synchronized(lock) {
             if (runtimeSnapshot.ready) return runtimeSnapshot
+            if (armed) return runtimeSnapshot
             runtimeSnapshot = runtimeSnapshot.copy(
                 state = PrivilegedRuntimeState.ACQUIRING,
                 phase = PrivilegedRuntimePhase.DISCOVERING_ADB_ENDPOINT,
@@ -122,7 +124,14 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                 "candidates=${initial.candidates.size} failures=${initial.failures.size} " +
                 "elapsed_ms=${SystemClock.elapsedRealtime() - startedAt}",
         )
-        if (initial.candidates.isEmpty()) {
+        val liveCandidates = initial.candidates.filterValues { server ->
+            synchronized(lock) { ownerConnections[server.launch.generation]?.alive() == true }
+        }
+        initial.candidates.filterKeys { it !in liveCandidates.keys }.forEach { (role, server) ->
+            initial.failures[role] = "owner_connection_lost_before_host_ready"
+            closeFeatureServer(role, server)
+        }
+        if (liveCandidates.isEmpty()) {
             val detail = initial.failures.values.firstOrNull() ?: "directshell_no_feature_server"
             val failure = if (detail.startsWith("bootstrap_")) {
                 launchFailure(detail)
@@ -140,7 +149,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             DebugSystemAudioCaptureOverrideRegistry.clear(audioOverride)
             DebugInputInjectionControllerOverrideRegistry.clear(inputOverride)
             DebugCaptureGatewayOverrideRegistry.clear(videoOverride)
-            initial.candidates.forEach { (role, server) -> closeFeatureServer(role, server) }
+            liveCandidates.forEach { (role, server) -> closeFeatureServer(role, server) }
             Log.w(TAG, "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=FAIL reason=override_install_rejected")
             return updateUnavailable(
                 PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
@@ -152,32 +161,46 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             Log.w(TAG, "DIRECT_SHELL_RUNTIME_FEATURE_UNAVAILABLE role=${role.name} detail=$detail")
         }
         val identity = parseIdentity(initial.identityDetail.orEmpty())
-        return synchronized(lock) {
-            val generation = nextRuntimeGeneration()
-            armed = true
-            runtimeGeneration = generation
-            prewarmedServers.putAll(initial.candidates)
-            featureFailures.putAll(initial.failures)
-            val audioBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing)
-            val inputBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.InputSession)
-            val videoBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.VideoCapture)
-            runtimeSnapshot = PrivilegedRuntimeSnapshot(
-                kind = PrivilegedRuntimeKind.DIRECT_SHELL,
-                state = PrivilegedRuntimeState.READY,
-                phase = PrivilegedRuntimePhase.RUNTIME_READY,
-                generation = generation,
-                identity = identity,
-                detail = "runtime_kind=DIRECT_SHELL runtime_generation=$generation " +
-                    "bootstrap=self_adb uid=2000 package=com.android.shell " +
-                    "audio_backend=$audioBackend input_backend=$inputBackend video_backend=$videoBackend " +
-                    "shizuku_audio=false shizuku_input=false " +
-                    "shizuku_video=false direct_root=ROOT_NOT_IMPLEMENTED " +
-                    "direct_shell=self_adb_ready " +
-                    "unavailable_features=${initial.failures.keys.joinToString { it.name }}",
-            )
-            Log.i(TAG, "DIRECT_SHELL_RUNTIME_READY attempt=$attempt ${runtimeSnapshot.detail}")
-            runtimeSnapshot
+        val ready = synchronized(lock) {
+            if (liveCandidates.values.any { ownerConnections[it.launch.generation]?.alive() != true }) {
+                null
+            } else {
+                val generation = nextRuntimeGeneration()
+                armed = true
+                runtimeGeneration = generation
+                prewarmedServers.putAll(liveCandidates)
+                featureFailures.putAll(initial.failures)
+                val audioBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing)
+                val inputBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.InputSession)
+                val videoBackend = backendDetail(DirectShellSelfBootstrapContract.ServerRole.VideoCapture)
+                runtimeSnapshot = PrivilegedRuntimeSnapshot(
+                    kind = PrivilegedRuntimeKind.DIRECT_SHELL,
+                    state = PrivilegedRuntimeState.READY,
+                    phase = PrivilegedRuntimePhase.RUNTIME_READY,
+                    generation = generation,
+                    identity = identity,
+                    detail = "runtime_kind=DIRECT_SHELL runtime_generation=$generation " +
+                        "bootstrap=self_adb uid=2000 package=com.android.shell " +
+                        "audio_backend=$audioBackend input_backend=$inputBackend video_backend=$videoBackend " +
+                        "shizuku_audio=false shizuku_input=false " +
+                        "shizuku_video=false direct_root=ROOT_NOT_IMPLEMENTED " +
+                        "direct_shell=self_adb_ready " +
+                        "unavailable_features=${initial.failures.keys.joinToString { it.name }}",
+                )
+                Log.i(TAG, "DIRECT_SHELL_RUNTIME_READY attempt=$attempt ${runtimeSnapshot.detail}")
+                runtimeSnapshot
+            }
         }
+        if (ready != null) return ready
+        DebugSystemAudioCaptureOverrideRegistry.clear(audioOverride)
+        DebugInputInjectionControllerOverrideRegistry.clear(inputOverride)
+        DebugCaptureGatewayOverrideRegistry.clear(videoOverride)
+        liveCandidates.forEach { (role, server) -> closeFeatureServer(role, server) }
+        Log.w(TAG, "DIRECT_SHELL_RUNTIME_PREPARATION attempt=$attempt result=FAIL reason=owner_lost_before_ready")
+        return updateUnavailable(
+            PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
+            "owner_lost_before_ready",
+        )
     }
 
     override fun releaseForHost() {
@@ -388,8 +411,9 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             source.clear()
             return rejectFeature(role, launched, "audio_${probe.error.name}_${probe.detail}")
         }
-        val delegate = source.createController(context.applicationContext, telemetry)
+        val delegate = source.createHostOwnedController(telemetry)
         val lease = FeatureLease(delegate) { consumed ->
+            if (consumed) suppressExpectedOwnerLoss(launched)
             runCatching { delegate.close() }
             source.clear()
             releaseFeatureServer(role, launched, consumed)
@@ -412,6 +436,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
         val delegate = source.createController(context.applicationContext)
         val lease = FeatureLease(delegate) { consumed ->
+            if (consumed) suppressExpectedOwnerLoss(launched)
             runCatching { delegate.close() }
             source.clear()
             releaseFeatureServer(role, launched, consumed)
@@ -437,6 +462,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
         val delegate = source.createGateway(context.applicationContext, onServiceDied)
         val lease = FeatureLease(delegate) { consumed ->
+            if (consumed) suppressExpectedOwnerLoss(launched)
             runCatching { delegate.close() }
             source.clear()
             releaseFeatureServer(role, launched, consumed)
@@ -474,7 +500,9 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             controller.bootstrapPreviouslyAuthorizedFeatureServer(role)
         }
         if (!launch.successful) {
-            recordFeatureFailure(role, "bootstrap_${launch.result.classification}_${launch.result.detail}")
+            val detail = "bootstrap_${launch.result.classification}_${launch.result.detail}"
+            recordFeatureFailure(role, detail)
+            invalidateFailedReplacement(role, detail)
             Log.w(
                 TAG,
                 "DIRECT_SHELL_RUNTIME_FEATURE_FAILED role=${role.name} result=${launch.result.classification}",
@@ -550,6 +578,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             closeFeatureServer(role, server)
             if (qualificationFailure != null) {
                 recordFeatureFailure(role, qualificationFailure)
+                invalidateFailedReplacement(role, qualificationFailure)
                 Log.w(
                     TAG,
                     "DIRECT_SHELL_RUNTIME_FEATURE_REPLACEMENT_REJECTED " +
@@ -559,11 +588,26 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
     }
 
+    private fun invalidateFailedReplacement(role: DirectShellFeatureRole, detail: String) {
+        val unavailable = synchronized(lock) {
+            if (!armed || !runtimeSnapshot.ready) return
+            runtimeSnapshot = runtimeSnapshot.copy(
+                state = PrivilegedRuntimeState.UNAVAILABLE,
+                phase = PrivilegedRuntimePhase.FAILED,
+                failure = PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
+                detail = "direct_shell=feature_replacement_failed role=${role.name} " +
+                    "runtime_generation=$runtimeGeneration reason=${detail.take(160)}",
+            )
+            runtimeSnapshot
+        }
+        PrivilegedRuntimeRegistry.reportHealth(this, unavailable)
+    }
+
     private fun qualifyServer(
         role: DirectShellSelfBootstrapContract.ServerRole,
         server: DirectShellSelfBootstrapController.DirectShellLaunchedServer,
     ): String? {
-        return when (role) {
+        val qualificationFailure = when (role) {
             DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing -> {
                 val source = DirectShellSystemAudioRemoteE2eSource.create(
                     server.launch.port,
@@ -605,12 +649,54 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             }
             else -> "unsupported_feature_role_${role.name}"
         }
+        if (qualificationFailure != null) return qualificationFailure
+        return runCatching {
+            val connection = DirectShellOwnerConnection.connect(
+                server.launch.port,
+                server.launch.generation,
+                server.launch.secret,
+            )
+            synchronized(lock) { ownerConnections[server.launch.generation] = connection }
+            connection.monitor { onOwnerLost(role, server.launch.generation) }
+            Log.i(
+                TAG,
+                "DIRECT_SHELL_HOST_OWNER role=${role.name} generation=${server.launch.generation} state=ATTACHED",
+            )
+            null
+        }.getOrElse { error -> "owner_attach_${error.javaClass.simpleName}" }
+    }
+
+    private fun onOwnerLost(role: DirectShellFeatureRole, serverGeneration: Long) {
+        val (connection, lost) = synchronized(lock) {
+            val connection = ownerConnections[serverGeneration] ?: return@synchronized null
+            if (connection.alive()) return@synchronized null
+            ownerConnections.remove(serverGeneration)
+            if (!armed || !runtimeSnapshot.ready) return@synchronized connection to null
+            runtimeSnapshot = runtimeSnapshot.copy(
+                state = PrivilegedRuntimeState.UNAVAILABLE,
+                phase = PrivilegedRuntimePhase.FAILED,
+                failure = PrivilegedRuntimeFailure.DIRECTSHELL_OWNER_LOST,
+                detail = "direct_shell=owner_connection_lost role=${role.name} " +
+                    "server_generation=$serverGeneration runtime_generation=$runtimeGeneration",
+            )
+            connection to runtimeSnapshot
+        } ?: return
+        connection.close()
+        if (lost == null) return
+        Log.w(TAG, "DIRECT_SHELL_HOST_OWNER role=${role.name} generation=$serverGeneration state=LOST")
+        PrivilegedRuntimeRegistry.reportHealth(this, lost)
+    }
+
+    private fun suppressExpectedOwnerLoss(server: DirectShellFeatureServer) {
+        synchronized(lock) { ownerConnections[server.launch.generation]?.suppressLoss() }
     }
 
     private fun closeFeatureServer(
         role: DirectShellSelfBootstrapContract.ServerRole,
         server: DirectShellSelfBootstrapController.DirectShellLaunchedServer,
     ) {
+        val owner = synchronized(lock) { ownerConnections.remove(server.launch.generation) }
+        owner?.suppressLoss()
         runCatching {
             when (role) {
                 DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing ->
@@ -643,6 +729,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                 else -> Unit
             }
         }
+        owner?.close()
         server.launch.secret.fill(0)
     }
 

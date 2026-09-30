@@ -979,3 +979,25 @@ unimplemented/unvalidated. No protocol, planner policy or native source change.
 ```text
 SINGLE_DIRECT_ROOT_HOST_ADMISSION_VALIDATED_IN_AOSP_LAB
 ```
+
+## Bounded DirectShell owner-liveness extension
+
+The 2026-09-30 non-Root implementation retains an authenticated, generation-bound
+owner control socket per DirectShell feature server for an explicitly enabled
+Host. A pre-owner acquisition guard still bounds failed/orphan bootstrap; after
+owner attachment, idle time alone is not a process expiry condition. EOF/error,
+explicit shutdown and generation teardown release the helper. Authentication,
+APK verification, purpose-specific operations and provider identity are unchanged.
+
+Owner loss invalidates volatile runtime health and the application publication
+owner withdraws an admitted DirectShell Host through ordinary teardown. Cached
+capability evidence does not assert process liveness and is not poisoned by this
+transient loss. Freeze alone never publishes Host; there is no post-freeze
+provider migration or new unexpected-loss recovery. Expected feature shutdown
+must be suppressed before closing ownership so ordinary Session teardown does
+not masquerade as unexpected loss.
+
+See [physical evidence and limitations](../phase6_5/DirectShellIdleLivenessAndAudioPlaybackQuality.md).
+Open socket ownership is not a general hung-helper detector. Full background,
+screen-off, Doze, power policy and systematic fixed-duration timeout auditing
+remain deferred to RFC-005K or the relevant future discovery/recovery RFC.

@@ -52,6 +52,34 @@ public final class DirectShellProbeProtocolTest {
     }
 
     @Test
+    public void hostOwnerAttachUsesAuthenticatedGenerationBoundFraming() throws Exception {
+        byte[] generation = java.nio.ByteBuffer.allocate(Long.BYTES).putLong(73L).array();
+        byte[] encoded = encodeRequest(1L, DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH, generation);
+        DirectShellProbeProtocol.Request request = DirectShellProbeProtocol.readRequest(
+                new DataInputStream(new ByteArrayInputStream(encoded)), SECRET);
+
+        assertEquals(DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH, request.command);
+        assertTrue(DirectShellOwnerLease.matchesGeneration(request.payload, 73L));
+        assertFalse(DirectShellOwnerLease.matchesGeneration(request.payload, 74L));
+        assertFalse(DirectShellOwnerLease.matchesGeneration(new byte[7], 73L));
+        assertFalse(DirectShellOwnerLease.matchesGeneration(request.payload, 0L));
+
+        try {
+            DirectShellProbeProtocol.readRequest(new DataInputStream(new ByteArrayInputStream(encoded)), OTHER_SECRET);
+            fail("Expected owner authentication rejection");
+        } catch (DirectShellProbeProtocol.ProtocolException exception) {
+            assertEquals(DirectShellProbeProtocol.ProtocolException.Kind.UNAUTHENTICATED, exception.kind);
+        }
+    }
+
+    @Test
+    public void authenticatedOwnerOutlivesOldIdleLimitButUnownedBootstrapExpires() {
+        assertFalse(DirectShellOwnerLease.bootstrapExpired(900_001L, 0L, 60_000L, true));
+        assertFalse(DirectShellOwnerLease.bootstrapExpired(59_999L, 0L, 60_000L, false));
+        assertTrue(DirectShellOwnerLease.bootstrapExpired(60_000L, 0L, 60_000L, false));
+    }
+
+    @Test
     public void responseAuthenticatesItsRequestIdAndPayload() throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DirectShellProbeProtocol.writeResponse(

@@ -439,11 +439,23 @@ reused Phase 3 Client-microphone -> Host Opus/Oboe infrastructure in three
 S9/API29 -> Tablet/API33 protected technical Sessions plus one final-APK
 spot-check. It did not establish
 human-audible Tablet output. A separate long-idle control found Host Available
-while its DirectShell helpers had expired, so truthful Host liveness after
-15-minute helper idle is the next bounded product defect to address. The
+while its DirectShell helpers had expired. The subsequent
+[owner-liveness follow-up](phase6_5/DirectShellIdleLivenessAndAudioPlaybackQuality.md)
+implemented authenticated generation-bound owner sockets and loss-driven
+publication withdrawal. Physical A41/Tablet controls crossed the former idle
+boundary without a Host toggle; this closes the bounded ordinary-idle defect,
+not background persistence. MicrophoneAudio remains PARTIAL: steady-state
+ring rejection/zero-fill and Tablet physical output need causal closure. A
+known external speaker tone captured on A41 and decoded on Tablet proves that
+portion of the protected path, not the Tablet speaker. The
 future `HOST_AND_REMOTE` user choice and Host display `KEEP_ON`,
 `PRIVACY_BLANK`, or true `SCREEN_OFF` policy are not implemented;
 screen-policy feasibility should be evaluated before or during RFC-005K.
+That dedicated lifecycle/background work must also audit fixed-duration helper,
+process and service assumptions for ownership-versus-expiry semantics, including
+Host persistence, screen-off and power management. Discovery-specific lifetime
+review stays with its appropriate future RFC. RFC-005J/005K are not started by
+the bounded owner-channel change.
 
 The [Phase 6.5 rendered-frame observability report](phase6_5/LegacyRenderedFrameObservability.md)
 defines the measurement precondition: local decoder and Surface-handoff
