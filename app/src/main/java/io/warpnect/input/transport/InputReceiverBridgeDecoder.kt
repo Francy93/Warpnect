@@ -37,7 +37,8 @@ object InputReceiverBridgeDecoder {
         val deviceSlot = buffer.getInt(DEVICE_SLOT_OFFSET)
         val sequenceNumber = buffer.getLong(SEQUENCE_OFFSET)
         val sourceEventTimeUs = buffer.getLong(SOURCE_TIME_OFFSET)
-        if (deviceSlot !in 0 until 65_535 || sequenceNumber < 0L || sourceEventTimeUs < 0L) return null
+        // AllDevices reset owns the reserved u16 slot; event validation rejects it for other events.
+        if (deviceSlot !in 0..65_535 || sequenceNumber < 0L || sourceEventTimeUs < 0L) return null
 
         val event = when (messageType) {
             InputMessageTypeMetadata.Key -> InputKeyEvent(
