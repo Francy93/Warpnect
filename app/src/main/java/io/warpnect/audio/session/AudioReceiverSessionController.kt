@@ -1,5 +1,6 @@
 package io.warpnect.audio.session
 
+import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.decoder.AudioDecoderController
 import io.warpnect.audio.decoder.AudioDecoderError
@@ -10,6 +11,7 @@ import io.warpnect.audio.decoder.EncodedAudioFrameMetadata
 import io.warpnect.audio.decoder.MissingAudioFrameMetadata
 import io.warpnect.audio.playback.AudioPlaybackController
 import io.warpnect.audio.playback.AudioPlaybackError
+import io.warpnect.audio.playback.AudioPlaybackState
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import io.warpnect.audio.transport.AudioReceiverFrameReady
 import io.warpnect.audio.transport.AudioReceiverRuntimeController
@@ -291,8 +293,19 @@ class DefaultAudioReceiverSessionController(
     }
 
     private fun resetForFreshFrameLocked(frame: AudioReceiverFrameReady, streamConfig: AudioReceiverStreamConfig) {
-        preparePipelineLocked(streamConfig)
-        if (decodeCurrentFrameLocked(frame, streamConfig)) {
+        if (lastConfig?.playbackWarmStart == true && streamConfig.source == AudioCaptureSource.MicrophoneAudio &&
+            playbackStartGate == null && playbackController?.snapshot()?.state == AudioPlaybackState.Running &&
+            playbackSink != null
+        ) {
+            // Same-generation codec freshness does not invalidate a healthy microphone output clock.
+            decoderController?.runCatching { stop() }
+            decoderController?.close()
+            val sink = playbackSink ?: return
+            if (!prepareDecoderLocked(streamConfig, sink)) return
+        } else {
+            preparePipelineLocked(streamConfig)
+        }
+        if (decodeCurrentFrameLocked(frame.copy(discontinuityBefore = true), streamConfig)) {
             expectedFirstFramePosition =
                 frame.firstFramePosition + streamConfig.samplesPerFrame().toLong()
             startPlaybackAfterPrimeLocked()
@@ -303,13 +316,17 @@ class DefaultAudioReceiverSessionController(
         state = AudioSessionState.PreparingPipeline
         releasePipelineLocked()
 
-        val decoder = decoderControllerFactory()
         val playback = playbackControllerFactory()
         val sink = SessionDecodedPcmSink(playback, config.configGeneration)
-        decoderController = decoder
         playbackController = playback
         playbackSink = sink
+        if (!prepareDecoderLocked(config, sink)) return
+        preparePlaybackLocked(config, playback)
+    }
 
+    private fun prepareDecoderLocked(config: AudioReceiverStreamConfig, sink: SessionDecodedPcmSink): Boolean {
+        val decoder = decoderControllerFactory()
+        decoderController = decoder
         val decoderPrepare = decoder.prepare(config.toDecoderConfig(), sink)
         if (decoderPrepare.error != AudioDecoderError.None) {
             failPipelineLocked(
@@ -319,7 +336,7 @@ class DefaultAudioReceiverSessionController(
                     decoderError = decoderPrepare.error,
                 ),
             )
-            return
+            return false
         }
         val decoderStart = decoder.start()
         if (decoderStart.error != AudioDecoderError.None) {
@@ -330,8 +347,12 @@ class DefaultAudioReceiverSessionController(
                     decoderError = decoderStart.error,
                 ),
             )
-            return
+            return false
         }
+        return true
+    }
+
+    private fun preparePlaybackLocked(config: AudioReceiverStreamConfig, playback: AudioPlaybackController) {
         val receiverConfig = lastConfig
             ?: return failPipelineLocked(sessionFailure(AudioSessionError.InvalidConfiguration))
         val playbackPrepare = playback.prepare(
@@ -350,6 +371,22 @@ class DefaultAudioReceiverSessionController(
                 ),
             )
             return
+        }
+        // Warm the optional microphone output clock while PCM primes in the callback.
+        if (receiverConfig.playbackWarmStart && config.source == AudioCaptureSource.MicrophoneAudio &&
+            playbackStartGate == null
+        ) {
+            val warmStart = playback.start()
+            if (!warmStart.isSuccess) {
+                failPipelineLocked(
+                    AudioSessionFailure(
+                        source = AudioSessionErrorSource.Playback,
+                        error = AudioSessionError.PlaybackFailed,
+                        playbackError = warmStart.error,
+                    ),
+                )
+                return
+            }
         }
 
         activeStreamConfig = config

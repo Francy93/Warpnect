@@ -1,5 +1,8 @@
 package io.warpnect.platform.audio.playback
 
+import android.util.Log
+import io.warpnect.BuildConfig
+import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.playback.AudioPlaybackConfig
 import io.warpnect.audio.playback.AudioPlaybackController
 import io.warpnect.audio.playback.AudioPlaybackError
@@ -10,6 +13,7 @@ import io.warpnect.audio.playback.AudioPlaybackValidation
 import io.warpnect.audio.playback.AudioPresentationTimestampResult
 import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
+import io.warpnect.platform.audio.PcmDeliveryDebugProbe
 import io.warpnect.telemetry.NativeAudioPlaybackTelemetry
 import java.nio.ByteBuffer
 
@@ -24,6 +28,14 @@ class NativeOboeAudioPlaybackController internal constructor(
     private var handle: Long = 0L
     private var config: AudioPlaybackConfig? = null
     private var localSnapshot = AudioPlaybackSnapshot()
+    private var deliveryProbe: PcmDeliveryDebugProbe? = null
+    private var startupRejectLogs = 0
+    private var firstConsumerLogged = false
+    private var lastLoggedUnderrunNs = 0L
+    private var underrunLogs = 0
+    private var observationStartNs = 0L
+    private var steadyRejectLogs = 0
+    private var steadyUnderrunLogs = 0
 
     override fun prepare(config: AudioPlaybackConfig): AudioPlaybackResult = synchronized(lock) {
         val validation = AudioPlaybackValidation.validate(config)
@@ -66,6 +78,14 @@ class NativeOboeAudioPlaybackController internal constructor(
             // Telemetry is observational: native source attachment failure never affects playback.
         }
         this.config = config
+        startupRejectLogs = 0
+        firstConsumerLogged = false
+        lastLoggedUnderrunNs = 0L
+        underrunLogs = 0
+        observationStartNs = System.nanoTime()
+        steadyRejectLogs = 0
+        steadyUnderrunLogs = 0
+        deliveryProbe = PcmDeliveryDebugProbe.create("${config.source}_decoded_playback")
         state = AudioPlaybackState.Prepared
         localSnapshot = created.snapshot.copy(state = state, lastError = AudioPlaybackError.None)
         resultLocked(AudioPlaybackError.None)
@@ -85,13 +105,54 @@ class NativeOboeAudioPlaybackController internal constructor(
             return@synchronized resultLocked(validation)
         }
         val error = backend.submitPcm(handle, buffer, offset, sizeBytes, frameCount, metadata)
+        deliveryProbe?.observe(buffer, offset, sizeBytes, frameCount, System.nanoTime())
         if (error != AudioPlaybackError.None) {
             recordFailure(error)
+            if (BuildConfig.DEBUG && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+                error == AudioPlaybackError.PlaybackRingFull && allowRejectDiagnostic()
+            ) {
+                refreshSnapshot()
+                logDiagnostic(
+                    "AUDIO_PLAYBACK_FULL local_ns=${System.nanoTime()} position=${metadata.firstFramePosition} " +
+                        "occupancy=${localSnapshot.ringOccupancyFrames} consumed=${localSnapshot.pcmFramesConsumed}",
+                )
+            }
             return@synchronized resultLocked(error)
         }
         refreshSnapshot()
+        if (BuildConfig.DEBUG && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+            localSnapshot.lastUnderrunTimeNs > lastLoggedUnderrunNs && allowUnderrunDiagnostic()
+        ) {
+            lastLoggedUnderrunNs = localSnapshot.lastUnderrunTimeNs
+            logDiagnostic(
+                "AUDIO_PLAYBACK_UNDERRUN callback_ns=$lastLoggedUnderrunNs " +
+                    "missing_frames=${localSnapshot.lastUnderrunMissingFrames} " +
+                    "total=${localSnapshot.underrunCallbacks} occupancy=${localSnapshot.ringOccupancyFrames}",
+            )
+        }
+        if (BuildConfig.DEBUG && !firstConsumerLogged && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+            localSnapshot.pcmFramesConsumed > 0
+        ) {
+            firstConsumerLogged = true
+            logDiagnostic(
+                "AUDIO_PLAYBACK_FIRST_CONSUMPTION_OBSERVED local_ns=${System.nanoTime()} " +
+                    "consumed=${localSnapshot.pcmFramesConsumed}",
+            )
+        }
         localSnapshot = localSnapshot.copy(lastError = AudioPlaybackError.None)
         resultLocked(AudioPlaybackError.None)
+    }
+
+    private fun allowRejectDiagnostic(): Boolean = if (System.nanoTime() - observationStartNs < 10_000_000_000L) {
+        startupRejectLogs++ < 12
+    } else {
+        steadyRejectLogs++ < 8
+    }
+
+    private fun allowUnderrunDiagnostic(): Boolean = if (System.nanoTime() - observationStartNs < 10_000_000_000L) {
+        underrunLogs++ < 16
+    } else {
+        steadyUnderrunLogs++ < 8
     }
 
     override fun start(): AudioPlaybackResult = synchronized(lock) {
@@ -106,7 +167,15 @@ class NativeOboeAudioPlaybackController internal constructor(
             }
             return@synchronized resultLocked(error)
         }
+        val startedNs = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         val error = backend.start(handle)
+        if (BuildConfig.DEBUG && error == AudioPlaybackError.None &&
+            config?.source == AudioCaptureSource.MicrophoneAudio
+        ) {
+            logDiagnostic(
+                "AUDIO_PLAYBACK_START_RETURN start_ns=$startedNs end_ns=${System.nanoTime()}",
+            )
+        }
         if (error == AudioPlaybackError.None) {
             state = AudioPlaybackState.Running
             refreshSnapshot()
@@ -171,6 +240,8 @@ class NativeOboeAudioPlaybackController internal constructor(
                 backend.destroy(handle)
             }
             handle = 0L
+            deliveryProbe?.flush(System.nanoTime())
+            deliveryProbe = null
             config = null
             state = AudioPlaybackState.Closed
             localSnapshot = AudioPlaybackSnapshot(state = state, lastError = AudioPlaybackError.None)
@@ -211,6 +282,10 @@ class NativeOboeAudioPlaybackController internal constructor(
         if (handle != 0L && state != AudioPlaybackState.Closed) {
             localSnapshot = backend.snapshot(handle, state)
         }
+    }
+
+    private fun logDiagnostic(message: String) {
+        runCatching { Log.i("WarpnectAudioDiagnostics", message) }
     }
 
     private fun recordFailure(error: AudioPlaybackError) {

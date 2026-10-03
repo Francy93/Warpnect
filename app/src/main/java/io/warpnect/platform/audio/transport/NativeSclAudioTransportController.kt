@@ -12,6 +12,7 @@ import io.warpnect.audio.transport.AudioTransportOpenResult
 import io.warpnect.audio.transport.AudioTransportSnapshot
 import io.warpnect.audio.transport.AudioTransportState
 import io.warpnect.audio.transport.AudioTransportSubmitResult
+import io.warpnect.platform.audio.AudioCadenceDebugProbe
 import io.warpnect.platform.session.channel.markNativeEndpointAdopted
 import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
 import io.warpnect.session.setup.ChannelEndpointLease
@@ -21,6 +22,7 @@ class NativeSclAudioTransportController : AudioTransportController {
     private var nativeHandle: Long = 0L
     private var config: AudioTransportConfig? = null
     private var localSnapshot = AudioTransportSnapshot()
+    private var deliveryProbe: AudioCadenceDebugProbe? = null
 
     /** RFC-005I adopts the exact RFC-005G sender handle; no replacement socket is created. */
     internal fun adoptPreparedTransport(handle: Long): AudioTransportError {
@@ -57,6 +59,7 @@ class NativeSclAudioTransportController : AudioTransportController {
     internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
 
     override fun open(config: AudioTransportConfig): AudioTransportOpenResult {
+        deliveryProbe = AudioCadenceDebugProbe.create("${config.source}_protected_send")
         if (localSnapshot.state == AudioTransportState.Closed) {
             return AudioTransportOpenResult(AudioTransportError.Closed, localSnapshot)
         }
@@ -113,6 +116,13 @@ class NativeSclAudioTransportController : AudioTransportController {
                 lookaheadSamples = format.lookaheadSamples,
             ),
         )
+        if (error == AudioTransportError.None) {
+            deliveryProbe = AudioCadenceDebugProbe.create(
+                "${format.source}_protected_send",
+                format.sampleRateHz.toLong() * format.frameDurationUs / 1_000_000L,
+                format.frameDurationUs.toLong() * 1_000L,
+            )
+        }
         return remember(error)
     }
 
@@ -145,6 +155,7 @@ class NativeSclAudioTransportController : AudioTransportController {
                 discontinuityBefore = discontinuityBefore,
             ),
         )
+        deliveryProbe?.observe(firstFramePosition, System.nanoTime())
         return remember(error)
     }
 
@@ -179,6 +190,7 @@ class NativeSclAudioTransportController : AudioTransportController {
         val error = AudioTransportError.fromNativeCode(NativeBridge.audioTransportDestroy(handle))
         localSnapshot = localSnapshot.copy(state = AudioTransportState.Closed, lastError = error)
         config = null
+        deliveryProbe = null
         return AudioTransportCloseResult(error, localSnapshot)
     }
 

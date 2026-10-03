@@ -1,5 +1,256 @@
 # Android Compatibility Matrix
 
+## 2026-10-03 Final Global Microphone Quality
+
+[Detailed final evidence](../phase6_5/DirectShellGlobalMicrophoneFinalClosure.md)
+supersedes partial status below without erasing failures.
+
+| Host/path | Final result | Remaining boundary |
+| --- | --- | --- |
+| S9/API29 ->Tablet/API33, C782DD9D r2 | MIC3/3 above121s under one Enable; ordinary72s/reopen28s; steady IPC/track/DEBUG quality deltas0; real997Hz, natural25 input, restoration15/11 | Exact-path quality VALIDATED, not release/universal app qualification |
+| Same Tablet, VOICE_COMMUNICATION/CAMCORDER | Fresh14s ordinary consumers: real997Hz/type25, then physical15/11 and15/12 | Natural selection, no UID or forced preference |
+| A41/API31, same backend | AudioService recorder-policy registration requires missing MODIFY_AUDIO_ROUTING under UID2000 | GLOBAL_CAPTURE_PRESET_INJECTION_PERMISSION_BLOCKED, no workaround |
+| S7/API26 | Product API_LT_31_CONTEXT_UNSUPPORTED; older-context diagnostic reaches routing permission denial | Adapter limitation separate from framework primitive/permission |
+| Tablet valid forced priority | Getter empty/authorized; no valid preferred role applied | NOT TESTED for set/clear and abnormal ownership; no priority token |
+| Tablet ->S9 SystemAudio control | Technical/lifecycle PASS; last epoch rejected19440/underrun58/xrun0, with earlier counter reset | Separate quality debt, not equal-window improvement or regression proof |
+
+Final gates1022 JVM/163 suites/zero failures/errors/skips, native22/22 Debug and
+Release. No model-specific product branches, Root, hidden Shizuku fallback,
+release availability promotion or RFC-006J recovery implementation.
+
+## 2026-10-03 Residual Global Microphone Quality
+
+[Current detailed evidence](../phase6_5/MicrophoneReceiverSchedulingQuality.md).
+S9/API29 ->Tablet/API33 peer link restored.81F10D24 one-burst DEBUG admission
+candidate has stable diagnostics but final cycle1 quality FAIL: first steady
+track+3, reopen DEBUG underrun+7/track+13; IPC steady loss0.2/3 NOT RUN.
+Ordinary UID-free MIC signal/restoration remain functional.1017 JVM/22+22
+native gates pass. No portability/priority/release promotion or new token.
+
+## 2026-10-03 Receiver Scheduling Continuation
+
+[Detailed evidence](../phase6_5/MicrophoneReceiverSchedulingQuality.md) supersedes
+current status below without changing prior records or capability boundaries.
+
+| Pair / role | Latest evidence | Classification |
+| --- | --- | --- |
+| S9/API29 ->Tablet/API33,49D62210 diagnostic | Microphone-only audio-priority worker; measured runnable wait33913->2469ms; first60s and reopened5s steady quality deltas0; real997Hz/type25 then physical15/11 | Preliminary physical diagnostic PASS, not acceptance |
+| Same pair, final gated43FB71D6 | One Enable Host; cycle1 loses peer/media then Tablet Wi-Fi/Debug wireless, Host Available withdrawn; policy released;2/3 NOT RUN | Functional milestone retained; quality PARTIAL, cycle1 FAIL |
+| A41/API31; S7/API26; Tablet valid priority | No new implementation/forced-role attempt while quality gate remains open | Existing permission/adapter/authorization-only boundaries retained |
+
+## 2026-10-03 Source-Clock Continuation
+
+[Detailed primary evidence](../phase6_5/MicrophoneSourceClockRecovery.md) retains
+all previous campaigns and capability boundaries; no device-model branch.
+
+| Pair / role | Latest evidence | Classification |
+| --- | --- | --- |
+| S9/API29 ->Tablet/API33, D28F6136 | Counted108.943s consumer-window cycle1: recurring first steady DEBUG rejected+9360/underrun+69/xrun0, track+37, IPC+720; reopen pressure worse; Input replacement HMAC fails, Host publication withdrawn | Functional input retained; quality/lifecycle FAIL;2/3 NOT RUN |
+| Same pair,388C3A75 extended diagnostic |117.758s Session,90.037s ordinary consumer;80s sampled steady DEBUG/track/IPC deltas0, natural25 then physical15/11, Ready/Waiting | Diagnostic PASS only, not required3x close/reopen acceptance |
+| Same continuously enabled diagnostic Host, next attempt | Early lifecycle/media suspension then Wi-Fi reason5, Bluetooth service death, Android adbwifi disable; later ping3/3/TCP marker PASS each way without product changes | Initiator INCONCLUSIVE; lost network/DirectShell prerequisite proven, manual Debug wireless required |
+| A41/API31 and S7/API26 | No new workaround/adapter or provider test before quality gate | Prior actual MODIFY_AUDIO_ROUTING registration barrier retained |
+| Tablet forced priority | No valid preference set | Authorization-only PARTIAL retained; abnormal rollback NOT TESTED |
+
+Frozen80/70ms DEBUG playout and provisional40ms IPC are distinct. Source pacer
+now repays bounded debt based on existing AudioRecord capacity, not added PCM
+buffering. No new quality/priority token or universal qualification claim.
+
+## 2026-10-03 Clock Continuity And Framework Boundaries
+
+[Full campaign](../phase6_5/MicrophoneConsumerClockContinuity.md), final66A8B330;
+no model-specific product branch or UID rule, unchanged80/70ms DEBUG reserve.
+
+| Pair / role | New evidence | Classification |
+| --- | --- | --- |
+| S9/API29 ->Tablet/API33 global MIC | Three108.562/108.325/108.292s Sessions under one Enable Host; ordinary MIC open/reopen997Hz, natural25/2031,2052,2073, restored15/11; IPC rejected0/0/0, HWM13/12/14, local write age<40ms | Functional VALIDATED retained; quality PARTIAL: cycle3 continuous DEBUG underflow+13 and AudioTrack0->9 |
+| Tablet natural VOICE_COMMUNICATION/CAMCORDER | Separate18s ordinary readers, type25/id2107; RMSmax500.6899/500.8965 and997Hz component706.7688/702.9374; physical15/11 afterward | Functional spot PASS, not quality soak |
+| A41/API31 shell policy | MODIFY_AUDIO_ROUTING denied; actual registerAudioPolicy-1; priority methods SecurityException | GLOBAL_CAPTURE_PRESET_INJECTION_PERMISSION_BLOCKED; no workaround |
+| S7/API26 shell policy | Legacy ActivityThread shell context and recorder rule reachable; AudioService denies actual registration for uid2000 requiring MODIFY_AUDIO_ROUTING | Current product adapter blocked, followed by proven permission barrier; not framework-primitive absence |
+| Tablet priority authorization | Invalid-preset setter-2/clearer1 without SecurityException; all valid preferences empty before/after | Authorization-only PARTIAL; valid forced priority and abnormal rollback NOT TESTED |
+| Tablet helper SIGKILL | Owner LOST and publication WITHDRAWN at same local timestamp; all helpers/secrets gone, ordinary consumer25->15 | Health/policy cleanup PASS; no automatic recovery or forced-role cleanup claim |
+| Tablet later diagnostic | UI Streaming not observed; later reason5 Wi-Fi loss, Bluetooth signal9, Android adbwifi disable, typed replacement failure, publication withdrawal | External prerequisite lost; early media stall/initiating radio cause INCONCLUSIVE |
+| Tablet ->S9 SystemAudio | Bounded technical/lifecycle PASS, last decoded1171440/rejected20160/underrun217/xrun0 | Separate quality debt; not equal-duration comparison or new human REMOTE_ONLY proof |
+
+All requested source gates PASS:1007 JVM/161 suites,0 failures/errors/skips;
+native Debug22/22 and Release22/22. Evidence and intermediate failures remain
+uncommitted/excluded from checkpoint. No quality/priority token or release promotion.
+
+## 2026-10-02 Tablet-return consumer-transition continuation
+
+[Exact campaign and APK](../phase6_5/MicrophoneConsumerTransitionQuality.md):
+858A76A0 final-gate build, unchanged80/70ms DEBUG playout, provisional40ms IPC
+freshness-aware FIFO. No model branches or UID criteria.
+
+| Pair / role | New evidence | Classification |
+| --- | --- | --- |
+| S9/API29 ->Tablet/API33 global MIC | Two complete108.180/108.615s Sessions under one Enable Host, ordinary MIC OFF/997Hz/OFF, natural25/id1860 and1890, restored15/id11, fresh generations. IPC steady rejection/stale deltas0; cycle1 one240-frame reopen rejection; cycle3 interrupted by radio/path loss | PARTIAL; not3/3 accepted, no quality token |
+| Tablet platform prerequisite | Repeated locally generated reason5 wlan0 loss, Bluetooth SIGKILL/status9, Android Debug wireless OFF. Publication withdrawn after failed replacement with typed prerequisite | External boundary; radio/kill origin INCONCLUSIVE; no router/OS workaround |
+| A41/API31 ->S9/API29 SystemAudio control | Same APK,8s Host tone,20s intended Streaming wait, decoded2118960; rejected69120/underrun789/xrun0; Ready/Waiting and helpers/secrets0 after disable | Technical/lifecycle PASS; separate quality debt, unequal prior windows |
+| A41/S7 injection capability and forced priority | No new probe after unclosed gate | Historical permission/context boundaries preserved; priority NOT TESTED |
+
+All seven requested software gates PASS:1004 JVM/161 suites/0 failures/errors/
+skips; native Debug/Release22/22 after a preserved local linker-write failure.
+The preceding unavailable-Tablet pause and previous campaigns below are historical.
+
+## 2026-10-02 S9 / Tablet peer-link continuation
+
+[Network evidence](../phase6_5/S9TabletPeerLinkRecovery.md): initial IPv4
+ping/TCP fail both ways; S9-to-Tablet UDP token arrives but reply fails;
+Tablet-to-S9 UDP fails; A41 controls pass. One explicit Tablet rejoin restores
+bidirectional ping and all eight TCP/UDP token/echo tests, same IP/MAC/BSSID.
+ENVIRONMENTAL_PRECONDITION cleared; exact underlying mechanism INCONCLUSIVE.
+IPv6 initial `-I` probes are a local harness error, not packet-loss evidence;
+corrected scoped S9-to-Tablet ping3/3. Android turned Debug wireless off on
+rejoin, then Tablet USB disappeared; operator confirmed Tablet unavailable and
+authorized pausing. No new microphone Session or S22 substitution. Unchanged
+87EF556C candidate build PASS; physical consumer-window gate still pending.
+New full-gate rerun interrupted before tests; prior998-test result unchanged.
+
+## 2026-10-02 global-input quality candidates
+
+[Exact failed experiments, queues, clocks and gates](../phase6_5/DirectShellGlobalMicrophoneInjectionQuality.md).
+This follow-up does not revoke the frozen functional/cadence evidence below.
+
+| Exact Host | New quality evidence | Current qualification |
+| --- | --- | --- |
+| Tablet/API33 `2023264` | After Wireless Debugging restoration, EBE1B1B2 first counted111.017s cycle fails: unexpected IPC rejection3120/stale2952/HWM16; MIC25/id1460 real997Hz signal and physical15/id11 restoration PASS. Opening-flush and smaller track-threshold experiments failed and were reverted. Subsequent IPv4 peer-link restored by rejoin, as above | PARTIAL; Tablet now unavailable by operator confirmation, primary campaign paused. Consumer-window guard and failed-replacement health branch physically unvalidated |
+| A41/API31 `A415FXXS8DXE2` | Same smaller-threshold backend as microphone CLIENT -> Tablet comparison:112.479s, unexpected IPC rejection306720/stale71976, quality FAIL; self-tone clips and is not qualified signal proof. No new Host registration/priority experiment | Prior Host MODIFY_AUDIO_ROUTING denial unchanged; exact Binder-boundary expansion deferred. Client comparison is not evidence of A41 Host injection support |
+| S7/API26 | No new context adapter experiment before Part A passes | Prior API_LT_31_CONTEXT_UNSUPPORTED is an adapter limit, not proof of fundamental Android8 impossibility |
+
+UID rules remain NONE; no model/OEM branch, Root, protocol change or ring-size
+increase. Forced preference setter/clear remains NOT TESTED. Release unchanged.
+Pre-window-guard software gates996 JVM/160 suites/0 failures/errors/skips,
+native Debug/Release22/22; newest guard's final software gates pass998 JVM/
+160 suites/0 failures/errors/skips, but its physical quality gate remains pending.
+Latest restored5145B951 A41->S9 SystemAudio control completes Streaming/Ready/Waiting
+with last sink rejected30720/underrun373/xrun0. A partial late acoustic window
+has nonzero decoded PCM, not a full quality/frequency/human proof. Earlier27840/
+108/0 control remains historical. Video output/release3 and Input START/RESET/
+STOP OK are bounded smokes only. Normal Tablet/A41 disable leaves helpers/secrets0.
+
+## 2026-10-02 portable global microphone integration
+
+[Final CF5C311C APK, ordinary consumer and all failed attempts](../phase6_5/DirectShellGlobalMicrophoneInjection.md).
+This entry does not replace the accepted cadence APK or earlier scoped probes.
+Functional global injection is validated on the exact Tablet build, not universal
+Android/release support or lossless input quality.
+
+| Exact Host | Same no-UID capture-preset backend | Ordinary consumer / qualification |
+| --- | --- | --- |
+| Tablet X700_EEA/API33 `2023264` | GLOBAL_CAPTURE_PRESET_INJECTION_SUPPORTED; recorder mix MIC1/VOICE_COMMUNICATION7/CAMCORDER5, LOOP_BACK; UID criteria NONE | Three fresh protected S9 Sessions with60s ordinary MIC consumers, plus30s VOICE/CAMCORDER: physical997Hz OFF/ON/OFF PASS. Natural type25/id1136,1206,1221,1236; built-in inputs intact. Normal stop/helper loss restore physical type15. Forced priority NOT TESTED, getter authorized only |
+| A41 SM-A415F/API31 `A415FXXS8DXE2` | PERMISSION_DENIED at MODIFY_AUDIO_ROUTING | No policy mutation; no OEM workaround; input enumeration unchanged |
+| S7 SM-G935F/API26 | API_UNAVAILABLE at existing API_LT_31 shell-context adapter | Not a claim that all API26 framework paths are impossible; no alternate architecture |
+
+Tablet integration candidates preserve explicit warm-start/ingress-blocking,
+decoder-reset owner-loss failures and a separate Wi-Fi disconnection that disabled
+Wireless Debugging. Session-scoped ownership fixes policy reacquisition on decoder
+reset. Final MIC1 DEBUG rejected7920/underrun10/xrun1 (local sink counters),
+MIC2/3 zero; IPC startup/no-consumer pressure remains open. Global signal proof
+does not qualify lossless quality. Final A41 control normal Host/technical mic
+PASS with truthful PERMISSION_DENIED, no policy/IPC and DEBUG counters0; S7
+same-source probe stops at API_LT_31 context. Gates990 JVM/0/0/0; native22/22 each.
+No forced priority was set. S22 was not required or tested in this follow-up.
+
+## 2026-10-01 autonomous MicrophoneAudio cadence closure
+
+[Complete chronology, failed candidates, local clocks and latency cost](../phase6_5/MicrophoneAudioCadenceRootCause.md).
+Final APK SHA256 `4B4B25989EF79D7C2C7FD5E69DFFA515B973F5CC1DC2A2FD1E8EE35538CB071D`,
+installed hash verified on both endpoints. S9/API29 `G960FXXUHFVG4` built-in mic
+-> Tablet/API33 `2023264` DEBUG SPEAKER sink,48kHz mono5ms Opus64kbit/s.
+One normal Enable Host, `SINGLE / DIRECT_SHELL`, no hidden retry or Shizuku.
+
+| Cycle | Sampled Streaming | PCM rejected / underrun / xrun | Kernel max gap | Ring HWM /3840frames | Local PCM residence max | Result |
+| --- | ---: | --- | ---: | ---: | ---: | --- |
+|1|69.902s|0 /0 /0|40.848ms|3568|74.041ms|Quality/lifecycle PASS |
+|2|69.748s|0 /0 /0|41.790ms|3664|76.054ms|Quality/lifecycle PASS |
+|3|69.898s|0 /0 /0|45.482ms|3600|74.873ms|Quality/lifecycle PASS |
+
+Startup and approximately55s steady deltas are0. Intentional warm pre-PCM
+silence has separate priming counters. Capacity80ms/reserve70ms correct the
+old20ms/5ms arrival-tolerance contract; nominal reserve adds65ms. Codec,
+pacer, socket and Oboe hardware buffers remain unchanged. Sequence windows
+have startup missing0/1/1, then missing/duplicate/reorder0; endpoint totals
+are asynchronous, not a loss subtraction. Rare154ms earlier stalls remain
+unexplained, beyond the bounded budget. No universal network qualification.
+
+Physical S9 speaker -> built-in mic OFF/ON/OFF RMS about45/3513/41 reaches
+Tablet decoded RMS46/3516/41. SPEAKER track consumption is observed, but
+final Tablet human audibility **NOT_CONFIRMED**. Each Disconnect restores
+Ready/Waiting and rediscovery. Final Disable leaves helpers/secrets0 and
+closed sinks. SystemAudio control is technical/lifecycle PASS, not quality
+closure: unchanged playback pressure remains separately recorded.
+Gates972 JVM/0 failures/errors/skips; native Debug/Release22/22 each.
+No Root, framework/HAL change or global AudioPolicy integration. Earlier
+failed paced and60/50ms campaigns remain historical below/in the report.
+
+## 2026-10-01 portable microphone ordered gate follow-up
+
+[Exact attempts, local clocks, APKs and gates](../phase6_5/DirectShellMicrophoneInjectionQualification.md).
+The earlier sections remain historical, including their failed campaigns.
+
+| Exact boundary | New evidence | Status |
+| --- | --- | --- |
+| S9/API29 AudioRecord -> synchronous sender | Reads return four240-frame blocks in approximately20ms groups; grouping already precedes Opus/socket | First source boundary PROVEN; total playback cause not closed |
+| S9/API29 local paced capture, final E080A820... |142320 physical PCM frames;592 intervals all3-7ms, max5.367ms; RMS27.1424; clean stop/close | Local physical1/1 PASS, not protected E2E quality |
+| S9 -> Tablet source diagnostic baseline6180A8BB... | Normal Session/Disconnect PASS; recurring rejection105600 and zero-fill120272 in last Host snapshot | Quality FAIL retained |
+| S9 -> Tablet paced attempt6F520EF7... | Control suspension stops mic before steady window; later WLAN disconnect disables wireless ADB | Attempt FAIL/first control cause INCONCLUSIVE; fresh Host setup ENVIRONMENTAL_PRECONDITION |
+| Resumed final E080A820... S9 -> Tablet, cycle1 |69.739s sampled Streaming; steady rejected35280, underruns204, xrun0; kernel maximum43.808ms | Lifecycle PASS; quality FAIL |
+| Resumed final E080A820... S9 -> Tablet, cycle2 |69.891s sampled Streaming; steady rejected35760, underruns205, xrun0; kernel maximum41.752ms | Lifecycle PASS; quality FAIL |
+| Resumed final E080A820... S9 -> Tablet, cycle3 |69.904s sampled Streaming; steady rejected33840, underruns195, xrun0; kernel maximum46.173ms | Lifecycle PASS; quality FAIL |
+| Separate resumed Tablet -> S9 SystemAudio control | Capture/send/decode/playback progress; normal Disconnect/Disable. Existing playback pressure remains, including rejected50880/underruns436 at last S9 snapshot | Technical/lifecycle PASS; no zero-loss or new human-audible claim |
+| Tablet/API33 global MIC/VOICE_COMMUNICATION/CAMCORDER policy | NOT TESTED: operator restored Wireless Debugging, but ordered quality gate failed3/3 | INCONCLUSIVE; previous scoped evidence is not global proof |
+| A41/API31 global path | NOT TESTED; restored Wireless Debugging verified1. Prior shell routing-permission denial unchanged as historical exact-key evidence | Registration prerequisite previously PERMISSION_BLOCKED; no workaround |
+| S7/API26 / S22/API36 | No new microphone qualification | NOT TESTED; no physical Root or API36 inference |
+
+No ring, Opus duration/bitrate, socket buffer or Oboe priority/priming change.
+No successful global-policy, priority, coexistence or fallback campaign yet.
+Software gates964 JVM/0 failures/errors/skips, native Debug/Release22/22 each.
+
+## 2026-10-01 microphone cadence / first-class input investigation
+
+[Exact clocks, attempts, counters and cleanup](../phase6_5/MicrophoneAudioCadenceAndVirtualInput.md).
+The earlier reports below remain historical. This is not new production
+MicrophoneAudio device support or a universal API/OEM statement.
+
+| Exact path | Current evidence | Classification |
+| --- | --- | --- |
+| S9/API29 microphone -> A41/API31 DEBUG sink | Normal protected baseline progressed; operator heard S9 audio on A41 | HUMAN AUDIBLE CONFIRMED on DEBUG path; quality still fails |
+| S9/API29 microphone -> Tablet/API33 DEBUG sink | Baseline and local kernel/read/authentication diagnostics progress; additional bursts exist at kernel ingress | Technical E2E/lifecycle separate from recurring ring rejection/zero-fill; root cause INCONCLUSIVE |
+| Tablet/API33 `2023264`, UID2000 | Four tested audio permissions granted; AudioPolicy register0; dynamic submix is actually enumerated alongside bottom/back mic | SCOPED_AUDIOPOLICY_INJECTION_ONLY for tested path |
+| Same Tablet ordinary consumer, unmatched UID | Preferred dynamic input accepted as a preference, but getInputForAttr=-1/start fails/read=-3 | PLATFORM_CAPABILITY_LIMIT; no first-class usable input PASS |
+| Same Tablet matching-UID control | Normal AudioRecord receives generated1193 Hz, RMS1413.67-1413.84; unregister restores bottom mic | Scoped framework control, not protected remote microphone product integration |
+| A41/API31 `A415FXXS8DXE2`, UID2000 | MODIFY_AUDIO_ROUTING denied, empty policy register-1; other three tested permissions granted | REQUIRES_DIRECTROOT_OR_STRONGER_PRIVILEGE at registration prerequisite, not proof that Root solves product input |
+| S22/API36 | NOT TESTED in this task | Prior scoped and SystemAudio evidence unchanged |
+| S7/API26 | Connected but not used/unlocked | No new qualification |
+
+Final APK and three separately counted >=60-second Sessions are detailed in
+the current report. No buffer or protocol change; owner-bound DirectShell is
+unchanged. Software gates959 JVM/0 failures/errors/skips and native Debug/Release
+22/22 each. New diagnostics/feasibility work remains uncommitted.
+
+## 2026-09-30 virtual-input feasibility / DEBUG playback follow-up
+
+[Exact experiment and final-APK campaign](../phase6_5/MicrophoneAudioVirtualInputArchitecture.md).
+Production intent is Android Host virtual microphone input; speaker playback
+is DEBUG-only. These results do not upgrade physical remote-mic product support.
+
+| Exact target / path | Result | Boundary |
+| --- | --- | --- |
+| A41/API31, `A415FXXS8DXE2`, shell UID2000 | `MODIFY_AUDIO_ROUTING=false`, empty AudioPolicy register=-1 | Input-policy prerequisite unavailable on this build; SystemAudio capture remains a separate proven capability |
+| S22/API36, `S901BXXSOGZH3`, shell UID2000 -> normal consumer UID10384 | Corrected scoped injector wrote477192 frames; standard AudioRecord received 1193 Hz with RMS1413.67-1413.84; after unregister it returned to physical mic | UID-scoped rerouting experiment only; no protected Client acoustic -> virtual Host input path or arbitrary-app selectable-device qualification |
+| S9/API29 microphone -> A41/API31 DEBUG playback | Final APK `64948EA3...`: 3/3 normal technical/lifecycle Sessions under one Host enable; AudioFlinger output SPEAKER | Quality FAIL in each 65-second steady window; real PCM rejected and zero-fill. Human audible result NOT CONFIRMED |
+| A41/API31 SystemAudio -> S9/API29 control | Same final APK, normal Session, eight-second source OFF/ON/OFF observed in decoded PCM; Disconnect/Disable clean | Technical regression only; playback pressure remains, no new human routing or zero-loss claim |
+| Tablet/API33 | NOT TESTED / disconnected for this follow-up | Earlier idle, microphone/earpiece and SystemAudio evidence retained |
+| S7/API26 | Connected but credential-locked, not used | No unlock bypass or new microphone qualification |
+
+S22 became available and was tested in this follow-up; older task-specific
+unavailability statements remain historical. Liveness checkpoint `715b215`
+retains the A41 almost18-hour and Tablet >18-minute evidence. The first scoped
+S22 attempt failed real attribution validation and remains FAIL; only the
+later corrected DEBUG fixture experiment passed. No Root, model allowlist,
+framework/vendor change or system-wide physical-microphone replacement.
+Final gates:954 JVM/0 failures/errors/skips; native Debug and Release22/22 each.
+
 ## 2026-09-30 owner liveness and microphone quality follow-up
 
 [Exact artifacts, anomalies and counters](../phase6_5/DirectShellIdleLivenessAndAudioPlaybackQuality.md).

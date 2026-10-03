@@ -91,6 +91,27 @@ class PrivilegedRuntimeRegistryTest {
     }
 
     @Test
+    fun `failed consumed helper replacement withdraws ready health with exact prerequisite reason`() {
+        val runtime = FakeRuntime(readySnapshot())
+        assertTrue(PrivilegedRuntimeRegistry.installDirectShell(runtime))
+        assertTrue(PrivilegedRuntimeRegistry.acquireForHost().ready)
+        val observed = mutableListOf<PrivilegedRuntimeSnapshot>()
+        val observation = PrivilegedRuntimeRegistry.observeHealth { observed += it }
+        val failed = readySnapshot().copy(
+            state = PrivilegedRuntimeState.UNAVAILABLE,
+            phase = PrivilegedRuntimePhase.WIRELESS_DEBUGGING_DISABLED,
+            failure = PrivilegedRuntimeFailure.DIRECTSHELL_WIRELESS_DEBUGGING_DISABLED,
+            detail = "direct_shell=feature_replacement_failed role=PcmSharedRing",
+        )
+        PrivilegedRuntimeRegistry.reportHealth(runtime, failed)
+        assertEquals(listOf(failed), observed)
+        assertFalse(PrivilegedRuntimeRegistry.snapshot().ready)
+        assertEquals(failed, PrivilegedRuntimeRegistry.snapshot())
+        assertEquals(1, runtime.acquireCalls)
+        observation.close()
+    }
+
+    @Test
     fun `stale runtime generation cannot withdraw current runtime`() {
         val runtime = FakeRuntime(readySnapshot())
         assertTrue(PrivilegedRuntimeRegistry.installDirectShell(runtime))

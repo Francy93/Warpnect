@@ -15,6 +15,9 @@ import io.warpnect.audio.transport.AudioReceiverRuntimeSnapshot
 import io.warpnect.audio.transport.AudioReceiverRuntimeState
 import io.warpnect.audio.transport.AudioReceiverStreamConfig
 import io.warpnect.audio.transport.AudioTransportError
+import io.warpnect.platform.audio.AudioCadenceDebugProbe
+import io.warpnect.platform.audio.AudioReceiveTimingDebugProbe
+import io.warpnect.platform.audio.capture.AndroidAudioThreadPriority
 import io.warpnect.platform.session.channel.markNativeEndpointAdopted
 import io.warpnect.platform.session.channel.nativeEndpointHandleForLiveRebind
 import io.warpnect.session.setup.ChannelEndpointLease
@@ -34,6 +37,8 @@ class NativeSclAudioReceiverController(
 
     private var currentConfig: AudioReceiverRuntimeConfig? = null
     private var localSnapshot = AudioReceiverRuntimeSnapshot()
+    private var deliveryProbe: AudioCadenceDebugProbe? = null
+    private var timingProbe: AudioReceiveTimingDebugProbe? = null
 
     /** RFC-005I adopts the stopped RFC-005G protected receiver without rebinding a UDP port. */
     internal fun adoptPreparedTransport(handle: Long): AudioTransportError {
@@ -116,15 +121,31 @@ class NativeSclAudioReceiverController(
             return AudioReceiverRuntimeResult(AudioTransportError.None, snapshot())
         }
         running = true
+        deliveryProbe = AudioCadenceDebugProbe.create("${currentConfig?.source}_protected_receive")
+        timingProbe = AudioReceiveTimingDebugProbe.create()
         worker = Thread({
+            applyMicrophoneReceiverPriority(currentConfig?.source, AndroidAudioThreadPriority::applyCapturePriority)
             while (running) {
                 val event = pumpOnce(pumpTimeoutUs)
                 when (event.type) {
                     AudioReceiverRuntimeEventType.StreamConfigReady -> {
-                        event.streamConfig?.let(listener::onStreamConfig)
+                        event.streamConfig?.let { config ->
+                            deliveryProbe = AudioCadenceDebugProbe.create(
+                                "${config.source}_protected_receive",
+                                config.sampleRateHz.toLong() * config.frameDurationUs / 1_000_000L,
+                                config.frameDurationUs.toLong() * 1_000L,
+                            )
+                            timingProbe = AudioReceiveTimingDebugProbe.create(config.frameDurationUs.toLong() * 1_000L)
+                            listener.onStreamConfig(config)
+                        }
                     }
                     AudioReceiverRuntimeEventType.AudioFrameReady -> {
-                        event.frame?.let(listener::onAudioFrameReady)
+                        event.frame?.let { frame ->
+                            deliveryProbe?.observe(frame.firstFramePosition, System.nanoTime())
+                            val startedNs = if (timingProbe != null) System.nanoTime() else 0L
+                            listener.onAudioFrameReady(frame)
+                            timingProbe?.let { it.listenerCompleted(System.nanoTime() - startedNs) }
+                        }
                     }
                     AudioReceiverRuntimeEventType.TransportError -> {
                         listener.onRuntimeError(event.error)
@@ -145,7 +166,11 @@ class NativeSclAudioReceiverController(
                 error = AudioTransportError.InvalidHandle,
             )
         }
-        return NativeBridge.audioReceiverPump(handle, timeoutUs).toReceiverEvent(currentConfig?.source)
+        val values = NativeBridge.audioReceiverPump(handle, timeoutUs)
+        if (values.getOrNull(0) == AudioReceiverRuntimeEventType.AudioFrameReady.ordinal.toLong()) {
+            timingProbe?.observe(values)
+        }
+        return values.toReceiverEvent(currentConfig?.source)
     }
 
     override fun readyBuffer(slotIndex: Int): ByteBuffer? {
@@ -198,6 +223,8 @@ class NativeSclAudioReceiverController(
             NativeBridge.audioReceiverDestroy(handle)
         }
         currentConfig = null
+        deliveryProbe = null
+        timingProbe = null
         localSnapshot = localSnapshot.copy(state = AudioReceiverRuntimeState.Closed)
     }
 
@@ -319,3 +346,6 @@ class NativeSclAudioReceiverController(
         const val U16_MAX = 65_535
     }
 }
+
+internal fun applyMicrophoneReceiverPriority(source: AudioCaptureSource?, applyPriority: () -> Boolean): Boolean =
+    source == AudioCaptureSource.MicrophoneAudio && applyPriority()

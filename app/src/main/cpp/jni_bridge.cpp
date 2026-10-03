@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -124,10 +125,10 @@ inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
 inline constexpr jsize kNativeAudioPlaybackCreateValues = 2;
-inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 49;
+inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 53;
 inline constexpr jsize kNativeAudioPlaybackSourceAnchorValues = 17;
 inline constexpr jsize kNativeAudioPlaybackTimestampValues = 5;
-inline constexpr jsize kNativeAudioReceiverEventValues = 15;
+inline constexpr jsize kNativeAudioReceiverEventValues = 20;
 inline constexpr jsize kNativeAudioReceiverSnapshotValues = 26;
 inline constexpr jsize kNativeAudioTransportSnapshotValues = 21;
 inline constexpr jsize kNativeInputTransportSnapshotValues = 34;
@@ -2494,6 +2495,10 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSnapshot(JNIEnv* env,
         values[46] = static_cast<jlong>(snapshot.last_ring_residence_ns);
         values[47] = static_cast<jlong>(snapshot.max_ring_residence_ns);
         values[48] = static_cast<jlong>(snapshot.lookahead_samples);
+        values[49] = static_cast<jlong>(snapshot.priming_callbacks);
+        values[50] = static_cast<jlong>(snapshot.priming_frames);
+        values[51] = static_cast<jlong>(snapshot.last_underrun_time_ns);
+        values[52] = static_cast<jlong>(snapshot.last_underrun_missing_frames);
     }
     jlongArray array = env->NewLongArray(kNativeAudioPlaybackSnapshotValues);
     if (array != nullptr) {
@@ -3770,7 +3775,14 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverPump(JNIEnv* env,
         values[0] = static_cast<jlong>(AudioReceiverEventType::TransportError);
         values[1] = audio_transport_error_code(AudioTransportError::InvalidHandle);
     } else {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        const auto lock_started = std::chrono::steady_clock::now();
+#endif
         std::lock_guard guard(native_handle->lock);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        const auto lock_wait_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::steady_clock::now() - lock_started).count();
+#endif
         const auto event =
             native_handle->runtime->pump(static_cast<std::uint64_t>(timeout_us));
         values[0] = static_cast<jlong>(event.type);
@@ -3787,7 +3799,14 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverPump(JNIEnv* env,
         values[11] = static_cast<jlong>(event.capture_time_us);
         values[12] = static_cast<jlong>(static_cast<std::uint8_t>(event.timestamp_quality));
         values[13] = event.discontinuity_before ? 1 : 0;
-        values[14] = 0;
+        values[14] = static_cast<jlong>(event.packet_sequence);
+        values[15] = static_cast<jlong>(event.receive_realtime_ns);
+        values[16] = static_cast<jlong>(event.receive_monotonic_ns);
+        values[17] = static_cast<jlong>(event.authenticated_monotonic_ns);
+        values[18] = static_cast<jlong>(event.socket_age_ns);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        values[19] = lock_wait_ns;
+#endif
     }
     jlongArray array = env->NewLongArray(kNativeAudioReceiverEventValues);
     if (array != nullptr) {

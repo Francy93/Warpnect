@@ -275,6 +275,18 @@ real Android/hardware validation remains separately tracked because no device wa
 
 ## Phase 6.5 - Privileged Runtime Evolution
 
+Current microphone evidence: [final global-input closure](phase6_5/DirectShellGlobalMicrophoneFinalClosure.md)
+validates C782DD9D r2 S9/API29 ->Tablet/API33 ordinary MIC3/3 above121s under one
+Enable, close/reopen steady quality deltas0, real997Hz, UID NONE, natural three-
+preset routing and normal/helper-loss cleanup. Fixed40ms IPC age is retained,
+independent of80/70ms DEBUG playout.1022 JVM/22+22 native gates pass. Older partial
+continuations later in this roadmap remain historical. A41 routing permission
+and S7 product context-adapter boundaries remain; valid forced priority,
+release promotion and universal qualification are not implied. Next separate
+task: SystemAudio causal jitter/playout quality analysis, not begun here.
+Same-provider recovery/root-assisted remediation/live migration remain deferred
+NOT IMPLEMENTED; composite pre-Session planning is not runtime recovery.
+
 Status: validated DirectShell modern Host baseline; static per-capability
 planning, optional Shizuku provider integration, and RFC-006J runtime
 state/background Host readiness plus Step 2 persistent evidence and prepared
@@ -444,10 +456,139 @@ while its DirectShell helpers had expired. The subsequent
 implemented authenticated generation-bound owner sockets and loss-driven
 publication withdrawal. Physical A41/Tablet controls crossed the former idle
 boundary without a Host toggle; this closes the bounded ordinary-idle defect,
-not background persistence. MicrophoneAudio remains PARTIAL: steady-state
+not background persistence. That earlier MicrophoneAudio follow-up remained PARTIAL: steady-state
 ring rejection/zero-fill and Tablet physical output need causal closure. A
 known external speaker tone captured on A41 and decoded on Tablet proves that
-portion of the protected path, not the Tablet speaker. The
+portion of the protected path, not the Tablet speaker. Owner liveness is now
+checkpointed locally at `715b215`, not re-opened for another lifetime redesign.
+The clarified [MicrophoneAudio destination architecture](phase6_5/MicrophoneAudioVirtualInputArchitecture.md)
+requires **Android Host virtual microphone input** for production. Oboe output
+is only DEBUG validation, explicitly labelled and unavailable as a release
+virtual-input offer. S22/API36 shell demonstrated UID-scoped Android recorder
+injection; A41/API31 policy authorization was denied. Additional/selectable
+input and local-mic coexistence, consent and protected Session handoff remain
+unimplemented, not disguised as speaker playback or generalized to all Android.
+DEBUG Media routing is technically SPEAKER on A41; Tablet route-after-fix and
+human audibility remain unconfirmed. Three final S9 -> A41 technical/lifecycle
+Sessions passed but all steady quality windows retained rejection/zero-fill.
+The first additional irregular boundary is protected submit -> pre-decoder
+receive; precise network/OS/receiver causality still needs a bounded investigation,
+not a larger ring. The 2026-10-01
+[cadence/first-class input follow-up](phase6_5/MicrophoneAudioCadenceAndVirtualInput.md)
+now observes additional jitter already at Host kernel receive, with local
+authentication/lock timing separated from ingress. Cause and playback quality
+remain INCONCLUSIVE/PARTIAL; no ring inflation or guessed transport change.
+S9 -> A41 DEBUG speaker audibility is operator-confirmed. Tablet/API33 shell
+can register a dynamic submix, but an unmatched ordinary consumer cannot open
+the enumerated input; matching-UID injection succeeds. A41 shell registration
+remains permission-blocked. First-class Android input is blocked on the tested
+DirectShell paths, not universally disproven and not solved by scoped injection.
+Those earlier software gates were959 JVM/0/0/0, native Debug/Release22/22 each.
+The later [portable microphone ordered gate](phase6_5/DirectShellMicrophoneInjectionQualification.md)
+proves AudioRecord API read batching before encoding, and physically validates
+local paced S9 delivery without another PCM queue (592 intervals all3-7ms).
+The initial control-suspension failure and Tablet Wi-Fi/ADB loss remain preserved.
+After operator restoration, three consecutive final-APK S9 -> Tablet Sessions
+above60s completed:3/3 lifecycle PASS,0/3 quality PASS. Source pacing improves
+encoder/socket cadence, but kernel gaps41.8-46.2ms and steady ring rejection/
+zero-fill remained in that campaign; no ring/codec/socket-buffer change. The then-next boundary was
+post-pacer socket-send-to-kernel cadence causality, not global injection or a
+larger buffer. Those exact-source gates were964 JVM/0/0/0 and native
+Debug/Release22/22 each; no new source change/rerun in the resumed hardware phase.
+Partial work remains uncommitted.
+The subsequent [autonomous cadence closure](phase6_5/MicrophoneAudioCadenceRootCause.md)
+establishes two Warpnect boundaries: an insufficient20ms PCM ring/5ms reserve
+for ordered arrivals with roughly49-64ms local phase range, and cold output
+startup while the ring was already full. An80ms bounded ring/70ms reserve
+plus warm output clock closes exact S9/API29 -> Tablet/API33 DEBUG playback:
+3/3 consecutive Sessions69.902/69.748/69.898s under one Enable Host, with
+rejection/underrun/xrun0. Nominal priming adds65ms; pacer, codec and socket
+buffers are unchanged. Kernel gaps40.9-45.5ms remain, so no Wi-Fi bug or
+absolute E2E latency is claimed. The rejected60/50ms campaign and earlier
+failures remain preserved. SPEAKER route and physical acoustic capture ->
+remote decode are proven, final human Tablet audibility is not. Normal
+Disconnect/Waiting/rediscovery and final helpers/secrets0 pass. SystemAudio
+technical control passes but retains its separately open playback pressure.
+Final gates972 JVM/0/0/0, native Debug/Release22/22 each; source remains
+uncommitted. Global policy was deliberately not started in this task.
+The new product experiment is one portable Dynamic AudioPolicy recorder mix
+matching MIC/VOICE_COMMUNICATION/CAMCORDER capture presets, without application
+UID criteria. The earlier explicit-port/scoped results neither prove nor disprove
+that hypothesis. The later [global integration](phase6_5/DirectShellGlobalMicrophoneInjection.md)
+physically validates one DEBUG capture-preset backend on final CF5C311C:
+S9->Tablet three fresh Sessions with60s ordinary MIC consumers and physical
+997Hz signal, plus VOICE_COMMUNICATION/CAMCORDER. UID rules NONE; natural Android
+selection and normal/helper-loss restoration pass. Release destination and
+quality remain PARTIAL: startup/no-consumer IPC backpressure and MIC1 late DEBUG
+underrun need causal closure; MIC2/3 DEBUG counters0 do not erase that result.
+Forced priority is NOT TESTED; getter authorization does not prove setter or
+crash-safe role rollback. A41 permission/S7 adapter boundaries are capability
+results, not separate architectures. Gates990 JVM/0/0/0 and native22/22 each.
+No device-specific path or framework/vendor/HAL patch. The
+latest [consumer-transition continuation](phase6_5/MicrophoneConsumerTransitionQuality.md)
+keeps global-input quality PARTIAL: Tablet returned; provisional40ms local IPC
+expiration and bounded stale-head admission improve two complete108s ordinary
+MIC Sessions, but the third fails during renewed platform radio/path loss.
+Bluetooth SIGKILL, wlan0 disassociation and Android disabling Debug wireless are
+observed; exact initiating cause remains INCONCLUSIVE. No primary substitution,
+priority/portability promotion or recovery/migration. Full gates1004 JVM/161
+suites and native22/22 each pass;80/70ms DEBUG playout remains unchanged.
+Current [residual microphone quality evidence](phase6_5/MicrophoneReceiverSchedulingQuality.md):
+peer link restored, bounded one-burst admission corrects whole-block DEBUG
+rejection without ring growth. Final81F10D24 first cycle remains quality FAIL
+on residual source/track starvation;2/3 NOT RUN.1017 JVM/22+22 native pass.
+Portability/forced priority/release remain gated; SystemAudio quality remains
+a separate future task, no recovery/migration implementation.
+
+Latest [receiver scheduling continuation](phase6_5/MicrophoneReceiverSchedulingQuality.md)
+keeps global microphone quality PARTIAL. A microphone-only audio-priority worker
+reduces proven local receive starvation; one stable physical diagnostic does
+not replace acceptance. Frozen43FB71D6 cycle1 loses peer/Tablet prerequisite,
+2/3 NOT RUN.1016 JVM/22+22 native pass. No release promotion, forced priority,
+provider recovery or new portability path. SystemAudio quality remains separate.
+
+Latest [source-clock recovery continuation](phase6_5/MicrophoneSourceClockRecovery.md)
+corrects a proven pacing-debt defect, but global-input quality remains PARTIAL:
+the first counted new108.943s cycle fails steady pressure and teardown;2/3 NOT
+RUN. Separate80s stable continuous-reader diagnostic is not close/reopen
+acceptance. Later primary media suspension/radio loss disables Debug wireless;
+peer ping/TCP subsequently recover automatically. No buffer/codec/socket change,
+new provider/OEM path, priority role, recovery/migration or release promotion.
+Finish this exact primary gate after manual prerequisite restoration; do not
+start the separate SystemAudio quality task from a partial microphone result.
+Current [2026-10-03 clock-continuity continuation](phase6_5/MicrophoneConsumerClockContinuity.md)
+completes functional3/3 consecutive108s S9 ->Tablet ordinary MIC Sessions on
+66A8B330. IPC rejection0 does not close quality: cycle3 has recurring steady
+DEBUG and RemoteSubmix AudioTrack underruns. Output continuity and explicit-gap
+re-priming reuse80/70ms; fixed40ms IPC freshness remains provisional. A subsequent
+diagnostic loses the Tablet radio/Debug wireless prerequisite, and Host health
+is withdrawn. A41/S7 actual AudioPolicy registration is permission blocked;
+legacy S7 shell context is reachable. Tablet invalid-preset setter/clearer probe
+proves permission authorization only, not valid priority or crash-safe rollback.
+Gates1007 JVM/161 suites/native22/22 each, no milestone commit or release promotion.
+Finish the same primary microphone gate before a separate SystemAudio quality
+task. Latest SystemAudio control is technical/lifecycle PASS,69120/789/0 with
+2118960 decoded frames, not an equal-window quality comparison.
+The preceding historical [quality follow-up](phase6_5/DirectShellGlobalMicrophoneInjectionQuality.md)
+remains PARTIAL: consumer-aware discard/idle silence,80ms local IPC age,
+outside-lock recording-device lookup and initial warm-clock retention did not
+close the first counted111.017s cycle after manual Wireless Debugging restoration.
+Real997Hz natural MIC reception and normal physical restoration remain proven;
+unexpected queue rejection3120frames/HWM16 prevents a quality token. Opening-flush
+and smaller track-threshold experiments were reverted after failed quality tests.
+A new local consumer-window admission guard is physically unvalidated; it adds
+no buffer or delay and is not a pressure fix. A later bidirectional S9/Tablet
+peer LAN failure was [reproduced outside Warpnect and cleared by one Tablet
+rejoin](phase6_5/S9TabletPeerLinkRecovery.md); all bidirectional IPv4 TCP/UDP
+controls now pass, without a product recovery change. The precise network cause
+remains INCONCLUSIVE. Tablet subsequently became unavailable by operator
+confirmation; current87EF556C primary acceptance is paused, not replaced by
+S22/A41. No new microphone Session counted. Earlier evidence remains preserved.
+Fixed80ms LOCAL IPC age is not the accepted80/70ms DEBUG playout reserve; no
+adaptive benefit or whole-platform age bound is proven. A separate
+failed-helper-replacement publication source fix needs physical confirmation.
+Portability alternatives and priority set/clear are deferred until quality PASS.
+No release promotion or new completion token. The
 future `HOST_AND_REMOTE` user choice and Host display `KEEP_ON`,
 `PRIVACY_BLANK`, or true `SCREEN_OFF` policy are not implemented;
 screen-policy feasibility should be evaluated before or during RFC-005K.

@@ -1,6 +1,7 @@
 package io.warpnect.platform.session.integration
 
 import android.content.Context
+import io.warpnect.BuildConfig
 import io.warpnect.audio.capture.AudioCaptureRequest
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.encoder.AudioEncoderRequest
@@ -8,6 +9,8 @@ import io.warpnect.audio.session.AudioReceiverSessionConfig
 import io.warpnect.audio.session.AudioTransmitterSessionConfig
 import io.warpnect.audio.session.DefaultAudioReceiverSessionController
 import io.warpnect.audio.session.DefaultAudioTransmitterSessionController
+import io.warpnect.audio.session.MicrophoneAudioDestination
+import io.warpnect.audio.session.MicrophonePlayoutReserve
 import io.warpnect.audio.transport.AudioReceiverRuntimeConfig
 import io.warpnect.audio.transport.AudioTransportConfig
 import io.warpnect.capture.CaptureRequest
@@ -25,6 +28,7 @@ import io.warpnect.platform.audio.capture.AndroidMicrophoneAudioCaptureControlle
 import io.warpnect.platform.audio.capture.SystemAudioCaptureControllerSelector
 import io.warpnect.platform.audio.decoder.NativeOpusAudioDecoderController
 import io.warpnect.platform.audio.encoder.NativeOpusAudioEncoderController
+import io.warpnect.platform.audio.playback.DebugMicrophoneInjectionOverrideRegistry
 import io.warpnect.platform.audio.playback.NativeOboeAudioPlaybackController
 import io.warpnect.platform.audio.transport.NativeSclAudioReceiverController
 import io.warpnect.platform.audio.transport.NativeSclAudioTransportController
@@ -242,18 +246,36 @@ class DefaultAndroidSessionPipelineBindings(
         receiver: NativeSclAudioReceiverController,
         telemetry: AudioReceiverTelemetry,
         playbackTelemetry: NativeAudioPlaybackTelemetry,
-    ): AndroidAudioReceiverPipeline {
+    ): AndroidAudioReceiverPipeline? {
         val source = channel.audioSource()
+        // Speaker playback is a diagnostic destination, never a substitute for virtual input.
+        if (source == AudioCaptureSource.MicrophoneAudio &&
+            !MicrophoneAudioDestination.forBuild(BuildConfig.DEBUG).receiverAvailable
+        ) {
+            return null
+        }
+        val microphoneInput = if (source == AudioCaptureSource.MicrophoneAudio) {
+            DebugMicrophoneInjectionOverrideRegistry.createSession()
+        } else {
+            null
+        }
+        val playbackFactory = {
+            val playback = NativeOboeAudioPlaybackController(playbackTelemetry)
+            microphoneInput?.wrap(playback) ?: playback
+        }
+        val controller = DefaultAudioReceiverSessionController(
+            receiverRuntimeController = receiver,
+            decoderControllerFactory = { NativeOpusAudioDecoderController(telemetry) },
+            playbackControllerFactory = playbackFactory,
+        )
         return AndroidAudioReceiverPipeline(
-            controller = DefaultAudioReceiverSessionController(
-                receiverRuntimeController = receiver,
-                decoderControllerFactory = { NativeOpusAudioDecoderController(telemetry) },
-                playbackControllerFactory = { NativeOboeAudioPlaybackController(playbackTelemetry) },
-            ),
+            controller = controller,
             telemetrySources = listOf(telemetry, playbackTelemetry),
-            config = AudioReceiverSessionConfig(
-                receiverRuntimeConfig = channel.audioReceiverConfig(source),
+            config = MicrophonePlayoutReserve.apply(
+                AudioReceiverSessionConfig(receiverRuntimeConfig = channel.audioReceiverConfig(source)),
+                mode.frameDurationUs,
             ),
+            onStop = { microphoneInput?.close() },
         )
     }
 

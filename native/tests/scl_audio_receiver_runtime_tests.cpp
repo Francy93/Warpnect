@@ -238,6 +238,12 @@ void stream_config_and_sequential_frames_arrive_exactly() {
                      "receiver publishes AudioFrameReady");
         expect_equal(frame.config_generation, 1U, "frame generation");
         expect_equal(frame.first_frame_position, first_position, "frame position exact");
+        expect_equal(frame.packet_sequence, static_cast<std::uint32_t>(index + 1),
+                     "diagnostics retain SCL unit identity independently of capture timestamps");
+#if !defined(__ANDROID__)
+        expect_equal(frame.receive_realtime_ns, 0ULL,
+                     "unsupported kernel diagnostics do not manufacture timestamps");
+#endif
         expect_equal(frame.capture_time_us, index * 5'000U, "capture timestamp floors to us");
         expect_equal(frame.timestamp_quality, AudioTimestampQuality::AudioRecordTimestamp,
                      "timestamp quality exact");

@@ -223,6 +223,7 @@ data class AndroidAudioReceiverPipeline(
     val controller: AudioReceiverSessionController,
     val config: AudioReceiverSessionConfig,
     val telemetrySources: List<AutoCloseable> = emptyList(),
+    val onStop: () -> Unit = {},
 )
 
 data class AndroidInputSenderPipeline(
@@ -461,6 +462,7 @@ class AndroidSessionPipelineFactory(
                     pipeline.controller.close()
                     telemetry.close()
                     playbackTelemetry.close()
+                    pipeline.onStop()
                     networkTelemetry?.close()
                     null
                 } else {
@@ -815,10 +817,12 @@ private class AudioReceiverComponent(
     override fun stop() {
         runtimeSampler.close()
         runBlocking { pipeline.controller.stop() }
+        pipeline.onStop()
     }
     override fun close() {
         runtimeSampler.close()
         pipeline.controller.close()
+        pipeline.onStop()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()
     }
@@ -839,6 +843,9 @@ private class AudioPipelineRuntimeDebugSampler(
             executor = Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "warpnect-audio-runtime-debug").apply { isDaemon = true }
             }.also { scheduler ->
+                listOf(100L, 250L, 500L, 1_000L, 2_000L).forEach { delayMs ->
+                    scheduler.schedule({ runCatching(sample) }, delayMs, TimeUnit.MILLISECONDS)
+                }
                 scheduler.scheduleAtFixedRate(
                     { runCatching(sample) },
                     0L,

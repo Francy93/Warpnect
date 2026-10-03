@@ -1,5 +1,8 @@
 #include "audio_playback_ring.h"
+#include "audio_playback_priming.h"
+#include "audio_playback_capacity_wait.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -255,6 +258,103 @@ void invalid_configuration_and_metadata_are_rejected() {
                  AudioPlaybackError::InvalidFrameCount, "invalid frame count");
 }
 
+// Ordered 5 ms packets delayed, then delivered together. No packet loss.
+void bounded_network_jitter_requires_both_playout_reserve_and_burst_headroom() {
+    const auto replay = [](std::uint32_t capacity, std::uint32_t prime, std::uint64_t gap_us) {
+        PcmPlaybackRing ring(config(1, 240, capacity));
+        expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare jitter replay");
+        const std::vector<std::int16_t> pcm(240, 321);
+        std::vector<std::int16_t> output(256);
+        bool started = false;
+        std::uint64_t next_callback_ticks = 0;
+        // One tick is 1/3 microsecond: 256 frames is exactly 16000 ticks at 48 kHz.
+        for (std::uint64_t packet = 0; packet < 4000; ++packet) {
+            const auto generated_us = packet * 5000;
+            const auto phase_us = generated_us % 250000;
+            const auto delivered_us = phase_us >= 100000 && phase_us < 100000 + gap_us
+                ? generated_us + 100000 + gap_us - phase_us : generated_us;
+            const auto delivered_ticks = delivered_us * 3;
+            while (started && next_callback_ticks < delivered_ticks) {
+                static_cast<void>(ring.consume(mutable_bytes(output), 256));
+                next_callback_ticks += 16000;
+            }
+            static_cast<void>(ring.submit(bytes(pcm), 240, metadata(packet * 240)));
+            if (!started && ring.occupancy_frames() >= prime * 240) {
+                started = true;
+                next_callback_ticks = delivered_ticks;
+            }
+        }
+        return ring.snapshot();
+    };
+    const auto original = replay(4, 1, 40000);
+    expect(original.pcm_frames_rejected > 0, "20 ms ring loses valid burst PCM");
+    expect(original.underrun_frames > 0, "20 ms ring exhausts during receive gap");
+    const auto insufficient = replay(12, 10, 60000);
+    expect(insufficient.underrun_frames > 0, "50 ms reserve cannot cover a 60 ms gap");
+    const auto corrected = replay(16, 14, 60000);
+    expect_equal(corrected.pcm_frames_rejected, 0ULL, "bounded ring accepts recovered burst");
+    expect_equal(corrected.underrun_frames, 0ULL, "bounded reserve covers receive gap");
+    expect(corrected.ring_high_water_mark <= 3840, "jitter reserve stays bounded");
+    const auto unprimed = replay(16, 1, 60000);
+    expect(unprimed.underrun_frames > 0, "capacity alone is not a playout reserve");
+}
+
+void warm_output_priming_does_not_consume_early_or_hide_later_underflow() {
+    warpnect::audio::AudioPlaybackPrimingGate gate(2400);
+    expect(!gate.ready(0), "empty warm clock is not PCM ready");
+    expect(!gate.ready(2399), "partial prime remains silent without consuming PCM");
+    expect(gate.ready(2400), "full reserve activates PCM");
+    expect(gate.ready(0), "later empty ring is an underrun, not hidden re-priming");
+    gate.reset();
+    expect(!gate.ready(0), "new playback lifetime needs its own reserve");
+}
+
+void explicit_discontinuity_rearms_reserve_without_hiding_ordinary_underflow() {
+    warpnect::audio::AudioPlaybackPrimingGate microphone(3360);
+    expect(microphone.ready(3360), "microphone reserve starts playback");
+    expect(microphone.ready(0), "ordinary starvation remains observable");
+    microphone.source_discontinuity();
+    expect(!microphone.ready(3359), "explicit freshness reset requires the same reserve");
+    expect(microphone.ready(3360), "fresh reserve resumes the existing output clock");
+    expect(microphone.ready(0), "later starvation is not silently reclassified as priming");
+    warpnect::audio::AudioPlaybackPrimingGate system_audio(0);
+    system_audio.source_discontinuity();
+    expect(system_audio.ready(0), "zero-threshold system audio remains unchanged");
+}
+
+void almost_fitting_microphone_block_waits_for_one_callback_without_rejection() {
+    PcmPlaybackRing ring(config(1, 240, 16));
+    expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare bounded admission");
+    const std::vector<std::int16_t> pcm(240, 123);
+    std::vector<std::int16_t> output(256);
+    for (std::uint64_t block = 0; block < 16; ++block) {
+        static_cast<void>(ring.submit(bytes(pcm), 240, metadata(block * 240)));
+    }
+    std::vector<std::int16_t> partial(224);
+    static_cast<void>(ring.consume(mutable_bytes(partial), 224));
+    expect_equal(ring.occupancy_frames(), 3616U, "reproduce partial head plus fifteen complete slots");
+    const warpnect::audio::AudioPlaybackCapacityWait admission(1, 256, 48000);
+    expect(admission.next_wait_ns(ring.occupancy_frames(), ring.capacity_frames(), 240, 1) > 0,
+           "16-frame shortage waits, does not drop 240 frames");
+    static_cast<void>(ring.consume(mutable_bytes(output), 256));
+    expect_equal(admission.next_wait_ns(ring.occupancy_frames(), ring.capacity_frames(), 240, 250001),
+                 0ULL, "one callback makes complete block fit");
+    expect_equal(ring.submit(bytes(pcm), 240, metadata(3840)).error,
+                 AudioPlaybackError::None, "valid PCM admitted after callback");
+    expect_equal(ring.snapshot().pcm_frames_rejected, 0ULL, "no loss counter suppressed");
+}
+
+void capacity_wait_expires_and_never_delays_invalid_or_already_fitting_blocks() {
+    const warpnect::audio::AudioPlaybackCapacityWait admission(100, 256, 48000);
+    expect_equal(admission.next_wait_ns(3840, 3840, 240, 5'333'433), 0ULL,
+                 "stalled callback cannot extend one-burst deadline");
+    expect_equal(admission.next_wait_ns(3600, 3840, 240, 100), 0ULL, "fitting block has no delay");
+    expect_equal(admission.next_wait_ns(3840, 3840, 3841, 100), 0ULL, "invalid block not retried");
+    expect_equal(admission.next_wait_ns(3840, 3840, 240, 99), 0ULL, "backward clock fails bounded");
+    const warpnect::audio::AudioPlaybackCapacityWait unavailable(100, 0, 48000);
+    expect_equal(unavailable.next_wait_ns(3840, 3840, 240, 100), 0ULL, "unknown burst never waits");
+}
+
 } // namespace
 
 int main() {
@@ -265,6 +365,11 @@ int main() {
     stereo_and_metadata_counters();
     source_anchor_tracks_slot_start_and_invalidates_on_underrun();
     invalid_configuration_and_metadata_are_rejected();
+    bounded_network_jitter_requires_both_playout_reserve_and_burst_headroom();
+    warm_output_priming_does_not_consume_early_or_hide_later_underflow();
+    explicit_discontinuity_rearms_reserve_without_hiding_ordinary_underflow();
+    almost_fitting_microphone_block_waits_for_one_callback_without_rejection();
+    capacity_wait_expires_and_never_delays_invalid_or_already_fitting_blocks();
 
     if (failures != 0) {
         std::cerr << failures << " audio playback ring test failure(s)\n";

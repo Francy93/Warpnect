@@ -89,6 +89,8 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         private final DirectShellPcmRingProducer producer;
         private volatile FileDescriptor listenerDescriptor;
         private Thread idleWatchdog;
+        private volatile DirectShellRemoteMicrophonePolicy microphone;
+        private int slowMicrophoneFeedSamples;
 
         ProbeServer(ServerArguments arguments) {
             this.arguments = arguments;
@@ -123,6 +125,7 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                     }
                 }
             } finally {
+                closeMicrophone();
                 producer.closeForShutdown();
                 ownerLease.close();
                 releaseEndpoint();
@@ -156,7 +159,9 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                         continue;
                     }
                     lastAuthenticatedActivityMillis.set(SystemClock.elapsedRealtime());
-                    log("AUTH result=SUCCESS request_id=" + request.requestId);
+                    if (request.command != DirectShellProbeProtocol.Command.MICROPHONE_FEED) {
+                        log("AUTH result=SUCCESS request_id=" + request.requestId);
+                    }
                     if (request.command == DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH) {
                         ownerTransferred = ownerLease.attach(client, request, output, arguments.secret,
                                 arguments.generationId, () -> requestShutdown("owner_connection_lost"));
@@ -177,6 +182,7 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 }
             } finally {
                 if (!ownerTransferred) {
+                    closeMicrophone();
                     try {
                         client.close();
                     } catch (IOException ignored) {
@@ -190,6 +196,50 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 throws IOException {
             DirectShellPcmRingProducer.Operation operation;
             switch (request.command) {
+                case MICROPHONE_PREPARE:
+                    closeMicrophone();
+                    if (!ownerLease.attached()) {
+                        writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.BAD_STATE,
+                                "OWNER_REQUIRED");
+                        return false;
+                    }
+                    microphone = new DirectShellRemoteMicrophonePolicy(arguments.generationId,
+                            new int[]{1, 7, 5});
+                    DirectShellRemoteMicrophonePolicy.Result prepared = microphone.prepare();
+                    writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, prepared.name());
+                    log(microphone.diagnostics());
+                    return false;
+                case MICROPHONE_START:
+                    writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK,
+                            microphone == null ? "NOT_PREPARED" :
+                            microphone.activate(arguments.generationId).name());
+                    return false;
+                case MICROPHONE_FEED:
+                    try {
+                        DirectShellMicrophoneFrame frame = DirectShellMicrophoneFrame.decode(request.payload,
+                                arguments.generationId);
+                        long feedStartedNs = System.nanoTime();
+                        int written = microphone == null ? -1 : microphone.feed(arguments.generationId,
+                                frame.samples, frame.samples.length, frame.enqueuedNs);
+                        long feedNs = System.nanoTime() - feedStartedNs;
+                        if (feedNs >= 5_000_000L && slowMicrophoneFeedSamples++ < 16) {
+                            log("REMOTE_MIC_FEED_TIMING request_id=" + request.requestId + ";" +
+                                    "elapsed_ns=" + feedNs + ";result=" + written);
+                        }
+                        writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK,
+                                Integer.toString(written));
+                        Arrays.fill(frame.samples, (short) 0);
+                        Arrays.fill(request.payload, (byte) 0);
+                    } catch (IllegalArgumentException invalid) {
+                        writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.BAD_STATE,
+                                invalid.getMessage());
+                    }
+                    return false;
+                case MICROPHONE_STOP:
+                    if (microphone != null) log(microphone.diagnostics());
+                    closeMicrophone();
+                    writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, "RELEASED");
+                    return false;
                 case PING:
                     writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, "PONG");
                     log("REQUEST id=" + request.requestId + " command=PING result=OK");
@@ -309,10 +359,17 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
 
         private void requestShutdown(String reason) {
             if (!running.compareAndSet(true, false)) return;
+            closeMicrophone();
             producer.closeForShutdown();
             ownerLease.close();
             log("SHUTDOWN result=REQUESTED reason=" + reason);
             releaseEndpoint();
+        }
+
+        private void closeMicrophone() {
+            DirectShellRemoteMicrophonePolicy current = microphone;
+            microphone = null;
+            if (current != null) current.close();
         }
 
         private void releaseEndpoint() {

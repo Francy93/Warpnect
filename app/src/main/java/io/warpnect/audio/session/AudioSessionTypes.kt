@@ -97,6 +97,7 @@ data class AudioReceiverSessionConfig(
     val playbackStartThresholdCodecFrames: Int = 1,
     val playbackRequestedBufferBursts: Int = 2,
     val maxImmediatePlcFrames: Int = DEFAULT_MAX_IMMEDIATE_PLC_FRAMES,
+    val playbackWarmStart: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_MAX_IMMEDIATE_PLC_FRAMES = 2

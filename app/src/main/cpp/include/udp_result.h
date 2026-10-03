@@ -99,6 +99,9 @@ struct [[nodiscard]] UdpReceiveResult final {
     UdpStatus status{};
     std::size_t bytes_received = 0;
     UdpEndpoint source{};
+    // DEBUG socket diagnostics only; CLOCK_REALTIME, never a remote latency clock.
+    std::uint64_t receive_realtime_ns = 0;
+    std::uint64_t socket_age_ns = 0;
 
     [[nodiscard]] constexpr bool ok() const noexcept {
         return status.ok();

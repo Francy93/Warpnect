@@ -105,6 +105,8 @@ AudioTransportStatus AudioReceiverRuntime::rebind_prebound_socket(
     config_.local_endpoint = local.endpoint;
     config_.remote_endpoint = remote_endpoint;
     socket_ = std::move(socket);
+    socket_.enable_receive_timestamps_for_diagnostics();
+    diagnostic_timing_ = {};
     if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(AudioTransportError::None);
 }
@@ -144,6 +146,7 @@ AudioTransportStatus AudioReceiverRuntime::open() noexcept {
             return status(snapshot_.last_error);
         }
         snapshot_.opened = true;
+        socket_.enable_receive_timestamps_for_diagnostics();
         remember(AudioTransportError::None);
         return status(AudioTransportError::None);
     }
@@ -160,6 +163,7 @@ AudioTransportStatus AudioReceiverRuntime::open() noexcept {
     }
 
     snapshot_.opened = true;
+    socket_.enable_receive_timestamps_for_diagnostics();
     remember(AudioTransportError::None);
     return status(AudioTransportError::None);
 }
@@ -218,6 +222,10 @@ AudioTransportStatus AudioReceiverRuntime::accept_datagram(std::span<const std::
         remember(AudioTransportError::PacketEncodeFailed);
         return status(snapshot_.last_error);
     }
+    diagnostic_timing_.packet_sequence = decoded.packet.header.sequence_number;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    diagnostic_timing_.authenticated_monotonic_ns = monotonic_time_now_us().value * 1000U;
+#endif
     return process_packet(decoded.packet, source, now_us);
 }
 
@@ -323,6 +331,11 @@ AudioReceiverEvent AudioReceiverRuntime::poll_pending_event() noexcept {
             .capture_time_us = slot.capture_time_us,
             .timestamp_quality = slot.timestamp_quality,
             .discontinuity_before = slot.discontinuity_before,
+            .packet_sequence = slot.diagnostic_timing.packet_sequence,
+            .receive_realtime_ns = slot.diagnostic_timing.receive_realtime_ns,
+            .receive_monotonic_ns = slot.diagnostic_timing.receive_monotonic_ns,
+            .authenticated_monotonic_ns = slot.diagnostic_timing.authenticated_monotonic_ns,
+            .socket_age_ns = slot.diagnostic_timing.socket_age_ns,
         };
     }
     return {};
@@ -356,6 +369,12 @@ AudioTransportStatus AudioReceiverRuntime::receive_one(std::uint64_t timeout_us)
     if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_received(received.bytes_received);
     const auto datagram =
         std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received);
+    diagnostic_timing_ = {};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    diagnostic_timing_.receive_realtime_ns = received.receive_realtime_ns;
+    diagnostic_timing_.receive_monotonic_ns = monotonic_time_now_us().value * 1000U;
+    diagnostic_timing_.socket_age_ns = received.socket_age_ns;
+#endif
     return accept_datagram(datagram, received.source, monotonic_time_now_us().value);
 }
 
@@ -498,6 +517,7 @@ AudioTransportStatus AudioReceiverRuntime::store_audio_frame(const AudioFrameVie
     slot.occupied = true;
     slot.announced = false;
     slot.completed_at_us = now_us;
+    slot.diagnostic_timing = diagnostic_timing_;
     ++snapshot_.audio_frames_completed;
     snapshot_.last_frame_position = frame.first_frame_position;
     snapshot_.last_capture_time_us = frame.capture_time_us;

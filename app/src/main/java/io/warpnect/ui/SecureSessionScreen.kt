@@ -149,7 +149,7 @@ internal fun SecureSessionScreen(
                         onCheckedChange = onDebugMicrophoneRequested,
                         enabled = canChangeMicrophone,
                     )
-                    Text("Microphone to Host")
+                    Text("Remote microphone (DEBUG)")
                 }
                 microphonePermissionNotice?.let { Text(it) }
             }

@@ -911,8 +911,10 @@ class AndroidSecureSessionComposition private constructor(
                     inputInjection = injection,
                     implementedCaptureKinds = CapabilityBits.INPUT_KEYBOARD or CapabilityBits.INPUT_MOUSE or
                         CapabilityBits.INPUT_TOUCHSCREEN or CapabilityBits.INPUT_TOUCHPAD or CapabilityBits.INPUT_STYLUS,
-                    // DEBUG only: one Client microphone can use the Host's existing Oboe speaker sink.
-                    separateMicrophonePerPeerAvailable = BuildConfig.DEBUG,
+                    // Product virtual input is not implemented. DEBUG alone offers the diagnostic sink.
+                    separateMicrophonePerPeerAvailable = io.warpnect.audio.session.MicrophoneAudioDestination.forBuild(
+                        BuildConfig.DEBUG,
+                    ).receiverAvailable,
                 )
                 val local = snapshot.toLocalSnapshot(role, capturedAtMonotonicNs = 0L)
                 val videoAvailable = local.localAvailability["video"] == LocalCapabilityAvailability.Available

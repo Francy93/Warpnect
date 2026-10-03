@@ -31,6 +31,9 @@ class AndroidMicrophoneAudioCaptureInstrumentationTest {
         val nonZeroSamples = AtomicLong()
         val sumSquares = AtomicLong()
         val peak = AtomicLong()
+        val deliveryIntervals = LongArray(7)
+        var previousDeliveryNs = 0L
+        var maxDeliveryGapNs = 0L
         val sink = object : PcmAudioSink {
             override fun onFormatChanged(format: AudioCaptureFormat) = Unit
 
@@ -43,6 +46,22 @@ class AndroidMicrophoneAudioCaptureInstrumentationTest {
                 captureTimeNs: Long,
                 timestampQuality: AudioTimestampQuality,
             ) {
+                val nowNs = System.nanoTime()
+                if (previousDeliveryNs != 0L) {
+                    val gapNs = nowNs - previousDeliveryNs
+                    maxDeliveryGapNs = maxOf(maxDeliveryGapNs, gapNs)
+                    val bucket = when {
+                        gapNs < 1_000_000 -> 0
+                        gapNs < 3_000_000 -> 1
+                        gapNs < 7_000_000 -> 2
+                        gapNs < 10_000_000 -> 3
+                        gapNs < 20_000_000 -> 4
+                        gapNs < 40_000_000 -> 5
+                        else -> 6
+                    }
+                    deliveryIntervals[bucket]++
+                }
+                previousDeliveryNs = nowNs
                 val samples = buffer.duplicate().order(ByteOrder.nativeOrder())
                 var localEnergy = 0L
                 var localNonZero = 0L
@@ -82,7 +101,8 @@ class AndroidMicrophoneAudioCaptureInstrumentationTest {
                 "WarpnectMicrophoneProbe",
                 "MIC_LOCAL_PROBE unprocessed_supported=${capabilities.unprocessedMicrophoneSupported} " +
                     "frames=$capturedFrames non_zero=${nonZeroSamples.get()} " +
-                    "rms=$rms peak=${peak.get()}",
+                    "rms=$rms peak=${peak.get()} max_delivery_gap_ns=$maxDeliveryGapNs " +
+                    "delivery_bins_lt1_3_7_10_20_40_else_ms=${deliveryIntervals.joinToString(",")}",
             )
             assertTrue(capturedFrames > 48_000L)
             assertTrue(nonZeroSamples.get() > 0L)

@@ -203,6 +203,10 @@ internal fun audioPlaybackSnapshotFrom(values: LongArray, state: AudioPlaybackSt
         lastRingResidenceNs = values.getOrElse(46) { 0L },
         maxRingResidenceNs = values.getOrElse(47) { 0L },
         lookaheadSamples = values.getOrElse(48) { 0L }.toInt(),
+        primingCallbacks = values.getOrElse(49) { 0L },
+        primingFrames = values.getOrElse(50) { 0L },
+        lastUnderrunTimeNs = values.getOrElse(51) { 0L },
+        lastUnderrunMissingFrames = values.getOrElse(52) { 0L }.toInt(),
     )
 }
 

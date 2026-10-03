@@ -390,23 +390,41 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
         } else {
             "client"
         }
+        val microphoneDestination = if (role == "host") {
+            "DEBUG_PLAYBACK_WITH_OPTIONAL_ANDROID_INPUT"
+        } else {
+            "NOT_APPLICABLE"
+        }
         Log.i(
             TAG,
             "event=audio_runtime role=$role " +
                 "local_monotonic_ms=${SystemClock.elapsedRealtime()} " +
                 "session_state=${snapshot.state} source=${snapshot.source} receiver_state=${receiver?.state} " +
+                "microphone_destination=$microphoneDestination " +
                 "datagrams_received=${receiver?.datagramsReceived} " +
                 "audio_datagrams_received=${receiver?.audioDatagramsReceived} " +
                 "stream_configs=${receiver?.streamConfigsReceived} completed=${receiver?.audioFramesCompleted} " +
                 "delivered=${receiver?.audioFramesDelivered} frames_received=${snapshot.framesReceived} " +
                 "frames_decoded=${snapshot.framesDecoded} decoder_pcm_frames=${decoder?.pcmFramesDecoded} " +
                 "decoder_failures=${decoder?.decodeFailures} playback_state=${playback?.state} " +
+                "audio_generation=${snapshot.activeConfigGeneration} " +
+                "playback_rate=${playback?.actualSampleRateHz} playback_channels=${playback?.actualChannelCount} " +
+                "playback_api=${playback?.audioApi} playback_performance=${playback?.actualPerformanceMode} " +
+                "playback_sharing=${playback?.actualSharingMode} playback_burst=${playback?.framesPerBurst} " +
+                "playback_buffer=${playback?.actualBufferFrames} playback_capacity=${playback?.bufferCapacityFrames} " +
+                "playback_ring_capacity=${playback?.ringCapacityFrames} " +
+                "playback_start_threshold=${snapshot.playbackStartThresholdCodecFrames} " +
                 "playback_ring_occupancy=${playback?.ringOccupancyFrames} " +
                 "playback_ring_hwm=${playback?.ringHighWaterMark} playback_written=${playback?.pcmFramesSubmitted} " +
                 "playback_consumed=${playback?.pcmFramesConsumed} playback_rejected=${playback?.pcmFramesRejected} " +
-                "playback_underruns=${playback?.underrunCallbacks} playback_xruns=${playback?.xRunCount} " +
+                "playback_ring_full_drops=${snapshot.playbackRingFullDrops} " +
+                "playback_underruns=${playback?.underrunCallbacks} " +
+                "playback_underrun_frames=${playback?.underrunFrames} " +
+                "playback_priming_callbacks=${playback?.primingCallbacks} " +
+                "playback_priming_frames=${playback?.primingFrames} " +
+                "playback_xruns=${playback?.xRunCount} playback_max_residence_ns=${playback?.maxRingResidenceNs} " +
                 "receiver_error=${receiver?.lastError} playback_error=${playback?.lastError} " +
-                "session_error=${snapshot.lastError.error}",
+                "session_error=${snapshot.lastError.error} session_playback_error=${snapshot.lastError.playbackError}",
         )
     }
 

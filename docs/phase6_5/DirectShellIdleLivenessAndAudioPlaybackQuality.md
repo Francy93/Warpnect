@@ -366,3 +366,47 @@ steady-state ring loss not fixed. Do not emit the combined CLOSED token.
 Next single recommended task: **MicrophoneAudio owned speaker-route validation
 and playback-delivery root-cause closure**, beginning with the public-API output
 route experiment and preserving the existing failed controls.
+
+## Later checkpoint / destination clarification
+
+Owner-bound liveness is now checkpointed locally at
+`715b2151af2c8ecac165729178266b24e5cae91b`,
+`fix(privileged): bind DirectShell helper lifetime to Host ownership`.
+Before checkpoint, full-gate APK `7491FEA5...` passed one bounded A41 -> S9
+normal Host/Session/Disconnect/Disable control. Host stayed Available after
+Disconnect, and disable left helpers/secrets zero. Prior long idle and orphan
+evidence above is preserved; the owner model was not redesigned again.
+
+The [current destination/quality report](MicrophoneAudioVirtualInputArchitecture.md)
+records the corrected product intent: Android Host virtual microphone input;
+speaker playback is DEBUG-only. A41 shell policy registration is denied,
+S22 supports the tested UID-scoped recorder injection, but the additional/
+selectable remote-mic product path and physical-mic coexistence remain open.
+DEBUG Media usage now gives an A41 SPEAKER track; Tablet is absent, so its
+route-after-fix/human output is not claimed. Three final S9 -> A41 normal
+technical/lifecycle Sessions passed, but rejection/zero-fill persisted in all
+three steady windows. This does not close the quality defect. Protected submit
+to pre-decoder receive is the first additional irregular boundary; no speculative
+buffer/priming/pacing fix was applied. Final gates954 JVM tests and native
+Debug/Release22/22 each. New microphone work stays uncommitted; full RFC-005K
+background and timeout audit remains deferred.
+
+## 2026-10-01 bounded regression / current quality boundary
+
+Owner-bound liveness at715b215 is unchanged. The
+[current cadence/input report](MicrophoneAudioCadenceAndVirtualInput.md)
+records three normal S9 -> Tablet DEBUG microphone Sessions and a separate
+SystemAudio control under one Enable Host, each returning Host Waiting and
+Client Ready. Final Disable Host leaves helpers/secrets0 and publication stopped.
+No idle-life redesign or repeated18-hour test was needed for diagnostic-only
+changes. Full background/timeout/power work remains deferred to RFC-005K.
+
+Additional cadence disturbance is already seen at Tablet kernel receipt,
+before application authentication/decoder, but exact radio/send-kernel cause
+is not proven. Quality remains PARTIAL: three >=60-second steady windows
+retain rejected decoded PCM and callback zero-fill, buffers unchanged. Tablet
+DEBUG tracks now route to SPEAKER technically; A41 audibility is confirmed
+by the operator, Tablet human audibility is not. Scoped Tablet input injection
+is separate from first-class product microphone integration, which is blocked
+at the tested normal-consumer boundary. Final gates959 JVM/0/0/0 and native
+Debug/Release22/22 each; new partial microphone diagnostics stay uncommitted.

@@ -89,7 +89,11 @@ final class DirectShellProbeProtocol {
         VIDEO_STOP(83),
         GET_VIDEO_DIAGNOSTICS(84),
         ROOT_CAPABILITIES(90),
-        HOST_OWNER_ATTACH(91);
+        HOST_OWNER_ATTACH(91),
+        MICROPHONE_PREPARE(100),
+        MICROPHONE_START(101),
+        MICROPHONE_FEED(102),
+        MICROPHONE_STOP(103);
 
         final int code;
 
@@ -200,9 +204,9 @@ final class DirectShellProbeProtocol {
     ) throws IOException {
         byte[] authenticated = authenticatedBody(type, requestId, code, payload);
         byte[] mac = mac(requireSecret(secret), authenticated);
-        output.writeInt(authenticated.length + mac.length);
-        output.write(authenticated);
-        output.write(mac);
+        byte[] frame = java.nio.ByteBuffer.allocate(4 + authenticated.length + mac.length)
+                .putInt(authenticated.length + mac.length).put(authenticated).put(mac).array();
+        output.write(frame);
         output.flush();
     }
 

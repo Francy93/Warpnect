@@ -102,6 +102,18 @@ class AudioTransportSender final : private AudioDatagramSink {
     std::uint8_t cached_channel_count_ = 0;
     std::uint32_t cached_frame_duration_us_ = 0;
     std::uint32_t cached_lookahead_samples_ = 0;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    void observe_debug_send(std::uint32_t sequence, std::uint64_t protect_start_ns,
+                            std::uint64_t send_start_ns, std::uint64_t sent_ns) noexcept;
+    std::uint64_t debug_window_start_ns_ = 0;
+    std::uint64_t debug_previous_send_ns_ = 0;
+    std::uint64_t debug_max_gap_ns_ = 0;
+    std::uint64_t debug_max_protect_ns_ = 0;
+    std::uint64_t debug_max_send_ns_ = 0;
+    std::uint32_t debug_intervals_[7]{};
+    std::uint32_t debug_count_ = 0;
+    std::uint32_t debug_windows_ = 0;
+#endif
 };
 
 [[nodiscard]] AudioTransportSizeResult

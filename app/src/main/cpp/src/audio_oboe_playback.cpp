@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "oboe/Oboe.h"
+#include "audio_playback_priming.h"
+#include "audio_playback_capacity_wait.h"
 
 namespace warpnect::audio::android {
 namespace {
@@ -61,8 +63,9 @@ inline constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ULL;
 }
 
 [[nodiscard]] oboe::Usage usage_for(AudioCaptureSource source) noexcept {
+    // Microphone playback is DEBUG-only. Media usage avoids communication/earpiece routing.
     return source == AudioCaptureSource::SystemAudio ? oboe::Usage::Game
-                                                     : oboe::Usage::VoiceCommunication;
+                                                     : oboe::Usage::Media;
 }
 
 [[nodiscard]] oboe::ContentType content_type_for(AudioCaptureSource source) noexcept {
@@ -118,8 +121,10 @@ inline constexpr std::uint64_t kNanosPerSecond = 1'000'000'000ULL;
 class OboeAudioPlayback::DataCallback final : public oboe::AudioStreamDataCallback {
 public:
     DataCallback(std::shared_ptr<PcmPlaybackRing> ring, std::uint8_t channel_count,
-                 std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source)
-        : ring_(std::move(ring)), channel_count_(channel_count) {
+                 std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source,
+                 std::uint32_t prime_frames)
+        : ring_(std::move(ring)), channel_count_(channel_count), priming_(prime_frames),
+          observe_times_(prime_frames > 0) {
         set_telemetry_source(std::move(telemetry_source));
     }
 
@@ -154,8 +159,23 @@ public:
         auto* const bytes = static_cast<std::byte*>(audio_data);
         const std::uint64_t output_start =
             output_frame_cursor_.fetch_add(safe_frames, std::memory_order_acq_rel);
-        const auto consumed = ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, 0,
+        if (reprime_requested_.exchange(false, std::memory_order_acq_rel)) {
+            priming_.source_discontinuity();
+        }
+        if (!priming_.ready(ring_->occupancy_frames())) {
+            std::fill_n(static_cast<std::int16_t*>(audio_data),
+                        static_cast<std::size_t>(safe_frames) * channel_count_, std::int16_t{0});
+            priming_callbacks_.fetch_add(1, std::memory_order_relaxed);
+            priming_frames_.fetch_add(safe_frames, std::memory_order_relaxed);
+            return oboe::DataCallbackResult::Continue;
+        }
+        const auto consume_ns = observe_times_ ? OboeAudioPlayback::monotonic_now_ns() : 0;
+        const auto consumed = ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, consume_ns,
                                              output_start);
+        if (consumed.underrun) {
+            last_underrun_missing_frames_.store(consumed.silence_frames_inserted, std::memory_order_relaxed);
+            last_underrun_time_ns_.store(consume_ns, std::memory_order_release);
+        }
         if (delivered_samples_ != nullptr) delivered_samples_->add(consumed.pcm_frames_copied);
         if (consumed.underrun && underruns_ != nullptr) underruns_->increment();
         if (ring_fill_ != nullptr) ring_fill_->set(static_cast<std::int64_t>(ring_->occupancy_frames()));
@@ -164,7 +184,22 @@ public:
 
     void reset_output_cursor() noexcept {
         output_frame_cursor_.store(0, std::memory_order_release);
+        priming_.reset();
+        reprime_requested_.store(false, std::memory_order_relaxed);
+        priming_callbacks_.store(0, std::memory_order_relaxed);
+        priming_frames_.store(0, std::memory_order_relaxed);
+        last_underrun_time_ns_.store(0, std::memory_order_relaxed);
+        last_underrun_missing_frames_.store(0, std::memory_order_relaxed);
     }
+
+    void request_source_discontinuity() noexcept {
+        if (observe_times_) reprime_requested_.store(true, std::memory_order_release);
+    }
+
+    std::uint64_t priming_callbacks() const noexcept { return priming_callbacks_.load(std::memory_order_relaxed); }
+    std::uint64_t priming_frames() const noexcept { return priming_frames_.load(std::memory_order_relaxed); }
+    std::uint64_t last_underrun_time_ns() const noexcept { return last_underrun_time_ns_.load(std::memory_order_acquire); }
+    std::uint32_t last_underrun_missing_frames() const noexcept { return last_underrun_missing_frames_.load(std::memory_order_relaxed); }
 
 private:
     std::shared_ptr<PcmPlaybackRing> ring_{};
@@ -176,6 +211,13 @@ private:
     scl::runtime_telemetry::RuntimeTelemetryGaugeI64* ring_fill_ = nullptr;
     std::uint8_t channel_count_ = 0;
     std::atomic<std::uint64_t> output_frame_cursor_{0};
+    AudioPlaybackPrimingGate priming_;
+    std::atomic<bool> reprime_requested_{false};
+    const bool observe_times_;
+    std::atomic<std::uint64_t> priming_callbacks_{0};
+    std::atomic<std::uint64_t> priming_frames_{0};
+    std::atomic<std::uint64_t> last_underrun_time_ns_{0};
+    std::atomic<std::uint32_t> last_underrun_missing_frames_{0};
 };
 
 class OboeAudioPlayback::ErrorCallback final : public oboe::AudioStreamErrorCallback {
@@ -259,7 +301,9 @@ AudioPlaybackError OboeAudioPlayback::prepare() {
         return ring_error;
     }
 
-    data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count, telemetry_source_);
+    data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count, telemetry_source_,
+        config_.source == AudioCaptureSource::MicrophoneAudio
+            ? config_.start_threshold_codec_frames * config_.frames_per_codec_frame : 0);
     error_callback_ = std::make_shared<ErrorCallback>();
     const AudioPlaybackError stream_error = open_stream();
     if (stream_error != AudioPlaybackError::None) {
@@ -351,7 +395,7 @@ AudioPlaybackError OboeAudioPlayback::start() {
     }
     const std::uint32_t threshold_frames =
         config_.start_threshold_codec_frames * config_.frames_per_codec_frame;
-    if (ring_->occupancy_frames() < threshold_frames) {
+    if (config_.source != AudioCaptureSource::MicrophoneAudio && ring_->occupancy_frames() < threshold_frames) {
         record_error(AudioPlaybackError::PlaybackNotPrimed);
         return AudioPlaybackError::PlaybackNotPrimed;
     }
@@ -406,10 +450,22 @@ AudioPlaybackError OboeAudioPlayback::submit_pcm(
         record_error(AudioPlaybackError::ConfigGenerationMismatch);
         return AudioPlaybackError::ConfigGenerationMismatch;
     }
+    if (running_ && config_.source == AudioCaptureSource::MicrophoneAudio) {
+        const AudioPlaybackCapacityWait admission(monotonic_now_ns(), snapshot_.frames_per_burst,
+                                                  config_.sample_rate_hz);
+        while (const auto wait_ns = admission.next_wait_ns(ring_->occupancy_frames(),
+                   ring_->capacity_frames(), frame_count, monotonic_now_ns())) {
+            const timespec pause{.tv_sec = 0, .tv_nsec = static_cast<long>(wait_ns)};
+            nanosleep(&pause, nullptr);
+        }
+    }
     const auto submitted = ring_->submit(pcm, frame_count, metadata, monotonic_now_ns());
     if (submitted.error != AudioPlaybackError::None) {
         record_error(submitted.error);
         return submitted.error;
+    }
+    if (metadata.discontinuity_before && metadata.frame_kind == DecodedAudioFrameKind::Normal) {
+        data_callback_->request_source_discontinuity();
     }
     snapshot_.last_error = AudioPlaybackError::None;
     return AudioPlaybackError::None;
@@ -553,6 +609,12 @@ OboeAudioPlaybackSnapshot OboeAudioPlayback::snapshot() {
     if (error_callback_ && error_callback_->last_error() != AudioPlaybackError::None) {
         snapshot_.last_error = error_callback_->last_error();
     }
+    if (data_callback_) {
+        snapshot_.priming_callbacks = data_callback_->priming_callbacks();
+        snapshot_.priming_frames = data_callback_->priming_frames();
+        snapshot_.last_underrun_time_ns = data_callback_->last_underrun_time_ns();
+        snapshot_.last_underrun_missing_frames = data_callback_->last_underrun_missing_frames();
+    }
     snapshot_.prepared = prepared_;
     snapshot_.running = running_;
     snapshot_.closed = closed_;
@@ -636,7 +698,7 @@ void OboeAudioPlayback::record_error(AudioPlaybackError error) noexcept {
     snapshot_.last_error = error;
 }
 
-std::uint64_t OboeAudioPlayback::monotonic_now_ns() const noexcept {
+std::uint64_t OboeAudioPlayback::monotonic_now_ns() noexcept {
     timespec now{};
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
         return 0;

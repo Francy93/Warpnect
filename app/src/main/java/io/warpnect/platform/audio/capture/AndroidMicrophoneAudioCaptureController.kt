@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
+import android.os.Debug
 import android.util.Log
 import io.warpnect.BuildConfig
 import io.warpnect.audio.capture.AudioCaptureCapabilities
@@ -26,9 +27,13 @@ import io.warpnect.audio.capture.AudioPcmEncoding
 import io.warpnect.audio.capture.AudioTimestampAnchor
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.platform.audio.AudioCadenceDebugProbe
+import io.warpnect.platform.audio.MicrophoneCaptureTimingDebugProbe
+import io.warpnect.platform.audio.PcmDeliveryDebugProbe
 import io.warpnect.telemetry.AudioSenderTelemetry
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.locks.LockSupport
 
 class AndroidMicrophoneAudioCaptureController(
     private val context: Context,
@@ -221,9 +226,19 @@ class AndroidMicrophoneAudioCaptureController(
         val localTracker = timestampTracker ?: return
         val requestedBytes = localFormat.targetFramesPerChunk * localFormat.bytesPerFrame
         val timestamp = AudioTimestamp()
+        val deliveryProbe = PcmDeliveryDebugProbe.create("client_microphone_capture")
+        val cadenceProbe = AudioCadenceDebugProbe.create(
+            "microphone_read_complete",
+            localFormat.targetFramesPerChunk.toLong(),
+            localFormat.targetFramesPerChunk.toLong() * 1_000_000_000L / localFormat.sampleRateHz,
+        )
+        val timingProbe = MicrophoneCaptureTimingDebugProbe.create()
+        val pacer = MicrophoneChunkPacer(localFormat.sampleRateHz, localRecord.bufferSizeInFrames)
         while (running) {
             val buffer = buffers[bufferIndex]
             buffer.clear()
+            val readStartedNs = if (timingProbe != null) System.nanoTime() else 0L
+            val cpuStartedNs = if (timingProbe != null) Debug.threadCpuTimeNanos() else 0L
             val readBytes = try {
                 localRecord.read(buffer, requestedBytes, AudioRecord.READ_BLOCKING)
             } catch (_: RuntimeException) {
@@ -239,7 +254,19 @@ class AndroidMicrophoneAudioCaptureController(
             if (alignedBytes > 0) {
                 updateTimestampAnchor(localRecord, timestamp, localTracker)
                 val frameCount = alignedBytes / localFormat.bytesPerFrame
+                deliveryProbe?.observe(buffer, 0, alignedBytes, frameCount, completionNs)
                 val timing = localTracker.recordChunk(frameCount, completionNs)
+                cadenceProbe?.observe(timing.firstFramePosition, completionNs)
+                val timestampCompletedNs = if (timingProbe != null) System.nanoTime() else 0L
+                val deadlineNs = pacer.deadlineNs(clockNs(), frameCount)
+                while (running) {
+                    val remainingNs = deadlineNs - clockNs()
+                    if (remainingNs <= 0) break
+                    LockSupport.parkNanos(remainingNs)
+                }
+                if (!running) return
+                val deliveryNs = clockNs()
+                pacer.recordDelivery(deliveryNs)
                 try {
                     localSink.onPcmChunk(
                         buffer = buffer,
@@ -258,6 +285,23 @@ class AndroidMicrophoneAudioCaptureController(
                         timestampQuality = timing.timestampQuality,
                     )
                     telemetry?.capturedSamples?.add(frameCount.toULong())
+                    val finishedNs = if (timingProbe != null) System.nanoTime() else 0L
+                    timingProbe?.observe(
+                        timing.firstFramePosition,
+                        readStartedNs,
+                        completionNs,
+                        timestampCompletedNs,
+                        finishedNs,
+                    )
+                    timingProbe?.observeSlowChunk(
+                        timing.firstFramePosition,
+                        readStartedNs,
+                        completionNs,
+                        timestampCompletedNs,
+                        deliveryNs,
+                        finishedNs,
+                        Debug.threadCpuTimeNanos() - cpuStartedNs,
+                    )
                 } catch (_: RuntimeException) {
                     core.recordSinkFailure()
                     failFromCaptureThread(AudioCaptureError.SinkFailure)

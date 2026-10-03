@@ -5,6 +5,11 @@
 #include "datagram_limits.h"
 #include "packet_codec.h"
 #include "runtime_network_telemetry.h"
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <algorithm>
+#include <android/log.h>
+#include "monotonic_time.h"
+#endif
 
 namespace warpnect::scl {
 namespace {
@@ -242,6 +247,9 @@ void AudioTransportSender::close() noexcept {
 
 AudioTransportStatus
 AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto protect_start_ns = monotonic_time_now_us().value * 1000ULL;
+#endif
     std::span<const std::byte> wire = datagram;
     if (config_.protector != nullptr) {
         const DatagramProtectionResult protected_result =
@@ -252,7 +260,13 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
         }
         wire = workspace_.protected_datagram_scratch.first(protected_result.bytes_written);
     }
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto send_start_ns = monotonic_time_now_us().value * 1000ULL;
+#endif
     const UdpSendResult sent = socket_.send_to(wire, config_.remote_endpoint);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto sent_ns = monotonic_time_now_us().value * 1000ULL;
+#endif
     if (!sent.ok()) {
         const AudioTransportError mapped = map_udp_send_error(sent.status.error);
         if (mapped == AudioTransportError::WouldBlock) {
@@ -268,9 +282,52 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
 
     ++snapshot_.datagrams_sent;
     snapshot_.bytes_sent += wire.size();
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto header = decode_packet_header(datagram);
+    if (header.ok() && config_.payload_type == PayloadType::MicrophoneAudio) {
+        observe_debug_send(header.header.sequence_number, protect_start_ns, send_start_ns, sent_ns);
+    }
+#endif
     if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->udp_sent(wire.size());
     return status(AudioTransportError::None);
 }
+
+#if defined(__ANDROID__) && !defined(NDEBUG)
+// Socket-call completion is not a radio transmit timestamp. All durations are local MONOTONIC.
+void AudioTransportSender::observe_debug_send(std::uint32_t sequence,
+    std::uint64_t protect_start_ns, std::uint64_t send_start_ns, std::uint64_t sent_ns) noexcept {
+    if (debug_windows_ >= 12 || protect_start_ns == 0 || send_start_ns < protect_start_ns ||
+        sent_ns < send_start_ns || sent_ns < debug_previous_send_ns_) return;
+    if (debug_window_start_ns_ == 0) debug_window_start_ns_ = sent_ns;
+    debug_max_protect_ns_ = std::max(debug_max_protect_ns_, send_start_ns - protect_start_ns);
+    debug_max_send_ns_ = std::max(debug_max_send_ns_, sent_ns - send_start_ns);
+    if (debug_previous_send_ns_ != 0) {
+        const auto gap = sent_ns - debug_previous_send_ns_;
+        debug_max_gap_ns_ = std::max(debug_max_gap_ns_, gap);
+        constexpr std::uint64_t limits[]{1000000, 3000000, 7000000, 10000000, 20000000, 40000000};
+        std::size_t bucket = 0;
+        while (bucket < 6 && gap >= limits[bucket]) ++bucket;
+        ++debug_intervals_[bucket];
+    }
+    debug_previous_send_ns_ = sent_ns;
+    ++debug_count_;
+    if (sent_ns - debug_window_start_ns_ < 5000000000ULL) return;
+    __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+        "AUDIO_SOCKET_SEND window=%u count=%u last_sequence=%u max_gap_ns=%llu "
+        "max_protect_ns=%llu max_send_ns=%llu interval_bins_lt1_3_7_10_20_40_else_ms=%u,%u,%u,%u,%u,%u,%u",
+        debug_windows_, debug_count_, sequence,
+        static_cast<unsigned long long>(debug_max_gap_ns_),
+        static_cast<unsigned long long>(debug_max_protect_ns_),
+        static_cast<unsigned long long>(debug_max_send_ns_),
+        debug_intervals_[0], debug_intervals_[1], debug_intervals_[2], debug_intervals_[3],
+        debug_intervals_[4], debug_intervals_[5], debug_intervals_[6]);
+    ++debug_windows_;
+    debug_window_start_ns_ = sent_ns;
+    debug_count_ = 0;
+    debug_max_gap_ns_ = debug_max_protect_ns_ = debug_max_send_ns_ = 0;
+    std::fill(std::begin(debug_intervals_), std::end(debug_intervals_), 0U);
+}
+#endif
 
 AudioTransportStatus AudioTransportSender::ensure_ready() noexcept {
     if (snapshot_.closed) {

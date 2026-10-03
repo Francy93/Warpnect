@@ -55,6 +55,11 @@ struct AudioReceiverEvent final {
     std::uint64_t capture_time_us = 0;
     AudioTimestampQuality timestamp_quality = AudioTimestampQuality::Unavailable;
     bool discontinuity_before = false;
+    std::uint32_t packet_sequence = 0;
+    std::uint64_t receive_realtime_ns = 0;
+    std::uint64_t receive_monotonic_ns = 0;
+    std::uint64_t authenticated_monotonic_ns = 0;
+    std::uint64_t socket_age_ns = 0;
 };
 
 struct AudioReceiverSnapshot final {
@@ -129,6 +134,7 @@ class AudioReceiverRuntime final {
         bool occupied = false;
         bool announced = false;
         std::uint64_t completed_at_us = 0;
+        AudioReceiverEvent diagnostic_timing{};
     };
 
     [[nodiscard]] AudioReceiverEvent poll_pending_event() noexcept;
@@ -155,6 +161,7 @@ class AudioReceiverRuntime final {
     void remember(AudioTransportError error) noexcept;
 
     AudioReceiverConfig config_{};
+    AudioReceiverEvent diagnostic_timing_{};
     UdpSocket socket_{};
     std::vector<std::byte> datagram_buffer_{};
     std::vector<std::byte> unprotected_datagram_buffer_{};

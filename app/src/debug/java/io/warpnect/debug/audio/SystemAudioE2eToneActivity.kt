@@ -43,7 +43,9 @@ class SystemAudioE2eToneActivity : Activity() {
     private fun startTone() {
         val durationSeconds = intent.getIntExtra(EXTRA_DURATION_SECONDS, DEFAULT_DURATION_SECONDS)
             .coerceIn(MIN_DURATION_SECONDS, MAX_DURATION_SECONDS)
-        val startedTone = runCatching { ValidationTone().apply { start() } }.getOrElse { exception ->
+        val startedTone = runCatching {
+            ValidationTone(intent.getBooleanExtra("continuousPhase", false)).apply { start() }
+        }.getOrElse { exception ->
             Log.i(
                 TAG,
                 "SYSTEM_AUDIO_E2E_TONE_FAILED type=${exception.javaClass.simpleName} " +

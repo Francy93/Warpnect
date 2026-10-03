@@ -2,6 +2,10 @@
 
 #include "internal/socket_platform.h"
 
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <sys/socket.h>
+#endif
+
 namespace warpnect::scl {
 namespace {
 
@@ -134,6 +138,16 @@ UdpReceiveResult UdpSocket::receive_from(std::span<std::byte> destination) noexc
     }
 
     return internal::receive_udp_datagram(socket_handle_, destination);
+}
+
+void UdpSocket::enable_receive_timestamps_for_diagnostics() noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (is_open()) {
+        const int enabled = 1;
+        (void)::setsockopt(static_cast<int>(socket_handle_), SOL_SOCKET, SO_TIMESTAMPNS,
+                          &enabled, sizeof(enabled));
+    }
+#endif
 }
 
 UdpReadinessResult UdpSocket::wait_readable(std::uint64_t timeout_us) noexcept {

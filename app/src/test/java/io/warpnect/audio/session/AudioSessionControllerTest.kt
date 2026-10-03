@@ -63,10 +63,35 @@ import io.warpnect.audio.transport.AudioTransportSubmitResult
 import java.nio.ByteBuffer
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioSessionControllerTest {
+    @Test fun optionalMicrophoneClockWarmsBeforePcmAndStopsWithItsSession() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val playback = FakePlayback(allowEmptyStart = true)
+        val session = DefaultAudioReceiverSessionController(runtime, { FakeDecoder() }, { playback })
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        assertEquals(1, playback.startCalls)
+        assertEquals(0, playback.submitCalls)
+        assertEquals(AudioSessionState.WaitingForFirstFrame, session.snapshot().state)
+        session.stop()
+        assertTrue(playback.closed)
+    }
+
+    @Test fun explicitPlaybackGateDoesNotAllowWarmStartToBypassIt() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val playback = FakePlayback(allowEmptyStart = true)
+        val gate = ManualStartGate()
+        val session = DefaultAudioReceiverSessionController(runtime, { FakeDecoder() }, { playback }, gate)
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        assertEquals(0, playback.startCalls)
+        assertTrue(session.stop().isSuccess)
+    }
+
     @Test
     fun transmitterRollsBackWhenTransportOpenFails() = runBlocking {
         val capture = FakeCapture()
@@ -184,6 +209,32 @@ class AudioSessionControllerTest {
     }
 
     @Test
+    fun primingMicrophoneGapResetsDecoderWithoutReopeningTheSameGenerationOutputClock() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val decoders = mutableListOf<FakeDecoder>()
+        val playbacks = mutableListOf<FakePlayback>()
+        val session = DefaultAudioReceiverSessionController(
+            runtime,
+            decoderControllerFactory = { FakeDecoder().also(decoders::add) },
+            playbackControllerFactory = { FakePlayback(allowEmptyStart = true).also(playbacks::add) },
+        )
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        runtime.emitFrame(frame(position = 0))
+        runtime.emitFrame(frame(position = 960))
+        assertEquals(2, decoders.size)
+        assertEquals(listOf(960L), decoders.last().decodedPositions)
+        assertEquals(1, playbacks.size)
+        assertFalse(playbacks.single().closed)
+        assertEquals(listOf(0L, 960L), playbacks.single().submitted.map { it.firstFramePosition })
+        runtime.emitConfig(streamConfig(generation = 2))
+        assertEquals(2, playbacks.size)
+        assertTrue(playbacks.first().closed)
+        session.stop()
+        assertTrue(playbacks.last().closed)
+    }
+
+    @Test
     fun receiverMisalignedGapTriggersFreshnessReset() = runBlocking {
         val runtime = FakeReceiverRuntime()
         val decoders = mutableListOf<FakeDecoder>()
@@ -201,6 +252,84 @@ class AudioSessionControllerTest {
         assertEquals(2, decoders.size)
         assertEquals(listOf(241L), decoders.last().decodedPositions)
         assertEquals(1L, session.snapshot().misalignedGapResets)
+    }
+
+    @Test
+    fun runningMicrophoneGapResetsDecoderWithoutRestartingOutputClock() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val decoders = mutableListOf<FakeDecoder>()
+        val playbacks = mutableListOf<FakePlayback>()
+        val session = DefaultAudioReceiverSessionController(
+            runtime,
+            decoderControllerFactory = { FakeDecoder().also(decoders::add) },
+            playbackControllerFactory = { FakePlayback(allowEmptyStart = true).also(playbacks::add) },
+        )
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        runtime.emitFrame(frame(position = 0))
+        playbacks.single().consumedFrames = 240
+        runtime.emitFrame(frame(position = 960))
+        runtime.emitFrame(frame(position = 1920))
+        assertEquals(3, decoders.size)
+        assertTrue(decoders.first().closed)
+        assertEquals(1, playbacks.size)
+        assertFalse(playbacks.single().closed)
+        assertEquals(listOf(0L, 960L, 1920L), playbacks.single().submitted.map { it.firstFramePosition })
+        assertEquals(AudioSessionState.Streaming, session.snapshot().state)
+        assertEquals(2L, session.snapshot().largeGapResets)
+        runtime.emitConfig(streamConfig(generation = 2))
+        assertEquals(2, playbacks.size)
+        assertTrue(playbacks.first().closed)
+        runtime.emitFrame(frame(position = 0, generation = 1))
+        assertEquals(0, playbacks.last().submitCalls)
+        session.stop()
+        assertTrue(playbacks.last().closed)
+    }
+
+    @Test
+    fun warmSystemAudioGapStillRecreatesPipeline() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val playbacks = mutableListOf<FakePlayback>()
+        val config = receiverConfig()
+        val session = DefaultAudioReceiverSessionController(
+            runtime,
+            decoderControllerFactory = { FakeDecoder() },
+            playbackControllerFactory = { FakePlayback(allowEmptyStart = true).also(playbacks::add) },
+        )
+        session.start(
+            config.copy(
+                receiverRuntimeConfig = config.receiverRuntimeConfig.copy(source = AudioCaptureSource.SystemAudio),
+                playbackWarmStart = true,
+            ),
+        )
+        runtime.emitConfig(streamConfig().copy(source = AudioCaptureSource.SystemAudio))
+        runtime.emitFrame(frame(position = 0))
+        playbacks.single().consumedFrames = 240
+        runtime.emitFrame(frame(position = 960))
+        assertEquals(2, playbacks.size)
+        assertTrue(playbacks.first().closed)
+        assertTrue(session.stop().isSuccess)
+    }
+
+    @Test
+    fun gatedMicrophoneGapRetainsExistingFreshnessRebuild() = runBlocking {
+        val runtime = FakeReceiverRuntime()
+        val playbacks = mutableListOf<FakePlayback>()
+        val gate = ManualStartGate()
+        val session = DefaultAudioReceiverSessionController(
+            runtime,
+            decoderControllerFactory = { FakeDecoder() },
+            playbackControllerFactory = { FakePlayback().also(playbacks::add) },
+            playbackStartGate = gate,
+        )
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        runtime.emitFrame(frame(position = 0))
+        runtime.emitFrame(frame(position = 960))
+        assertEquals(2, playbacks.size)
+        assertTrue(playbacks.first().closed)
+        assertEquals(0, playbacks.last().startCalls)
+        assertTrue(session.stop().isSuccess)
     }
 
     @Test
@@ -712,12 +841,14 @@ private class FakeDecoder(
 
 private class FakePlayback(
     private val submitError: AudioPlaybackError = AudioPlaybackError.None,
+    private val allowEmptyStart: Boolean = false,
 ) : AudioPlaybackController {
     var prepareCalls = 0
     var submitCalls = 0
     var acceptedSubmitCalls = 0
     var startCalls = 0
     var closed = false
+    var consumedFrames = 0L
     val submitted = mutableListOf<DecodedPcmMetadata>()
     private var config: AudioPlaybackConfig? = null
     private var state = AudioPlaybackState.Stopped
@@ -747,7 +878,7 @@ private class FakePlayback(
 
     override fun start(): AudioPlaybackResult {
         startCalls += 1
-        return if (acceptedSubmitCalls == 0) {
+        return if (acceptedSubmitCalls == 0 && !allowEmptyStart) {
             AudioPlaybackResult(AudioPlaybackError.PlaybackNotPrimed, snapshot())
         } else {
             state = AudioPlaybackState.Running
@@ -772,6 +903,7 @@ private class FakePlayback(
         frameDurationUs = config?.frameDurationUs ?: 0,
         framesPerCodecFrame = config?.framesPerCodecFrame ?: 0,
         pcmFramesSubmitted = acceptedSubmitCalls * 240L,
+        pcmFramesConsumed = consumedFrames,
         ringOccupancyFrames = acceptedSubmitCalls * 240,
     )
 

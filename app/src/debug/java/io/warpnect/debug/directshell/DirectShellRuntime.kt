@@ -35,6 +35,8 @@ import io.warpnect.input.injection.InputResetReason
 import io.warpnect.input.injection.InputResetScope
 import io.warpnect.platform.audio.capture.DebugSystemAudioCaptureOverride
 import io.warpnect.platform.audio.capture.DebugSystemAudioCaptureOverrideRegistry
+import io.warpnect.platform.audio.playback.DebugMicrophoneInjectionOverride
+import io.warpnect.platform.audio.playback.DebugMicrophoneInjectionOverrideRegistry
 import io.warpnect.platform.capture.DebugCaptureGatewayOverride
 import io.warpnect.platform.capture.DebugCaptureGatewayOverrideRegistry
 import io.warpnect.platform.capture.PrivilegedCaptureGateway
@@ -84,6 +86,11 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
     private val audioOverride = object : DebugSystemAudioCaptureOverride {
         override fun createController(context: Context, telemetry: AudioSenderTelemetry?): AudioCaptureController =
             RuntimeAudioController(this@DirectShellRuntime, context, telemetry)
+    }
+
+    private val microphoneOverride = DebugMicrophoneInjectionOverride {
+        val input = AsyncRemoteMicrophoneDestination(::acquireMicrophoneLease)
+        DirectShellMicrophoneInputSession(input, input)
     }
 
     private val inputOverride = object : DebugInputInjectionControllerOverride {
@@ -156,6 +163,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
                 "debug_feature_override_install_rejected",
             )
         }
+        DebugMicrophoneInjectionOverrideRegistry.install(microphoneOverride)
 
         initial.failures.forEach { (role, detail) ->
             Log.w(TAG, "DIRECT_SHELL_RUNTIME_FEATURE_UNAVAILABLE role=${role.name} detail=$detail")
@@ -193,6 +201,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
         if (ready != null) return ready
         DebugSystemAudioCaptureOverrideRegistry.clear(audioOverride)
+        DebugMicrophoneInjectionOverrideRegistry.clear(microphoneOverride)
         DebugInputInjectionControllerOverrideRegistry.clear(inputOverride)
         DebugCaptureGatewayOverrideRegistry.clear(videoOverride)
         liveCandidates.forEach { (role, server) -> closeFeatureServer(role, server) }
@@ -421,6 +430,29 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         return registerLease(lease)
     }
 
+    private fun acquireMicrophoneLease(): Pair<DirectShellRemoteMicrophoneSource, AutoCloseable>? {
+        val role = DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing
+        val launched = takeFeatureServer(role) ?: return null
+        val source = runCatching {
+            DirectShellRemoteMicrophoneSource(launched.launch.port, launched.launch.generation, launched.launch.secret)
+        }.getOrNull()
+        val result = runCatching { source?.prepare() }.getOrNull() ?: "API_UNAVAILABLE"
+        Log.i(TAG, "REMOTE_MIC_CAPABILITY generation=${launched.launch.generation} result=$result uid_rules=NONE")
+        if (source == null || result != "SUPPORTED") {
+            runCatching { source?.close() }
+            releaseFeatureServer(role, launched, false)
+            return null
+        }
+        val lease = FeatureLease(source) { consumed ->
+            if (consumed) suppressExpectedOwnerLoss(launched)
+            source.close()
+            releaseFeatureServer(role, launched, consumed)
+        }
+        lease.markConsumed()
+        val registered = registerLease(lease) ?: return null
+        return source to AutoCloseable { releaseLease(registered) }
+    }
+
     private fun acquireInputLease(context: Context): FeatureLease<InputInjectionController>? {
         val role = DirectShellSelfBootstrapContract.ServerRole.InputSession
         val launched = takeFeatureServer(role) ?: return null
@@ -502,7 +534,7 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         if (!launch.successful) {
             val detail = "bootstrap_${launch.result.classification}_${launch.result.detail}"
             recordFeatureFailure(role, detail)
-            invalidateFailedReplacement(role, detail)
+            invalidateFailedReplacement(role, detail, launchFailure(launch.result.classification))
             Log.w(
                 TAG,
                 "DIRECT_SHELL_RUNTIME_FEATURE_FAILED role=${role.name} result=${launch.result.classification}",
@@ -550,7 +582,9 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
             controller.bootstrapPreviouslyAuthorizedFeatureServer(role)
         }
         if (!launch.successful) {
-            recordFeatureFailure(role, "bootstrap_${launch.result.classification}_${launch.result.detail}")
+            val detail = "bootstrap_${launch.result.classification}_${launch.result.detail}"
+            recordFeatureFailure(role, detail)
+            invalidateFailedReplacement(role, detail, launchFailure(launch.result.classification))
             Log.w(
                 TAG,
                 "DIRECT_SHELL_RUNTIME_FEATURE_REPLACEMENT_FAILED " +
@@ -588,13 +622,17 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         }
     }
 
-    private fun invalidateFailedReplacement(role: DirectShellFeatureRole, detail: String) {
+    private fun invalidateFailedReplacement(
+        role: DirectShellFeatureRole,
+        detail: String,
+        failure: PrivilegedRuntimeFailure = PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
+    ) {
         val unavailable = synchronized(lock) {
             if (!armed || !runtimeSnapshot.ready) return
             runtimeSnapshot = runtimeSnapshot.copy(
                 state = PrivilegedRuntimeState.UNAVAILABLE,
-                phase = PrivilegedRuntimePhase.FAILED,
-                failure = PrivilegedRuntimeFailure.DIRECTSHELL_FEATURE_QUALIFICATION_FAILED,
+                phase = failure.phase(),
+                failure = failure,
                 detail = "direct_shell=feature_replacement_failed role=${role.name} " +
                     "runtime_generation=$runtimeGeneration reason=${detail.take(160)}",
             )

@@ -136,6 +136,10 @@ struct OboeAudioPlaybackSnapshot final {
     std::uint64_t ring_residence_samples = 0;
     std::uint64_t last_ring_residence_ns = 0;
     std::uint64_t max_ring_residence_ns = 0;
+    std::uint64_t priming_callbacks = 0;
+    std::uint64_t priming_frames = 0;
+    std::uint64_t last_underrun_time_ns = 0;
+    std::uint32_t last_underrun_missing_frames = 0;
 };
 
 class OboeAudioPlayback final {
@@ -170,7 +174,7 @@ private:
     void refresh_stream_snapshot();
     void refresh_xrun_count();
     void record_error(AudioPlaybackError error) noexcept;
-    [[nodiscard]] std::uint64_t monotonic_now_ns() const noexcept;
+    [[nodiscard]] static std::uint64_t monotonic_now_ns() noexcept;
     [[nodiscard]] static std::uint64_t lookahead_duration_us(std::uint32_t lookahead_samples,
                                                              std::uint32_t sample_rate_hz) noexcept;
 

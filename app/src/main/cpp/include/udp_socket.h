@@ -35,6 +35,8 @@ class UdpSocket final {
     [[nodiscard]] UdpEndpointResult local_endpoint() const noexcept;
     [[nodiscard]] bool is_open() const noexcept;
 
+    void enable_receive_timestamps_for_diagnostics() noexcept;
+
     void close() noexcept;
 
   private:

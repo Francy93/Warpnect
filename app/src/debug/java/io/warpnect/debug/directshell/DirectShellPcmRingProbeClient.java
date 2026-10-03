@@ -26,25 +26,33 @@ final class DirectShellPcmRingProbeClient implements AutoCloseable {
 
     Response call(DirectShellProbeProtocol.Command command)
             throws IOException, DirectShellProbeProtocol.ProtocolException {
+        return call(command, new byte[0]);
+    }
+
+    synchronized Response call(DirectShellProbeProtocol.Command command, byte[] payload)
+            throws IOException, DirectShellProbeProtocol.ProtocolException {
         long requestId = nextRequestId++;
-        DirectShellProbeProtocol.writeRequest(output, requestId, command, new byte[0], secret);
+        DirectShellProbeProtocol.writeRequest(output, requestId, command, payload, secret);
         DirectShellProbeProtocol.Response response = DirectShellProbeProtocol.readResponse(input, secret);
         if (response.requestId != requestId) {
             throw new IOException("DirectShell PCM ring probe response request ID mismatch");
         }
-        return new Response(response.status, new String(response.payload, StandardCharsets.UTF_8));
+        return new Response(requestId, response.status, new String(response.payload, StandardCharsets.UTF_8));
     }
 
     @Override
     public void close() throws IOException {
         socket.close();
+        java.util.Arrays.fill(secret, (byte) 0);
     }
 
     static final class Response {
+        final long requestId;
         final DirectShellProbeProtocol.Status status;
         final String payload;
 
-        Response(DirectShellProbeProtocol.Status status, String payload) {
+        Response(long requestId, DirectShellProbeProtocol.Status status, String payload) {
+            this.requestId = requestId;
             this.status = status;
             this.payload = payload;
         }

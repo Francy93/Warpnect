@@ -49,5 +49,9 @@ data class AudioPlaybackSnapshot(
     val ringResidenceSamples: Long = 0,
     val lastRingResidenceNs: Long = 0,
     val maxRingResidenceNs: Long = 0,
+    val primingCallbacks: Long = 0,
+    val primingFrames: Long = 0,
+    val lastUnderrunTimeNs: Long = 0,
+    val lastUnderrunMissingFrames: Int = 0,
     val lastError: AudioPlaybackError = AudioPlaybackError.None,
 )

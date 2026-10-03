@@ -140,5 +140,5 @@ endif()
 target_link_libraries(scl_core PRIVATE Opus::opus warpnect_mbedcrypto)
 
 if(ANDROID)
-    target_link_libraries(scl_core PRIVATE oboe)
+    target_link_libraries(scl_core PRIVATE oboe log)
 endif()

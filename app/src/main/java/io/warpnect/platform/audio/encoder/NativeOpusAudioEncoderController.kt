@@ -14,6 +14,7 @@ import io.warpnect.audio.encoder.EncodedAudioFormat
 import io.warpnect.audio.encoder.EncodedAudioSink
 import io.warpnect.audio.encoder.PcmSubmittingAudioEncoderController
 import io.warpnect.audio.encoder.audioFrameOffsetTimeNs
+import io.warpnect.platform.audio.AudioCadenceDebugProbe
 import io.warpnect.telemetry.AudioSenderTelemetry
 import java.nio.ByteBuffer
 
@@ -31,6 +32,8 @@ class NativeOpusAudioEncoderController internal constructor(
     private var format: EncodedAudioFormat? = null
     private var sink: EncodedAudioSink? = null
     private var localSnapshot = AudioEncoderSnapshot()
+    private var inputProbe: AudioCadenceDebugProbe? = null
+    private var outputProbe: AudioCadenceDebugProbe? = null
 
     override fun queryCapabilities(request: AudioEncoderRequest): AudioEncoderCapabilities {
         val error = AudioEncoderValidation.validate(request)
@@ -101,6 +104,10 @@ class NativeOpusAudioEncoderController internal constructor(
             handle = created.handle
             outputBuffer = created.outputBuffer
             this.request = request
+            val step = request.sampleRateHz.toLong() * request.frameDurationUs / 1_000_000L
+            val nominalPeriodNs = request.frameDurationUs.toLong() * 1_000L
+            inputProbe = AudioCadenceDebugProbe.create("${request.source}_encoder_input", step, nominalPeriodNs)
+            outputProbe = AudioCadenceDebugProbe.create("${request.source}_encoder_output", step, nominalPeriodNs)
             this.sink = sink
             state = AudioEncoderState.Prepared
             localSnapshot = created.snapshot.copy(state = state, lastError = AudioEncoderError.None)
@@ -212,6 +219,7 @@ class NativeOpusAudioEncoderController internal constructor(
         }
 
         var remainingBytes = sizeBytes
+        inputProbe?.observe(firstFramePosition, System.nanoTime())
         var currentOffset = offset
         var consumedFramesFromChunk = 0L
         var discontinuityRetry = false
@@ -252,6 +260,7 @@ class NativeOpusAudioEncoderController internal constructor(
                         return@synchronized submitted.error
                     }
                     try {
+                        outputProbe?.observe(submitted.firstFramePosition, System.nanoTime())
                         currentSink.onEncodedFrame(
                             buffer = currentOutput,
                             offset = 0,
@@ -319,6 +328,8 @@ class NativeOpusAudioEncoderController internal constructor(
                 backend.destroy(handle)
             }
             handle = 0L
+            inputProbe = null
+            outputProbe = null
             outputBuffer = null
             request = null
             format = null

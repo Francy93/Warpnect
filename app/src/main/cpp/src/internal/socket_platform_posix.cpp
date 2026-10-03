@@ -11,6 +11,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <time.h>
 
 namespace warpnect::scl::internal {
 namespace {
@@ -216,6 +217,12 @@ UdpReceiveResult receive_udp_datagram(NativeSocketHandle socket,
     message.msg_iov = &iov;
     message.msg_iovlen = 1;
 
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    alignas(cmsghdr) std::array<std::byte, CMSG_SPACE(sizeof(timespec))> control{};
+    message.msg_control = control.data();
+    message.msg_controllen = control.size();
+#endif
+
     const auto received = ::recvmsg(static_cast<int>(socket), &message, MSG_TRUNC);
     if (received < 0) {
         const int native_error = errno;
@@ -252,10 +259,37 @@ UdpReceiveResult receive_udp_datagram(NativeSocketHandle socket,
         };
     }
 
+    std::uint64_t receive_ns = 0;
+    std::uint64_t socket_age_ns = 0;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if ((message.msg_flags & MSG_CTRUNC) == 0) {
+        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&message); cmsg != nullptr;
+             cmsg = CMSG_NXTHDR(&message, cmsg)) {
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMPNS &&
+                cmsg->cmsg_len >= CMSG_LEN(sizeof(timespec))) {
+                timespec stamp{};
+                std::memcpy(&stamp, CMSG_DATA(cmsg), sizeof(stamp));
+                if (stamp.tv_sec > 0 && stamp.tv_nsec >= 0 && stamp.tv_nsec < 1'000'000'000) {
+                    receive_ns = static_cast<std::uint64_t>(stamp.tv_sec) * 1'000'000'000ULL +
+                                 static_cast<std::uint64_t>(stamp.tv_nsec);
+                    timespec now{};
+                    if (::clock_gettime(CLOCK_REALTIME, &now) == 0) {
+                        const auto now_ns = static_cast<std::uint64_t>(now.tv_sec) * 1'000'000'000ULL +
+                                            static_cast<std::uint64_t>(now.tv_nsec);
+                        if (now_ns >= receive_ns && now_ns - receive_ns < 1'000'000'000ULL)
+                            socket_age_ns = now_ns - receive_ns;
+                    }
+                }
+            }
+        }
+    }
+#endif
     return UdpReceiveResult{
         .status = status(UdpError::None),
         .bytes_received = bytes_received,
         .source = source.endpoint,
+        .receive_realtime_ns = receive_ns,
+        .socket_age_ns = socket_age_ns,
     };
 }
 
