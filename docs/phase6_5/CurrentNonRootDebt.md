@@ -1,9 +1,17 @@
-# Current Phase 6.5 Non-Root Debt (2026-10-03)
+# Current Phase 6.5 Non-Root Debt (2026-10-04)
 
 This is the current debt index, not a rewrite of historical experiment reports.
 Evidence order: repository/runtime, current Phase 6.5 reports and compatibility
 matrix, accepted RFC-006I/J, then older reports/checklists. Implementation,
 hardware qualification, and product policy are distinct states.
+
+Current [SystemAudio causal closure](SystemAudioQualityRootCause.md):
+microphone milestone checkpoint596a534 and independent Input reset checkpoint
+b812d82 preserve validated work. FC7D151F A41 ->S9 three-session gate passes,
+70s tone each, active/closing rejection/underrun/xrun0. Fixed85/70ms SystemAudio
+reserve is measured and has a declared latency cost; earlier FAILs and source-
+pacer removal are retained. Final1037 JVM/22+22 native gates pass.
+No microphone compatibility/priority expansion or RFC-006J recovery is started.
 
 Current [final global microphone closure](DirectShellGlobalMicrophoneFinalClosure.md)
 supersedes the historical continuations below. Frozen C782DD9D r2 MIC3/3 above121s
@@ -11,7 +19,8 @@ passes ordinary consumer close/reopen with steady IPC/track/DEBUG quality deltas
 Quality VALIDATED on exact S9/API29 ->Tablet/API33 path, UID NONE, physical997Hz,
 natural routing and cleanup.1022 JVM/22+22 native gates pass. No release, valid
 forced preference or additional portable mechanism is promoted. SystemAudio
-causal jitter/playout investigation is the ONE recommended next separate task.
+causal jitter/playout closure above now supersedes its previously recommended
+next task. The ONE next task is MicrophoneAudio Android Compatibility Expansion.
 
 Current [residual quality continuation](MicrophoneReceiverSchedulingQuality.md):
 peer link restored, bounded microphone admission prevents whole-block loss
@@ -97,7 +106,7 @@ functional global-input milestones are not revoked or generalized to candidates.
 | Global microphone injection quality | Authenticated IPC/AudioTrack timing reserve and no-consumer pressure | **CLOSED_ON_EXACT_PRIMARY_PATH / VALIDATED**: [final C782DD9D r2](DirectShellGlobalMicrophoneFinalClosure.md)3/3 consecutive Sessions122.247/121.492/121.393s under one Enable; ordinary MIC72s plus reopened28s, all sampled steady IPC/track/DEBUG rejected/underrun/xrun deltas0. Independent maintenance silence supply, bounded source catch-up/mic receiver scheduling/one-burst admission; no capacity/codec/socket growth.1022 JVM/22+22 native pass. Fixed40ms IPC and80/70ms DEBUG remain separate. | An additional helper-loss test has two initial185/193ms track transients, no recurrence before kill; disclosed latency/rare scheduling stalls/longer soak remain qualification risk. No adaptive policy, release or forced-priority promotion. Earlier failed campaigns are preserved, not retroactively passed. |
 | Failed DirectShell consumed-helper replacement | Host Available with helpers0 after replacement bootstrap failure | **WITHDRAWAL PHYSICALLY OBSERVED FOR WIRELESS-DEBUGGING LOSS**: failed PcmSharedRing/InputSession bootstrap reports FAIL_WIRELESS_DEBUGGING_DISABLED, publication withdraws, readiness becomes STALE then USER_ACTION_REQUIRED with fresh generation. [Chronology](MicrophoneConsumerTransitionQuality.md). Focused regression test passes. | Other replacement-failure modes remain unqualified; no same-provider recovery, migration or owner-lifetime redesign. |
 | MicrophoneAudio DEBUG playback quality / output | Technical E2E; pacer-only3/3 lifecycle PASS,0/3 quality PASS; kernel ingress burstiness | **FIXED_AND_VALIDATED ON EXACT S9/API29 -> TABLET/API33 DEBUG PATH**: [autonomous investigation](MicrophoneAudioCadenceRootCause.md) proves an inadequate20ms/5ms decoded-playout budget and a separate cold-output startup boundary. Final80ms capacity/70ms reserve with warm output clock completed3/3 Sessions69.902/69.748/69.898s, startup/steady rejection and underrun0, xrun0. Kernel gaps40.9-45.5ms remain. Earlier failed campaigns and the rejected60/50ms candidate are preserved. | Nominal priming adds65ms; no universal latency/network qualification. Tablet human DEBUG output remains unconfirmed; rare stalls beyond80ms, longer clock drift and other routes need separate evidence. This is not Android virtual-input support. |
-| SystemAudio playback pressure | Previously observed valid PCM rejection and zero-fill in technical controls | **STILL_OPEN / CAUSE INCONCLUSIVE**: [final bounded C782DD9D control](DirectShellGlobalMicrophoneFinalClosure.md)20s requested Streaming,8s tone, technical/lifecycle PASS. Last local output epoch rejected19440/underrun58/xrun0; earlier epoch9840/96/0 and cumulative207 ring-full blocks show counter resets. Earlier unequal controls remain historical. | Next separate causal jitter/playout quality task. Do not copy microphone reserves, sum reset snapshots as full-run totals, or infer improvement/regression from unequal windows. No new human REMOTE_ONLY claim. |
+| SystemAudio playback pressure | Previously observed rejection/zero-fill, preserved in C782 controls and failed candidates | **CLOSED ON EXACT A41/API31 ->S9/API29 PATH**: [causal report](SystemAudioQualityRootCause.md), frozenFC7D151F3/3 consecutive70s tones under one Enable; decoded=accepted4968240/4562160/4553520, rejection/underrun/xrun0. Same-generation clock retention, capture admission/allocation fixes, receiver audio priority, block-rounded wait and measured fixed85/70ms reserve. | Broader network/device/long-duration qualification and latency tradeoff remain separate; no universal or new human routing claim. Microphone80/70ms and40ms IPC are unchanged. |
 | Final reverse-input coverage | Some early matrices NOT_TESTED | **PARTLY CLOSED**: physical human S7 -> A41 reverse Input and approximately 5-6 S9 physical interactions yielding 26 protocol events through the controlled Shizuku composite are proven; DirectShell Client-to-Host payload path also has technical E2E evidence in [runtime integration](DirectShellProductionRuntimeIntegration.md). The 26 events are not 26 human taps. | Deliberate human DirectShell reverse-input and broad final topology regression when an operator is present. |
 | Normal-user Host/Client and SAS pairing UX | Engineering flows validated, user journey incomplete | **STILL_OPEN**; no current broad normal-user acceptance campaign is documented. | Operator-led end-to-end UX validation with explicit SAS/pairing results. |
 | Wi-Fi Direct E2E | Discovery/control pieces exist | **STILL_OPEN** for physical Direct-path group, authenticated Session and media; [FutureRoadmap](../FutureRoadmap.md) does not claim that campaign. | Separately scoped Wi-Fi Direct hardware E2E. |
@@ -114,7 +123,7 @@ fallback, and not scheduled for unconditional deletion by an old roadmap line.
 
 ## Prioritized queue
 
-- **READY_NOW:** review the exact-path final microphone closure, then perform the separate SystemAudio causal jitter/playout quality investigation. C782DD9D r2 MIC3/3 closes steady consumer-window quality on S9 ->Tablet; earlier failures, bounded initial route transient and latency cost remain documented. Release promotion and optional crash-safe priority stay separate; permission probes are capability data, not an additional portability implementation. Owner liveness at `715b215` and accepted80/70ms microphone budget are not redesigned.
+- **READY_NOW:** MicrophoneAudio Android Compatibility Expansion (A41/API31 and S7/API26, one capability-driven architecture, no OEM hacks). SystemAudio FC7D151F3/3 closes the exact A41 ->S9 quality path; C782DD9D r2 MIC3/3 remains the exact prior microphone qualification. Its new bounded regression has documented cold-start/teardown events, not a universal artifact-free claim. Release promotion and optional crash-safe priority stay separate; owner liveness at715b215 and microphone80/70ms plus40ms IPC are unchanged.
 - **ROOT_HARDWARE_BLOCKED:** physical DirectRoot bootstrap, Video, SystemAudio, Input, complete Host and production root-manager authorization evidence.
 - **HUMAN_VALIDATION_BLOCKED:** Tablet MicrophoneAudio DEBUG speaker/intelligible-voice confirmation (A41 DEBUG audibility is now confirmed); normal-user Host/Client/SAS UX; final human DirectShell reverse-input/topology matrix; additional audio output routes. Listening requires operator availability. Tablet/A41/S22 SystemAudio routing evidence remains distinct from MicrophoneAudio virtual input.
 - **PLANNED_RFC:** RFC-005J, RFC-005K, root-assisted remediation, same-provider recovery and live provider migration.

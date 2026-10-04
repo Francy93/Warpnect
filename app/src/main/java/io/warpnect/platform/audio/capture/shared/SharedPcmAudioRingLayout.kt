@@ -115,6 +115,14 @@ object SharedPcmAudioRingLayout {
         return buffer.getInt(slotMetadataOffset(slot, payloadCapacity(buffer)) + SLOT_GENERATION)
     }
 
+    fun hasWritableSlot(memory: ByteBuffer): Boolean {
+        val buffer = ordered(memory)
+        val payloadCapacity = payloadCapacity(buffer)
+        return (0 until slotCount(buffer)).any {
+            buffer.getInt(slotMetadataOffset(it, payloadCapacity) + SLOT_STATE) == SLOT_STATE_FREE
+        }
+    }
+
     fun beginWrite(memory: ByteBuffer): Int {
         val buffer = ordered(memory)
         val count = slotCount(buffer)
@@ -248,7 +256,9 @@ object SharedPcmAudioRingLayout {
     private fun slotPayloadOffset(slot: Int, payloadCapacityBytes: Int): Int =
         slotMetadataOffset(slot, payloadCapacityBytes) + SLOT_METADATA_BYTES
 
-    private fun ordered(memory: ByteBuffer): ByteBuffer = memory.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+    // Metadata uses absolute accesses; an already ordered mapping needs no per-access view.
+    private fun ordered(memory: ByteBuffer): ByteBuffer =
+        if (memory.order() == ByteOrder.LITTLE_ENDIAN) memory else memory.duplicate().order(ByteOrder.LITTLE_ENDIAN)
 }
 
 data class PcmSlotView(

@@ -309,6 +309,48 @@ void warm_output_priming_does_not_consume_early_or_hide_later_underflow() {
     expect(!gate.ready(0), "new playback lifetime needs its own reserve");
 }
 
+void stereo_system_reserve_covers_measured_ordered_phase_range() {
+    const auto replay = [](std::uint32_t capacity, std::uint32_t prime, std::uint64_t excursion_us = 40000) {
+        PcmPlaybackRing ring(config(2, 240, capacity));
+        expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare stereo jitter replay");
+        const std::vector<std::int16_t> pcm(480, 321);
+        std::vector<std::int16_t> output(192);
+        bool started = false;
+        std::uint64_t next_callback_us = 0;
+        for (std::uint64_t packet = 0; packet < 4000; ++packet) {
+            const auto generated_us = packet * 5000;
+            const auto phase_us = generated_us % 250000;
+            const auto delivered_us = phase_us >= 100000 && phase_us < 100000 + excursion_us
+                ? generated_us + 100000 + excursion_us - phase_us : generated_us;
+            while (started && next_callback_us < delivered_us) {
+                static_cast<void>(ring.consume(mutable_bytes(output), 96));
+                next_callback_us += 2000;
+            }
+            static_cast<void>(ring.submit(bytes(pcm), 240, metadata(packet * 240)));
+            if (!started && ring.occupancy_frames() >= prime * 240) {
+                started = true;
+                next_callback_us = delivered_us;
+            }
+        }
+        return ring.snapshot();
+    };
+    const auto baseline = replay(4, 1);
+    expect(baseline.pcm_frames_rejected > 0, "old stereo ring rejects continuous ordered audio");
+    expect(baseline.underrun_frames > 0, "old stereo reserve starves");
+    expect(replay(8, 6).underrun_frames > 0, "30 ms cannot cover a measured 40 ms phase excursion");
+    const auto candidate = replay(12, 10);
+    expect_equal(candidate.pcm_frames_rejected, 0ULL, "60 ms capacity accepts restored stereo burst");
+    expect_equal(candidate.underrun_frames, 0ULL, "50 ms reserve covers bounded phase excursion");
+    expect(candidate.ring_high_water_mark <= 2880, "system reserve remains bounded");
+    // Audio-priority hardware run: lossless ordered arrival phase range 63.38 ms.
+    expect(replay(13, 10, 65000).underrun_frames > 0, "50 ms cannot cover measured 63.38 ms phase range");
+    expect(replay(15, 12, 65000).underrun_frames > 0, "60 ms reserve remains insufficient");
+    const auto measured_range = replay(17, 14, 65000);
+    expect_equal(measured_range.pcm_frames_rejected, 0ULL, "three spare packets accept stereo burst");
+    expect_equal(measured_range.underrun_frames, 0ULL, "70 ms reserve covers rounded measured range");
+    expect(measured_range.ring_high_water_mark <= 4080, "85 ms remains a hard capacity bound");
+}
+
 void explicit_discontinuity_rearms_reserve_without_hiding_ordinary_underflow() {
     warpnect::audio::AudioPlaybackPrimingGate microphone(3360);
     expect(microphone.ready(3360), "microphone reserve starts playback");
@@ -355,6 +397,71 @@ void capacity_wait_expires_and_never_delays_invalid_or_already_fitting_blocks() 
     expect_equal(unavailable.next_wait_ns(3840, 3840, 240, 100), 0ULL, "unknown burst never waits");
 }
 
+void stereo_system_block_waits_only_for_its_output_burst() {
+    PcmPlaybackRing ring(config(2, 240, 4));
+    expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare stereo admission");
+    const std::vector<std::int16_t> pcm(480, 123);
+    for (std::uint64_t block = 0; block < 4; ++block) {
+        static_cast<void>(ring.submit(bytes(pcm), 240, metadata(block * 240)));
+    }
+    std::vector<std::int16_t> output(192);
+    static_cast<void>(ring.consume(mutable_bytes(output), 96));
+    static_cast<void>(ring.consume(mutable_bytes(output), 96));
+    const warpnect::audio::AudioPlaybackCapacityWait admission(1, 96, 48000);
+    expect_equal(ring.occupancy_frames(), 768U, "192 consumed frames leave a partial stereo slot");
+    expect(admission.next_wait_ns(768, 960, 240, 1) > 0, "48-frame deficit waits for one burst");
+    static_cast<void>(ring.consume(mutable_bytes(output), 96));
+    expect_equal(ring.submit(bytes(pcm), 240, metadata(960)).error,
+                 AudioPlaybackError::None, "one stereo callback admits the complete block");
+    expect_equal(admission.next_wait_ns(960, 960, 240, 2'000'001), 0ULL,
+                 "system admission cannot exceed the two-millisecond burst budget");
+    expect_equal(ring.snapshot().pcm_frames_rejected, 0ULL, "valid stereo PCM is not discarded");
+}
+
+void stereo_partial_head_admission_needs_one_spare_packet_when_callback_is_late() {
+    const std::vector<std::int16_t> pcm(480, 123);
+    const auto replay = [&](std::uint32_t slots) {
+        PcmPlaybackRing ring(config(2, 240, slots));
+        expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare measured partial head");
+        for (std::uint64_t block = 0; block < 12; ++block) {
+            static_cast<void>(ring.submit(bytes(pcm), 240, metadata(block * 240)));
+        }
+        std::vector<std::int16_t> output(384);
+        static_cast<void>(ring.consume(mutable_bytes(output), 192));
+        expect_equal(ring.occupancy_frames(), 2688U, "physical rejection occupancy after partial callback");
+        static_cast<void>(ring.submit(bytes(pcm), 240, metadata(2880)));
+        return ring.snapshot();
+    };
+    expect_equal(replay(12).pcm_frames_rejected, 240ULL, "60 ms loses a valid complete packet before the next callback");
+    const auto candidate = replay(13);
+    expect_equal(candidate.pcm_frames_rejected, 0ULL, "one spare packet admits without extending the wait deadline");
+    expect_equal(candidate.ring_occupancy_frames, 2928U, "only the actual 240 frame packet is added");
+}
+
+void complete_system_block_admission_has_a_bounded_multi_burst_deadline() {
+    PcmPlaybackRing ring(config(2, 240, 13));
+    expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare complete stereo block admission");
+    const std::vector<std::int16_t> pcm(480, 123);
+    for (std::uint64_t block = 0; block < 13; ++block) {
+        static_cast<void>(ring.submit(bytes(pcm), 240, metadata(block * 240)));
+    }
+    const warpnect::audio::AudioPlaybackCapacityWait one_burst(1, 96, 48000);
+    const warpnect::audio::AudioPlaybackCapacityWait block(1, 96, 48000, 240);
+    expect_equal(one_burst.next_wait_ns(3120, 3120, 240, 2'000'001), 0ULL,
+                 "one hardware burst is too short for a complete packet at a full ring");
+    std::vector<std::int16_t> output(192);
+    for (std::uint64_t callback = 1; callback <= 3; ++callback) {
+        expect(block.next_wait_ns(ring.occupancy_frames(), 3120, 240, callback * 1'500'000) > 0,
+               "whole block budget survives until enough frames are consumed");
+        static_cast<void>(ring.consume(mutable_bytes(output), 96));
+    }
+    expect_equal(ring.submit(bytes(pcm), 240, metadata(3120)).error,
+                 AudioPlaybackError::None, "three small callbacks release the complete packet");
+    expect_equal(block.next_wait_ns(3120, 3120, 240, 6'000'001), 0ULL,
+                 "stalled output cannot extend the rounded six millisecond deadline");
+    expect_equal(ring.snapshot().pcm_frames_rejected, 0ULL, "no valid buffer discarded or counter hidden");
+}
+
 } // namespace
 
 int main() {
@@ -367,9 +474,13 @@ int main() {
     invalid_configuration_and_metadata_are_rejected();
     bounded_network_jitter_requires_both_playout_reserve_and_burst_headroom();
     warm_output_priming_does_not_consume_early_or_hide_later_underflow();
+    stereo_system_reserve_covers_measured_ordered_phase_range();
     explicit_discontinuity_rearms_reserve_without_hiding_ordinary_underflow();
     almost_fitting_microphone_block_waits_for_one_callback_without_rejection();
     capacity_wait_expires_and_never_delays_invalid_or_already_fitting_blocks();
+    stereo_system_block_waits_only_for_its_output_burst();
+    stereo_partial_head_admission_needs_one_spare_packet_when_callback_is_late();
+    complete_system_block_admission_has_a_bounded_multi_burst_deadline();
 
     if (failures != 0) {
         std::cerr << failures << " audio playback ring test failure(s)\n";

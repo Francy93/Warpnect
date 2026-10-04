@@ -284,7 +284,7 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
     snapshot_.bytes_sent += wire.size();
 #if defined(__ANDROID__) && !defined(NDEBUG)
     const auto header = decode_packet_header(datagram);
-    if (header.ok() && config_.payload_type == PayloadType::MicrophoneAudio) {
+    if (header.ok()) {
         observe_debug_send(header.header.sequence_number, protect_start_ns, send_start_ns, sent_ns);
     }
 #endif

@@ -283,7 +283,14 @@ independent of80/70ms DEBUG playout.1022 JVM/22+22 native gates pass. Older part
 continuations later in this roadmap remain historical. A41 routing permission
 and S7 product context-adapter boundaries remain; valid forced priority,
 release promotion and universal qualification are not implied. Next separate
-task: SystemAudio causal jitter/playout quality analysis, not begun here.
+task was SystemAudio causal jitter/playout quality analysis. The
+[completed exact-pair investigation](phase6_5/SystemAudioQualityRootCause.md) preserves
+the microphone milestone at596a534 and independent Input reset atb812d82;
+SystemAudio FC7D151F3/3 consecutive70s A41/API31 ->S9/API29 tones pass with
+rejection/underrun/xrun0. Fixed85/70ms reserve follows measured phase range;
+latency cost and all failed experiments remain documented. Final1037 JVM/22+22
+native gates pass. Next ONE task is MicrophoneAudio Android Compatibility
+Expansion (A41/S7), not started here; release/universal qualification is not implied.
 Same-provider recovery/root-assisted remediation/live migration remain deferred
 NOT IMPLEMENTED; composite pre-Session planning is not runtime recovery.
 

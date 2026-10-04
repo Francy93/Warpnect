@@ -293,11 +293,14 @@ class DefaultAudioReceiverSessionController(
     }
 
     private fun resetForFreshFrameLocked(frame: AudioReceiverFrameReady, streamConfig: AudioReceiverStreamConfig) {
-        if (lastConfig?.playbackWarmStart == true && streamConfig.source == AudioCaptureSource.MicrophoneAudio &&
+        val retainOutputClock = streamConfig.source == AudioCaptureSource.SystemAudio ||
+            (lastConfig?.playbackWarmStart == true && streamConfig.source == AudioCaptureSource.MicrophoneAudio)
+        if (retainOutputClock &&
             playbackStartGate == null && playbackController?.snapshot()?.state == AudioPlaybackState.Running &&
             playbackSink != null
         ) {
-            // Same-generation codec freshness does not invalidate a healthy microphone output clock.
+            // Codec freshness does not invalidate a healthy same-generation output clock.
+            // Reopening Android output here blocks the protected receiver during every large gap.
             decoderController?.runCatching { stop() }
             decoderController?.close()
             val sink = playbackSink ?: return
@@ -372,10 +375,8 @@ class DefaultAudioReceiverSessionController(
             )
             return
         }
-        // Warm the optional microphone output clock while PCM primes in the callback.
-        if (receiverConfig.playbackWarmStart && config.source == AudioCaptureSource.MicrophoneAudio &&
-            playbackStartGate == null
-        ) {
+        // Warm the negotiated output clock while its bounded reserve primes in the callback.
+        if (receiverConfig.playbackWarmStart && playbackStartGate == null) {
             val warmStart = playback.start()
             if (!warmStart.isSuccess) {
                 failPipelineLocked(

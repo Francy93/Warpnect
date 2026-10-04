@@ -1,6 +1,9 @@
 #include "audio_receiver_runtime.h"
 
 #include <algorithm>
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <android/log.h>
+#endif
 
 #include "datagram_limits.h"
 #include "fragmentation.h"
@@ -107,6 +110,10 @@ AudioTransportStatus AudioReceiverRuntime::rebind_prebound_socket(
     socket_ = std::move(socket);
     socket_.enable_receive_timestamps_for_diagnostics();
     diagnostic_timing_ = {};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    debug_previous_kernel_ns_ = 0;
+    debug_have_sequence_ = false;
+#endif
     if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(AudioTransportError::None);
 }
@@ -374,6 +381,15 @@ AudioTransportStatus AudioReceiverRuntime::receive_one(std::uint64_t timeout_us)
     diagnostic_timing_.receive_realtime_ns = received.receive_realtime_ns;
     diagnostic_timing_.receive_monotonic_ns = monotonic_time_now_us().value * 1000U;
     diagnostic_timing_.socket_age_ns = received.socket_age_ns;
+    if (debug_previous_kernel_ns_ != 0 && received.receive_realtime_ns > debug_previous_kernel_ns_ &&
+        received.receive_realtime_ns - debug_previous_kernel_ns_ >= 50000000ULL && debug_gap_reports_++ < 16) {
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+            "AUDIO_RAW_SOCKET_GAP receive_ns=%llu kernel_gap_ns=%llu socket_age_ns=%llu bytes=%zu",
+            static_cast<unsigned long long>(received.receive_realtime_ns),
+            static_cast<unsigned long long>(received.receive_realtime_ns - debug_previous_kernel_ns_),
+            static_cast<unsigned long long>(received.socket_age_ns), received.bytes_received);
+    }
+    debug_previous_kernel_ns_ = received.receive_realtime_ns;
 #endif
     return accept_datagram(datagram, received.source, monotonic_time_now_us().value);
 }
@@ -389,6 +405,18 @@ AudioTransportStatus AudioReceiverRuntime::process_packet(const PacketView& pack
     }
 
     ++snapshot_.datagrams_received;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (debug_have_sequence_ && packet.header.sequence_number != debug_previous_sequence_ + 1U &&
+        debug_gap_reports_++ < 16) {
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+            "AUDIO_AUTHENTICATED_SEQUENCE_GAP previous=%u current=%u receive_ns=%llu socket_age_ns=%llu",
+            debug_previous_sequence_, packet.header.sequence_number,
+            static_cast<unsigned long long>(diagnostic_timing_.receive_realtime_ns),
+            static_cast<unsigned long long>(diagnostic_timing_.socket_age_ns));
+    }
+    debug_have_sequence_ = true;
+    debug_previous_sequence_ = packet.header.sequence_number;
+#endif
     if (packet.header.payload_type != config_.payload_type) {
         if (is_supported_audio_payload_type(packet.header.payload_type)) {
             ++snapshot_.unsupported_payload_datagrams;

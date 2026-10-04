@@ -124,7 +124,7 @@ class NativeSclAudioReceiverController(
         deliveryProbe = AudioCadenceDebugProbe.create("${currentConfig?.source}_protected_receive")
         timingProbe = AudioReceiveTimingDebugProbe.create()
         worker = Thread({
-            applyMicrophoneReceiverPriority(currentConfig?.source, AndroidAudioThreadPriority::applyCapturePriority)
+            applyAudioReceiverPriority(currentConfig?.source, AndroidAudioThreadPriority::applyCapturePriority)
             while (running) {
                 val event = pumpOnce(pumpTimeoutUs)
                 when (event.type) {
@@ -347,5 +347,5 @@ class NativeSclAudioReceiverController(
     }
 }
 
-internal fun applyMicrophoneReceiverPriority(source: AudioCaptureSource?, applyPriority: () -> Boolean): Boolean =
-    source == AudioCaptureSource.MicrophoneAudio && applyPriority()
+internal fun applyAudioReceiverPriority(source: AudioCaptureSource?, applyPriority: () -> Boolean): Boolean =
+    source != null && applyPriority()

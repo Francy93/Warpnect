@@ -162,6 +162,12 @@ class AudioReceiverRuntime final {
 
     AudioReceiverConfig config_{};
     AudioReceiverEvent diagnostic_timing_{};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::uint64_t debug_previous_kernel_ns_ = 0;
+    std::uint32_t debug_previous_sequence_ = 0;
+    std::uint32_t debug_gap_reports_ = 0;
+    bool debug_have_sequence_ = false;
+#endif
     UdpSocket socket_{};
     std::vector<std::byte> datagram_buffer_{};
     std::vector<std::byte> unprotected_datagram_buffer_{};

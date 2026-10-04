@@ -4,6 +4,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioCadenceDebugProbeTest {
+    @Test fun startupIdentityIsBoundedAndDeferredWithoutChangingCadence() {
+        val events = mutableListOf<String>()
+        val pending = mutableListOf<() -> Unit>()
+        val probe = AudioCadenceDebugProbe("startup", events::add, deferEmission = pending::add)
+        repeat(40) { probe.observe(it * 240L, 1L + it * 5_000_000L) }
+        assertTrue(events.isEmpty())
+        assertTrue(pending.size == 1)
+        pending.single()()
+        assertTrue(events.single().startsWith("AUDIO_STARTUP boundary=startup positions=0,240,480,"))
+        assertTrue(events.single().contains(",7440 local_ns=1,5000001,"))
+    }
+
+    @Test fun deferredReportKeepsTheCompletedWindowIndependentOfFurtherCapture() {
+        val reports = mutableListOf<String>()
+        val pending = mutableListOf<() -> Unit>()
+        val probe = AudioCadenceDebugProbe("capture", reports::add, deferEmission = pending::add)
+        probe.observe(0, 1)
+        probe.observe(240, 5_000_000_001)
+        probe.observe(480, 10_000_000_001)
+        assertTrue(reports.isEmpty())
+
+        pending.forEach { it() }
+        assertTrue(reports[0].contains("window=0 count=2 last_position=240"))
+        assertTrue(reports[1].contains("window=1 count=1 last_position=480"))
+    }
+
     @Test fun relativeNominalPhaseSeparatesArrivalDelayFromSequenceLoss() {
         val events = mutableListOf<String>()
         val probe = AudioCadenceDebugProbe("receiver", events::add)

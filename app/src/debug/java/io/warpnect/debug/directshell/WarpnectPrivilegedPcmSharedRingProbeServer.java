@@ -18,6 +18,8 @@ import android.util.Log;
 import io.warpnect.audio.capture.AudioTimestampQuality;
 import io.warpnect.platform.audio.capture.shared.PcmRingSignalRecord;
 import io.warpnect.platform.audio.capture.shared.SharedPcmAudioRingLayout;
+import io.warpnect.platform.audio.capture.shared.SharedPcmCapturedChunkWriter;
+import io.warpnect.platform.audio.AudioCadenceDebugProbe;
 
 import java.io.BufferedReader;
 import java.io.DataInputStream;
@@ -441,6 +443,7 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         private AudioRecord audioRecord;
         private ByteBuffer discardBuffer;
         private Thread captureThread;
+        private volatile long recordingStartedNs;
         private long nextSequence = 1L;
         private long nextFramePosition;
         private int regionBytes;
@@ -744,6 +747,7 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 return Operation.failed(lastClassification, diagnosticsPayload());
             }
             captureRunning.set(true);
+            recordingStartedNs = System.nanoTime();
             state = State.RECORDING;
             captureThread = new Thread(this::captureLoop, "WarpnectDirectShellPcmRingCapture");
             captureThread.start();
@@ -827,6 +831,15 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         }
 
         private void captureLoop() {
+            long workerEnteredNs = System.nanoTime();
+            try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
+            } catch (RuntimeException unavailable) {
+                Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_PRIORITY result=UNAVAILABLE type="
+                        + unavailable.getClass().getSimpleName());
+            }
+            Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_PRIORITY tid=" + Process.myTid()
+                    + " nice=" + Process.getThreadPriority(Process.myTid()));
             ByteBuffer localRing = mappedRing;
             AudioRecord localRecord = audioRecord;
             OutputStream localNotify = notifyOutput;
@@ -834,16 +847,30 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 failCapture("CAPTURE_RESOURCES_UNAVAILABLE");
                 return;
             }
-            byte[] notifyScratch = new byte[PcmRingSignalRecord.WIRE_SIZE];
-            byte[] ackScratch = new byte[PcmRingSignalRecord.WIRE_SIZE];
+            PcmRingSignalRecord.Codec signals = new PcmRingSignalRecord.Codec();
+            android.system.StructPollfd ackPoll = new android.system.StructPollfd();
+            ackPoll.fd = ackReadFd.getFileDescriptor();
+            ackPoll.events = (short) android.system.OsConstants.POLLIN;
+            android.system.StructPollfd[] ackPolls = new android.system.StructPollfd[] {ackPoll};
+            SharedPcmCapturedChunkWriter captured = new SharedPcmCapturedChunkWriter(5_000_000L);
+            captured.prepare(localRing, discardBuffer);
+            AudioCadenceDebugProbe readCadence = AudioCadenceDebugProbe.Companion.create(
+                    "SystemAudio_capture_read_complete", 240L, 5_000_000L);
+            long previousCompletionNs = 0;
+            int slowReadLogs = 0;
+            int slowStageLogs = 0;
+            long firstReadStartNs = 0;
+            long firstReadCompletionNs = 0;
+            int startupReads = 0;
             while (captureRunning.get()) {
-                drainAcks(ackScratch);
-                int slot = SharedPcmAudioRingLayout.INSTANCE.beginWrite(localRing);
-                ByteBuffer target = slot >= 0
-                        ? SharedPcmAudioRingLayout.INSTANCE.payloadSlice(localRing, slot)
-                        : discardBuffer;
+                long loopStartNs = System.nanoTime();
+                drainAcks(signals, ackPolls);
+                long firstAckNs = System.nanoTime();
+                ByteBuffer target = discardBuffer;
                 target.clear();
                 int read;
+                long readStartNs = System.nanoTime();
+                long readCpuStartMs = SystemClock.currentThreadTimeMillis();
                 try {
                     read = localRecord.read(target, PAYLOAD_CAPACITY_BYTES, AudioRecord.READ_BLOCKING);
                 } catch (RuntimeException exception) {
@@ -852,6 +879,25 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                     return;
                 }
                 long completionNs = System.nanoTime();
+                if (startupReads == 0) {
+                    firstReadStartNs = readStartNs;
+                    firstReadCompletionNs = completionNs;
+                }
+                if (++startupReads == 32) {
+                    Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_STARTUP worker_delay_ns="
+                            + (workerEnteredNs - recordingStartedNs) + " worker_setup_ns="
+                            + (firstReadStartNs - workerEnteredNs) + " first_read_ns="
+                            + (firstReadCompletionNs - firstReadStartNs));
+                }
+                if (slowReadLogs < 16 && (completionNs - readStartNs >= 30_000_000L
+                        || (previousCompletionNs != 0 && readStartNs - previousCompletionNs >= 30_000_000L))) {
+                    slowReadLogs++;
+                    Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_SLOW read_ns=" + (completionNs - readStartNs)
+                            + " between_reads_ns=" + (previousCompletionNs == 0 ? 0 : readStartNs - previousCompletionNs)
+                            + " read_cpu_ms=" + (SystemClock.currentThreadTimeMillis() - readCpuStartMs)
+                            + " frame_position=" + framesCaptured.get() + " read_bytes=" + read);
+                }
+                previousCompletionNs = completionNs;
                 if (read < 0) {
                     readErrors.incrementAndGet();
                     failCapture("READ_FAILED_" + read);
@@ -860,38 +906,36 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 int alignedBytes = read - (read % BYTES_PER_FRAME);
                 int frameCount = alignedBytes / BYTES_PER_FRAME;
                 framesCaptured.addAndGet(frameCount);
-                if (slot < 0) {
-                    chunksDropped.incrementAndGet();
-                    continue;
-                }
+                if (readCadence != null) readCadence.observe(framesCaptured.get(), completionNs);
+                long cadenceNs = System.nanoTime();
                 if (alignedBytes <= 0) {
-                    SharedPcmAudioRingLayout.INSTANCE.cancelWrite(localRing, slot);
                     continue;
                 }
-                int slotGeneration = SharedPcmAudioRingLayout.INSTANCE.slotGeneration(localRing, slot);
-                boolean published = SharedPcmAudioRingLayout.INSTANCE.publish(
-                        localRing,
-                        slot,
-                        nextSequence++,
-                        alignedBytes,
-                        frameCount,
-                        nextFramePosition,
-                        completionNs,
-                        AudioTimestampQuality.EstimatedFromReadCompletion.ordinal(),
-                        0,
-                        completionNs
-                );
-                nextFramePosition += frameCount;
-                if (!published) {
-                    SharedPcmAudioRingLayout.INSTANCE.cancelWrite(localRing, slot);
+                drainAcks(signals, ackPolls);
+                long secondAckNs = System.nanoTime();
+                int published = captured.writeSlot(localRing, target, alignedBytes,
+                        frameCount, completionNs, AudioTimestampQuality.EstimatedFromReadCompletion.ordinal());
+                long publishNs = System.nanoTime();
+                if (published < 0) {
                     chunksDropped.incrementAndGet();
                     continue;
                 }
-                boolean notified = PcmRingSignalRecord.Companion.write(
+                boolean notified = signals.write(
                         localNotify,
-                        new PcmRingSignalRecord(slot, slotGeneration),
-                        notifyScratch
+                        published,
+                        SharedPcmAudioRingLayout.INSTANCE.slotGeneration(localRing, published)
                 );
+                long notifyNs = System.nanoTime();
+                if (slowStageLogs < 16 && (firstAckNs - loopStartNs >= 30_000_000L
+                        || notifyNs - completionNs >= 30_000_000L)) {
+                    slowStageLogs++;
+                    Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_STAGE_SLOW first_ack_ns=" + (firstAckNs - loopStartNs)
+                            + " cadence_ns=" + (cadenceNs - completionNs)
+                            + " second_ack_ns=" + (secondAckNs - cadenceNs)
+                            + " publish_ns=" + (publishNs - secondAckNs)
+                            + " notify_ns=" + (notifyNs - publishNs)
+                            + " frame_position=" + framesCaptured.get());
+                }
                 if (!notified) {
                     failCapture("NOTIFICATION_CHANNEL_FAILED");
                     return;
@@ -901,21 +945,24 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 chunksWritten.incrementAndGet();
                 notificationsSent.incrementAndGet();
             }
+            Log.i(TAG, "SYSTEM_AUDIO_CAPTURE_FINAL captured=" + framesCaptured.get()
+                    + " published=" + framesWritten.get() + " dropped_chunks=" + chunksDropped.get()
+                    + " capacity_waits=" + captured.getCapacityWaits()
+                    + " max_capacity_wait_ns=" + captured.getMaxCapacityWaitNs());
         }
 
-        private void drainAcks(byte[] scratch) {
+        private void drainAcks(PcmRingSignalRecord.Codec signals, android.system.StructPollfd[] polls) {
             InputStream input = ackInput;
             if (input == null) return;
             while (true) {
-                int available;
                 try {
-                    available = input.available();
-                } catch (IOException exception) {
+                    if (android.system.Os.poll(polls, 0) == 0
+                            || (polls[0].revents & android.system.OsConstants.POLLIN) == 0) return;
+                } catch (android.system.ErrnoException exception) {
                     return;
                 }
-                if (available < PcmRingSignalRecord.WIRE_SIZE) return;
-                PcmRingSignalRecord record = PcmRingSignalRecord.Companion.read(input, scratch);
-                if (record == null) return;
+                // Pipe notifications are atomic fixed-size records; ACKs carry no ownership mutation.
+                if (!signals.discardAck(input)) return;
                 acknowledgementsObserved.incrementAndGet();
             }
         }

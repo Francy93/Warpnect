@@ -4,6 +4,7 @@ import android.app.Activity
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -55,6 +56,10 @@ class SystemAudioE2eToneActivity : Activity() {
             return
         }
         tone = startedTone
+        handler.postDelayed(
+            { runCatching { Log.i(TAG, "SYSTEM_AUDIO_TONE_ROUTE ${startedTone.route()}") } },
+            1_000L,
+        )
         Log.i(
             TAG,
             "SYSTEM_AUDIO_E2E_TONE_STARTED rate=$SAMPLE_RATE_HZ channels=$CHANNEL_COUNT " +
@@ -75,6 +80,13 @@ class SystemAudioE2eToneActivity : Activity() {
         private val writing = AtomicBoolean(false)
         private lateinit var track: AudioTrack
         private lateinit var writer: Thread
+
+        fun route(): String {
+            val device = track.routedDevice
+            val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) device?.address else null
+            return "type=${device?.type} id=${device?.id} address=$address " +
+                "frames_written=${framesWritten.get()} track_underrun=${track.underrunCount}"
+        }
 
         fun start() {
             val bufferBytes = AudioTrack.getMinBufferSize(

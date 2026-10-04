@@ -1,5 +1,22 @@
 # Android Compatibility Matrix
 
+## 2026-10-04 SystemAudio Exact-Pair Quality Closure
+
+[Current causal report](../phase6_5/SystemAudioQualityRootCause.md): exact
+A41/API31 Host ->S9/API29 Client, normal SINGLE/DIRECT_SHELL, same5ms stereo
+codec/socket contracts. Earlier counted FAILs remain FAIL. FrozenFC7D151F,
+3/3 consecutive70s tones under one Enable: PCM rejection/underrun/xrun0,
+sequence gaps/resets0; HWM4080/3936/3984 frames, fixed85/70ms SystemAudio.
+Streaming-to-Ready103.311/103.388/101.613s; those are not all active tone time.
+Real997Hz OFF/ON/OFF, technical route25->2 after Disconnect. Human unavailable.
+Final1037 JVM/165 suites,22/22 CTest per Debug/Release, all gates PASS.
+Microphone checkpoints596a534
+and Input resetb812d82 are local only. Same-APK Input2 touches/Video63 frames
+pass with cleanup. Bounded S9 ->Tablet ordinary MIC remains functional and
+steady-stable; cold-start DEBUG1440 rejected/submix7 under and closing-only21
+DEBUG under in one explicit reproduction remain documented, not erased.
+No universal Android quality or new microphone release qualification claim.
+
 ## 2026-10-03 Final Global Microphone Quality
 
 [Detailed final evidence](../phase6_5/DirectShellGlobalMicrophoneFinalClosure.md)

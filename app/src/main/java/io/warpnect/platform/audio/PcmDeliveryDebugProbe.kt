@@ -23,6 +23,9 @@ internal class PcmDeliveryDebugProbe(
     private var peak = 0
     private var tonePrevious = 0.0
     private var toneOlder = 0.0
+    private var toneSamples = 0L
+    private var previousChannelSample = 0
+    private var positiveCrossings = 0L
     private var maxGapNs = 0L
     private var burst = 0
     private var maxBurst = 0
@@ -36,14 +39,18 @@ internal class PcmDeliveryDebugProbe(
         maxBurst = maxOf(maxBurst, burst)
         previousNs = nowNs
         val pcm = buffer.duplicate().order(ByteOrder.nativeOrder())
+        val channelCount = (sizeBytes / Short.SIZE_BYTES / frameCount.coerceAtLeast(1)).coerceAtLeast(1)
         for (index in 0 until sizeBytes / Short.SIZE_BYTES) {
             val sample = pcm.getShort(offset + index * Short.SIZE_BYTES).toInt()
             squares += sample.toDouble() * sample
             peak = maxOf(peak, abs(sample))
-            if (boundary.contains("microphone", ignoreCase = true)) {
+            if (index % channelCount == 0) {
+                if (previousChannelSample < 0 && sample >= 0) positiveCrossings++
+                previousChannelSample = sample
                 val next = sample + TONE_COEFFICIENT * tonePrevious - toneOlder
                 toneOlder = tonePrevious
                 tonePrevious = next
+                toneSamples++
             }
         }
         chunks++
@@ -58,6 +65,7 @@ internal class PcmDeliveryDebugProbe(
             "PCM_DELIVERY boundary=$boundary window=$windows chunks=$chunks frames=$frames " +
                 "rms=${sqrt(squares / samples.coerceAtLeast(1L))} peak=$peak " +
                 "tone997=${toneAmplitude()} " +
+                "positive_crossing_hz=${positiveCrossings * 48_000.0 / toneSamples.coerceAtLeast(1L)} " +
                 "max_gap_ns=$maxGapNs max_burst=$maxBurst elapsed_ns=${nowNs - windowStartNs}",
         )
         windows++
@@ -69,6 +77,8 @@ internal class PcmDeliveryDebugProbe(
         peak = 0
         tonePrevious = 0.0
         toneOlder = 0.0
+        toneSamples = 0
+        positiveCrossings = 0
         maxGapNs = 0
         maxBurst = 0
     }
@@ -76,13 +86,13 @@ internal class PcmDeliveryDebugProbe(
     private fun toneAmplitude(): Double {
         val power = tonePrevious * tonePrevious + toneOlder * toneOlder -
             TONE_COEFFICIENT * tonePrevious * toneOlder
-        return 2 * sqrt(power.coerceAtLeast(0.0)) / samples.coerceAtLeast(1L)
+        return 2 * sqrt(power.coerceAtLeast(0.0)) / toneSamples.coerceAtLeast(1L)
     }
 
     companion object {
         private const val WINDOW_NS = 5_000_000_000L
         private const val BURST_GAP_NS = 1_000_000L
-        private const val MAX_WINDOWS = 12
+        private const val MAX_WINDOWS = 24
         private val TONE_COEFFICIENT = 2 * cos(2 * Math.PI * 997 / 48_000)
         private val remainingLogEntries = AtomicInteger(256)
 

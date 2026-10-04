@@ -5,13 +5,15 @@
 
 namespace warpnect::audio {
 
-// Producer-only admission: one output burst can release a nearly fitting PCM block.
+// Producer-only admission. System blocks may need several hardware bursts to fit.
 class AudioPlaybackCapacityWait final {
 public:
     AudioPlaybackCapacityWait(std::uint64_t started_ns, std::uint32_t burst_frames,
-                              std::uint32_t sample_rate_hz) noexcept
-        : started_ns_(started_ns), budget_ns_(sample_rate_hz == 0 ? 0 :
-              static_cast<std::uint64_t>(burst_frames) * 1'000'000'000ULL / sample_rate_hz) {}
+                              std::uint32_t sample_rate_hz,
+                              std::uint32_t required_block_frames = 0) noexcept
+        : started_ns_(started_ns), budget_ns_(sample_rate_hz == 0 || burst_frames == 0 ? 0 :
+              std::max<std::uint64_t>(1, (static_cast<std::uint64_t>(required_block_frames) +
+                  burst_frames - 1) / burst_frames) * burst_frames * 1'000'000'000ULL / sample_rate_hz) {}
 
     [[nodiscard]] std::uint64_t next_wait_ns(std::uint32_t occupancy, std::uint32_t capacity,
                                             std::uint32_t requested, std::uint64_t now_ns) const noexcept {

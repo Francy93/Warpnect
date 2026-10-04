@@ -11,6 +11,7 @@ import io.warpnect.audio.session.DefaultAudioReceiverSessionController
 import io.warpnect.audio.session.DefaultAudioTransmitterSessionController
 import io.warpnect.audio.session.MicrophoneAudioDestination
 import io.warpnect.audio.session.MicrophonePlayoutReserve
+import io.warpnect.audio.session.SystemAudioPlayoutReserve
 import io.warpnect.audio.transport.AudioReceiverRuntimeConfig
 import io.warpnect.audio.transport.AudioTransportConfig
 import io.warpnect.capture.CaptureRequest
@@ -272,7 +273,10 @@ class DefaultAndroidSessionPipelineBindings(
             controller = controller,
             telemetrySources = listOf(telemetry, playbackTelemetry),
             config = MicrophonePlayoutReserve.apply(
-                AudioReceiverSessionConfig(receiverRuntimeConfig = channel.audioReceiverConfig(source)),
+                SystemAudioPlayoutReserve.apply(
+                    AudioReceiverSessionConfig(receiverRuntimeConfig = channel.audioReceiverConfig(source)),
+                    mode.frameDurationUs,
+                ),
                 mode.frameDurationUs,
             ),
             onStop = { microphoneInput?.close() },

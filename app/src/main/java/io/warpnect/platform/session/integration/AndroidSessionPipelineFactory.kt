@@ -746,6 +746,7 @@ private class VideoPipelineRuntimeDebugSampler(
 
     override fun close() {
         synchronized(lock) {
+            if (executor != null) runCatching(sample)
             executor?.shutdownNow()
             executor = null
         }
@@ -858,6 +859,7 @@ private class AudioPipelineRuntimeDebugSampler(
 
     override fun close() {
         synchronized(lock) {
+            if (executor != null) runCatching(sample)
             executor?.shutdownNow()
             executor = null
         }

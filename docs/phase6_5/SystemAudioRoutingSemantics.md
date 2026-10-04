@@ -1,5 +1,17 @@
 # Host / Client SystemAudio Routing Semantics (2026-09-28)
 
+## 2026-10-04 Technical Quality Control
+
+[SystemAudioQualityRootCause.md](SystemAudioQualityRootCause.md) records frozen
+FC7D151F A41/API31 ->S9/API29,3/3 consecutive70s tones under one Enable,
+rejection/underrun/xrun0 and real997Hz decoded/consumed PCM. Host AudioTrack
+reports REMOTE_SUBMIX(type25) during the final Sessions; a bounded post-
+Disconnect tone reports BUILTIN_SPEAKER(type2), track underrun0. Ready/Waiting,
+rediscovery and Disable Host cleanup pass. Volume5/15, tone quarter-scale.
+This is new technical routing evidence, not human listening: the operator is
+away. The previously human-validated REMOTE_ONLY result below is preserved;
+HOST_AND_REMOTE and external output routes are not implemented/qualified here.
+
 ## Scope and result
 
 This is a physical observation of the *normal* DirectShell Host Session, not

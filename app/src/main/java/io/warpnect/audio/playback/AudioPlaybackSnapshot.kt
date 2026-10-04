@@ -53,5 +53,9 @@ data class AudioPlaybackSnapshot(
     val primingFrames: Long = 0,
     val lastUnderrunTimeNs: Long = 0,
     val lastUnderrunMissingFrames: Int = 0,
+    val callbackCount: Long = 0,
+    val callbackFrames: Long = 0,
+    val maxCallbackGapNs: Long = 0,
+    val ringLowWaterMark: Int = 0,
     val lastError: AudioPlaybackError = AudioPlaybackError.None,
 )

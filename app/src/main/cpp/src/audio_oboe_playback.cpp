@@ -124,7 +124,13 @@ public:
                  std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source,
                  std::uint32_t prime_frames)
         : ring_(std::move(ring)), channel_count_(channel_count), priming_(prime_frames),
-          observe_times_(prime_frames > 0) {
+          observe_times_(
+#if defined(__ANDROID__) && !defined(NDEBUG)
+              true
+#else
+              prime_frames > 0
+#endif
+          ) {
         set_telemetry_source(std::move(telemetry_source));
     }
 
@@ -152,6 +158,15 @@ public:
             return oboe::DataCallbackResult::Continue;
         }
         const auto safe_frames = static_cast<std::uint32_t>(num_frames);
+        callback_count_.fetch_add(1, std::memory_order_relaxed);
+        const auto callback_ns = observe_times_ ? OboeAudioPlayback::monotonic_now_ns() : 0;
+        const auto previous_ns = previous_callback_ns_.exchange(callback_ns, std::memory_order_relaxed);
+        if (previous_ns != 0 && callback_ns >= previous_ns) {
+            const auto gap_ns = callback_ns - previous_ns;
+            auto maximum = max_callback_gap_ns_.load(std::memory_order_relaxed);
+            while (gap_ns > maximum && !max_callback_gap_ns_.compare_exchange_weak(
+                maximum, gap_ns, std::memory_order_relaxed)) {}
+        }
         if (callbacks_ != nullptr) callbacks_->increment();
         if (requested_samples_ != nullptr) requested_samples_->add(safe_frames);
         const auto byte_count =
@@ -169,9 +184,13 @@ public:
             priming_frames_.fetch_add(safe_frames, std::memory_order_relaxed);
             return oboe::DataCallbackResult::Continue;
         }
-        const auto consume_ns = observe_times_ ? OboeAudioPlayback::monotonic_now_ns() : 0;
+        const auto consume_ns = callback_ns;
         const auto consumed = ring_->consume(std::span<std::byte>(bytes, byte_count), safe_frames, consume_ns,
                                              output_start);
+        const auto occupancy = ring_->occupancy_frames();
+        auto low_water = ring_low_water_mark_.load(std::memory_order_relaxed);
+        while (occupancy < low_water && !ring_low_water_mark_.compare_exchange_weak(
+            low_water, occupancy, std::memory_order_relaxed)) {}
         if (consumed.underrun) {
             last_underrun_missing_frames_.store(consumed.silence_frames_inserted, std::memory_order_relaxed);
             last_underrun_time_ns_.store(consume_ns, std::memory_order_release);
@@ -190,6 +209,10 @@ public:
         priming_frames_.store(0, std::memory_order_relaxed);
         last_underrun_time_ns_.store(0, std::memory_order_relaxed);
         last_underrun_missing_frames_.store(0, std::memory_order_relaxed);
+        callback_count_.store(0, std::memory_order_relaxed);
+        previous_callback_ns_.store(0, std::memory_order_relaxed);
+        max_callback_gap_ns_.store(0, std::memory_order_relaxed);
+        ring_low_water_mark_.store(UINT32_MAX, std::memory_order_relaxed);
     }
 
     void request_source_discontinuity() noexcept {
@@ -200,6 +223,13 @@ public:
     std::uint64_t priming_frames() const noexcept { return priming_frames_.load(std::memory_order_relaxed); }
     std::uint64_t last_underrun_time_ns() const noexcept { return last_underrun_time_ns_.load(std::memory_order_acquire); }
     std::uint32_t last_underrun_missing_frames() const noexcept { return last_underrun_missing_frames_.load(std::memory_order_relaxed); }
+    std::uint64_t callback_count() const noexcept { return callback_count_.load(std::memory_order_relaxed); }
+    std::uint64_t callback_frames() const noexcept { return output_frame_cursor_.load(std::memory_order_relaxed); }
+    std::uint64_t max_callback_gap_ns() const noexcept { return max_callback_gap_ns_.load(std::memory_order_relaxed); }
+    std::uint32_t ring_low_water_mark() const noexcept {
+        const auto value = ring_low_water_mark_.load(std::memory_order_relaxed);
+        return value == UINT32_MAX ? 0 : value;
+    }
 
 private:
     std::shared_ptr<PcmPlaybackRing> ring_{};
@@ -218,6 +248,10 @@ private:
     std::atomic<std::uint64_t> priming_frames_{0};
     std::atomic<std::uint64_t> last_underrun_time_ns_{0};
     std::atomic<std::uint32_t> last_underrun_missing_frames_{0};
+    std::atomic<std::uint64_t> callback_count_{0};
+    std::atomic<std::uint64_t> previous_callback_ns_{0};
+    std::atomic<std::uint64_t> max_callback_gap_ns_{0};
+    std::atomic<std::uint32_t> ring_low_water_mark_{UINT32_MAX};
 };
 
 class OboeAudioPlayback::ErrorCallback final : public oboe::AudioStreamErrorCallback {
@@ -302,8 +336,7 @@ AudioPlaybackError OboeAudioPlayback::prepare() {
     }
 
     data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count, telemetry_source_,
-        config_.source == AudioCaptureSource::MicrophoneAudio
-            ? config_.start_threshold_codec_frames * config_.frames_per_codec_frame : 0);
+        config_.start_threshold_codec_frames * config_.frames_per_codec_frame);
     error_callback_ = std::make_shared<ErrorCallback>();
     const AudioPlaybackError stream_error = open_stream();
     if (stream_error != AudioPlaybackError::None) {
@@ -393,12 +426,7 @@ AudioPlaybackError OboeAudioPlayback::start() {
     if (running_) {
         return AudioPlaybackError::AlreadyRunning;
     }
-    const std::uint32_t threshold_frames =
-        config_.start_threshold_codec_frames * config_.frames_per_codec_frame;
-    if (config_.source != AudioCaptureSource::MicrophoneAudio && ring_->occupancy_frames() < threshold_frames) {
-        record_error(AudioPlaybackError::PlaybackNotPrimed);
-        return AudioPlaybackError::PlaybackNotPrimed;
-    }
+    // A warm clock emits priming silence; the callback alone owns PCM-ready admission.
     data_callback_->reset_output_cursor();
     ring_->invalidate_source_timeline();
     const oboe::Result result = stream_->requestStart();
@@ -450,9 +478,9 @@ AudioPlaybackError OboeAudioPlayback::submit_pcm(
         record_error(AudioPlaybackError::ConfigGenerationMismatch);
         return AudioPlaybackError::ConfigGenerationMismatch;
     }
-    if (running_ && config_.source == AudioCaptureSource::MicrophoneAudio) {
+    if (running_) {
         const AudioPlaybackCapacityWait admission(monotonic_now_ns(), snapshot_.frames_per_burst,
-                                                  config_.sample_rate_hz);
+            config_.sample_rate_hz, config_.source == AudioCaptureSource::SystemAudio ? frame_count : 0);
         while (const auto wait_ns = admission.next_wait_ns(ring_->occupancy_frames(),
                    ring_->capacity_frames(), frame_count, monotonic_now_ns())) {
             const timespec pause{.tv_sec = 0, .tv_nsec = static_cast<long>(wait_ns)};
@@ -614,6 +642,10 @@ OboeAudioPlaybackSnapshot OboeAudioPlayback::snapshot() {
         snapshot_.priming_frames = data_callback_->priming_frames();
         snapshot_.last_underrun_time_ns = data_callback_->last_underrun_time_ns();
         snapshot_.last_underrun_missing_frames = data_callback_->last_underrun_missing_frames();
+        snapshot_.callback_count = data_callback_->callback_count();
+        snapshot_.callback_frames = data_callback_->callback_frames();
+        snapshot_.max_callback_gap_ns = data_callback_->max_callback_gap_ns();
+        snapshot_.ring_low_water_mark = data_callback_->ring_low_water_mark();
     }
     snapshot_.prepared = prepared_;
     snapshot_.running = running_;

@@ -68,6 +68,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioSessionControllerTest {
+    @Test fun systemOutputClockWarmsBeforePcmWithoutBypassingAnExplicitGate() = runBlocking {
+        val original = receiverConfig()
+        val config = original.copy(
+            receiverRuntimeConfig = original.receiverRuntimeConfig.copy(source = AudioCaptureSource.SystemAudio),
+            playbackWarmStart = true,
+        )
+        val runtime = FakeReceiverRuntime()
+        val playback = FakePlayback(allowEmptyStart = true)
+        val session = DefaultAudioReceiverSessionController(runtime, { FakeDecoder() }, { playback })
+        session.start(config)
+        runtime.emitConfig(streamConfig().copy(source = AudioCaptureSource.SystemAudio))
+        assertEquals(1, playback.startCalls)
+        assertEquals(0, playback.submitCalls)
+        session.stop()
+        assertTrue(playback.closed)
+        val gatedRuntime = FakeReceiverRuntime()
+        val gatedPlayback = FakePlayback(allowEmptyStart = true)
+        val gated = DefaultAudioReceiverSessionController(
+            gatedRuntime,
+            { FakeDecoder() },
+            { gatedPlayback },
+            ManualStartGate(),
+        )
+        gated.start(config)
+        gatedRuntime.emitConfig(streamConfig().copy(source = AudioCaptureSource.SystemAudio))
+        assertEquals(0, gatedPlayback.startCalls)
+        assertTrue(gated.stop().isSuccess)
+    }
+
     @Test fun optionalMicrophoneClockWarmsBeforePcmAndStopsWithItsSession() = runBlocking {
         val runtime = FakeReceiverRuntime()
         val playback = FakePlayback(allowEmptyStart = true)
@@ -287,7 +316,7 @@ class AudioSessionControllerTest {
     }
 
     @Test
-    fun warmSystemAudioGapStillRecreatesPipeline() = runBlocking {
+    fun systemAudioGapRetainsHealthyOutputEvenWithoutWarmStart() = runBlocking {
         val runtime = FakeReceiverRuntime()
         val playbacks = mutableListOf<FakePlayback>()
         val config = receiverConfig()
@@ -299,13 +328,17 @@ class AudioSessionControllerTest {
         session.start(
             config.copy(
                 receiverRuntimeConfig = config.receiverRuntimeConfig.copy(source = AudioCaptureSource.SystemAudio),
-                playbackWarmStart = true,
+                playbackWarmStart = false,
             ),
         )
         runtime.emitConfig(streamConfig().copy(source = AudioCaptureSource.SystemAudio))
         runtime.emitFrame(frame(position = 0))
         playbacks.single().consumedFrames = 240
         runtime.emitFrame(frame(position = 960))
+        assertEquals(1, playbacks.size)
+        assertFalse(playbacks.first().closed)
+        assertEquals(listOf(0L, 960L), playbacks.single().submitted.map { it.firstFramePosition })
+        runtime.emitConfig(streamConfig(generation = 2).copy(source = AudioCaptureSource.SystemAudio))
         assertEquals(2, playbacks.size)
         assertTrue(playbacks.first().closed)
         assertTrue(session.stop().isSuccess)

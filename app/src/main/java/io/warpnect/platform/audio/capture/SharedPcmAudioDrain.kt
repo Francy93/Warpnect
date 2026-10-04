@@ -2,10 +2,14 @@ package io.warpnect.platform.audio.capture
 
 import android.annotation.SuppressLint
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.os.SharedMemory
+import android.util.Log
+import io.warpnect.BuildConfig
 import io.warpnect.audio.capture.AudioCaptureError
 import io.warpnect.audio.capture.AudioTimestampQuality
 import io.warpnect.audio.capture.PcmAudioSink
+import io.warpnect.platform.audio.AudioCadenceDebugProbe
 import io.warpnect.platform.audio.capture.shared.JavaSharedPcmMemory
 import io.warpnect.platform.audio.capture.shared.PcmMemoryRegion
 import io.warpnect.platform.audio.capture.shared.PcmRingSignalRecord
@@ -94,11 +98,20 @@ internal class SharedPcmAudioDrain(
     }
 
     private fun drainLoop() {
+        val priorityApplied = AndroidAudioThreadPriority.applyCapturePriority()
+        if (BuildConfig.DEBUG) {
+            Log.i(
+                "WarpnectAudioDiagnostics",
+                "SYSTEM_AUDIO_DRAIN_PRIORITY applied=$priorityApplied tid=${Process.myTid()} " +
+                    "nice=${Process.getThreadPriority(Process.myTid())}",
+            )
+        }
         val input = notifyInput ?: return
         val output = ackOutput ?: return
         val ring = mappedMemory ?: return
         val readScratch = ByteArray(PcmRingSignalRecord.WIRE_SIZE)
         val writeScratch = ByteArray(PcmRingSignalRecord.WIRE_SIZE)
+        val cadence = AudioCadenceDebugProbe.create("SystemAudio_shared_ring_read")
         while (running) {
             val record = PcmRingSignalRecord.read(input, readScratch) ?: return
             val slot = SharedPcmAudioRingLayout.beginRead(
@@ -111,6 +124,7 @@ internal class SharedPcmAudioDrain(
                 continue
             }
             try {
+                cadence?.observe(slot.firstFramePosition, System.nanoTime())
                 sink.onPcmChunk(
                     buffer = slot.payload,
                     offset = 0,

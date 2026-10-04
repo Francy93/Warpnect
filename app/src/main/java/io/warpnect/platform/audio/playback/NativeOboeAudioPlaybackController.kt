@@ -2,7 +2,6 @@ package io.warpnect.platform.audio.playback
 
 import android.util.Log
 import io.warpnect.BuildConfig
-import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.playback.AudioPlaybackConfig
 import io.warpnect.audio.playback.AudioPlaybackController
 import io.warpnect.audio.playback.AudioPlaybackError
@@ -108,7 +107,7 @@ class NativeOboeAudioPlaybackController internal constructor(
         deliveryProbe?.observe(buffer, offset, sizeBytes, frameCount, System.nanoTime())
         if (error != AudioPlaybackError.None) {
             recordFailure(error)
-            if (BuildConfig.DEBUG && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+            if (BuildConfig.DEBUG &&
                 error == AudioPlaybackError.PlaybackRingFull && allowRejectDiagnostic()
             ) {
                 refreshSnapshot()
@@ -120,7 +119,7 @@ class NativeOboeAudioPlaybackController internal constructor(
             return@synchronized resultLocked(error)
         }
         refreshSnapshot()
-        if (BuildConfig.DEBUG && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+        if (BuildConfig.DEBUG &&
             localSnapshot.lastUnderrunTimeNs > lastLoggedUnderrunNs && allowUnderrunDiagnostic()
         ) {
             lastLoggedUnderrunNs = localSnapshot.lastUnderrunTimeNs
@@ -130,7 +129,7 @@ class NativeOboeAudioPlaybackController internal constructor(
                     "total=${localSnapshot.underrunCallbacks} occupancy=${localSnapshot.ringOccupancyFrames}",
             )
         }
-        if (BuildConfig.DEBUG && !firstConsumerLogged && currentConfig.source == AudioCaptureSource.MicrophoneAudio &&
+        if (BuildConfig.DEBUG && !firstConsumerLogged &&
             localSnapshot.pcmFramesConsumed > 0
         ) {
             firstConsumerLogged = true
@@ -169,9 +168,7 @@ class NativeOboeAudioPlaybackController internal constructor(
         }
         val startedNs = if (BuildConfig.DEBUG) System.nanoTime() else 0L
         val error = backend.start(handle)
-        if (BuildConfig.DEBUG && error == AudioPlaybackError.None &&
-            config?.source == AudioCaptureSource.MicrophoneAudio
-        ) {
+        if (BuildConfig.DEBUG && error == AudioPlaybackError.None) {
             logDiagnostic(
                 "AUDIO_PLAYBACK_START_RETURN start_ns=$startedNs end_ns=${System.nanoTime()}",
             )

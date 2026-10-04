@@ -12,6 +12,9 @@
 #include <span>
 #include <string_view>
 #include <vector>
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <android/log.h>
+#endif
 
 #include <mbedtls/platform_util.h>
 
@@ -125,7 +128,7 @@ inline constexpr jsize kNativeAudioEncoderSubmitValues = 14;
 inline constexpr jsize kNativeAudioEncoderStopValues = 2;
 inline constexpr jsize kNativeAudioEncoderSnapshotValues = 28;
 inline constexpr jsize kNativeAudioPlaybackCreateValues = 2;
-inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 53;
+inline constexpr jsize kNativeAudioPlaybackSnapshotValues = 57;
 inline constexpr jsize kNativeAudioPlaybackSourceAnchorValues = 17;
 inline constexpr jsize kNativeAudioPlaybackTimestampValues = 5;
 inline constexpr jsize kNativeAudioReceiverEventValues = 20;
@@ -434,6 +437,13 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
             return {.error = warpnect::scl::DatagramProtectionError::Failed};
         }
         const auto result = state_->runtime->unprotect(source, secure, output, now_us);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        if (!result.ok() && debug_rejection_reports_++ < 16) {
+            __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+                "PROTECTED_DATAGRAM_REJECTED local_us=%llu error=%u bytes=%zu",
+                static_cast<unsigned long long>(now_us), static_cast<unsigned>(result.error), secure.size());
+        }
+#endif
         record_unprotect_result(result.error);
         return {.error = map(result.error), .bytes_written = result.bytes_written};
     }
@@ -479,6 +489,9 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
     std::shared_ptr<NativeSessionProtectionState> state_{};
     ProtectionScope scope_{};
     warpnect::scl::RuntimeNetworkTelemetry* telemetry_ = nullptr;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::uint32_t debug_rejection_reports_ = 0;
+#endif
 };
 
 [[nodiscard]] std::unique_ptr<warpnect::scl::DatagramProtector> make_channel_protector(
@@ -2499,6 +2512,10 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSnapshot(JNIEnv* env,
         values[50] = static_cast<jlong>(snapshot.priming_frames);
         values[51] = static_cast<jlong>(snapshot.last_underrun_time_ns);
         values[52] = static_cast<jlong>(snapshot.last_underrun_missing_frames);
+        values[53] = static_cast<jlong>(snapshot.callback_count);
+        values[54] = static_cast<jlong>(snapshot.callback_frames);
+        values[55] = static_cast<jlong>(snapshot.max_callback_gap_ns);
+        values[56] = static_cast<jlong>(snapshot.ring_low_water_mark);
     }
     jlongArray array = env->NewLongArray(kNativeAudioPlaybackSnapshotValues);
     if (array != nullptr) {

@@ -12,7 +12,7 @@ class MicrophoneReceiverPriorityTest {
         var appliedThread: Thread? = null
         var applied = false
         val worker = Thread {
-            applied = applyMicrophoneReceiverPriority(AudioCaptureSource.MicrophoneAudio) {
+            applied = applyAudioReceiverPriority(AudioCaptureSource.MicrophoneAudio) {
                 appliedThread = Thread.currentThread()
                 true
             }
@@ -24,24 +24,24 @@ class MicrophoneReceiverPriorityTest {
     }
 
     @Test
-    fun systemAudioRetainsItsExistingSchedulingPolicy() {
+    fun systemAudioUsesTheSameAudioWorkerPriorityWithoutChangingOtherThreads() {
         var calls = 0
-        assertFalse(
-            applyMicrophoneReceiverPriority(AudioCaptureSource.SystemAudio) {
+        assertTrue(
+            applyAudioReceiverPriority(AudioCaptureSource.SystemAudio) {
                 calls++
                 true
             },
         )
-        assertEquals(0, calls)
+        assertEquals(1, calls)
     }
 
     @Test
     fun missingSourceDoesNotAcquireMicrophoneScheduling() {
-        assertFalse(applyMicrophoneReceiverPriority(null) { error("unexpected_priority_request") })
+        assertFalse(applyAudioReceiverPriority(null) { error("unexpected_priority_request") })
     }
 
     @Test
     fun unavailablePriorityRemainsAReportedFailureInsteadOfFalseSuccess() {
-        assertFalse(applyMicrophoneReceiverPriority(AudioCaptureSource.MicrophoneAudio) { false })
+        assertFalse(applyAudioReceiverPriority(AudioCaptureSource.MicrophoneAudio) { false })
     }
 }

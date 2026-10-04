@@ -408,6 +408,10 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "frames_decoded=${snapshot.framesDecoded} decoder_pcm_frames=${decoder?.pcmFramesDecoded} " +
                 "decoder_failures=${decoder?.decodeFailures} playback_state=${playback?.state} " +
                 "audio_generation=${snapshot.activeConfigGeneration} " +
+                "audio_gap_events=${snapshot.gapEvents} audio_plc=${snapshot.plcFramesGenerated} " +
+                "audio_large_resets=${snapshot.largeGapResets} " +
+                "audio_misaligned_resets=${snapshot.misalignedGapResets} " +
+                "audio_duplicates=${snapshot.duplicateFramesDropped} audio_late=${snapshot.lateFramesDropped} " +
                 "playback_rate=${playback?.actualSampleRateHz} playback_channels=${playback?.actualChannelCount} " +
                 "playback_api=${playback?.audioApi} playback_performance=${playback?.actualPerformanceMode} " +
                 "playback_sharing=${playback?.actualSharingMode} playback_burst=${playback?.framesPerBurst} " +
@@ -416,6 +420,9 @@ internal class AndroidDiscoveryDebugLog(context: Context) {
                 "playback_start_threshold=${snapshot.playbackStartThresholdCodecFrames} " +
                 "playback_ring_occupancy=${playback?.ringOccupancyFrames} " +
                 "playback_ring_hwm=${playback?.ringHighWaterMark} playback_written=${playback?.pcmFramesSubmitted} " +
+                "playback_ring_lwm=${playback?.ringLowWaterMark} playback_callbacks=${playback?.callbackCount} " +
+                "playback_callback_frames=${playback?.callbackFrames} " +
+                "playback_callback_max_gap_ns=${playback?.maxCallbackGapNs} " +
                 "playback_consumed=${playback?.pcmFramesConsumed} playback_rejected=${playback?.pcmFramesRejected} " +
                 "playback_ring_full_drops=${snapshot.playbackRingFullDrops} " +
                 "playback_underruns=${playback?.underrunCallbacks} " +

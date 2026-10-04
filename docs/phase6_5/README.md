@@ -2,6 +2,17 @@
 
 ## Current Status
 
+The [SystemAudio quality closure](SystemAudioQualityRootCause.md) is
+HARDWARE_VALIDATED on exact A41/API31 ->S9/API29:FC7D151F,3/3 consecutive
+70s tone Sessions, rejection/underrun/xrun0 including closing samples. Fixed
+85/70ms SystemAudio reserve follows measured phase range and smaller failed
+replays; its latency cost is explicit. Earlier counted FAILs remain visible.
+Validated microphone source/tests/docs are checkpointed locally at596a534;
+the independent all-device Input reset bridge fix is checkpointed atb812d82.
+No recovery/migration, microphone compatibility expansion or release promotion
+is included in the SystemAudio task. Final1037 JVM/22+22 native gates pass.
+Next ONE task: MicrophoneAudio Android Compatibility Expansion (A41/S7).
+
 Current [global microphone final closure](DirectShellGlobalMicrophoneFinalClosure.md)
 is **VALIDATED ON THE EXACT PRIMARY PATH**: C782DD9D r2 S9/API29 ->Tablet/API33,
 3/3 above121s under one Enable, ordinary MIC close/reopen, sampled steady
@@ -9,8 +20,8 @@ IPC/track/DEBUG rejected/underrun/xrun deltas0. Physical997Hz, natural MIC/VOICE
 CAMCORDER routing, UID NONE, restoration and helper-loss publication withdrawal.
 1022 JVM/22+22 native gates pass. Fixed40ms IPC,80/70ms DEBUG remain separate;
 no release/universal qualification/priority or portable-extension promotion.
-Earlier current-status notes below are historical. Next separate task is
-SystemAudio jitter/playout causal quality analysis; it is not begun here.
+Earlier current-status notes below are historical. The SystemAudio continuation
+is linked above; this microphone campaign remains its own historical evidence.
 
 Current [residual quality continuation](MicrophoneReceiverSchedulingQuality.md)
 is PARTIAL. Peer link restored; bounded one-burst admission corrects240-frame

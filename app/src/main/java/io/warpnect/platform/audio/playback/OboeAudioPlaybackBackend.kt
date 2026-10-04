@@ -207,6 +207,10 @@ internal fun audioPlaybackSnapshotFrom(values: LongArray, state: AudioPlaybackSt
         primingFrames = values.getOrElse(50) { 0L },
         lastUnderrunTimeNs = values.getOrElse(51) { 0L },
         lastUnderrunMissingFrames = values.getOrElse(52) { 0L }.toInt(),
+        callbackCount = values.getOrElse(53) { 0L },
+        callbackFrames = values.getOrElse(54) { 0L },
+        maxCallbackGapNs = values.getOrElse(55) { 0L },
+        ringLowWaterMark = values.getOrElse(56) { 0L }.toInt(),
     )
 }
 

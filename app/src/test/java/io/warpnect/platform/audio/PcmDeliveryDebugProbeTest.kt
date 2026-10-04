@@ -8,6 +8,21 @@ import org.junit.Test
 
 class PcmDeliveryDebugProbeTest {
     @Test
+    fun stereoSystemAudioUsesFramesInsteadOfInterleavedSamplesForToneFrequency() {
+        val events = mutableListOf<String>()
+        val probe = PcmDeliveryDebugProbe("SystemAudio_decoded_playback", events::add)
+        val pcm = ByteBuffer.allocateDirect(192_000).order(ByteOrder.nativeOrder())
+        repeat(48_000) { frame ->
+            val value = (kotlin.math.sin(2 * Math.PI * 997 * frame / 48_000) * 2_000).toInt().toShort()
+            pcm.putShort(frame * 4, value)
+            pcm.putShort(frame * 4 + 2, value)
+        }
+        probe.observe(pcm, 0, pcm.capacity(), 48_000, 1L)
+        probe.flush(2L)
+        assertEquals(2_000.0, events.single().substringAfter("tone997=").substringBefore(' ').toDouble(), 1.0)
+    }
+
+    @Test
     fun correlatesKnownMonoToneNumericallyAndResetsEachWindow() {
         val events = mutableListOf<String>()
         val probe = PcmDeliveryDebugProbe("client_microphone_capture", events::add)
@@ -50,10 +65,10 @@ class PcmDeliveryDebugProbeTest {
         probe.observe(pcm, 0, 2, 1, 20_500_001L)
         probe.flush(20_500_002L)
         assertTrue(events.single().contains("max_gap_ns=20000000 max_burst=2"))
-        repeat(20) {
+        repeat(30) {
             probe.observe(pcm, 0, 2, 1, 30_000_000L + it)
             probe.flush(30_000_001L + it)
         }
-        assertEquals(12, events.size)
+        assertEquals(24, events.size)
     }
 }

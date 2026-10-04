@@ -140,6 +140,10 @@ struct OboeAudioPlaybackSnapshot final {
     std::uint64_t priming_frames = 0;
     std::uint64_t last_underrun_time_ns = 0;
     std::uint32_t last_underrun_missing_frames = 0;
+    std::uint64_t callback_count = 0;
+    std::uint64_t callback_frames = 0;
+    std::uint64_t max_callback_gap_ns = 0;
+    std::uint32_t ring_low_water_mark = 0;
 };
 
 class OboeAudioPlayback final {

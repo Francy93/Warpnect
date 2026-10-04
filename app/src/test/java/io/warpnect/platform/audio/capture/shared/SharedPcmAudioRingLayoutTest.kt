@@ -3,12 +3,30 @@ package io.warpnect.platform.audio.capture.shared
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SharedPcmAudioRingLayoutTest {
+    @Test
+    fun metadataAccessPreservesMappingPositionLimitAndOrder() {
+        for (order in listOf(ByteOrder.LITTLE_ENDIAN, ByteOrder.BIG_ENDIAN)) {
+            val memory = ByteBuffer.allocateDirect(SharedPcmAudioRingLayout.totalBytes(2, 16)).order(order)
+            memory.position(3)
+            memory.limit(memory.capacity() - 1)
+
+            assertTrue(SharedPcmAudioRingLayout.initialize(memory, 2, 16))
+            assertTrue(SharedPcmAudioRingLayout.validate(memory))
+            assertEquals(0, SharedPcmAudioRingLayout.beginWrite(memory))
+            assertEquals(1, SharedPcmAudioRingLayout.slotGeneration(memory, 0))
+            assertEquals(3, memory.position())
+            assertEquals(memory.capacity() - 1, memory.limit())
+            assertEquals(order, memory.order())
+        }
+    }
+
     @Test
     fun calculatesBoundedMemorySize() {
         val total = SharedPcmAudioRingLayout.totalBytes(slotCount = 8, payloadCapacityBytes = 960)
@@ -84,5 +102,17 @@ class SharedPcmAudioRingLayoutTest {
         val decoded = PcmRingSignalRecord.read(ByteArrayInputStream(output.toByteArray()), scratch)
 
         assertEquals(PcmRingSignalRecord(3, 7), decoded)
+    }
+
+    @Test fun reusableSignalCodecPreservesWireIdentityAndDetectsIncompleteAck() {
+        val codec = PcmRingSignalRecord.Codec()
+        val output = ByteArrayOutputStream()
+        assertTrue(codec.write(output, 3, 7))
+        assertTrue(codec.write(output, 1, 9))
+        val input = ByteArrayInputStream(output.toByteArray())
+        assertEquals(PcmRingSignalRecord(3, 7), PcmRingSignalRecord.read(input))
+        assertEquals(PcmRingSignalRecord(1, 9), PcmRingSignalRecord.read(input))
+        assertTrue(codec.discardAck(ByteArrayInputStream(ByteArray(8))))
+        org.junit.Assert.assertFalse(codec.discardAck(ByteArrayInputStream(ByteArray(7))))
     }
 }
