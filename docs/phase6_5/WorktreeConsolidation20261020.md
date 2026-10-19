@@ -65,8 +65,8 @@ functional tests are `node --test tools/worktree/inventory.test.cjs`.
 6. **Generated artifacts:** native CMake cache/projects, object/library/test
    binaries, Gradle outputs and JVM crash/replay files. They are not source.
    `.gitignore` now names the existing `native/build-rfc006e/` qualification
-   directory narrowly. Previously tracked generated files remain tracked and
-   unchanged by this ignore rule: no `git rm`, deletion or cleanup is performed.
+   directory narrowly. The ignore rule itself does not untrack existing files;
+   a separately reviewed index-only artifact cleanup is documented below.
 7. **Unattributed files:** root attachments, legacy fixtures and other entries
    without a sufficiently certain ownership chain remain untouched. A path/name
    or duplicate hash alone does not establish that they are dispensable.
@@ -144,3 +144,37 @@ and fail-closed path/rename handling. Narrow build-directory ignore plus this
 ledger/tooling form an independent bookkeeping group; they do not promote the
 remaining microphone transition code. The current compatibility investigation
 will append its real-device results separately.
+
+## Reviewed Generated-Artifact Tracking Cleanup
+
+The full tracked build tree contains 2055 files, not just the 246 modified ones
+in the starting dirty inventory. Classification by actual contents/extensions:
+830 tlogs, 630 objects, MSVC projects/filters/recipes/state, caches, generated
+CMake rules, libraries, test executables and debug symbols. The only C/C++/header
+entries are the two CMake compiler-identification programs and generated Opus
+`config.h`. `CMakeCache.txt` identifies this exact native build directory.
+The isolated 22/22 Debug and Release rebuilds use only HEAD sources and vendors,
+not this directory, proving that these are outputs rather than source inputs.
+
+After that review, `git rm --cached` removes only this exact bounded directory
+from repository tracking. It does NOT delete local artifacts. All 2055 absolute
+paths are checked to stay under the workspace's real non-link build directory;
+all exist with identical sizes and modification timestamps afterward. Evidence:
+`app/build/reports/r1214-native-generated-before.json` and the successful
+`r1216-native-generated-index-removal.txt`. No source, test, hardware log,
+diagnostic report, uncertain file or private state is deleted or moved.
+Old generated versions remain recoverable from Git history. The local current
+25-target test tree remains runnable and is ignored rather than recommitted.
+This is a separate generated-artifact-only checkpoint, not an omnibus product
+commit or a claim to have freed disk space. Other unattributed files remain
+preserved. No history rewrite, garbage collection, push or merge is performed.
+
+The first index-only removal and six bounded follow-up attempts were blocked
+by a NEW empty index lock, not the reviewed October 4 lock. They changed no
+staged files; preserve `r1215-native-untrack-bounded-attempts.txt`. Only after
+the new lock was over five minutes old, no Git process remained, exclusive
+access succeeded and unchanged metadata was checked, its separate copy and
+metadata were saved as `r1216-stale-index-lock-*`. Removing only that established
+stale lock allowed the single successful r1216 operation. No active index
+writer or Git process was killed. This failed safety gate is not hidden as an
+immediately successful cleanup.
