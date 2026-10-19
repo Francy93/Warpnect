@@ -2,9 +2,12 @@ package io.warpnect.video.render
 
 import android.graphics.Color
 import android.os.Build
+import android.os.Looper
+import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.warpnect.MainActivity
 import io.warpnect.platform.video.render.AndroidVideoRenderController
 import io.warpnect.platform.video.render.VideoRenderDebugObserver
@@ -13,6 +16,8 @@ import io.warpnect.video.decoder.VideoDecoderFrameRenderedEvent
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -29,6 +34,83 @@ class AndroidVideoRenderControllerInstrumentationTest {
     fun tearDown() {
         scenario?.close()
         controller?.close()
+    }
+
+    @Test
+    fun decoderWorkerGeometryRequestsLayoutOnTheViewThread() {
+        val recordRequests = AtomicBoolean(false)
+        val requested = CountDownLatch(1)
+        val wrongThread = AtomicBoolean(false)
+        val workerError = AtomicReference<Throwable?>()
+        val renderController = AndroidVideoRenderController()
+        controller = renderController
+        val launched = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launched
+        launched.onActivity { activity ->
+            val view = object : SurfaceView(activity) {
+                override fun requestLayout() {
+                    if (recordRequests.get()) {
+                        if (Looper.myLooper() != Looper.getMainLooper()) wrongThread.set(true)
+                        requested.countDown()
+                    }
+                    super.requestLayout()
+                }
+            }
+            activity.setContentView(FrameLayout(activity).apply { addView(view) })
+            renderController.attach(view)
+        }
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        recordRequests.set(true)
+        val worker = Thread {
+            try {
+                renderController.setVideoGeometry(640, 480)
+            } catch (failure: Throwable) {
+                workerError.set(failure)
+            }
+        }
+        worker.start()
+        worker.join(2_000)
+        assertTrue("Geometry worker must finish", !worker.isAlive)
+        assertEquals("No worker-thread View access", null, workerError.get())
+        assertTrue("UI layout request must arrive", requested.await(3, TimeUnit.SECONDS))
+        assertTrue("Layout must run on the owner thread", !wrongThread.get())
+        assertEquals(640, renderController.snapshot().videoWidth)
+    }
+
+    @Test
+    fun queuedGeometryDoesNotTouchADetachedView() {
+        val queued = AtomicReference<Runnable?>()
+        val capturePost = AtomicBoolean(false)
+        val recordRequests = AtomicBoolean(false)
+        val requested = AtomicBoolean(false)
+        val renderController = AndroidVideoRenderController()
+        controller = renderController
+        val launched = ActivityScenario.launch(MainActivity::class.java)
+        scenario = launched
+        lateinit var view: SurfaceView
+        launched.onActivity { activity ->
+            view = object : SurfaceView(activity) {
+                override fun post(action: Runnable): Boolean = if (capturePost.get()) {
+                    queued.set(action)
+                    true
+                } else {
+                    super.post(action)
+                }
+
+                override fun requestLayout() {
+                    if (recordRequests.get()) requested.set(true)
+                    super.requestLayout()
+                }
+            }
+            renderController.attach(view)
+            capturePost.set(true)
+            renderController.setVideoGeometry(640, 480)
+            renderController.detach(view)
+            recordRequests.set(true)
+            assertNotNull("Layout action was dispatched", queued.get())
+            queued.get()?.run()
+            assertTrue("Detached owner must not receive queued layout", !requested.get())
+        }
     }
 
     @Test

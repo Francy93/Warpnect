@@ -103,7 +103,12 @@ class AndroidVideoRenderController(
 
     override fun setVideoGeometry(width: Int, height: Int): VideoRenderControlResult {
         val error = core.setVideoGeometry(width, height)
-        attachedView?.requestLayout()
+        // Decoder callbacks may run off the View owner; detached targets must not receive queued work.
+        attachedView?.let { view ->
+            view.post {
+                if (attachedView === view) view.requestLayout()
+            }
+        }
         return VideoRenderControlResult(error, core.snapshot())
     }
 
