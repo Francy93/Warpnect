@@ -7,6 +7,8 @@ build/
 app/build/
 native/build/
 native/build-release/
+# Local CMake qualification tree; existing tracked outputs are not removed here.
+native/build-rfc006e/
 .cxx/
 .externalNativeBuild/
 captures/
