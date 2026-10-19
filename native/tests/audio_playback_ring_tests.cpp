@@ -462,6 +462,41 @@ void complete_system_block_admission_has_a_bounded_multi_burst_deadline() {
     expect_equal(ring.snapshot().pcm_frames_rejected, 0ULL, "no valid buffer discarded or counter hidden");
 }
 
+void recorded_system_callback_delay_has_one_burst_of_nonrenewable_margin() {
+    const auto replay = [](bool margin) {
+        PcmPlaybackRing ring(config(2, 240, 17));
+        expect_equal(ring.prepare(), AudioPlaybackError::None, "prepare unchanged85ms stereo ring");
+        const std::vector<std::int16_t> pcm(480, 123);
+        for (std::uint64_t block = 0; block < 17; ++block) {
+            static_cast<void>(ring.submit(bytes(pcm), 240, metadata(block * 240)));
+        }
+        std::vector<std::int16_t> output(192);
+        static_cast<void>(ring.consume(mutable_bytes(output), 96));
+        static_cast<void>(ring.consume(mutable_bytes(output), 96));
+        expect_equal(ring.occupancy_frames(), 3888U, "r866 two callbacks leave48 more frames to free");
+        const warpnect::audio::AudioPlaybackCapacityWait admission(1, 96, 48000, 240, true, margin);
+        const auto remaining = admission.next_wait_ns(3888, 4080, 240, 6'044'078);
+        expect_equal(remaining > 0, margin, "old deadline expires before recorded third callback");
+        if (remaining > 0) {
+            expect(admission.next_wait_ns(3888, 4080, 240, 6'923'578) > 0,
+                   "third callback completes within one additional burst");
+            static_cast<void>(ring.consume(mutable_bytes(output), 96));
+        }
+        static_cast<void>(ring.submit(bytes(pcm), 240, metadata(4080)));
+        return ring.snapshot().pcm_frames_rejected;
+    };
+    expect_equal(replay(false), 240ULL, "measured nominal-only deadline loses a valid packet");
+    expect_equal(replay(true), 0ULL, "one burst margin reuses existing ring credit without loss");
+    const warpnect::audio::AudioPlaybackCapacityWait candidate(1, 96, 48000, 240, true, true);
+    expect_equal(candidate.next_wait_ns(4080, 4080, 240, 8'000'001), 0ULL,
+                 "stalled callback cannot renew the eight millisecond deadline");
+    expect_equal(candidate.next_wait_ns(3840, 4080, 240, 2), 0ULL,
+                 "fitting packets acquire no extra reserve or wait");
+    const warpnect::audio::AudioPlaybackCapacityWait disabled(1, 96, 48000, 240, false, true);
+    expect_equal(disabled.next_wait_ns(4080, 4080, 240, 2), 0ULL,
+                 "callback margin never enables a disabled microphone wait");
+}
+
 } // namespace
 
 int main() {
@@ -481,6 +516,7 @@ int main() {
     stereo_system_block_waits_only_for_its_output_burst();
     stereo_partial_head_admission_needs_one_spare_packet_when_callback_is_late();
     complete_system_block_admission_has_a_bounded_multi_burst_deadline();
+    recorded_system_callback_delay_has_one_burst_of_nonrenewable_margin();
 
     if (failures != 0) {
         std::cerr << failures << " audio playback ring test failure(s)\n";

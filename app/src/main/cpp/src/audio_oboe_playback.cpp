@@ -480,7 +480,8 @@ AudioPlaybackError OboeAudioPlayback::submit_pcm(
     }
     if (running_) {
         const AudioPlaybackCapacityWait admission(monotonic_now_ns(), snapshot_.frames_per_burst,
-            config_.sample_rate_hz, config_.source == AudioCaptureSource::SystemAudio ? frame_count : 0);
+            config_.sample_rate_hz, config_.source == AudioCaptureSource::SystemAudio ? frame_count : 0,
+            true, config_.source == AudioCaptureSource::SystemAudio);
         while (const auto wait_ns = admission.next_wait_ns(ring_->occupancy_frames(),
                    ring_->capacity_frames(), frame_count, monotonic_now_ns())) {
             const timespec pause{.tv_sec = 0, .tv_nsec = static_cast<long>(wait_ns)};

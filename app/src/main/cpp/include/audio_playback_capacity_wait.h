@@ -10,10 +10,12 @@ class AudioPlaybackCapacityWait final {
 public:
     AudioPlaybackCapacityWait(std::uint64_t started_ns, std::uint32_t burst_frames,
                               std::uint32_t sample_rate_hz,
-                              std::uint32_t required_block_frames = 0) noexcept
-        : started_ns_(started_ns), budget_ns_(sample_rate_hz == 0 || burst_frames == 0 ? 0 :
-              std::max<std::uint64_t>(1, (static_cast<std::uint64_t>(required_block_frames) +
-                  burst_frames - 1) / burst_frames) * burst_frames * 1'000'000'000ULL / sample_rate_hz) {}
+                              std::uint32_t required_block_frames = 0, bool allow_wait = true,
+                              bool callback_jitter_margin = false) noexcept
+        : started_ns_(started_ns), budget_ns_(!allow_wait || sample_rate_hz == 0 || burst_frames == 0 ? 0 :
+              (std::max<std::uint64_t>(1, (static_cast<std::uint64_t>(required_block_frames) +
+                  burst_frames - 1) / burst_frames) + (callback_jitter_margin ? 1U : 0U)) *
+                  burst_frames * 1'000'000'000ULL / sample_rate_hz) {}
 
     [[nodiscard]] std::uint64_t next_wait_ns(std::uint32_t occupancy, std::uint32_t capacity,
                                             std::uint32_t requested, std::uint64_t now_ns) const noexcept {
