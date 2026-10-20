@@ -4,6 +4,11 @@
 #include <array>
 #include <cstring>
 
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <android/log.h>
+#include <atomic>
+#endif
+
 #include "fec_control.h"
 #include "monotonic_time.h"
 #include "packet_codec.h"
@@ -16,6 +21,23 @@
 
 namespace warpnect::scl {
 namespace {
+
+void observe_clock_sample_rejection(const char* stage, TimingError error) noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    static std::atomic<unsigned> emitted{0};
+    unsigned count = emitted.load(std::memory_order_relaxed);
+    while (count < 8 && !emitted.compare_exchange_weak(count, count + 1, std::memory_order_relaxed)) {}
+    if (count < 8) {
+        const auto name = timing_error_name(error);
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectDiscovery",
+                            "event=video_clock_sample_rejected stage=%s reason=%.*s",
+                            stage, static_cast<int>(name.size()), name.data());
+    }
+#else
+    (void)stage;
+    (void)error;
+#endif
+}
 
 [[nodiscard]] constexpr VideoStatus status(VideoError error) noexcept {
     return VideoStatus{.error = error};
@@ -282,7 +304,9 @@ VideoReceiverEvent VideoReceiverRuntime::pump(std::uint64_t timeout_us) noexcept
     }
 
     if (VideoReceiverEvent pending = poll_pending_event();
-        pending.type != VideoReceiverEventType::None) {
+        pending.type != VideoReceiverEventType::None &&
+        (pending.type != VideoReceiverEventType::AccessUnitReady ||
+         snapshot_.active_config_generation != 0U)) {
         return pending;
     }
 
@@ -290,24 +314,30 @@ VideoReceiverEvent VideoReceiverRuntime::pump(std::uint64_t timeout_us) noexcept
     expire_reassembly_slots(now_us);
     collect_and_send_nacks(now_us);
     maybe_send_clock_sync_request(now_us);
-    if (VideoReceiverEvent pending = poll_pending_event();
-        pending.type != VideoReceiverEventType::None) {
+    const VideoReceiverEvent pending = poll_pending_event();
+    if (pending.type != VideoReceiverEventType::None &&
+        (pending.type != VideoReceiverEventType::AccessUnitReady ||
+         snapshot_.active_config_generation != 0U)) {
         return pending;
     }
 
-    const VideoStatus received = receive_one(timeout_us);
+    // Only unconfigured frames may bypass decoder backpressure to admit their late config.
+    const VideoStatus received = receive_one(
+        pending.type == VideoReceiverEventType::AccessUnitReady ? 0U : timeout_us);
     if (received.error == VideoError::NoData) {
         remember(VideoError::None);
-        return make_event(VideoReceiverEventType::Timeout);
+        return pending.type == VideoReceiverEventType::AccessUnitReady
+                   ? pending
+                   : make_event(VideoReceiverEventType::Timeout);
     }
     if (!received.ok()) {
         remember(received.error);
         return make_event(VideoReceiverEventType::TransportError, received.error);
     }
 
-    if (VideoReceiverEvent pending = poll_pending_event();
-        pending.type != VideoReceiverEventType::None) {
-        return pending;
+    if (VideoReceiverEvent received_event = poll_pending_event();
+        received_event.type != VideoReceiverEventType::None) {
+        return received_event;
     }
     return make_event(VideoReceiverEventType::None);
 }
@@ -641,6 +671,11 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
     const LossObservationResult observed =
         loss_detector_.observe(packet.header.sequence_number, now_us);
     if (!observed.ok()) {
+        if (observed.error == RecoveryError::WindowCapacityExceeded) {
+            // The bounded NACK history cannot recover this gap; resume from authenticated input.
+            loss_detector_.reset();
+            (void)loss_detector_.observe(packet.header.sequence_number, now_us);
+        }
         mark_discontinuity(VideoError::Discontinuity, VideoResyncReason::Discontinuity);
     }
     if (!from_fec_recovery) {
@@ -650,8 +685,36 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
         }
     }
 
+    // NACK/FEC overlap must not recreate a consumed AU or an incomplete fragment barrier.
+    if (observed.ok() && observed.kind == LossObservationKind::Duplicate) {
+        return status(VideoError::None);
+    }
+
     ReceiverSlot* slot = find_or_allocate_slot(packet.header, now_us);
     if (slot == nullptr) {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        static std::atomic<unsigned> pressure_observations{0};
+        unsigned count = pressure_observations.load(std::memory_order_relaxed);
+        while (count < 8 && !pressure_observations.compare_exchange_weak(
+                   count, count + 1, std::memory_order_relaxed)) {}
+        if (count < 8) {
+            std::size_t incomplete = 0;
+            std::size_t complete = 0;
+            for (const auto& occupied : slots_) {
+                if (!occupied.reassembly->is_started()) continue;
+                if (occupied.complete_access_unit) ++complete;
+                else ++incomplete;
+            }
+            __android_log_print(ANDROID_LOG_INFO, "WarpnectDiscovery",
+                                "event=video_window_full sequence=%u ready=%zu complete=%zu "
+                                "incomplete=%zu active_generation=%u awaiting_keyframe=%d "
+                                "pending=%u from_fec=%d fec_enabled=%d",
+                                packet.header.sequence_number, ready_count_, complete, incomplete,
+                                snapshot_.active_config_generation, snapshot_.awaiting_keyframe,
+                                static_cast<unsigned>(pending_event_.type), from_fec_recovery,
+                                config_.fec.enabled);
+        }
+#endif
         ++snapshot_.reassembly_window_full;
         remember(VideoError::ReassemblyWindowFull);
         return status(snapshot_.last_error);
@@ -698,24 +761,25 @@ VideoStatus VideoReceiverRuntime::process_clock_sync_response(std::span<const st
     if (!clock_exchange_tracker_.has_value() || !clock_synchronizer_.has_value()) {
         return status(VideoError::None);
     }
+    const auto reject_sample = [&](const char* stage, TimingError error) {
+        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
+        observe_clock_sample_rejection(stage, error);
+        // ClockSync is supplementary diagnostics, not a prerequisite for valid media delivery.
+        remember(VideoError::None);
+        return status(VideoError::None);
+    };
     const auto decoded = decode_clock_sync_response(payload);
     if (!decoded.ok()) {
-        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
-        remember(VideoError::ClockSyncUnavailable);
-        return status(snapshot_.last_error);
+        return reject_sample("decode", decoded.error);
     }
     const ClockExchangeResult exchanged =
         clock_exchange_tracker_->complete_response(decoded.response, now_us);
     if (!exchanged.ok()) {
-        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
-        remember(VideoError::ClockSyncUnavailable);
-        return status(snapshot_.last_error);
+        return reject_sample("exchange", exchanged.error);
     }
     const ClockModelUpdateResult updated = clock_synchronizer_->add_sample(exchanged.sample);
     if (!updated.ok()) {
-        if (config_.runtime_clock_sync_telemetry != nullptr) config_.runtime_clock_sync_telemetry->rejected();
-        remember(VideoError::ClockSyncUnavailable);
-        return status(snapshot_.last_error);
+        return reject_sample("sample", updated.error);
     }
     ++snapshot_.clock_sync_responses_received;
     if (config_.runtime_clock_sync_telemetry != nullptr) {
@@ -883,6 +947,17 @@ VideoReceiverRuntime::find_or_allocate_slot(const PacketHeader& header,
             slot.queued = false;
             slot.complete_access_unit = false;
             update_occupancy_high_water();
+            return &slot;
+        }
+    }
+    // Before activation, ready AUs cannot drain and must not exclude their required config.
+    if (snapshot_.active_config_generation == 0 && ready_count_ != 0) {
+        const auto oldest = pop_ready_slot();
+        if (oldest.has_value()) {
+            ReceiverSlot& slot = slots_[*oldest];
+            reset_slot(slot);
+            ++snapshot_.stale_frames_released;
+            slot.started_at_us = now_us;
             return &slot;
         }
     }

@@ -1,4 +1,5 @@
 #include "packet_codec.h"
+#include "monotonic_time.h"
 #include "video_packetizer.h"
 #include "video_protocol.h"
 #include "video_receiver_runtime.h"
@@ -11,6 +12,7 @@
 #include <limits>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -287,11 +289,388 @@ void test_reassembly_timeout_marks_discontinuity() {
     expect_equal(runtime.snapshot().stale_frames_released, 1ULL, "stale release is counted");
 }
 
+void test_ready_frame_does_not_starve_late_stream_config() {
+    warpnect::scl::UdpSocket receiver_socket;
+    expect(receiver_socket.open(warpnect::scl::IpVersion::V4).ok(), "receiver socket opens");
+    expect(receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok(), "receiver socket binds");
+    const auto receiver_endpoint = receiver_socket.local_endpoint();
+    expect(receiver_endpoint.ok(), "receiver endpoint is available");
+    if (!receiver_endpoint.ok()) return;
+
+    auto config = receiver_config();
+    config.local_endpoint = receiver_endpoint.endpoint;
+    config.clock_sync_interval_us = 0;
+    VideoReceiverRuntime runtime(config);
+    runtime.adopt_prebound_socket(std::move(receiver_socket));
+    expect(runtime.open().ok(), "prebound runtime opens");
+    const auto frame = make_bytes(24, 19);
+    expect(feed(runtime, packetize_access_unit(128, 11, 1, 1, 100, true, as_bytes(frame)),
+                warpnect::scl::monotonic_time_now_us().value), "frame precedes its config");
+    expect_equal(runtime.pump(0).type, VideoReceiverEventType::AccessUnitReady,
+                 "pending frame is observable without consuming it");
+
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    warpnect::scl::UdpSocket sender_socket;
+    expect(sender_socket.open(warpnect::scl::IpVersion::V4).ok(), "config sender opens");
+    const auto configs = packetize_stream_config(128, 12, 1, entries);
+    for (const auto& datagram : configs) {
+        expect(sender_socket.send_to(as_bytes(datagram.bytes), receiver_endpoint.endpoint).ok(),
+               "late config enters actual socket");
+    }
+    bool config_received = false;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        if (runtime.pump(1'000).type == VideoReceiverEventType::StreamConfigReady) {
+            config_received = true;
+            break;
+        }
+    }
+    expect(config_received, "unconsumed frame must not starve socket config delivery");
+    expect_equal(runtime.snapshot().stream_configs_received, 1ULL, "late config is received");
+    if (!config_received) return;
+    expect(runtime.activate_config_generation(1).ok(), "late config can activate");
+    std::array<std::byte, 64> output{};
+    const auto filled = runtime.fill_decoder_input(output);
+    expect(filled.has_access_unit, "original queued frame remains available");
+    expect(bytes_equal(std::span<const std::byte>(output).first(filled.size), as_bytes(frame)),
+           "queued frame is not altered or consumed by the socket pump");
+}
+
+void test_full_unconfigured_window_admits_fragmented_config_without_growth() {
+    VideoReceiverRuntime runtime(receiver_config());
+    expect(runtime.open().ok(), "unconfigured full-window runtime opens");
+    const auto frame = make_bytes(24, 19);
+    for (std::uint32_t index = 0; index < 8; ++index) {
+        expect(feed(runtime, packetize_access_unit(128, 100 + index, 1, index + 1,
+                                                  1000 + index, true, as_bytes(frame))),
+               "unconfigured frame fills existing window");
+    }
+    expect_equal(runtime.snapshot().ready_access_units, static_cast<std::size_t>(8),
+                 "existing eight-slot window is full");
+    const auto csd = make_bytes(100, 7);
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    const auto config = packetize_stream_config(128, 108, 1, entries);
+    expect(config.size() > 1, "late config fixture is fragmented");
+    if (!feed(runtime, config)) return;
+    expect_equal(runtime.pump(0).type, VideoReceiverEventType::StreamConfigReady,
+                 "full unconfigured frames do not exclude late config");
+    expect_equal(runtime.snapshot().reassembly_slots_high_water, static_cast<std::size_t>(8),
+                 "config admission does not grow the window");
+    expect_equal(runtime.snapshot().stale_frames_released, 1ULL,
+                 "one oldest unconfigured frame is explicitly released");
+    expect(runtime.activate_config_generation(1).ok(), "late config can activate");
+    std::array<std::byte, 64> output{};
+    const auto filled = runtime.fill_decoder_input(output);
+    expect(filled.has_access_unit, "remaining current-generation frames can decode");
+    expect_equal(filled.frame_id, 2U, "only the oldest pending frame was released");
+    expect(bytes_equal(std::span<const std::byte>(output).first(filled.size), as_bytes(frame)),
+           "remaining frame contents are unchanged");
+}
+
+void test_active_config_full_window_keeps_existing_backpressure() {
+    VideoReceiverRuntime runtime(receiver_config());
+    expect(runtime.open().ok(), "active full-window runtime opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 99, 1, entries)), "active config feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "active config activates");
+    const auto frame = make_bytes(24, 19);
+    for (std::uint32_t index = 0; index < 8; ++index) {
+        expect(feed(runtime, packetize_access_unit(128, 100 + index, 1, index + 1,
+                                                  1000 + index, true, as_bytes(frame))),
+               "active frames fill existing window");
+    }
+    const auto extra = packetize_access_unit(128, 108, 1, 9, 1009, true, as_bytes(frame));
+    expect_equal(runtime.accept_datagram(as_bytes(extra.front().bytes),
+                                        UdpEndpoint::loopback_v4(49000), 1000).error,
+                 VideoError::ReassemblyWindowFull, "active stream retains bounded backpressure");
+    expect_equal(runtime.snapshot().stale_frames_released, 0ULL,
+                 "startup exception does not drop an active frame");
+}
+
+void test_active_ready_window_does_not_read_past_decoder_backpressure() {
+    warpnect::scl::UdpSocket receiver_socket;
+    expect(receiver_socket.open(warpnect::scl::IpVersion::V4).ok(), "active receiver opens");
+    expect(receiver_socket.bind(UdpEndpoint::loopback_v4(0)).ok(), "active receiver binds");
+    const auto endpoint = receiver_socket.local_endpoint();
+    expect(endpoint.ok(), "active receiver endpoint exists");
+    if (!endpoint.ok()) return;
+    auto config = receiver_config();
+    config.local_endpoint = endpoint.endpoint;
+    config.clock_sync_interval_us = 0;
+    VideoReceiverRuntime runtime(config);
+    runtime.adopt_prebound_socket(std::move(receiver_socket));
+    expect(runtime.open().ok(), "active prebound runtime opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 99, 1, entries)), "config feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "decoder generation activates");
+    const auto frame = make_bytes(24, 19);
+    for (std::uint32_t i = 0; i < 8; ++i) {
+        expect(feed(runtime, packetize_access_unit(128, 100 + i, 1, i + 1,
+                                                  1000 + i, true, as_bytes(frame))),
+               "complete frames fill the bounded ready window");
+    }
+    warpnect::scl::UdpSocket sender;
+    expect(sender.open(warpnect::scl::IpVersion::V4).ok(), "next frame sender opens");
+    const auto extra = packetize_access_unit(128, 108, 1, 9, 1009, true, as_bytes(frame));
+    for (const auto& datagram : extra) {
+        expect(sender.send_to(as_bytes(datagram.bytes), endpoint.endpoint).ok(),
+               "next active frame enters actual UDP socket");
+    }
+    const auto before = runtime.snapshot();
+    for (int i = 0; i < 16; ++i) {
+        const auto event = runtime.pump(1'000);
+        expect_equal(event.type, VideoReceiverEventType::AccessUnitReady,
+                     "decoder backpressure is not a fatal receive error");
+        expect_equal(event.frame_id, 1U, "oldest ready frame retains ownership");
+    }
+    expect_equal(runtime.snapshot().datagrams_received, before.datagrams_received,
+                 "active pump does not consume the next packet before decoder admission");
+    expect_equal(runtime.snapshot().reassembly_window_full, 0ULL,
+                 "readiness cannot manufacture a full-window failure");
+    std::array<std::byte, 64> output{};
+    for (std::uint32_t i = 1; i <= 8; ++i) {
+        const auto filled = runtime.fill_decoder_input(output);
+        expect(filled.has_access_unit, "existing decoder frames remain available");
+        expect_equal(filled.frame_id, i, "queued frame ordering is unchanged");
+    }
+    const auto next = runtime.pump(10'000);
+    expect_equal(next.type, VideoReceiverEventType::AccessUnitReady,
+                 "socket progress resumes after the decoder drains");
+    const auto filled = runtime.fill_decoder_input(output);
+    expect(filled.has_access_unit, "post-pressure decoder fill progresses");
+    expect_equal(filled.frame_id, 9U, "next frame is delivered exactly once");
+    expect(bytes_equal(std::span<const std::byte>(output).first(filled.size), as_bytes(frame)),
+           "post-pressure frame bytes remain intact");
+    expect_equal(runtime.snapshot().reassembly_slots_high_water, static_cast<std::size_t>(8),
+                 "no reassembly window growth");
+    expect_equal(runtime.snapshot().ready_access_units, static_cast<std::size_t>(0),
+                 "decoder releases all ready ownership");
+}
+
+void test_duplicate_access_unit_is_not_recreated_after_decoder_delivery() {
+    VideoReceiverRuntime runtime(receiver_config());
+    expect(runtime.open().ok(), "duplicate replay runtime opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 99, 1, entries)), "duplicate config feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "duplicate config activates");
+    const auto frame = make_bytes(24, 17);
+    const auto original = packetize_access_unit(128, 100, 1, 1, 1000, true, as_bytes(frame));
+    expect(feed(runtime, original), "original unit feeds");
+    std::array<std::byte, 64> output{};
+    expect(runtime.fill_decoder_input(output).has_access_unit, "original unit is delivered");
+    expect(feed(runtime, original), "redundant authenticated inner datagram is harmless");
+    expect_equal(runtime.fill_decoder_input(output).has_access_unit, false,
+                 "an already delivered unit must not be recreated");
+    expect_equal(runtime.snapshot().access_units_delivered, 1ULL,
+                 "decoder delivery is exactly once for this sequence");
+}
+
+void test_duplicate_retransmission_cannot_exhaust_a_full_active_window() {
+    VideoReceiverRuntime runtime(receiver_config());
+    expect(runtime.open().ok(), "full-window duplicate runtime opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 99, 1, entries)), "full-window config feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "full-window config activates");
+    const auto frame = make_bytes(24, 23);
+    const auto old = packetize_access_unit(128, 100, 1, 1, 1000, true, as_bytes(frame));
+    expect(feed(runtime, old), "old unit feeds");
+    std::array<std::byte, 64> output{};
+    expect(runtime.fill_decoder_input(output).has_access_unit, "old unit is consumed");
+    for (std::uint32_t i = 1; i <= 8; ++i) {
+        expect(feed(runtime, packetize_access_unit(128, 100 + i, 1, 1 + i,
+                                                  1000 + i, true, as_bytes(frame))),
+               "fresh units fill the existing bounded window");
+    }
+    expect_equal(runtime.accept_datagram(as_bytes(old.front().bytes),
+                                        UdpEndpoint::loopback_v4(49000), 1009).error,
+                 VideoError::None, "old retransmission must not allocate a ninth slot");
+    expect_equal(runtime.snapshot().reassembly_window_full, 0ULL,
+                 "duplicate input cannot manufacture capacity exhaustion");
+    for (std::uint32_t i = 2; i <= 9; ++i) {
+        const auto filled = runtime.fill_decoder_input(output);
+        expect(filled.has_access_unit, "fresh queued unit remains owned");
+        expect_equal(filled.frame_id, i, "duplicate does not reorder fresh units");
+    }
+    expect_equal(runtime.snapshot().reassembly_slots_high_water, static_cast<std::size_t>(8),
+                 "no slot capacity increase");
+}
+
+void test_late_duplicate_fragment_cannot_create_an_ordering_barrier() {
+    VideoReceiverRuntime runtime(receiver_config());
+    expect(runtime.open().ok(), "fragment replay runtime opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 99, 1, entries)), "fragment config feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "fragment config activates");
+    const auto large_frame = make_bytes(256, 29);
+    const auto old = packetize_access_unit(128, 100, 1, 1, 1000, true, as_bytes(large_frame));
+    expect(old.size() > 1, "the old access unit genuinely spans multiple datagrams");
+    expect(feed(runtime, old), "the complete original access unit feeds");
+    std::array<std::byte, 512> output{};
+    expect(runtime.fill_decoder_input(output).has_access_unit, "original decoder delivery releases its slot");
+    expect(runtime.accept_datagram(as_bytes(old.front().bytes),
+                                   UdpEndpoint::loopback_v4(49000), 1001).ok(),
+           "one late redundant fragment is harmless");
+    const auto fresh = make_bytes(24, 31);
+    const auto next_sequence = 100U + static_cast<std::uint32_t>(old.size());
+    for (std::uint32_t i = 0; i < 7; ++i) {
+        expect(feed(runtime, packetize_access_unit(128, next_sequence + i, 1, 2 + i,
+                                                  1002 + i, true, as_bytes(fresh))),
+               "seven newer complete units feed");
+    }
+    const auto before_next = runtime.snapshot();
+    std::cout << "DUPLICATE_FRAGMENT_REPLAY ready=" << before_next.ready_access_units
+              << " slots=" << before_next.reassembly_slots_used << '\n';
+    expect_equal(before_next.ready_access_units, static_cast<std::size_t>(7),
+                 "a consumed fragment cannot block newer complete frames");
+    expect_equal(before_next.reassembly_slots_used, static_cast<std::size_t>(7),
+                 "no ghost incomplete slot remains after an old fragment");
+    const auto extra = packetize_access_unit(128, next_sequence + 7, 1, 9, 1009, true, as_bytes(fresh));
+    expect(runtime.accept_datagram(as_bytes(extra.front().bytes),
+                                   UdpEndpoint::loopback_v4(49000), 1009).ok(),
+           "eighth fresh access unit still fits the original window");
+    expect_equal(runtime.snapshot().reassembly_window_full, 0ULL,
+                 "an old fragment cannot manufacture the physical pressure fingerprint");
+    expect_equal(runtime.snapshot().reassembly_slots_high_water, static_cast<std::size_t>(8),
+                 "the fixed eight-slot contract is unchanged");
+}
+
+void test_loss_window_overflow_rebases_without_permanent_resync() {
+    auto config = receiver_config(128);
+    config.clock_sync_interval_us = 0;
+    VideoReceiverRuntime runtime(config);
+    expect(runtime.open().ok(), "loss-window replay opens");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 0, 1, entries)), "loss replay config");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "loss replay generation activates");
+    const auto frame = make_bytes(24, 13);
+    std::array<std::byte, 64> output{};
+    expect(feed(runtime, packetize_access_unit(128, 1, 1, 1, 1000, true, as_bytes(frame))),
+           "initial keyframe arrives");
+    (void)runtime.pump(0);
+    expect(runtime.fill_decoder_input(output).has_access_unit, "initial keyframe drains");
+
+    // A Surface pause/socket loss may exceed the bounded NACK window, not the Session.
+    expect(feed(runtime, packetize_access_unit(128, 200, 1, 2, 2000, true, as_bytes(frame))),
+           "post-gap keyframe arrives");
+    expect_equal(runtime.pump(0).type, VideoReceiverEventType::Discontinuity,
+                 "one gap requests decoder resynchronization");
+    expect(runtime.fill_decoder_input(output).has_access_unit, "post-gap keyframe drains");
+    const auto discontinuities = runtime.snapshot().discontinuities;
+    for (std::uint32_t sequence = 201; sequence < 205; ++sequence) {
+        expect(feed(runtime, packetize_access_unit(128, sequence, 1, sequence - 198,
+                                                   2000 + sequence, false, as_bytes(frame))),
+               "continuous post-gap delta arrives");
+        expect_equal(runtime.pump(0).type, VideoReceiverEventType::AccessUnitReady,
+                     "continuous data must not request the same resync forever");
+        expect(runtime.fill_decoder_input(output).has_access_unit,
+               "delta frames remain decodable after the recovered keyframe");
+    }
+    expect_equal(runtime.snapshot().discontinuities, discontinuities,
+                 "loss-window overflow is rebased exactly once");
+    expect_equal(runtime.snapshot().active_config_generation, 1U,
+                 "loss recovery does not replace stream generation");
+    expect_equal(runtime.snapshot().reassembly_window_full, 0ULL,
+                 "loss recovery does not grow or exhaust the reassembly window");
+}
+
+void test_rejected_clock_diagnostics_do_not_fail_media_delivery() {
+    warpnect::scl::UdpSocket peer;
+    expect(peer.open(warpnect::scl::IpVersion::V4).ok(), "clock peer opens");
+    expect(peer.bind(UdpEndpoint::loopback_v4(0)).ok(), "clock peer binds");
+    const auto endpoint = peer.local_endpoint();
+    expect(endpoint.ok(), "clock peer endpoint resolves");
+    auto config = receiver_config(128);
+    config.remote_endpoint = endpoint.endpoint;
+    config.clock_sync_interval_us = 1;
+    VideoReceiverRuntime runtime(config);
+    expect(runtime.open().ok(), "clock rejection replay opens");
+    const auto request = [&]() {
+        (void)runtime.pump(0);
+        expect(peer.wait_readable(10'000).readable, "actual clock request arrives");
+        std::array<std::byte, 128> wire{};
+        const auto received = peer.receive_from(wire);
+        expect(received.ok(), "clock request receives");
+        const auto packet = warpnect::scl::decode_packet(
+            std::span<const std::byte>(wire).first(received.bytes_received));
+        expect(packet.ok(), "clock request packet decodes");
+        const auto decoded = warpnect::scl::decode_clock_sync_request(packet.packet.payload);
+        expect(decoded.ok(), "clock request payload decodes");
+        return decoded.request;
+    };
+    std::uint32_t control_sequence = 0;
+    const auto respond = [&](const warpnect::scl::ClockSyncResponse& response,
+                             std::uint64_t now_us, bool malformed = false) {
+        std::array<std::byte, warpnect::scl::kClockSyncResponseWireSize> payload{};
+        expect(warpnect::scl::encode_clock_sync_response(response, payload).ok(),
+               "clock response encodes");
+        if (malformed) payload[1] = byte(0x7F);
+        std::array<std::byte, 128> wire{};
+        const auto encoded = warpnect::scl::encode_packet(
+            PacketHeader{.sequence_number = control_sequence++,
+                         .payload_type = warpnect::scl::PayloadType::SessionControl},
+            payload, wire);
+        expect(encoded.ok(), "clock response packet encodes");
+        return runtime.accept_datagram(
+            std::span<const std::byte>(wire).first(encoded.bytes_written), endpoint.endpoint, now_us);
+    };
+    const auto first = request();
+    auto response = warpnect::scl::ClockSyncResponse{
+        .exchange_id = first.exchange_id, .t0_us = first.t0_us,
+        .t1_us = first.t0_us + 10, .t2_us = first.t0_us + 20};
+    auto unknown = response;
+    unknown.exchange_id += 100;
+    expect(respond(unknown, first.t0_us + 100).ok(),
+           "uncorrelated clock sample is dropped without failing media");
+    expect(respond(response, first.t0_us + 100, true).ok(),
+           "malformed clock sample remains diagnostic-only");
+    expect(respond(response, first.t0_us + config.clock_sync.max_accepted_rtt_us + 1000).ok(),
+           "late clock sample is rejected without a fatal transport event");
+    expect_equal(runtime.snapshot().clock_sync_responses_received, 0ULL,
+                 "rejected samples are not accepted clock evidence");
+    const auto second = request();
+    response = {.exchange_id = second.exchange_id, .t0_us = second.t0_us,
+                .t1_us = second.t0_us + 10, .t2_us = second.t0_us + 20};
+    expect(respond(response, second.t0_us + 100).ok(), "fresh clock sample still accepts");
+    expect_equal(runtime.snapshot().clock_sync_responses_received, 1ULL,
+                 "only fresh correlated sample updates the model");
+    const std::array<std::byte, 2> csd{byte(1), byte(2)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(feed(runtime, packetize_stream_config(128, 0, 1, entries)), "media config still feeds");
+    (void)runtime.pump(0);
+    expect(runtime.activate_config_generation(1).ok(), "media generation still activates");
+    const auto frame = make_bytes(24, 3);
+    expect(feed(runtime, packetize_access_unit(128, 1, 1, 1, 1000, true, as_bytes(frame))),
+           "media keyframe still feeds");
+    std::array<std::byte, 64> output{};
+    expect(runtime.fill_decoder_input(output).has_access_unit, "media progresses after diagnostic rejection");
+}
+
 int run_all_tests() {
     test_stream_config_event_and_exact_csd();
     test_keyframe_gate_and_direct_decoder_fill();
     test_frame_ordering_waits_for_older_frame();
     test_reassembly_timeout_marks_discontinuity();
+    test_ready_frame_does_not_starve_late_stream_config();
+    test_full_unconfigured_window_admits_fragmented_config_without_growth();
+    test_active_config_full_window_keeps_existing_backpressure();
+    test_active_ready_window_does_not_read_past_decoder_backpressure();
+    test_duplicate_access_unit_is_not_recreated_after_decoder_delivery();
+    test_duplicate_retransmission_cannot_exhaust_a_full_active_window();
+    test_late_duplicate_fragment_cannot_create_an_ordering_barrier();
+    test_loss_window_overflow_rebases_without_permanent_resync();
+    test_rejected_clock_diagnostics_do_not_fail_media_delivery();
     return failures == 0 ? 0 : 1;
 }
 
