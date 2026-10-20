@@ -26,6 +26,7 @@ import io.warpnect.video.decoder.VideoDecoderSnapshot
 import io.warpnect.video.decoder.VideoDecoderStartResult
 import io.warpnect.video.decoder.VideoDecoderState
 import io.warpnect.video.decoder.VideoDecoderStopResult
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -41,6 +42,12 @@ class AndroidMediaCodecVideoDecoder(
     private val codecHandler = Handler(codecThread.looper)
     private val core = VideoDecoderControllerCore(clockUs)
     private val inputSlots = AvailableInputSlotTracker()
+    private val inputWakeupPending = AtomicBoolean()
+    private val inputWakeup = Runnable {
+        // Rearm before draining so an arrival during the drain can schedule one subsequent wakeup.
+        inputWakeupPending.set(false)
+        if (!closed) retryHeldInputSlots()
+    }
 
     @Volatile
     private var latestSnapshot = core.snapshot()
@@ -51,7 +58,10 @@ class AndroidMediaCodecVideoDecoder(
     private var pendingStop: CompletableDeferred<VideoDecoderStopResult>? = null
     private var drainTimeoutTask: Runnable? = null
     private var codecStarted = false
+
+    @Volatile
     private var closed = false
+
     private var eosRequested = false
     private var firstAccessUnitSubmittedObserved = false
     private var firstOutputAvailableObserved = false
@@ -85,11 +95,11 @@ class AndroidMediaCodecVideoDecoder(
     }
 
     override fun notifyInputAvailable() {
-        if (closed) {
+        if (closed || !inputWakeupPending.compareAndSet(false, true)) {
             return
         }
-        codecHandler.post {
-            retryHeldInputSlots()
+        if (!codecHandler.post(inputWakeup)) {
+            inputWakeupPending.set(false)
         }
     }
 
@@ -304,6 +314,8 @@ class AndroidMediaCodecVideoDecoder(
     }
 
     private fun releaseCodecResources(stopCodec: Boolean): VideoDecoderError {
+        codecHandler.removeCallbacks(inputWakeup)
+        inputWakeupPending.set(false)
         val ownedCodec = codec
         val shouldStopCodec = stopCodec && codecStarted
         codec = null

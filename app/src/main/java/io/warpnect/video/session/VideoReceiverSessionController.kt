@@ -17,6 +17,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 interface VideoReceiverSessionController : VideoRenderTargetListener, AutoCloseable {
     suspend fun start(config: VideoReceiverSessionConfig): VideoSessionControlResult
@@ -40,6 +42,7 @@ class DefaultVideoReceiverSessionController(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : VideoReceiverSessionController {
     private val lock = Any()
+    private val decoderLifecycle = Mutex()
     private val core = VideoReceiverSessionCore()
     private val streamConfigAdmission = VideoReceiverStreamConfigAdmission()
     private var currentConfig: VideoReceiverSessionConfig? = null
@@ -120,9 +123,8 @@ class DefaultVideoReceiverSessionController(
 
     override fun onRenderTargetDestroyed(surfaceGeneration: Long) {
         val shouldStopDecoder = synchronized(lock) {
-            if (currentRenderTarget?.surfaceGeneration == surfaceGeneration) {
-                currentRenderTarget = null
-            }
+            if (currentRenderTarget?.surfaceGeneration != surfaceGeneration) return
+            currentRenderTarget = null
             surfaceRecreatedRequiresKeyFrame = true
             core.onSurfaceDestroyed()
             true
@@ -130,7 +132,9 @@ class DefaultVideoReceiverSessionController(
         receiverRuntimeController.setAwaitingKeyFrame(true)
         if (shouldStopDecoder) {
             scope.launch {
-                decoderController.stop()
+                decoderLifecycle.withLock {
+                    if (synchronized(lock) { currentRenderTarget == null }) decoderController.stop()
+                }
             }
         }
     }
@@ -143,10 +147,11 @@ class DefaultVideoReceiverSessionController(
             if (core.state == VideoSessionState.Idle) {
                 return VideoSessionControlResult.Success
             }
-            core.state
+            // Invalidate suspended preparation before waiting for its decoder ownership.
+            currentConfig = null
         }
         receiverRuntimeController.stop()
-        decoderController.stop()
+        decoderLifecycle.withLock { decoderController.stop() }
         synchronized(lock) {
             core.stop()
             lastError = VideoSessionFailure()
@@ -197,6 +202,10 @@ class DefaultVideoReceiverSessionController(
     }
 
     private suspend fun prepareDecoderIfReady() {
+        decoderLifecycle.withLock { prepareOwnedDecoderIfReady() }
+    }
+
+    private suspend fun prepareOwnedDecoderIfReady() {
         val config: VideoReceiverSessionConfig
         val streamConfig: VideoReceiverStreamConfig
         val target: VideoRenderTarget
@@ -210,6 +219,7 @@ class DefaultVideoReceiverSessionController(
         }
 
         decoderController.stop()
+        if (!preparationIsCurrent(config, streamConfig, target)) return
         val geometry = renderController.setVideoGeometry(streamConfig.width, streamConfig.height)
         if (!geometry.isSuccess) {
             synchronized(lock) {
@@ -244,6 +254,10 @@ class DefaultVideoReceiverSessionController(
             inputSource = receiverRuntimeController.inputSource,
             outputSink = renderController.decodedVideoSink,
         )
+        if (!preparationIsCurrent(config, streamConfig, target)) {
+            decoderController.stop()
+            return
+        }
         if (!prepare.isSuccess) {
             synchronized(lock) {
                 core.onError()
@@ -259,8 +273,11 @@ class DefaultVideoReceiverSessionController(
         }
         val start = decoderController.start()
         var preparedSurfaceGeneration: Long? = null
+        var obsolete = false
         synchronized(lock) {
-            if (start.isSuccess) {
+            if (!preparationIsCurrent(config, streamConfig, target)) {
+                obsolete = true
+            } else if (start.isSuccess) {
                 core.onDecoderPrepared()
                 lastError = VideoSessionFailure()
                 val reason = if (surfaceRecreatedRequiresKeyFrame) {
@@ -285,7 +302,21 @@ class DefaultVideoReceiverSessionController(
                 )
             }
         }
+        if (obsolete) {
+            decoderController.stop()
+            return
+        }
         preparedSurfaceGeneration?.let(onDecoderPreparedForSurfaceGeneration)
+    }
+
+    private fun preparationIsCurrent(
+        config: VideoReceiverSessionConfig,
+        streamConfig: VideoReceiverStreamConfig,
+        target: VideoRenderTarget,
+    ): Boolean = synchronized(lock) {
+        currentConfig === config && latestStreamConfig === streamConfig &&
+            currentRenderTarget?.surfaceGeneration == target.surfaceGeneration &&
+            currentRenderTarget?.surface === target.surface && core.state == VideoSessionState.PreparingDecoder
     }
 
     private val runtimeListener = object : VideoReceiverRuntimeListener {
