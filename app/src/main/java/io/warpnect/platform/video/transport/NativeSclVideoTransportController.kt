@@ -15,6 +15,8 @@ import io.warpnect.video.transport.VideoTransportSnapshot
 import io.warpnect.video.transport.VideoTransportState
 import io.warpnect.video.transport.VideoTransportSubmitResult
 import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 
 class NativeSclVideoTransportController(
     private val debugObserver: VideoTransportDebugObserver = VideoTransportDebugObserver.None,
@@ -196,9 +198,11 @@ class NativeSclVideoTransportController(
             return VideoTransportSubmitResult(error, localSnapshot)
         }
         val nativeError = VideoTransportError.fromNativeCode(
-            NativeBridge.videoTransportPumpControl(handle, timeoutUs),
+            // Native polling shares the encoder submission lock: wait only after releasing it.
+            NativeBridge.videoTransportPumpControl(handle, 0),
         )
         if (nativeError == VideoTransportError.NoData) {
+            if (timeoutUs > 0) LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(timeoutUs))
             return VideoTransportSubmitResult(VideoTransportError.None, snapshot())
         }
         val error = remember(nativeError)
