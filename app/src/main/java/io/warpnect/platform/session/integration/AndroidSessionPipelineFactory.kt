@@ -232,6 +232,7 @@ data class AndroidInputSenderPipeline(
     val config: ReverseInputSenderSessionConfig,
     val onInputSafetyReset: () -> Unit = {},
     val telemetrySources: List<AutoCloseable> = emptyList(),
+    val onClose: () -> Unit = {},
 )
 
 data class AndroidInputReceiverPipeline(
@@ -507,6 +508,7 @@ class AndroidSessionPipelineFactory(
                     transport.close()
                     null
                 } else if (!pipeline.config.matches(channel)) {
+                    pipeline.onClose()
                     pipeline.controller.close()
                     telemetry.close()
                     networkTelemetry?.close()
@@ -896,6 +898,7 @@ private class InputSenderComponent(
     override fun onInputSafetyReset() = pipeline.onInputSafetyReset()
     override fun close() {
         runtimeSampler.close()
+        pipeline.onClose()
         pipeline.controller.close()
         pipeline.telemetrySources.forEach(AutoCloseable::close)
         networkTelemetry?.close()

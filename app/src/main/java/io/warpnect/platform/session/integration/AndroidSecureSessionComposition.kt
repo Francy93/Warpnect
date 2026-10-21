@@ -29,6 +29,7 @@ import io.warpnect.platform.diagnostics.AndroidReportSupport
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.discovery.AndroidDiscoveryHostAlias
 import io.warpnect.platform.discovery.AndroidLocalDiscoveryController
+import io.warpnect.platform.input.capture.AndroidInputCaptureController
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
 import io.warpnect.platform.input.injection.InputInjectionControllerSelector
 import io.warpnect.platform.privileged.planning.AndroidHostPrivilegedCapabilityAdmission
@@ -388,6 +389,7 @@ class AndroidSecureSessionComposition private constructor(
                 videoEncoderDiscovery,
                 AndroidSessionPipelineResources(
                     bindClientVideoRenderer = uiResources::bindClientVideoRenderer,
+                    bindClientInputCapture = uiResources::bindClientInputCapture,
                     clientInputSurface = uiResources::inputCaptureSurface,
                     clientViewportGeometry = VideoViewportGeometryProvider(uiResources::clientViewportGeometry),
                 ),
@@ -1355,6 +1357,8 @@ class AndroidSessionUiResources(
 ) {
     private val render = AtomicReference<WarpnectVideoSurfaceView?>()
     private val input = AtomicReference<WarpnectInputCaptureView?>()
+    private val inputLock = Any()
+    private var inputCapture: AndroidInputCaptureController? = null
     private val rendererLock = Any()
     private var renderer: AndroidVideoRenderController? = null
     private val _clientVideoRendererBound = MutableStateFlow(false)
@@ -1463,10 +1467,32 @@ class AndroidSessionUiResources(
 
     fun attachClientInputSurface(inputSurface: WarpnectInputCaptureView) {
         input.set(inputSurface)
+        refreshClientInputSurface()
     }
 
     fun clearClientInputSurface(inputSurface: WarpnectInputCaptureView) {
-        input.compareAndSet(inputSurface, null)
+        if (input.compareAndSet(inputSurface, null)) refreshClientInputSurface()
+    }
+
+    fun bindClientInputCapture(value: AndroidInputCaptureController): AutoCloseable? = synchronized(inputLock) {
+        if (inputCapture != null) return@synchronized null
+        inputCapture = value
+        AutoCloseable {
+            synchronized(inputLock) {
+                if (inputCapture === value) inputCapture = null
+            }
+        }
+    }
+
+    private fun refreshClientInputSurface() {
+        val update = Runnable {
+            synchronized(inputLock) { inputCapture?.rebindSurface(input.get()) }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            update.run()
+        } else {
+            Handler(Looper.getMainLooper()).post(update)
+        }
     }
 
     /**

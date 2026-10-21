@@ -46,6 +46,7 @@ import kotlin.math.max
 class AndroidInputCaptureController(
     context: Context,
     private val telemetry: InputSenderTelemetry? = null,
+    private val surfaceProvider: (() -> WarpnectInputCaptureView?)? = null,
 ) : InputCaptureController,
     InputManager.InputDeviceListener {
     private val appContext = context.applicationContext
@@ -79,6 +80,7 @@ class AndroidInputCaptureController(
         )
     }
 
+    @Synchronized
     override fun prepare(surface: View, config: InputCaptureConfig, sink: InputEventSink): InputCaptureResult {
         if (snapshot.state == InputCaptureState.Closed) return result(InputCaptureError.Closed)
         val validation = config.validate()
@@ -86,7 +88,8 @@ class AndroidInputCaptureController(
             recordError(validation, InputCaptureState.Error)
             return result(validation)
         }
-        val inputView = surface as? WarpnectInputCaptureView
+        val currentSurface = if (surfaceProvider == null) surface else surfaceProvider.invoke()
+        val inputView = currentSurface as? WarpnectInputCaptureView
         if (inputView == null) {
             recordError(InputCaptureError.InvalidSurface, InputCaptureState.Error)
             return result(InputCaptureError.InvalidSurface)
@@ -115,6 +118,7 @@ class AndroidInputCaptureController(
         return result(InputCaptureError.None)
     }
 
+    @Synchronized
     override fun start(): InputCaptureResult {
         val current = snapshot.state
         if (current == InputCaptureState.Closed) return result(InputCaptureError.Closed)
@@ -123,6 +127,7 @@ class AndroidInputCaptureController(
             recordError(InputCaptureError.NotPrepared)
             return result(InputCaptureError.NotPrepared)
         }
+        if (surfaceProvider != null) rebindSurface(surfaceProvider.invoke())
         registry.clearForNewLifecycle()
         clearLocalInputState()
         updateSnapshot {
@@ -136,6 +141,16 @@ class AndroidInputCaptureController(
             )
         }
         return result(InputCaptureError.None)
+    }
+
+    /** Changes only the UI endpoint; the active Session sink and logical device slots survive. */
+    @Synchronized
+    fun rebindSurface(surface: WarpnectInputCaptureView?) {
+        if (config == null || captureView === surface || snapshot.state == InputCaptureState.Closed) return
+        if (isRunning()) onWindowFocusChanged(false)
+        captureView?.detachController(this)
+        captureView = surface
+        surface?.attachController(this)
     }
 
     override fun requestPointerCapture(): InputCaptureResult {
@@ -167,6 +182,7 @@ class AndroidInputCaptureController(
         return result(InputCaptureError.None)
     }
 
+    @Synchronized
     override fun stop(): InputCaptureResult {
         if (snapshot.state == InputCaptureState.Closed) return result(InputCaptureError.Closed)
         if (snapshot.state == InputCaptureState.Stopped) return result(InputCaptureError.None)
@@ -203,6 +219,7 @@ class AndroidInputCaptureController(
 
     override fun snapshot(): InputCaptureSnapshot = snapshot
 
+    @Synchronized
     override fun close() {
         if (snapshot.state == InputCaptureState.Closed) return
         stop()

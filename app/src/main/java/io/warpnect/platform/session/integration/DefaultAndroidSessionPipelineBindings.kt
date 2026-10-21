@@ -89,6 +89,7 @@ import io.warpnect.video.transport.VideoTransportFecConfig
  */
 data class AndroidSessionPipelineResources(
     val bindClientVideoRenderer: (AndroidVideoRenderController) -> AutoCloseable? = { null },
+    val bindClientInputCapture: (AndroidInputCaptureController) -> AutoCloseable? = { null },
     val clientInputSurface: () -> WarpnectInputCaptureView? = { null },
     val clientViewportGeometry: VideoViewportGeometryProvider = VideoViewportGeometryProvider {
         VideoViewportGeometry()
@@ -291,14 +292,20 @@ class DefaultAndroidSessionPipelineBindings(
     ): AndroidInputSenderPipeline? {
         val surface = resources.clientInputSurface() ?: return null
         val reliability = config.config.toReliabilityConfig()
+        val capture = AndroidInputCaptureController(appContext, telemetry, resources.clientInputSurface)
+        val captureBinding = resources.bindClientInputCapture(capture) ?: run {
+            capture.close()
+            return null
+        }
         return AndroidInputSenderPipeline(
             controller = ReverseInputSenderSessionController(
-                captureController = AndroidInputCaptureController(appContext, telemetry),
+                captureController = capture,
                 geometryProvider = resources.clientViewportGeometry,
                 transportController = transport,
                 telemetry = telemetry,
             ),
             telemetrySources = listOf(telemetry),
+            onClose = captureBinding::close,
             surface = surface,
             config = ReverseInputSenderSessionConfig(
                 captureConfig = InputCaptureConfig(enabledKinds = config.config.inputKinds.toInputKinds()),
