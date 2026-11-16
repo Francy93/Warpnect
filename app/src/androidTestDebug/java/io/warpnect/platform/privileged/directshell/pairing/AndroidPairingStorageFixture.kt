@@ -33,7 +33,15 @@ import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 
 /** DEBUG instrumentation only. Never targets production records/alias or existing DEBUG pairing identity. */
-internal class AndroidPairingStorageFixture(multiprocess: Boolean = false) : AutoCloseable {
+internal class AndroidPairingStorageFixture(
+    multiprocess: Boolean = false,
+    expectedApi: Int = 30,
+) : AutoCloseable {
+    init {
+        check(expectedApi == 30 || (expectedApi == 31 && !multiprocess))
+        check(Build.VERSION.SDK_INT == expectedApi)
+    }
+
     private val target = InstrumentationRegistry.getInstrumentation().targetContext
     private val ownerRoot = target.noBackupFilesDir.toPath().toRealPath()
     val token: String = UUID.randomUUID().toString()
@@ -55,7 +63,6 @@ internal class AndroidPairingStorageFixture(multiprocess: Boolean = false) : Aut
     val context: Context
 
     init {
-        check(Build.VERSION.SDK_INT == 30)
         check(Process.myUid() == target.applicationInfo.uid)
         val domain = File("/proc/self/attr/current").readText().trim().trimEnd('\u0000')
         check(domain.startsWith("u:r:untrusted_app:"))
@@ -63,7 +70,7 @@ internal class AndroidPairingStorageFixture(multiprocess: Boolean = false) : Aut
         val mode = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
         Files.createDirectory(fixture, mode)
         Files.createDirectory(base, mode)
-        emit("api=30 uid=${Process.myUid()} domain=$domain fixture=${fixture.fileName}")
+        emit("api=$expectedApi uid=${Process.myUid()} domain=$domain fixture=${fixture.fileName}")
         context = object : ContextWrapper(target) {
             override fun getApplicationContext(): Context = this
             override fun getDataDir(): File = fixture.toFile()

@@ -1,6 +1,7 @@
 package io.warpnect.debug.storage
 
 import io.warpnect.platform.privileged.directshell.pairing.AndroidDirectShellCredentialKeyStore
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,10 +23,16 @@ class PairingStorageFixtureProtocolTest {
     }
 
     @Test fun processSuffixUsesAndroidIdentifierCharacters() {
-        val parts = PairingStorageFixtureProtocol.PROCESS.split(':')
+        val parts = PairingStorageFixtureProtocol.processName("io.warpnect").split(':')
         assertTrue(parts.size == 2 && parts[0] == "io.warpnect")
         assertTrue(parts[1].matches(Regex("[a-zA-Z][a-zA-Z0-9_]*")))
         assertFalse(parts[1].contains('-'))
+    }
+
+    @Test fun sideBySideProcessIsBoundToItsOwnPackage() {
+        val sideBySide = PairingStorageFixtureProtocol.processName("io.warpnect.af30gate")
+        assertEquals("io.warpnect.af30gate:pairing_storage_fixture", sideBySide)
+        assertFalse(sideBySide == PairingStorageFixtureProtocol.processName("io.warpnect"))
     }
 
     @Test fun syntheticAliasUsesExistingKeyOwnershipPolicyWithoutReadingOrProvisioning() {

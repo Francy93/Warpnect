@@ -1,14 +1,25 @@
 package io.warpnect.debug.directshell
 
 import android.net.nsd.NsdManager
+import java.io.IOException
 import java.net.InetAddress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DirectShellSelfAdbEndpointDiscoveryTest {
+    @Test
+    fun rejectsUnavailablePlatformBeforeNumericAddressParsing() {
+        val endpoint = DirectShellSelfAdbEndpointDiscovery.Endpoint("127.0.0.1", 35_395, "adb-test")
+        val failure = assertThrows(IOException::class.java) {
+            DirectShellSelfAdbEndpointDiscovery.requireCurrentLocalSocketAddress(endpoint)
+        }
+        assertEquals("adb_endpoint_wireless_debugging_unavailable", failure.message)
+    }
+
     @Test
     fun keepsConnectionServicePublicationGraceSeparateFromPairingDiscovery() {
         assertEquals(8_000L, DirectShellSelfAdbEndpointDiscovery.PAIRING_DISCOVERY_TIMEOUT_MILLIS)

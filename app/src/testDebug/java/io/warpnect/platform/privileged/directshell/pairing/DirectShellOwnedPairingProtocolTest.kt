@@ -9,9 +9,17 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import org.bouncycastle.tls.DefaultTlsClient
+import org.bouncycastle.tls.ProtocolVersion
+import org.bouncycastle.tls.TlsAuthentication
+import org.bouncycastle.tls.TlsClientProtocol
+import org.bouncycastle.tls.TlsServerCertificate
+import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -122,6 +130,76 @@ class DirectShellOwnedPairingProtocolTest {
     @Test fun a04ActualContextTlsHandshakeIsInterruptedAndDrains() = cancelAt(Peer.Mode.TLS_STALL)
 
     @Test fun a05ActualContextPakeReceiveIsInterruptedAndDrains() = cancelAt(Peer.Mode.PAKE_STALL)
+
+    @Test fun sameOwnedTransportInterruptsNativeWriteUnderRealTlsApplicationBackpressure() {
+        val peer = peer(Peer.Mode.TLS_APPLICATION_BACKPRESSURE)
+        val thread = AtomicReference<Thread>()
+        val written = AtomicInteger()
+        val connected = CountDownLatch(1)
+        val socket = Socket().apply { sendBufferSize = 4_096 }
+        val engine = object : Transport.Protocol {
+            override fun exchange(socket: Socket, code: CharArray, checkActive: () -> Unit): Transport.Completion {
+                thread.set(Thread.currentThread())
+                val tls = TlsClientProtocol(socket.getInputStream(), socket.getOutputStream())
+                tls.connect(object : DefaultTlsClient(BcTlsCrypto(SecureRandom())) {
+                    override fun getProtocolVersions(): Array<ProtocolVersion> = ProtocolVersion.TLSv13.only()
+                    override fun getAuthentication() = object : TlsAuthentication {
+                        override fun notifyServerCertificate(certificate: TlsServerCertificate) {
+                            check(
+                                StorageFixture.identity.certificate.encoded.contentEquals(
+                                    certificate.certificate.getCertificateAt(0).encoded,
+                                ),
+                            )
+                        }
+                        override fun getClientCredentials(request: org.bouncycastle.tls.CertificateRequest) = null
+                    }
+                })
+                connected.countDown()
+                val chunk = ByteArray(4096)
+                repeat(8_192) {
+                    checkActive()
+                    tls.outputStream.write(chunk)
+                    written.addAndGet(chunk.size)
+                }
+                error("tls_test_backpressure_not_reached")
+            }
+
+            // This fixture borrows only the owned socket; it grants no pairing completion or peer evidence.
+            override fun release() = socket.isClosed
+        }
+        val operation = operation(peer.endpoint, engine, sockets = { socket })
+        assertTrue(start(operation))
+        peer.await()
+        assertTrue(connected.await(3, TimeUnit.SECONDS))
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3)
+        fun inNativeTlsWrite(): Boolean {
+            val stack = thread.get().stackTrace
+            val tlsRecord = stack.any {
+                it.className.startsWith("org.bouncycastle.tls.") && it.methodName == "writeRecord"
+            }
+            val kernelWrite = stack.any {
+                it.className.startsWith("sun.nio.ch.") && it.methodName.contains("write", ignoreCase = true)
+            }
+            return tlsRecord && kernelWrite
+        }
+        var blocked = false
+        while (System.nanoTime() < deadline && !blocked) {
+            val before = written.get()
+            val inWrite = inNativeTlsWrite()
+            Thread.sleep(80)
+            blocked = before > 0 && written.get() == before && inWrite && inNativeTlsWrite()
+        }
+        assertTrue("live socket write beneath a TLS record, with no write progress", blocked)
+        assertFalse(operation.awaitDrain(0).drained)
+        assertTrue(operation.requestStop(ticket))
+        val result = operation.awaitDrain()
+        assertEquals(Transport.Outcome.CANCELLED, result.outcome)
+        assertEquals(Transport.Completion.INCOMPLETE, result.completion)
+        assertEquals(DirectShellPairingExternalEffect.POSSIBLE, result.externalEffect)
+        assertTrue(result.drained)
+        assertTrue(socket.isClosed)
+        assertEquals(1L, peer.proceed.count)
+    }
     private fun cancelAt(mode: Peer.Mode) {
         val peer = peer(mode)
         val protocol = protocol(peer.endpoint)

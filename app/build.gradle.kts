@@ -10,6 +10,12 @@ plugins {
     id("org.jlleitschuh.gradle.ktlint")
 }
 
+val networkPhysicalGate = providers.gradleProperty("networkPhysicalGate").orNull == "true"
+val privateSetupPhysicalGate = providers.gradleProperty("privateSetupPhysicalGate").orNull == "true"
+val api30PhysicalGate = privateSetupPhysicalGate || networkPhysicalGate ||
+    providers.gradleProperty("api30PhysicalGate").orNull == "true"
+check(!privateSetupPhysicalGate || !networkPhysicalGate) { "Physical fixtures must be selected separately" }
+
 android {
     namespace = "io.warpnect"
     compileSdk = 35
@@ -24,7 +30,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += if (api30PhysicalGate) listOf("arm64-v8a") else listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
 
         externalNativeBuild {
@@ -53,6 +59,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (api30PhysicalGate) {
+                applicationIdSuffix = when {
+                    privateSetupPhysicalGate -> ".privatesetupgate"
+                    networkPhysicalGate -> ".networkgate"
+                    else -> ".af30gate"
+                }
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -60,6 +75,17 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+
+    if (api30PhysicalGate) {
+        sourceSets.getByName("main").manifest.srcFile("src/af30gate/AndroidManifest.xml")
+        val debugManifest = when {
+            privateSetupPhysicalGate -> "PrivateSetupDebugManifest.xml"
+            networkPhysicalGate -> "NetworkDebugManifest.xml"
+            else -> "DebugManifest.xml"
+        }
+        sourceSets.getByName("debug").manifest.srcFile("src/af30gate/$debugManifest")
+        sourceSets.getByName("androidTest").manifest.srcFile("src/af30gate/TestManifest.xml")
     }
 
     lint {
@@ -76,6 +102,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        if (api30PhysicalGate) variant.enable = false
     }
 }
 

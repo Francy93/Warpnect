@@ -5,7 +5,7 @@ import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Unwired loopback qualification boundary, NOT an ADB backend or an authentication grant. */
+/** Unwired owned pairing transport, not an ADB backend or an authentication grant. */
 internal class DirectShellPairingTransport(
     private val ticket: DirectShellPairingTicket,
     private val endpoint: InetSocketAddress,
@@ -18,6 +18,7 @@ internal class DirectShellPairingTransport(
     private val connector: (Socket, InetSocketAddress, Int) -> Unit = { socket, address, timeout ->
         socket.connect(address, timeout)
     },
+    private val numericBinding: DirectShellNumericRouteCandidate.Binding? = null,
 ) {
     /** Worker-only borrowed socket/code. No retained copies; release runs on that same worker. */
     internal interface Protocol {
@@ -80,13 +81,20 @@ internal class DirectShellPairingTransport(
             !endpoint.isUnresolved && endpoint.port in 1..65535 &&
                 (
                     bytes.contentEquals(byteArrayOf(127, 0, 0, 1)) ||
-                        (bytes?.size == 16 && bytes.dropLast(1).all { it == 0.toByte() } && bytes.last() == 1.toByte())
+                        (
+                            bytes?.size == 16 &&
+                                bytes.dropLast(1).all { it == 0.toByte() } &&
+                                bytes.last() == 1.toByte()
+                            ) ||
+                        numericBinding?.matches(ticket, endpoint, clock, deadlineMs) == true
                     ),
-        ) { "pairing_transport_loopback_required" }
+        ) { "pairing_transport_endpoint_not_admitted" }
+        require(numericBinding == null || numericBinding.matches(ticket, endpoint, clock, deadlineMs))
     }
 
     /** Explicit one-shot dispatch; constructors/inspection create neither sockets nor workers. */
     fun start(input: DirectShellPairingCode): Boolean {
+        val cancelledTimer: DirectShellPairingTimer?
         synchronized(gate) {
             if (started || stopped != null) return false
             started = true
@@ -105,17 +113,31 @@ internal class DirectShellPairingTransport(
                 return false
             }
             outcome = Outcome.RUNNING
-            ioWorker = Thread(::run, "pairing-transport-io")
-            closeWorker = Thread({
-                closeSignal.await()
-                closeSocket()
-            }, "pairing-transport-close")
-            timer = scheduler.at(deadlineMs) { requestStop(ticket, expired = true) }
-            // Thread dispatch is CPU-only; no socket, protocol, crypto or join runs under this gate.
-            closeWorker!!.start()
-            ioWorker!!.start()
-            return true
+            try {
+                ioWorker = Thread(::run, "pairing-transport-io")
+                closeWorker = Thread({
+                    closeSignal.await()
+                    closeSocket()
+                }, "pairing-transport-close")
+                timer = scheduler.at(deadlineMs) { requestStop(ticket, expired = true) }
+                // Publish ownership first. Socket operations and joins remain outside this gate.
+                closeWorker!!.start()
+                ioWorker!!.start()
+                return true
+            } catch (_: RuntimeException) {
+                if (stopped == null) stopped = Outcome.FAILED
+                if (ioWorker?.isAlive != true) {
+                    code?.fill('\u0000')
+                    code = null
+                    outcome = requireNotNull(stopped)
+                    settled = true
+                }
+                closeSignal.countDown()
+                cancelledTimer = timer
+            }
         }
+        cancelledTimer?.cancel()
+        return false
     }
 
     /** CPU-only stop signal. Closing an actual socket is owned by the close worker, not a UI caller. */
@@ -132,8 +154,10 @@ internal class DirectShellPairingTransport(
         true
     }
 
-    private fun checkActive() = synchronized(gate) {
-        if (clock.elapsedRealtimeMs() >= deadlineMs && stopped == null && !settled) stopped = Outcome.EXPIRED
+    private fun checkActive() = synchronized(gate) { checkActiveLocked(clock.elapsedRealtimeMs()) }
+
+    private fun checkActiveLocked(now: Long) {
+        if (now >= deadlineMs && stopped == null && !settled) stopped = Outcome.EXPIRED
         check(stopped == null) { "pairing_transport_stopped" }
     }
 
@@ -145,8 +169,16 @@ internal class DirectShellPairingTransport(
             synchronized(gate) { socket = created }
             checkActive()
             created.setSoLinger(false, 0)
-            val remaining = (deadlineMs - clock.elapsedRealtimeMs()).coerceIn(1, 60_000).toInt()
-            connector(created, endpoint, remaining)
+            val remaining = synchronized(gate) {
+                val now = clock.elapsedRealtimeMs()
+                checkActiveLocked(now)
+                (deadlineMs - now).coerceAtMost(60_000).toInt()
+            }
+            if (numericBinding == null) {
+                connector(created, endpoint, remaining)
+            } else {
+                numericBinding.connect(created) { requestStop(it) }
+            }
             connecting = false
             checkActive()
             if (!recoveryReady()) {
@@ -160,7 +192,10 @@ internal class DirectShellPairingTransport(
                 completion = Completion.INCOMPLETE
                 protocolReleased = false
             }
-            val result = protocol.exchange(created, requireNotNull(code), ::checkActive)
+            val result = protocol.exchange(created, requireNotNull(code)) {
+                checkActive()
+                numericBinding?.ensureCurrent()
+            }
             synchronized(gate) { completion = result }
             settle(
                 when (result) {
@@ -247,8 +282,10 @@ internal class DirectShellPairingTransport(
     /** Worker/test-only bounded observation, NEVER a coordinator-monitor or UI operation. */
     fun awaitDrain(observationMs: Long = 3_000): Receipt {
         require(observationMs in 0..3_000) { "pairing_transport_observation_bound" }
+        if (observationMs == 0L) return observe()
         val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(observationMs)
         val workers = synchronized(gate) { listOf(ioWorker, closeWorker) }
+        check(workers.none { it === Thread.currentThread() }) { "pairing_transport_self_join" }
         for (worker in workers) {
             if (worker == null) continue
             val remaining = end - System.nanoTime()

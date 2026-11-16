@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.InetAddresses
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import android.util.Log
 import io.warpnect.platform.discovery.AndroidDiscoveryMulticastLock
 import io.warpnect.session.discovery.DiscoveryError
@@ -428,6 +429,9 @@ internal object DirectShellSelfAdbEndpointDiscovery {
     }
 
     internal fun requireCurrentLocalSocketAddress(endpoint: Endpoint): InetSocketAddress {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            throw IOException("adb_endpoint_wireless_debugging_unavailable")
+        }
         val address = try {
             InetAddresses.parseNumericAddress(endpoint.host)
         } catch (_: IllegalArgumentException) {

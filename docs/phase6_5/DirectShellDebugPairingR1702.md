@@ -98,7 +98,7 @@ and [pair-only architecture](DirectShellReleasePairingArchitecture.md).
 
 | Gate | Remaining evidence |
 | --- | --- |
-| Android P1/P2 synthetic composition | Execute the exact-API30 localhost fixture: real AndroidKeyStore AES test alias, private storage, authenticated recovery, file/directory sync, native no-replace publication, separate P/S, and owned socket/worker/storage/observer drain. The r1634 fixture has 69 methods compiled and zero executed. |
+| Android P1/P2 synthetic composition | At r1703 the r1634 fixture had 69 methods compiled and zero executed. Later [physical API30 evidence](DirectShellPhysicalApi30Gates.md) covers the exact handset, not production or other devices. |
 | Production identity and lifecycle | Explicit decisions D-P1-D-P4 (RSA/AES provisioning, adoption and recovery); application-owned clock/timer/consent wiring and Android process lifecycle. No automatic migration or production key change. |
 | Production transport and endpoint | Network/NSD binding, the pair-only P1/P2 path against real adbd, Android blocked TLS-write cancellation and suspend/connect qualification. One legacy Debug self-bootstrap success does not qualify these. |
 | Compatibility and onboarding | Exact API/OEM/device coverage, Release pairing setup/backend and admission. A Release APK build is not Release runtime qualification. |
@@ -106,7 +106,7 @@ and [pair-only architecture](DirectShellReleasePairingArchitecture.md).
 Host-side synthetic and owner-drain checkpoints remain verified for software
 only. Historical Windows lease failure remains unattributed.
 
-## Smallest Next Runtime Gate
+## Original Next Runtime Gate (At r1703)
 
 Separately authorize the **physical Galaxy A41 Android 11/API30** for the
 existing Android synthetic fixture, not another real pairing. First verify

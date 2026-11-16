@@ -45,8 +45,40 @@ class DirectShellPairingSyntheticCompositionTest {
         fixtures.forEach { it.close() }
     }
 
-    private fun fixture(mode: OwnedPairingPeerFixture.Mode = OwnedPairingPeerFixture.Mode.SUCCESS): Fixture =
-        Fixture(temporary.newFolder().toPath(), mode).also(fixtures::add)
+    private fun fixture(
+        mode: OwnedPairingPeerFixture.Mode = OwnedPairingPeerFixture.Mode.SUCCESS,
+        provisioning: Boolean = false,
+    ): Fixture = Fixture(temporary.newFolder().toPath(), mode, provisioning).also(fixtures::add)
+
+    @Test fun firstEnrollmentReachesProtocolAndCommitOnTheOriginalLease() {
+        val f = fixture(provisioning = true)
+        val ticket = f.request()
+        f.hold(Stage.RECOVERY_READY)
+        f.submit()
+        f.awaitHeld()
+        assertEquals(1, f.keys.creations)
+        assertTrue(Files.exists(f.record(DirectShellCredentialStorage.ANCHOR)))
+        assertEquals(0, f.sockets.get())
+        assertSame(ticket, f.operation.workContext?.ticket)
+        assertFalse(f.owner.submitCode(ticket, CODE.toCharArray()))
+        f.release()
+        f.finish()
+        assertEquals(DirectShellPairingPhase.PAIRED_NEEDS_EXPLICIT_HOST_RETRY, f.state.phase)
+        assertTrue(f.state.drained)
+        assertEquals(1, f.sockets.get())
+        assertEquals(1, f.keys.creations)
+        assertEquals(DirectShellCredentialStorage.Status.COMMITTED_RECONCILIATION, f.inspect())
+    }
+
+    @Test fun changedReadinessGenerationInsideKeySetupForbidsProvisioningAndSocket() {
+        val f = fixture(provisioning = true)
+        f.keys.beforeGenerate = { f.readinessGeneration = 2 }
+        f.submit()
+        f.finish()
+        assertEquals(0, f.keys.creations)
+        assertNull(f.peer)
+        assertFalse(Files.exists(f.record(DirectShellCredentialStorage.ANCHOR)))
+    }
 
     @Test fun c01PassiveConstruction() {
         val f = fixture()
@@ -409,6 +441,25 @@ class DirectShellPairingSyntheticCompositionTest {
         assertEquals(DirectShellPairingPhase.RECONCILIATION_REQUIRED, f.state.phase)
     }
 
+    @Test fun expiryAfterReservationBeforePublicationLeavesOnlyRecoveryAndPending() {
+        val f = fixture()
+        f.hold(Stage.RESERVED)
+        f.submit()
+        f.awaitHeld()
+        // Do not deliver the timer: the worker must use the original elapsed deadline.
+        f.clock.now = 60_000
+        f.release()
+        f.finish()
+        assertEquals(DirectShellPairingPublication.NOT_PUBLISHED, f.operation.storeReceipt!!.publication)
+        assertEquals(0, f.fs.links.get())
+        assertTrue(Files.exists(f.record(DirectShellCredentialStorage.ANCHOR)))
+        assertTrue(Files.exists(f.record(DirectShellCredentialStorage.PENDING)))
+        assertFalse(Files.exists(f.record(DirectShellCredentialStorage.RECORD)))
+        assertTrue(f.state.drained)
+        assertEquals(DirectShellPairingPhase.RECONCILIATION_REQUIRED, f.state.phase)
+        assertNull(f.owner.request(1))
+    }
+
     @Test fun c20OldGenerationCannotAffectNewOwner() {
         val old = fixture()
         old.hold(Stage.BEFORE_RECOVERY)
@@ -624,7 +675,11 @@ class DirectShellPairingSyntheticCompositionTest {
         }
     }
 
-    private class Fixture(val base: Path, val mode: OwnedPairingPeerFixture.Mode) : AutoCloseable {
+    private class Fixture(
+        val base: Path,
+        val mode: OwnedPairingPeerFixture.Mode,
+        private val provisioning: Boolean,
+    ) : AutoCloseable {
         val clock = Clock()
         val scheduler = clock.scheduler
         val created = AtomicInteger()
@@ -632,6 +687,8 @@ class DirectShellPairingSyntheticCompositionTest {
         val borrowClosed = AtomicInteger()
         val stages = java.util.Collections.synchronizedList(mutableListOf<Stage>())
         val fs = FileSystem()
+        val keys = ModeledFirstEnrollmentKey().also { it.probe = ::outside }
+        var readinessGeneration = 1L
         var environment = DirectShellPairingEnvironment(true, true, 1, 0)
         lateinit var owner: DirectShellPairingCoordinator
         lateinit var operation: DirectShellSyntheticPairingComposition.Operation
@@ -650,12 +707,27 @@ class DirectShellPairingSyntheticCompositionTest {
         val state get() = owner.state.value
         fun record(name: String): Path = directory.resolve(name)
         fun outside() = check(!Thread.holdsLock(owner)) { "blocking_under_p1_monitor" }
-        fun store() = DirectShellCredentialStorage(base, {
+        private val existing = DirectShellPairingWrappingKey {
             outside()
             StorageFixture.key
-        }, fs)
+        }
+        fun store() = DirectShellCredentialStorage(base, if (provisioning) keys else existing, fs)
         fun inspect(): DirectShellCredentialStorage.Status =
             DirectShellCredentialStorage(base, { StorageFixture.key }, ModeledDirectorySync()).inspect().status
+
+        private fun borrowIdentity(): DirectShellSyntheticPairingComposition.IdentityBorrow {
+            outside()
+            return DirectShellSyntheticPairingComposition.IdentityBorrow(StorageFixture.identity) {
+                outside()
+                borrowClosed.incrementAndGet()
+                true
+            }
+        }
+
+        private fun createFirstIdentity(): DirectShellCredentialIdentity {
+            outside()
+            return StorageFixture.identity
+        }
 
         val adapter = DirectShellSyntheticPairingComposition(
             clock,
@@ -664,14 +736,7 @@ class DirectShellPairingSyntheticCompositionTest {
                 outside()
                 store().also { ownedStore = it }
             },
-            {
-                outside()
-                DirectShellSyntheticPairingComposition.IdentityBorrow(StorageFixture.identity) {
-                    outside()
-                    borrowClosed.incrementAndGet()
-                    true
-                }
-            },
+            if (provisioning) null else ::borrowIdentity,
             {
                 outside()
                 OwnedPairingPeerFixture(mode, SERVER).also {
@@ -693,12 +758,13 @@ class DirectShellPairingSyntheticCompositionTest {
                     check(proceed.await(3, TimeUnit.SECONDS)) { "composition_fixture_boundary" }
                 }
             },
+            firstEnrollmentIdentity = if (provisioning) ::createFirstIdentity else null,
         )
 
         init {
             fs.checkWorker = ::outside
             owner = DirectShellPairingCoordinator(
-                { pairingRequiredUiState(1) }, { environment }, clock, scheduler,
+                { pairingRequiredUiState(readinessGeneration) }, { environment }, clock, scheduler,
                 { ticket, observer ->
                     created.incrementAndGet()
                     adapter.create(ticket, observer).also { operation = it }

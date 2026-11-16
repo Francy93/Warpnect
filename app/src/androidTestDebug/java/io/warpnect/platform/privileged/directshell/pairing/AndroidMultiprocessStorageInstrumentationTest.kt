@@ -91,7 +91,7 @@ class AndroidMultiprocessStorageInstrumentationTest {
         val domain = File("/proc/self/attr/current").readText().trim().trimEnd('\u0000')
         assertEquals(Process.myUid(), b.getInt("uid"))
         assertNotEquals(Process.myPid(), b.getInt("pid"))
-        assertEquals(Wire.PROCESS, b.getString("process"))
+        assertEquals(remote.expectedProcess, b.getString("process"))
         assertEquals(domain, b.getString("domain"))
         assertTrue(domain.startsWith("u:r:untrusted_app:"))
         assertEquals(f.base.toString(), b.getString("namespace"))
@@ -218,7 +218,7 @@ class AndroidMultiprocessStorageInstrumentationTest {
         assertNull(fs.acquireLease(f.directory, false))
         val b = remote.call(Wire.IDENTITY)
         assertEquals(Process.myUid(), b.getInt("uid"))
-        assertEquals(Wire.PROCESS, b.getString("process"))
+        assertEquals(remote.expectedProcess, b.getString("process"))
         assertNotEquals(Process.myPid(), b.getInt("pid"))
         KernelReleaseBarrier(f.directory.resolve(DirectShellCredentialStorage.LOCK)).use { barrier ->
             remote.terminate()
@@ -463,6 +463,7 @@ class AndroidMultiprocessStorageInstrumentationTest {
 
     private class Remote : AutoCloseable {
         private val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val expectedProcess = Wire.processName(context.packageName)
         private val connected = CountDownLatch(1)
         private lateinit var binder: IBinder
         private val connection = object : ServiceConnection {

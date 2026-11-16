@@ -13,11 +13,16 @@ internal class DirectShellSyntheticPairingComposition(
     private val clock: DirectShellPairingClock,
     private val scheduler: DirectShellPairingScheduler,
     private val storage: () -> DirectShellCredentialStorage,
-    private val identity: () -> IdentityBorrow,
+    private val identity: (() -> IdentityBorrow)?,
     private val endpoint: () -> InetSocketAddress,
     private val socket: () -> Socket = { Socket() },
     private val checkpoint: (Stage) -> Unit = {},
+    private val firstEnrollmentIdentity: (() -> DirectShellCredentialIdentity)? = null,
 ) : DirectShellPairingBackend, DirectShellPairingCommitter {
+    init {
+        require((identity == null) != (firstEnrollmentIdentity == null)) { "pairing_identity_source_invalid" }
+    }
+
     enum class Stage {
         BEFORE_RECOVERY,
         RECOVERY_READY,
@@ -143,14 +148,31 @@ internal class DirectShellSyntheticPairingComposition(
             try {
                 checkpoint(Stage.BEFORE_RECOVERY)
                 requireActive(work)
-                borrowAttempted = true
-                borrowReleased = false
-                borrow = identity()
+                val createIdentity = firstEnrollmentIdentity
+                if (createIdentity == null) {
+                    borrowAttempted = true
+                    borrowReleased = false
+                    borrow = requireNotNull(identity).invoke()
+                } else {
+                    check(work.mayProvision(ticket)) { "pairing_first_enrollment_stale" }
+                }
+                requireActive(work)
                 storageAttempted = true
                 storeReleased = false
                 ownedStore = storage()
+                requireActive(work)
                 recovery = DirectShellPairingRecovery.UNKNOWN
-                val status = ownedStore.begin(ticket, requireNotNull(borrow).material)
+                val status = if (createIdentity == null) {
+                    ownedStore.begin(ticket, requireNotNull(borrow).material) { active(work) }
+                } else {
+                    val enrollment = ownedStore.beginFirstEnrollment(ticket, work, { active(work) }, createIdentity)
+                    enrollment.identity?.let {
+                        borrowAttempted = true
+                        borrowReleased = false
+                        borrow = IdentityBorrow(it) { true }
+                    }
+                    enrollment.status
+                }
                 if (status != DirectShellCredentialStorage.Status.RECOVERY_READY) {
                     observer.failed(DirectShellPairingReason.RECOVERY_UNCONFIRMED)
                     return
@@ -160,6 +182,10 @@ internal class DirectShellSyntheticPairingComposition(
                 requireActive(work)
                 val admittedStore = ownedStore
                 if (admittedStore.recoveryAdmission(ticket) != DirectShellCredentialStorage.Status.RECOVERY_READY) {
+                    observer.failed(DirectShellPairingReason.RECOVERY_UNCONFIRMED)
+                    return
+                }
+                if (createIdentity != null && !work.mayProvision(ticket)) {
                     observer.failed(DirectShellPairingReason.RECOVERY_UNCONFIRMED)
                     return
                 }
@@ -209,7 +235,7 @@ internal class DirectShellSyntheticPairingComposition(
                 checkpoint(Stage.PEER_BOUND)
                 requireActive(work)
                 check(result.drained) { "pairing_transport_not_drained" }
-                val preparation = ownedStore.prepare(evidence, staged)
+                val preparation = ownedStore.prepare(evidence, staged) { active(work) }
                 val candidate = requireNotNull(preparation.candidate) { "pairing_candidate_unconfirmed" }
                 check(preparation.status == DirectShellCredentialStorage.Status.PREPARED)
                 checkpoint(Stage.PREPARED)
@@ -219,7 +245,7 @@ internal class DirectShellSyntheticPairingComposition(
                 checkpoint(Stage.BEFORE_R)
                 val reservation = commit.control.reserve(candidate.prepared) ?: return
                 checkpoint(Stage.RESERVED)
-                val receipt = ownedStore.publish(candidate, reservation)
+                val receipt = ownedStore.publish(candidate, reservation) { active(work) }
                 storeReceipt = receipt
                 if (receipt.publication == DirectShellPairingPublication.PUBLISHED) {
                     recovery = DirectShellPairingRecovery.COMMITTED_RECORD_PRESENT

@@ -2,10 +2,58 @@
 
 ## 2026-11-12 DirectShell Pairing
 
+R1713: [private code entry and local roles](../phase6_5/DirectShellR1713PrivateEntry.md)
+records successful isolated keypad lifecycle on A41/API30 and API31,
+the distinct successful unlocked API31
+SystemUI delivery and operator-visible shade result, and API30 local
+PCM/Surface handle tests. Live Samsung pairing dialog continuity after
+switching apps and multi-window were not established. This does not
+qualify notification history, real pairing, a remote handle transfer,
+capture, injection or Release.
+
+R1712: [isolated Samsung SystemUI carrier](../phase6_5/DirectShellR1712CarrierAndRoleBoundaries.md#samsung-systemui-api31)
+on the exact A41/API31. The operator saw it unlocked and not on the
+lock screen; the notice was unavailable after unlocking. No synthetic
+reply was submitted, so authentication and retention are not qualified.
+Both trials cleaned up their isolated APKs and preserved original state.
+
+R1711: [standalone Control v2](../phase6_5/DirectShellR1711ControlQualification.md#physical-control)
+executed as UID2000 on the exact A41/API30 and API31. Provenance was
+corroborated by transferred hash, process DEX mapping and loopback socket
+ownership; authenticated shutdown and independent teardown passed.
+Neither the new Network/lock policies nor normal Release or media/input
+execution are qualified by this result.
+
+R1710: [Samsung numeric panel](../phase6_5/DirectShellR1710ControlAndPrivateSetup.md#samsung-numeric-pairing-tuple)
+observed by the operator on the exact API30 and API31 A41: the temporary
+pairing port differs from reconnect and changes across dialog openings.
+No code was sent and no pairing was performed.
+The [P3 fixture](../phase6_5/DirectShellR1710ControlAndPrivateSetup.md#private-setup-fixture)
+passed Activity recreation/rotation, RemoteInput, blocked channel and inert
+old reply after owned process death on both phones. Nothing was registered
+in the ordinary app. No API33+ permission, SystemUI, FGS or Release
+runtime claim follows.
+
+R1709: [isolated Network-bound TCP](../phase6_5/DirectShellR1709NetworkAndIntegration.md#physical-network)
+passed once each on A41/API30 and A41/API31, with a numeric same-device
+peer and verified cleanup. This is not physical link-loss, Samsung Settings
+tuple, PAKE/TLS, real-adbd pairing, P3 runtime or Release evidence.
+
+R1708: [AF25](../phase6_5/DirectShellR1708Prototypes.md#af25-physical-owner-pass)
+passed once on the API30 A41 using the sealed r1706 fixture. Its Android
+clock and automatic drain evidence is distinct from earlier tests; no
+production AndroidKeyStore writer, general lifecycle or Release qualification.
+
+R1707: the AF25 Android-owner method was not installed or executed on the
+API30 A41 because the existing 2 GiB/no-LOW storage gate failed. This does
+not change the 69 distinct methods already exercised on that handset or
+qualify first-enrollment Keystore generation. See the [R1707 receipt](../phase6_5/DirectShellR1707FirstEnrollment.md#af25-attempt).
+
 | Target | Evidence | Boundary |
 | --- | --- | --- |
 | Galaxy A41 SM-A415F, Android 12/API31 | [r1702 side-by-side Debug](../phase6_5/DirectShellDebugPairingR1702.md): one Host-UI pairing, same-device NSD and ADB TLS reconnect, helper HMAC and shutdown; cleanup verified | Exact APK/device result. Ordinary Debug consolidation is software-verified, not a new hardware run. No Release or other OEM qualification. |
-| Galaxy A41 Android 11/API30 candidate | Android synthetic fixture compiled, not executed | Requires separate target and sandbox authorization. A41/API31 Debug evidence does not substitute for API30 P1/P2 execution. |
+| Galaxy A41 SM-A415F, Android 11/API30, ARM64 | [Physical synthetic P1/P2 gates](../phase6_5/DirectShellPhysicalApi30Gates.md): real private storage, Keystore test aliases, JNI publication/collision, localhost TLS/PAKE and owned drain | Exact handset and test-only packages. No production identity, real adbd, suspend/connect or Release qualification follows. |
+| Galaxy A41 SM-A415F, Android 12/API31, ARM64 | [Isolated API31 key reader](../phase6_5/DirectShellPhysicalApi30Gates.md#separate-api31-keystore-probe): absent alias remains absent; test AES256 reports TEE backing, rejects wrong AAD and is removed | No hardware RSA, production provisioning or full API31 synthetic composition claim. Independent of the real-adbd Debug evidence above. |
 
 ## 2026-10-25 Isolated G1-G4 Candidate
 

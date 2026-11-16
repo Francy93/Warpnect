@@ -94,12 +94,21 @@ internal class DirectShellPairingCoordinator(
 
     /** Input is consumed/wiped on every path; no secret is placed in Attempt or StateFlow. */
     @Synchronized
-    fun submitCode(ticket: DirectShellPairingTicket, input: CharArray): Boolean {
+    fun submitCode(
+        ticket: DirectShellPairingTicket,
+        input: CharArray,
+        requireCurrentReadiness: Boolean = false,
+    ): Boolean {
         val code = DirectShellPairingCode.take(input)
         try {
             val attempt = active?.takeIf { it.ticket === ticket } ?: return false
             if (attempt.closing ||
                 mutableState.value.phase != DirectShellPairingPhase.AWAITING_CONSENT_AND_CODE
+            ) {
+                return false
+            }
+            if (requireCurrentReadiness &&
+                hostPairingSetupGeneration(readiness()) != ticket.originReadinessGeneration
             ) {
                 return false
             }
@@ -125,7 +134,14 @@ internal class DirectShellPairingCoordinator(
                 if (operation is DeadlineAwarePairingOperation) {
                     operation.start(
                         code,
-                        DirectShellPairingWorkContext(ticket, attempt.workDeadline!!, clock, scheduler),
+                        DirectShellPairingWorkContext(ticket, attempt.workDeadline!!, clock, scheduler) {
+                            synchronized(this) {
+                                active === attempt && !attempt.closing && attempt.submitted &&
+                                    mutableState.value.phase == DirectShellPairingPhase.DISCOVERING &&
+                                    hostPairingSetupGeneration(readiness()) == ticket.originReadinessGeneration &&
+                                    currentFailure(attempt) == null
+                            }
+                        },
                     )
                 } else {
                     operation.start(code)
@@ -188,6 +204,15 @@ internal class DirectShellPairingCoordinator(
                 }
             }
         }
+    }
+
+    /** Foreground wake hint; a queued timer may be late or already dequeued. */
+    @Synchronized
+    fun reevaluateDeadline() {
+        val attempt = active ?: return
+        if (clock.elapsedRealtimeMs() < attempt.deadline) return
+        disarm(attempt)
+        expireCurrentStage(attempt)
     }
 
     @Synchronized
@@ -704,12 +729,18 @@ internal class DirectShellPairingCoordinator(
                 attempt.timerVersion++
                 if (clock.elapsedRealtimeMs() < attempt.deadline) {
                     arm(attempt)
-                } else if (attempt.closing) {
-                    show(attempt, DirectShellPairingPhase.CLEANUP_INCOMPLETE)
                 } else {
-                    checkCurrent(attempt)
+                    expireCurrentStage(attempt)
                 }
             }
+        }
+    }
+
+    private fun expireCurrentStage(attempt: Attempt) {
+        if (attempt.closing) {
+            show(attempt, DirectShellPairingPhase.CLEANUP_INCOMPLETE)
+        } else {
+            checkCurrent(attempt)
         }
     }
 

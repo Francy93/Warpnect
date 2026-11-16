@@ -3,4 +3,12 @@
     <string name="directshell_pairing_settings_unavailable" translatable="false">Opzioni sviluppatore non disponibili.</string>
     <string name="directshell_pairing_settings_denied" translatable="false">Accesso alle Opzioni sviluppatore non consentito.</string>
     <string name="directshell_pairing_permissions_denied" translatable="false">Autorizzazione non concessa. Puoi riprovare con Mostra notifica pairing oppure tornare a Warpnect.</string>
+    <string name="directshell_private_setup_action" translatable="false">Mostra notifica pairing</string>
+    <string name="directshell_private_setup_channel" translatable="false">Pairing DirectShell</string>
+    <string name="directshell_private_setup_code" translatable="false">Codice di accoppiamento</string>
+    <string name="directshell_private_code_title" translatable="false">Codice DirectShell</string>
+    <string name="directshell_private_code_arm" translatable="false">Autorizza inserimento</string>
+    <string name="directshell_private_code_delete" translatable="false">Cancella cifra</string>
+    <string name="directshell_private_code_confirm" translatable="false">Conferma</string>
+    <string name="directshell_private_code_close" translatable="false">Chiudi</string>
 </resources>

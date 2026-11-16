@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application android:label="Warpnect Private Setup Fixture" tools:replace="android:label">
+        <activity
+            android:name="io.warpnect.platform.privileged.directshell.pairing.DirectShellPrivatePairingActivity"
+            android:exported="false" />
+        <activity
+            android:name="io.warpnect.platform.privileged.directshell.pairing.DirectShellPrivateCodeActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+        <receiver
+            android:name="io.warpnect.platform.privileged.directshell.pairing.DirectShellPrivatePairingReplyReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

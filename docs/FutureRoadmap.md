@@ -1,14 +1,98 @@
 # Future Roadmap
 
+## R1713 RFC-006J Private Entry
+
+[R1713](phase6_5/DirectShellR1713PrivateEntry.md): the private fixture
+has an executable local keypad. The isolated unlocked RemoteInput reply
+was delivered; the observed shade did not retain visible text, but
+system-managed history was not qualified. Keep real pairing codes out
+of RemoteInput pending a decision. Production onboarding, Android A06,
+atomic Keystore writer and real inter-process role authorities remain
+open. **P2_PARTIAL_BLOCKED**.
+
+## R1712 RFC-006J Carrier And Role Boundaries
+
+[R1712](phase6_5/DirectShellR1712CarrierAndRoleBoundaries.md): the
+Samsung API31 lock-screen fixture did not deliver a reply. Do not
+qualify retention or start production RemoteInput enrollment. Next
+P3 work is explicit unlocked foreground entry in a private fixture;
+physical Android backpressure and actual FD/Surface/privileged input
+approval remain separate. **P2_PARTIAL_BLOCKED**.
+
+## R1711 RFC-006J Control Qualification
+
+[R1711](phase6_5/DirectShellR1711ControlQualification.md): standalone Control
+v2 passed UID2000, artifact mapping, HMAC and teardown on A41/API30/31.
+Review launch ownership before product integration, not another identical
+standalone test. Approve the actual FD/Surface and input authority
+boundaries, a real SystemUI gesture gate and a verifiable no-replace
+provider before advancing the remaining roles. **P2_PARTIAL_BLOCKED**.
+
+## R1710 RFC-006J Control And Private Setup
+
+[R1710 evidence and decisions](phase6_5/DirectShellR1710ControlAndPrivateSetup.md):
+both Samsung pairing dialogs show a numeric IPv4 and an ephemeral port
+distinct from reconnect. The offline numeric adapter is not app wiring.
+The distinct minimal Control DEX is isolated and not launched. Keep
+D-P1-D-P4 strict, and review the launch/process witness and Input/PCM/Video
+authority boundaries separately. The private setup fixture passed on the
+two exact A41s, without production registration. **P2_PARTIAL_BLOCKED**.
+
+## R1709 RFC-006J Network And Integration Gates
+
+[R1709](phase6_5/DirectShellR1709NetworkAndIntegration.md): same-device
+Network-bound synthetic TCP and cleanup passed on the exact A41/API30 and
+API31. Next qualify Samsung numeric tuple visibility without pairing and
+review the existing-only key capability option without relaxing no-replace.
+Keep P3 Android delivery unregistered pending lifecycle qualification.
+Extract the narrow P4 Control runtime before adapting the media/input
+roles. P5 remains inactive. **P2_PARTIAL_BLOCKED**.
+
+## R1708 RFC-006J Physical Owner And Prototypes
+
+[R1708](phase6_5/DirectShellR1708Prototypes.md): AF25 PASS on the isolated
+API30 A41. Review strict no-replace alias admission and API30/31 same-device
+Network binding separately. P3 private delivery and P4 offline closure checks
+are prepared but not registered; P5 remains inactive. **P2_PARTIAL_BLOCKED**.
+
+## R1707 RFC-006J First-Enrollment And Integration Gates
+
+[R1707 decision and validation record](phase6_5/DirectShellR1707FirstEnrollment.md):
+D-P1-D-P4 approved, with a single-lease transaction and fail-closed restart
+behavior. A compatible, non-replacing Android alias contract remains open.
+AF25 still needs an isolated A41/API30 with 2 GiB free and no LOW/FULL state.
+Review the API30/31 same-device Network admission, P3 private delivery
+policy and P4 narrow artifact closure before any activation. P5 is inactive.
+**P2_PARTIAL_BLOCKED**; emulator and R0b remain suspended.
+
+## 2026-11-13 RFC-006J Isolated Android Owner
+
+[Owner and dependency review](phase6_5/DirectShellAndroidPairingOwner.md):
+the unregistered DEBUG owner implements the approved no-wakeup policy
+and reuses the original P1 work deadline and physical drain. Keep
+**P2_PARTIAL_BLOCKED**. Next: targeted platform evidence, approve the
+first-enrollment transaction (D-P1-D-P4), review Network/NSD authority and
+the distinct P3/P4 integration and P5 qualification gates.
+
+## 2026-11-13 RFC-006J Physical API30 Evidence
+
+[Physical Android gate](phase6_5/DirectShellPhysicalApi30Gates.md): positive
+P1/P2 localhost composition, key absence, real no-replace collision, recovery,
+cancellation and owned drain now have exact-handset evidence. Keep
+**P2_PARTIAL_BLOCKED**. Remaining critical path: production identity and
+recovery decisions D-P1-D-P4, Android owner/time and Network/NSD admission,
+real-adbd composition, then separately reviewed production setup, runtime
+and Release qualification. Emulator/R0b remain suspended.
+
 ## 2026-11-12 RFC-006J Debug Pairing on A41/API31
 
 [r1702 hardware evidence and Debug consolidation](phase6_5/DirectShellDebugPairingR1702.md):
 one real Host-UI pairing, NSD-bound TLS reconnect, and helper HMAC/shutdown
 passed with verified cleanup. The normal Debug build excludes the diagnostic
 A41 gate and temporary package. No Release or Android synthetic fixture
-runtime qualification follows. **P2_PARTIAL_BLOCKED**; retain existing
-checkpoints and historical negatives. Next: separately authorized AF02
-preflight and AF08 on an isolated physical A41/API30. Emulator/R0b suspended.
+runtime qualification follows from r1702 itself. **P2_PARTIAL_BLOCKED**;
+retain existing checkpoints and historical negatives. The subsequent physical
+API30 gate is recorded above. Emulator/R0b suspended.
 
 ## 2026-11-03 RFC-006J API30 Fixture Independent Checkpoint Review (r1634)
 

@@ -202,7 +202,11 @@ internal class DirectShellPairingWorkContext(
     val deadlineElapsedRealtimeMs: Long,
     val clock: DirectShellPairingClock,
     val scheduler: DirectShellPairingScheduler,
+    private val firstEnrollmentAdmission: () -> Boolean = { false },
 ) {
+    fun mayProvision(ticket: DirectShellPairingTicket): Boolean =
+        this.ticket === ticket && clock.elapsedRealtimeMs() < deadlineElapsedRealtimeMs && firstEnrollmentAdmission()
+
     override fun toString(): String = "DirectShellPairingWorkContext(redacted)"
 }
 

@@ -5,6 +5,14 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** All writers for this alias must use the same namespace lease. Lookup failure must throw. */
+internal interface DirectShellFirstEnrollmentKey : DirectShellPairingWrappingKey {
+    fun aliasAbsent(): Boolean
+
+    /** Checks absence again and invokes mayGenerate immediately before the provider call. */
+    fun generateIfAbsent(mayGenerate: () -> Boolean): Boolean
+}
+
 /**
  * Blocking operation-owned storage, never callable under the P1 monitor. Construction is inert.
  * Only an explicitly submitted operation may call begin(); this is not a pairing backend or UI adapter.
@@ -33,6 +41,7 @@ internal class DirectShellCredentialStorage(
         IO_UNCERTAIN,
         OWNERSHIP_UNRESOLVED,
         FOREIGN_RECORD,
+        PROVISIONING_RECONCILIATION,
     }
 
     data class Inspection(val status: Status) {
@@ -59,6 +68,7 @@ internal class DirectShellCredentialStorage(
     }
 
     data class Preparation(val status: Status, val candidate: Candidate? = null)
+    data class FirstEnrollment(val status: Status, val identity: DirectShellCredentialIdentity? = null)
 
     private val executing = AtomicBoolean(false)
     private var directory: Path? = null
@@ -74,60 +84,107 @@ internal class DirectShellCredentialStorage(
     private var settledReceipt: DirectShellPairingStoreReceipt? = null
     private var ownershipUnknown = false
 
-    /** One-shot, explicit worker boundary. All failures require close(); surviving artifacts are retained. */
-    fun begin(ticket: DirectShellPairingTicket, identity: DirectShellCredentialIdentity): Status =
-        exclusive(Status.BUSY) {
-            if (closed || begun) return@exclusive Status.STALE
-            begun = true
-            if (ticket.credentialRevision != 0L) return@exclusive Status.REVISION_CONFLICT
-            val key = existingKey() ?: return@exclusive Status.KEY_UNAVAILABLE
-            val encrypted = try {
-                DirectShellCredentialCodec.encode(
-                    DirectShellCredentialCodec.Record(
-                        DirectShellCredentialCodec.Kind.RECOVERY,
-                        DirectShellCredentialCodec.binding(ticket),
-                        identity,
-                        null,
-                    ),
-                    key,
-                )
-            } catch (_: Exception) {
-                return@exclusive Status.INVALID_MATERIAL
+    /** The caller owns this storage until close(), including on failure after any persistent effect. */
+    fun beginFirstEnrollment(
+        ticket: DirectShellPairingTicket,
+        work: DirectShellPairingWorkContext,
+        mayStartEffect: () -> Boolean,
+        createIdentity: () -> DirectShellCredentialIdentity,
+    ): FirstEnrollment = exclusive(FirstEnrollment(Status.BUSY)) {
+        fun active() = mayStartEffect() && work.mayProvision(ticket)
+        if (closed || begun || !active()) return@exclusive FirstEnrollment(Status.STALE)
+        begun = true
+        if (ticket.credentialRevision != 0L) return@exclusive FirstEnrollment(Status.REVISION_CONFLICT)
+        val keyOwner = wrappingKey as? DirectShellFirstEnrollmentKey
+            ?: return@exclusive FirstEnrollment(Status.UNSUPPORTED)
+        try {
+            val base = io.canonicalBase(noBackupBase)
+            if (!active()) return@exclusive FirstEnrollment(Status.STALE)
+            val dir = io.prepareNamespace(base)
+            directory = dir
+            if (!active()) return@exclusive FirstEnrollment(Status.STALE)
+            lease = io.acquireLease(dir, true) ?: return@exclusive FirstEnrollment(Status.BUSY)
+            if (!isLeaseOnly(dir) || !keyOwner.aliasAbsent()) {
+                return@exclusive FirstEnrollment(Status.PROVISIONING_RECONCILIATION)
             }
-            try {
-                val base = io.canonicalBase(noBackupBase)
-                val dir = io.prepareNamespace(base)
-                directory = dir
-                lease = io.acquireLease(dir, true) ?: return@exclusive Status.BUSY
-                val initial = inspectOwned(key).status
-                if (initial != Status.EMPTY) return@exclusive initial
-                try {
-                    io.syncDirectory(base)
-                    io.syncDirectory(dir)
-                } catch (failure: Exception) {
-                    return@exclusive platformStatus(failure, Status.UNSUPPORTED)
-                }
-                io.writeNew(dir.resolve(ANCHOR), encrypted)
-                try {
-                    io.syncDirectory(dir)
-                } catch (failure: Exception) {
-                    return@exclusive platformStatus(failure, Status.IO_UNCERTAIN)
-                }
-                // Re-read the exact authenticated anchor before declaring the pre-PAKE gate open.
-                require(MessageDigest.isEqual(encrypted, io.read(dir.resolve(ANCHOR)))) { "credential_anchor_changed" }
-                DirectShellCredentialCodec.decode(encrypted, key)
-                this.ticket = ticket
-                anchorDigest = DirectShellCredentialCodec.digest(encrypted)
-                Status.RECOVERY_READY
-            } catch (_: UnsupportedOperationException) {
-                Status.UNSUPPORTED
-            } catch (_: DirectShellCredentialOwnershipUnresolved) {
-                ownershipUnknown = true
-                Status.OWNERSHIP_UNRESOLVED
-            } catch (failure: Exception) {
-                platformStatus(failure, Status.IO_UNCERTAIN)
+            io.syncDirectory(base)
+            io.syncDirectory(dir)
+            if (!active()) return@exclusive FirstEnrollment(Status.STALE)
+            val identity = createIdentity()
+            if (!isLeaseOnly(dir)) return@exclusive FirstEnrollment(Status.PROVISIONING_RECONCILIATION)
+            if (!active()) return@exclusive FirstEnrollment(Status.STALE)
+            if (!keyOwner.generateIfAbsent { lease?.valid() == true && active() }) {
+                return@exclusive FirstEnrollment(Status.PROVISIONING_RECONCILIATION)
             }
+            // From here on, even a cancelled operation may own an orphan alias. Never compensate.
+            val key = existingKey() ?: return@exclusive FirstEnrollment(Status.KEY_UNAVAILABLE)
+            val encrypted = encodeRecovery(ticket, identity, key)
+            if (!active()) return@exclusive FirstEnrollment(Status.PROVISIONING_RECONCILIATION)
+            require(lease?.valid() == true) { "credential_ownership_lost" }
+            io.writeNew(path(ANCHOR), encrypted)
+            io.syncDirectory(dir)
+            readBackRecovery(ticket, key, encrypted)
+            FirstEnrollment(Status.RECOVERY_READY, identity)
+        } catch (_: UnsupportedOperationException) {
+            FirstEnrollment(Status.UNSUPPORTED)
+        } catch (_: DirectShellCredentialOwnershipUnresolved) {
+            ownershipUnknown = true
+            FirstEnrollment(Status.OWNERSHIP_UNRESOLVED)
+        } catch (failure: Exception) {
+            FirstEnrollment(platformStatus(failure, Status.IO_UNCERTAIN))
         }
+    }
+
+    /** One-shot worker boundary. The optional effect guard must be nonblocking and must not enter P1. */
+    fun begin(
+        ticket: DirectShellPairingTicket,
+        identity: DirectShellCredentialIdentity,
+        mayStartEffect: () -> Boolean = { true },
+    ): Status = exclusive(Status.BUSY) {
+        if (closed || begun) return@exclusive Status.STALE
+        if (wrappingKey is DirectShellFirstEnrollmentKey) return@exclusive Status.UNSUPPORTED
+        begun = true
+        if (ticket.credentialRevision != 0L) return@exclusive Status.REVISION_CONFLICT
+        if (!mayStartEffect()) return@exclusive Status.STALE
+        val key = existingKey() ?: return@exclusive Status.KEY_UNAVAILABLE
+        val encrypted = try {
+            encodeRecovery(ticket, identity, key)
+        } catch (_: Exception) {
+            return@exclusive Status.INVALID_MATERIAL
+        }
+        try {
+            val base = io.canonicalBase(noBackupBase)
+            if (!mayStartEffect()) return@exclusive Status.STALE
+            val dir = io.prepareNamespace(base)
+            directory = dir
+            if (!mayStartEffect()) return@exclusive Status.STALE
+            lease = io.acquireLease(dir, true) ?: return@exclusive Status.BUSY
+            val initial = inspectOwned(key).status
+            if (initial != Status.EMPTY) return@exclusive initial
+            try {
+                io.syncDirectory(base)
+                io.syncDirectory(dir)
+            } catch (failure: Exception) {
+                return@exclusive platformStatus(failure, Status.UNSUPPORTED)
+            }
+            if (!mayStartEffect()) return@exclusive Status.STALE
+            io.writeNew(dir.resolve(ANCHOR), encrypted)
+            try {
+                io.syncDirectory(dir)
+            } catch (failure: Exception) {
+                return@exclusive platformStatus(failure, Status.IO_UNCERTAIN)
+            }
+            readBackRecovery(ticket, key, encrypted)
+            Status.RECOVERY_READY
+        } catch (_: UnsupportedOperationException) {
+            Status.UNSUPPORTED
+        } catch (_: DirectShellCredentialOwnershipUnresolved) {
+            ownershipUnknown = true
+            Status.OWNERSHIP_UNRESOLVED
+        } catch (failure: Exception) {
+            platformStatus(failure, Status.IO_UNCERTAIN)
+        }
+    }
 
     /** Read-only worker checkpoint before protocol entry; never creates, repairs or adopts a record. */
     fun recoveryAdmission(owner: DirectShellPairingTicket): Status = exclusive(Status.BUSY) {
@@ -146,11 +203,13 @@ internal class DirectShellCredentialStorage(
     fun prepare(
         evidence: DirectShellAuthenticatedPairingEvidence,
         authorization: DirectShellStagedAuthorization,
+        mayStartEffect: () -> Boolean = { true },
     ): Preparation = exclusive(Preparation(Status.BUSY)) {
         val current = ticket
         if (closed || current == null || candidate != null || evidence.ticket !== current || authorization.isResolved) {
             return@exclusive Preparation(Status.STALE)
         }
+        if (!mayStartEffect()) return@exclusive Preparation(Status.STALE)
         val key = existingKey() ?: return@exclusive Preparation(Status.KEY_UNAVAILABLE)
         try {
             require(lease?.valid() == true) { "credential_ownership_lost" }
@@ -167,6 +226,7 @@ internal class DirectShellCredentialStorage(
                 ),
                 key,
             )
+            if (!mayStartEffect()) return@exclusive Preparation(Status.STALE)
             io.writeNew(path(PENDING), bytes)
             io.syncDirectory(directory!!)
             require(MessageDigest.isEqual(bytes, io.read(path(PENDING)))) { "credential_candidate_changed" }
@@ -179,27 +239,30 @@ internal class DirectShellCredentialStorage(
         }
     }
 
-    /** P is outside R. No fallback copy/replace and no inference of nonpublication from an unknown exception. */
-    fun publish(value: Candidate, reservation: DirectShellPairingCommitReservation): DirectShellPairingStoreReceipt =
-        exclusive(unknown()) {
-            if (value === candidate && settledReservation === reservation) {
-                settledReceipt?.let { return@exclusive it }
-                if (executionConsumed) return@exclusive unknown()
-            }
-            if (closed || value !== candidate || value.owner !== this || executionConsumed ||
-                value.prepared.ticket !== ticket || value.prepared.expectedCredentialRevision != 0L
-            ) {
-                return@exclusive notPublished()
-            }
-            // Claim one validated in-memory operation, not P. Known failures before publication entry
-            // can now truthfully return NotPublished to P1 without an unproven execution receipt.
-            if (!reservation.claim(value.prepared)) return@exclusive notPublished()
-            executionConsumed = true
-            settledReservation = reservation
-            publishClaimed(value).also { settledReceipt = it }
+    /** P is outside R. A guard can refuse entry to P, never undo P once entered. */
+    fun publish(
+        value: Candidate,
+        reservation: DirectShellPairingCommitReservation,
+        mayStartEffect: () -> Boolean = { true },
+    ): DirectShellPairingStoreReceipt = exclusive(unknown()) {
+        if (value === candidate && settledReservation === reservation) {
+            settledReceipt?.let { return@exclusive it }
+            if (executionConsumed) return@exclusive unknown()
         }
+        if (closed || value !== candidate || value.owner !== this || executionConsumed ||
+            value.prepared.ticket !== ticket || value.prepared.expectedCredentialRevision != 0L
+        ) {
+            return@exclusive notPublished()
+        }
+        // Claim one validated in-memory operation, not P. Known failures before publication entry
+        // can now truthfully return NotPublished to P1 without an unproven execution receipt.
+        if (!reservation.claim(value.prepared)) return@exclusive notPublished()
+        executionConsumed = true
+        settledReservation = reservation
+        publishClaimed(value, mayStartEffect).also { settledReceipt = it }
+    }
 
-    private fun publishClaimed(value: Candidate): DirectShellPairingStoreReceipt {
+    private fun publishClaimed(value: Candidate, mayStartEffect: () -> Boolean): DirectShellPairingStoreReceipt {
         val key = existingKey() ?: return notPublished()
         return try {
             require(lease?.valid() == true) { "credential_ownership_lost" }
@@ -211,6 +274,7 @@ internal class DirectShellCredentialStorage(
                 decoded.kind == DirectShellCredentialCodec.Kind.AUTHENTICATED &&
                     MessageDigest.isEqual(decoded.binding, DirectShellCredentialCodec.binding(ticket!!)),
             ) { "credential_candidate_binding" }
+            if (!mayStartEffect()) return notPublished()
             publicationAttempted = true
             // The storage primitive decides no-replacement at P, not an exists() check at R.
             val outcome = io.publishNoReplace(path(RECORD), path(PENDING))
@@ -257,7 +321,7 @@ internal class DirectShellCredentialStorage(
         try {
             val dir = io.canonicalBase(noBackupBase).resolve(DIRECTORY)
             val attributes = DirectShellCredentialFileSystem.attributes(dir)
-                ?: return@exclusive Inspection(Status.EMPTY)
+                ?: return@exclusive Inspection(inspectEmptyNamespace())
             if (!attributes.isDirectory) return@exclusive Inspection(Status.CORRUPT)
             io.validateNamespace(dir)
             directory = dir
@@ -266,8 +330,12 @@ internal class DirectShellCredentialStorage(
             }
             lease = io.acquireLease(dir, false)
                 ?: return@exclusive Inspection(Status.BUSY)
-            val key = existingKey()
-            val result = if (key == null) Inspection(Status.KEY_UNAVAILABLE) else inspectOwned(key)
+            val result = if (wrappingKey is DirectShellFirstEnrollmentKey && isLeaseOnly(dir)) {
+                Inspection(inspectEmptyNamespace())
+            } else {
+                val key = existingKey()
+                if (key == null) Inspection(Status.KEY_UNAVAILABLE) else inspectOwned(key)
+            }
             if (!io.resourcesDrained()) return@exclusive Inspection(Status.OWNERSHIP_UNRESOLVED)
             if (lease!!.close()) {
                 lease = null
@@ -286,6 +354,47 @@ internal class DirectShellCredentialStorage(
                 Inspection(platformStatus(failure, Status.IO_UNCERTAIN))
             }
         }
+    }
+
+    private fun inspectEmptyNamespace(): Status =
+        if (wrappingKey is DirectShellFirstEnrollmentKey && !wrappingKey.aliasAbsent()) {
+            Status.PROVISIONING_RECONCILIATION
+        } else {
+            Status.EMPTY
+        }
+
+    private fun isLeaseOnly(dir: Path): Boolean {
+        require(lease?.valid() == true) { "credential_ownership_lost" }
+        return Files.newDirectoryStream(dir).use { entries ->
+            val cursor = entries.iterator()
+            cursor.hasNext() && cursor.next().fileName.toString() == LOCK && !cursor.hasNext()
+        }
+    }
+
+    private fun encodeRecovery(
+        ticket: DirectShellPairingTicket,
+        identity: DirectShellCredentialIdentity,
+        key: DirectShellCredentialAead,
+    ) = DirectShellCredentialCodec.encode(
+        DirectShellCredentialCodec.Record(
+            DirectShellCredentialCodec.Kind.RECOVERY,
+            DirectShellCredentialCodec.binding(ticket),
+            identity,
+            null,
+        ),
+        key,
+    )
+
+    private fun readBackRecovery(
+        owner: DirectShellPairingTicket,
+        key: DirectShellCredentialAead,
+        encrypted: ByteArray,
+    ) {
+        val actual = io.read(path(ANCHOR))
+        require(MessageDigest.isEqual(encrypted, actual)) { "credential_anchor_changed" }
+        DirectShellCredentialCodec.decode(actual, key)
+        ticket = owner
+        anchorDigest = DirectShellCredentialCodec.digest(actual)
     }
 
     private fun inspectOwned(key: DirectShellCredentialAead): Inspection {

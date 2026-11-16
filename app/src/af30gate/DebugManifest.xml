@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="io.warpnect.debug.storage.PairingStorageFixtureService"
+            android:exported="false"
+            android:process=":pairing_storage_fixture" />
+    </application>
+</manifest>

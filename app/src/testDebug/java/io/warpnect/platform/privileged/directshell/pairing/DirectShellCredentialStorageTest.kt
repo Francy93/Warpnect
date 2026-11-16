@@ -107,6 +107,43 @@ class DirectShellCredentialStorageTest {
     }
 
     @Test
+    fun `worker expiry during recovery setup leaves no encrypted anchor`() {
+        var live = true
+        val fs = object : ModeledDirectorySync() {
+            override fun syncDirectory(path: Path) {
+                super.syncDirectory(path)
+                live = false
+            }
+        }
+        val s = store(fs)
+        assertEquals(StorageStatus.STALE, s.begin(ticket, StorageFixture.identity) { live })
+        assertFalse(Files.exists(path(DirectShellCredentialStorage.ANCHOR)))
+        assertTrue(s.close())
+    }
+
+    @Test
+    fun `worker expiry prevents pending write and retains existing anchor`() {
+        val s = begin()
+        val result = s.prepare(StorageFixture.evidence(ticket), DirectShellStagedAuthorization {}) { false }
+        assertEquals(StorageStatus.STALE, result.status)
+        assertTrue(Files.exists(path(DirectShellCredentialStorage.ANCHOR)))
+        assertFalse(Files.exists(path(DirectShellCredentialStorage.PENDING)))
+    }
+
+    @Test
+    fun `claim followed by expiry before native entry cannot publish or retry`() {
+        val s = begin()
+        val c = prepare(s)
+        val reservation = DirectShellPairingCommitReservation.issue(c.prepared)
+        val receipt = s.publish(c, reservation) { false }
+        assertTrue(reservation.wasClaimed)
+        assertEquals(DirectShellPairingPublication.NOT_PUBLISHED, receipt.publication)
+        assertEquals(receipt, s.publish(c, reservation))
+        assertTrue(Files.exists(path(DirectShellCredentialStorage.PENDING)))
+        assertFalse(Files.exists(path(DirectShellCredentialStorage.RECORD)))
+    }
+
+    @Test
     fun `unexportable or non AES256 wrapping key remains unsupported`() {
         key = SecretKeySpec(ByteArray(16), "AES")
         assertEquals(StorageStatus.KEY_UNAVAILABLE, store().begin(ticket, StorageFixture.identity))

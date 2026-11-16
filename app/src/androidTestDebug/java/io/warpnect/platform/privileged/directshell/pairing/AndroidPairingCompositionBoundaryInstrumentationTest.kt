@@ -218,7 +218,7 @@ class AndroidPairingCompositionBoundaryInstrumentationTest {
         assertTrue(Files.exists(o.fixture!!.record))
         assertFalse(Files.exists(o.fixture!!.directory.resolve(DirectShellCredentialStorage.PENDING)))
         assertEquals(DirectShellPairingPublication.UNKNOWN, o.p1.state.value.publication)
-        assertEquals(DirectShellPairingPhase.RECONCILIATION_REQUIRED, o.p1.state.value.phase)
+        assertEquals(DirectShellPairingPhase.COMMIT_OUTCOME_UNKNOWN, o.p1.state.value.phase)
         assertTrue(o.p1.state.value.drained)
         assertNull(o.p1.request(1))
     }

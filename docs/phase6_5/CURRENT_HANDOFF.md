@@ -1,5 +1,101 @@
 # Phase 6.5 Current Handoff
 
+## R1713 Private Code Entry And Local Handle Qualification
+
+[R1713 report](DirectShellR1713PrivateEntry.md): the isolated foreground
+keypad passed lifecycle and synthetic delivery on both A41s. It binds
+one explicit P1 ticket and keeps the code out of RemoteInput, saved state
+and IME. Samsung dialog continuity and split-screen remain unverified.
+The distinct unlocked API31 SystemUI test observed
+one real submission with no text visible afterwards in the observed
+shade; system history and retention are not qualified. See the Samsung
+interaction outcome in the report before relying on a foreground flow.
+Local Android PCM/Surface handle duplication and release are not
+inter-process or production media qualification. **P2_PARTIAL_BLOCKED**;
+no emulator, R0b or Release activation.
+
+## R1712 Samsung Carrier And Independent Role Work
+
+[R1712 evidence](DirectShellR1712CarrierAndRoleBoundaries.md): on the
+exact A41/API31, the isolated notice was seen unlocked, hidden while
+locked, and absent after unlock in both trials. No reply was sent;
+retention and platform authentication are unqualified. Prefer explicit
+foreground entry for secrets. The unregistered foreground lifecycle,
+Wi-Fi resampling, owned TLS stress and typed role drain progress do
+not enable production pairing or media. **P2_PARTIAL_BLOCKED**;
+emulator/R0b remain suspended.
+
+## R1711 Physical Control, Role Contracts And Private Integration
+
+[R1711 evidence](DirectShellR1711ControlQualification.md): the unchanged
+Control v2 DEX passed on the exact A41/API30 and API31, including UID2000,
+independent mapping/listener evidence, authenticated frames and actual
+teardown. The first API30 binary-pipe failure remains recorded. Input,
+PCM and video have typed software boundaries, not production gateways.
+The private lock policy and Network observer are unregistered. No writer,
+real pairing, Host/Session or Release activation. **P2_PARTIAL_BLOCKED**;
+emulator and R0b remain suspended.
+
+## R1710 Numeric Route, Private Setup And Control
+
+[R1710 evidence](DirectShellR1710ControlAndPrivateSetup.md) records the
+two Samsung numeric observations, the offline pairing-only route,
+isolated P3 delivery, blocked channel and stale reply after process
+death on A41/API30 and API31, and the standalone Control artifact. Production
+Keystore no-replace remains unresolved. No privileged helper launch,
+production pairing, Host/Session or Release activation. **P2_PARTIAL_BLOCKED**;
+emulator and R0b remain suspended.
+
+## R1709 Physical Network And Integration Review
+
+[R1709 evidence](DirectShellR1709NetworkAndIntegration.md): the isolated
+Network-bound TCP fixture passed once on each A41/API30 and API31, with
+verified cleanup. No physical link loss, Samsung numeric tuple or new
+pairing was observed. P3 Android components are unregistered; actual Debug
+helper closure is not eligible for a P4 DEX. Strict no-replace is unchanged.
+Overall **P2_PARTIAL_BLOCKED**; emulator and R0b remain suspended.
+
+## R1708 Physical Owner And Independent Prototypes
+
+[R1708 report](DirectShellR1708Prototypes.md): the sealed r1706 AF25 passed
+once on isolated A41/API30, with observed resource drain and cleanup. The
+writer intent, numeric route and private setup experiments remain unregistered;
+the P4 review JAR pipeline does not package an active helper. No public
+AndroidKeyStore no-replace writer is qualified. Overall **P2_PARTIAL_BLOCKED**;
+no new real adbd, Host, Session or Release wiring. Earlier LOW stop is preserved.
+
+## R1707 First-Enrollment Transaction And AF25 Stop
+
+[Accepted decisions, implementation and remaining gates](DirectShellR1707FirstEnrollment.md).
+D-P1-D-P4 are accepted; the host-testable transaction owns one writer lease.
+No Android key writer is declared safe on the evidence available. AF25
+stopped before installation on the A41/API30 because `/data` was LOW and
+below 2 GiB. Existing fixture results are undisturbed. P3 has an unregistered
+ticket carrier and P4 a role/artifact inventory, not production wiring.
+Overall **P2_PARTIAL_BLOCKED**. Emulator and R0b stay suspended.
+
+## 2026-11-13 Isolated Android DirectShell Owner
+
+See [owner, elapsed deadlines and next decisions](DirectShellAndroidPairingOwner.md).
+R1706 composes the existing synthetic operation and drain handoff with one
+unregistered DEBUG Android owner. Resume rechecks elapsed deadlines without
+waking the phone; worker guards close the gap before starting new connect
+or storage effects. This does not restore consent, qualify real suspend, or
+activate production provisioning, Network/NSD, Host, Session or Release.
+Overall **P2_PARTIAL_BLOCKED**; emulator/R0b remain suspended.
+
+## 2026-11-13 Physical DirectShell Gates
+
+See [runtime evidence and dependency matrix](DirectShellPhysicalApi30Gates.md).
+r1704 AF02/AF08 passed on an isolated physical A41/API30. r1705 adds native
+collision, authenticated recovery, stalled TLS/PAKE, cancellation, lease and
+drain, and Android component evidence: 69/69 distinct methods across two
+artifact cohorts, with the first AF12 failure retained. The separate API31
+probe confirms the existing-only AES reader and platform backing on a fresh
+test alias, with cleanup verified. Historical compile-only statements below
+describe their original checkpoints. None qualifies production pairing or
+Release. Keep **P2_PARTIAL_BLOCKED**, with emulator/R0b suspended.
+
 ## 2026-11-12 DirectShell Debug Pairing Consolidation
 
 [Hardware receipt and remaining gates](DirectShellDebugPairingR1702.md):
@@ -10,8 +106,8 @@ APK/association were removed; Debug wireless was restored to Off. The ordinary
 Debug changes preserve the path without the A41-specific diagnostic gate.
 Hardware evidence applies to r1702, not to the new APK bytes or Release.
 
-Android synthetic P1/P2 remains compiled/software-tested, not runtime
-validated. Overall **P2_PARTIAL_BLOCKED**. Prefer a separately authorized
+At the r1703 consolidation Android synthetic P1/P2 had only compile/software
+evidence; see the later runtime record above. At the time the proposed gate was an
 exact-API30 physical A41 for the existing AF02 preflight and one AF08; no
 production keys, real pairing, Release activation or emulator/R0b resumption.
 

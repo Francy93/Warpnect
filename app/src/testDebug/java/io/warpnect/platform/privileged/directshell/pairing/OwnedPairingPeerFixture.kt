@@ -40,6 +40,7 @@ internal class OwnedPairingPeerFixture(
     enum class Mode {
         SUCCESS,
         TLS_STALL,
+        TLS_APPLICATION_BACKPRESSURE,
         PAKE_STALL,
         TRICKLE,
         WRONG_CODE,
@@ -88,12 +89,15 @@ internal class OwnedPairingPeerFixture(
         val tls = TlsServerProtocol(socket.getInputStream(), socket.getOutputStream())
         tls.accept(object : DefaultTlsServer(crypto) {
             override fun getProtocolVersions(): Array<ProtocolVersion> = ProtocolVersion.TLSv13.only()
-            override fun getCertificateRequest() = CertificateRequest(
-                byteArrayOf(),
-                Vector(listOf(SignatureAndHashAlgorithm.rsa_pss_rsae_sha256)),
-                null,
-                null,
-            )
+            override fun getCertificateRequest(): CertificateRequest? {
+                if (mode == Mode.TLS_APPLICATION_BACKPRESSURE) return null
+                return CertificateRequest(
+                    byteArrayOf(),
+                    Vector(listOf(SignatureAndHashAlgorithm.rsa_pss_rsae_sha256)),
+                    null,
+                    null,
+                )
+            }
             override fun notifyClientCertificate(certificate: Certificate) {
                 check(!certificate.isEmpty)
                 val encoded = certificate.getCertificateAt(0).encoded
@@ -118,6 +122,11 @@ internal class OwnedPairingPeerFixture(
                 exported.set(context.exportKeyingMaterial("adb-label\u0000", null, 64))
             }
         })
+        if (mode == Mode.TLS_APPLICATION_BACKPRESSURE) {
+            boundary.countDown()
+            check(proceed.await(10, TimeUnit.SECONDS))
+            return
+        }
         val input = DataInputStream(tls.inputStream)
         val output = DataOutputStream(tls.outputStream)
         val alice = read(input, 0)

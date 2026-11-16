@@ -96,6 +96,75 @@ class DirectShellPairingTransportTest {
         assertTrue(op.observe().drained)
     }
 
+    @Test fun failedTimerRegistrationRetiresBorrowedCodeWithoutDispatchOrRetry() {
+        val creates = AtomicInteger()
+        val op = Transport(
+            ticket,
+            InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), 1),
+            61_000,
+            time,
+            { _, _ -> throw IllegalStateException("test_timer_registration") },
+            { error("unexpected_recovery") },
+            SimpleProtocol(),
+            {
+                creates.incrementAndGet()
+                Socket()
+            },
+        ).also { operations += it }
+        assertFalse(start(op))
+        assertFalse(start(op))
+        val receipt = op.awaitDrain()
+        assertTrue(receipt.drained)
+        assertTrue(receipt.codeReleased)
+        assertEquals(Transport.Outcome.FAILED, receipt.outcome)
+        assertEquals(Transport.SocketClosure.NOT_CREATED, receipt.socket)
+        assertEquals(DirectShellPairingExternalEffect.NONE_POSSIBLE, receipt.externalEffect)
+        assertEquals(0, creates.get())
+    }
+
+    @Test fun ownedWorkerCannotBlockOnItsOwnDrain() {
+        lateinit var transport: Transport
+        val verified = CountDownLatch(1)
+        val protocol = object : Transport.Protocol {
+            override fun exchange(socket: Socket, code: CharArray, checkActive: () -> Unit): Transport.Completion {
+                val sample = transport.awaitDrain(0)
+                assertFalse(sample.drained)
+                assertFalse(sample.ioWorkerTerminated)
+                val failure = runCatching { transport.awaitDrain(3_000) }.exceptionOrNull()
+                assertEquals("pairing_transport_self_join", failure?.message)
+                verified.countDown()
+                return Transport.Completion.FIXTURE_VERIFIED
+            }
+
+            override fun release() = true
+        }
+        transport = operation(protocol = protocol, connector = { _, _, _ -> })
+        assertTrue(start(transport))
+        assertTrue(verified.await(2, TimeUnit.SECONDS))
+        assertTrue(transport.awaitDrain().drained)
+    }
+
+    @Test fun elapsedExpiryDuringSocketSetupDoesNotGrantAMinimumConnectBudget() {
+        val connects = AtomicInteger()
+        val op = operation(
+            sockets = {
+                object : Socket() {
+                    override fun setSoLinger(on: Boolean, linger: Int) {
+                        time.now.set(61_000)
+                    }
+                }
+            },
+            connector = { _, _, _ -> connects.incrementAndGet() },
+        )
+        assertTrue(start(op))
+        val receipt = op.awaitDrain()
+        assertTrue(receipt.drained)
+        assertEquals(Transport.Outcome.EXPIRED, receipt.outcome)
+        assertEquals(Transport.SocketClosure.CLOSED, receipt.socket)
+        assertEquals(DirectShellPairingExternalEffect.NONE_POSSIBLE, receipt.externalEffect)
+        assertEquals(0, connects.get())
+    }
+
     @Test fun t03ActualRefusedLoopbackConnectFailsOnceAndDrains() {
         val port = ServerSocket(0, 1, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))).use { it.localPort }
         val creates = AtomicInteger()

@@ -1,5 +1,40 @@
 # DirectShell Release Pairing Architecture
 
+## R1707 First-Enrollment Contract, Release Still Inactive
+
+[R1707](DirectShellR1707FirstEnrollment.md) supersedes the earlier pending
+D-P1-D-P4 decision status. The single-lease transaction does not admit the
+public Android generator against an ambiguously absent alias. Network/NSD,
+production setup/notifications, the closed P4 helper artifact, and Release
+activation remain separate decisions. P5 remains inactive.
+
+## 2026-11-13 Isolated Android Owner
+
+[R1706](DirectShellAndroidPairingOwner.md) supplies the approved no-wakeup
+owner and elapsed-time policy in an unregistered DEBUG fixture. This is not
+application registration, consent restoration, provisioning, or a new
+Release backend. Network/NSD authority and D-P1-D-P4 remain separate.
+
+## 2026-11-13 Physical Synthetic Evidence, Production Decisions Open
+
+The [physical API30 receipt](DirectShellPhysicalApi30Gates.md) covers the
+synthetic composition and separate storage/native/multiprocess checks on one
+ARM64 Samsung build. It is independent of the earlier real-adbd Debug path.
+The same receipt records the recommended first-enrollment transaction and
+crash dispositions for D-P1-D-P4. These are not accepted policy. The Android
+owner/timer and Network admission still require review before wiring, and
+P3-P5 are not activated. Overall **P2_PARTIAL_BLOCKED**.
+
+P4 cannot be enabled by moving the Debug provider into Release:
+`DirectShellRuntimeAutoRegistrationProvider.onCreate` also registers Root
+laboratory implementations and cleans abandoned Root-lab files, and the Debug
+bootstrap contract lists additional smoke/server entry points. The first P4
+review should identify an allowlist of the production server, artifact and
+commands needed for the existing Host acquisition, prove its negative class/
+manifest closure, and leave the Release adapter unavailable. Pair-only
+completion must still start no helper; only a later explicit Host acquisition
+can use that bundle.
+
 ## 2026-11-12 Debug Evidence, Release Boundary Unchanged
 
 [r1702](DirectShellDebugPairingR1702.md) demonstrates the existing Debug Host-UI

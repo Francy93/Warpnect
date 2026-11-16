@@ -36,7 +36,7 @@ class PairingStorageFixtureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? {
         if (android.os.Build.VERSION.SDK_INT < 30) return null
-        check(processName() == PairingStorageFixtureProtocol.PROCESS)
+        check(processName() == PairingStorageFixtureProtocol.processName(packageName))
         return object : Binder() {
             override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
                 if (!PairingStorageFixtureProtocol.allowed(code)) return super.onTransact(code, data, reply, flags)

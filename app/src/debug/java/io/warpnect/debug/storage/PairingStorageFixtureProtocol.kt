@@ -5,7 +5,7 @@ import java.util.UUID
 /** Fixed DEBUG fixture protocol. No paths, key bytes, commands or production alias cross Binder. */
 internal object PairingStorageFixtureProtocol {
     const val DESCRIPTOR = "io.warpnect.debug.storage.fixture.v1"
-    const val PROCESS = "io.warpnect:pairing_storage_fixture"
+    private const val PROCESS_SUFFIX = ":pairing_storage_fixture"
     const val PREFIX = "wn-multiprocess-storage-"
     const val ALIAS = "warpnect.test.directshell.pairing.aes256.v1."
     const val CONFIGURE = 1
@@ -26,4 +26,6 @@ internal object PairingStorageFixtureProtocol {
     }
 
     fun allowed(operation: Int): Boolean = operation in CONFIGURE..EXIT
+
+    fun processName(packageName: String): String = packageName + PROCESS_SUFFIX
 }

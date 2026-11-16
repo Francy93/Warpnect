@@ -14,6 +14,10 @@ Current ADRs:
 - [ADR-0002 - SCL Over UDP](adr/ADR-0002-scl-over-udp.md)
 - [ADR-0003 - Android First](adr/ADR-0003-android-first.md)
 
+RFC-006J: [D-P1 through D-P4 first-enrollment decisions](phase6_5/DirectShellR1707FirstEnrollment.md#accepted-rfc-006j-addendum-d-p1-through-d-p4)
+are approved by the R1707+ operator instruction. This does not approve a new
+Android alias policy, production credentials, Network/NSD, or Release wiring.
+
 ## Rules
 
 An ADR is required for changes to:

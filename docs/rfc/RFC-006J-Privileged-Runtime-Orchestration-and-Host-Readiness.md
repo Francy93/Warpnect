@@ -49,6 +49,10 @@ runtime discovery
 
 ## Current Facts
 
+* The operator accepted [D-P1 through D-P4](../phase6_5/DirectShellR1707FirstEnrollment.md#accepted-rfc-006j-addendum-d-p1-through-d-p4)
+  for a future production first-enrollment transaction. The accepted storage
+  design does not authorize production key creation, adbd, Network/NSD or
+  Release runtime activation. An Android proof of safe alias absence remains open.
 * RFC-006I's static planner and complete-plan admission already exist. A frozen
   plan is required before Host publication, discovery, WNCP, or Session setup.
 * DirectShell has hardware evidence for Video, SystemAudio, and Input on the
@@ -68,6 +72,27 @@ runtime discovery
   evidence for that Debug path, not Android synthetic P1/P2 or Release
   qualification. `P2_PARTIAL_BLOCKED` and the accepted authority contracts
   are unchanged.
+* The [physical API30 gates](../phase6_5/DirectShellPhysicalApi30Gates.md)
+  provide distinct evidence for the synthetic P1/P2 composition on one
+  isolated Android 11 handset. No real adbd or production credentials were
+  used by that fixture. This is not an authority amendment or Release gate.
+* [R1709](../phase6_5/DirectShellR1709NetworkAndIntegration.md) observed
+  one Network-bound TCP exchange with a same-device synthetic peer on the
+  exact A41/API30 and A41/API31. This does not qualify production endpoint
+  admission, the AndroidKeyStore writer, actual link loss or real adbd.
+  Private setup components remain unregistered; the Debug helper is not
+  eligible for the proposed minimal production closure.
+* [R1710](../phase6_5/DirectShellR1710ControlAndPrivateSetup.md) records
+  separate Samsung pairing/reconnect ports, an unregistered Network-bound
+  pairing-only adapter, and a standalone three-command Control artifact.
+  The artifact was not launched on Android. The review preserves
+  D-P1-D-P4 strict no-replace; the probability-based alias option does not
+  qualify or amend the accepted contract.
+* [R1711](../phase6_5/DirectShellR1711ControlQualification.md) qualifies the
+  sealed standalone Control v2 DEX on two exact A41 firmwares. Physical
+  identity, HMAC and actual owned teardown are distinct from production
+  launcher, media/input runtime and Release evidence. The unregistered
+  Wi-Fi and private carrier policies do not amend P1 or D-P1-D-P4.
 * Existing capability evidence is useful but cannot by itself prove that a
   volatile runtime, authorization, network endpoint, or provider process is
   usable now.
