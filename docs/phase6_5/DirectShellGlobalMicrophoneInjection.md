@@ -525,7 +525,7 @@ type18, default type25 and other platform inputs. Dynamic IDs are not hardcoded.
 | Host | Same backend result | First boundary |
 | --- | --- | --- |
 | Tablet/API33 | Prerequisite SUPPORTED; global E2E pending | UID2000 has MODIFY_AUDIO_ROUTING, CAPTURE_AUDIO_OUTPUT, RECORD_AUDIO, MODIFY_AUDIO_SETTINGS; policy registration and natural MIC routing work |
-| A41 SM-A415F/API31, `R58N52B32JJ` | GLOBAL_CAPTURE_PRESET_INJECTION_PERMISSION_BLOCKED | Current shell lacks MODIFY_AUDIO_ROUTING; other three relevant permissions granted; no policy registered, physical inputs unchanged |
+| A41 SM-A415F/API31, `TESTUNIT002` | GLOBAL_CAPTURE_PRESET_INJECTION_PERMISSION_BLOCKED | Current shell lacks MODIFY_AUDIO_ROUTING; other three relevant permissions granted; no policy registered, physical inputs unchanged |
 | S7 SM-G935F/API26, `9886734e4937395657` | GLOBAL_CAPTURE_PRESET_INJECTION_API_UNAVAILABLE in current adapter | `API_LT_31_CONTEXT_UNSUPPORTED` shell-context construction; not proof that all API26 framework mechanisms are impossible |
 
 A41 fingerprint `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys`.

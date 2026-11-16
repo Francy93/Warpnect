@@ -1,5 +1,45 @@
 # Future Roadmap
 
+## 2026-10-25 Bounded Video Diagnostic
+
+[The first-full observer](phase6_5/VideoReassemblyFirstFullDiagnostic.md)
+follows the isolated protected replay checkpointf0c6d87. It is an opt-in DEBUG
+discriminator, not a recovery policy or hardware-validation result. A narrow
+HOME/REOPEN proposal is documented but not executed. Phase7 R2/S0, protocols,
+audio defaults and provider planning remain unchanged.
+Source142e467 is implemented/software validated with its scoped report and
+frozen APK, not a new hardware qualification or a production recovery fix.
+
+## 2026-10-25 Video Replay Scope
+
+[The HOME/REOPEN replay](phase6_5/VideoHomeReopenDeterministicReplay.md) adds
+protected native and Session lifecycle characterization above frozen656c378.
+The occupancy/error signature is reproducible, but historical root attribution
+and hardware acceptance remain PARTIAL. No product fix or Phase7 change is
+promoted. A bounded first-full slot snapshot is the next proposed discriminator;
+no new installation or campaign is performed in this task.
+
+## 2026-10-25 G5 Software Receipt
+
+The [G5 diagnostic receipt](phase6_5/DirectShellDiagnosticConsolidation.md)
+records isolated local checkpoints99f0bfc/f8cf491 and integrated software gates:
+1155 JVM,26/26 native Debug and Release, Android Debug/Release builds and lint.
+New runtime observations are DEBUG-only, explicit opt-in and default OFF;
+output24ms/fault/Phase7 tools are excluded. The selected G1-G5 branch is ready
+for controlled source integration, not a merge, hardware qualification or release
+promotion. Original dirty evidence and frozen G1-G4 remain intact. RFC-006I/J,
+Phase7 R2/S0 state and the independent audio/Video/timestamp debts are unchanged.
+
+## 2026-10-25 G1-G4 Consolidation Receipt
+
+The [isolated functional baseline](phase6_5/DirectShellFunctionalConsolidation.md)
+records local logical checkpoints and software verification, not a development
+branch merge or fresh hardware/release qualification. RFC-006I static planning
+already exists; no planner/provider/recovery work is begun. Outstanding audio,
+Video, timestamp and full Android regression debt remains explicit. Phase7 R2
+and its separate S0/prototype plan are preserved unchanged in the original dirty
+worktree; no future optimization is imported into this source projection.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This roadmap is architectural context. Phase 1 core networking and Phase 2 core video implementation are complete.

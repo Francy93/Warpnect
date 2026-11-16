@@ -1,5 +1,50 @@
 # Current Phase 6.5 Non-Root Debt (2026-10-04)
 
+## 2026-10-25 First-Full Diagnostic Scope
+
+[DEBUG first-full metadata](VideoReassemblyFirstFullDiagnostic.md) targets the
+missing slot/group/bitmap/age discriminator with5808-byte storage,64 events and
+one frozen capture per Session. Default OFF and Release exclusion preserve the
+recovery contract; host overhead is not Android qualification. The actual
+historical incomplete AU remains unattributed pending separately authorized
+hardware evidence. No Video/audio/provider debt is silently closed.
+Source142e467 is software validated (1159 JVM,27+27 native, three-ABI compile/
+symbol exclusion); enabled Android timing and hardware attribution remain pending.
+
+## 2026-10-25 Video Replay Boundary
+
+[Protected deterministic replay](VideoHomeReopenDeterministicReplay.md) shows
+that a genuine partial AU plus a pre-expiry burst is sufficient for the observed
+full8/ready0 signature. Late-tail recreation after expiry has different timeout
+accounting and is not attributed to the hardware episode. The missing per-slot
+identity/bitmap/age prevents a verified root-cause fix. No capacity-error policy,
+security, provider or audio changes; Video HOME/REOPEN and all independent debts
+remain open. The next discriminator is bounded first-full metadata, not a larger
+window or automatic recovery.
+
+## 2026-10-25 G5 Software Scope
+
+The [G5 receipt](DirectShellDiagnosticConsolidation.md) consolidates only safe,
+opt-in DEBUG observations and offline guards above the frozen G1-G4 baseline.
+1155 JVM,26+26 native and integrated Android/Release gates pass. Debug lint has
+134 warnings (132 historical plus2 cross-method trace findings); Release has42,
+with no errors or suppressions. Software-ready integration does not close
+hardware/preset/API/release-default qualification, enabled-observer timing cost,
+existing DEBUG trust/export/reflection debt or any audio/Video/timestamp failure.
+Original experiments/evidence, accepted RFC-006I/J and Phase7 R2 remain unchanged;
+no fallback, recovery, migration or S0 implementation is introduced.
+
+## 2026-10-25 Consolidation Scope
+
+The [isolated G1-G4 receipt](DirectShellFunctionalConsolidation.md) supersedes
+the old assumption that HEAD alone reproduces the selected microphone source,
+but only on its dedicated consolidation branch. It does not close integrated
+hardware/preset/API/release qualification. SystemAudio RX/AAudio/dispatch,
+Video HOME/REOPEN/EADDRINUSE and same-quality S9 microphone timestamp failures
+remain open. API26 legacy policy adaptation exists; tested API26/API31 routing
+authority denials remain truthful. No provider recovery, new qualification,
+Phase7 actuator/S0 implementation or release-default availability is inferred.
+
 This is the current debt index, not a rewrite of historical experiment reports.
 Evidence order: repository/runtime, current Phase 6.5 reports and compatibility
 matrix, accepted RFC-006I/J, then older reports/checklists. Implementation,

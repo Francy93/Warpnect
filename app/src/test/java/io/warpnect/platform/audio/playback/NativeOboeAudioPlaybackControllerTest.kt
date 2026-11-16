@@ -14,11 +14,93 @@ import io.warpnect.audio.playback.AudioPresentationTimestampResult
 import io.warpnect.audio.playback.AudioSourcePresentationAnchorResult
 import io.warpnect.audio.playback.DecodedPcmMetadata
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeOboeAudioPlaybackControllerTest {
+    @Test fun microphoneRingAdmissionIsIndependentOfNumericObservation() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        controller.prepare(config())
+        val pcm = directPcm()
+        controller.submitPcm(pcm, 0, 480, 240, metadata())
+        controller.start()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        backend.beforeSnapshot = {
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+        }
+        val observer = Thread { controller.sampleMicrophoneDiagnostics() }
+        observer.start()
+        try {
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            val admitted = CountDownLatch(1)
+            val producer = Thread {
+                repeat(10) {
+                    assertEquals(
+                        AudioPlaybackError.None,
+                        controller.admitMicrophonePcm(pcm, 0, 480, 240, metadata()).error,
+                    )
+                }
+                admitted.countDown()
+            }
+            producer.start()
+            assertTrue(admitted.await(1, TimeUnit.SECONDS))
+            producer.join(1000)
+            assertEquals(11, backend.submitCalls)
+            assertEquals(
+                AudioPlaybackError.ConfigGenerationMismatch,
+                controller.admitMicrophonePcm(pcm, 0, 480, 240, metadata(2)).error,
+            )
+            assertEquals(11, backend.submitCalls)
+        } finally {
+            release.countDown()
+            observer.join(2000)
+            controller.close()
+        }
+        assertEquals(AudioPlaybackError.NotRunning, controller.admitMicrophonePcm(pcm, 0, 480, 240, metadata()).error)
+    }
+
+    @Test fun closeWaitsForInFlightRingCopyAndRejectsLaterPcm() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        val pcm = directPcm()
+        controller.prepare(config())
+        controller.submitPcm(pcm, 0, 480, 240, metadata())
+        controller.start()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        backend.beforeSubmit = {
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+        }
+        val producer = Thread { controller.admitMicrophonePcm(pcm, 0, 480, 240, metadata()) }
+        producer.start()
+        try {
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            Thread {
+                controller.close()
+                closed.countDown()
+            }.start()
+            assertTrue(!closed.await(100, TimeUnit.MILLISECONDS))
+            assertEquals(0, backend.destroyCalls)
+            assertEquals(
+                AudioPlaybackError.NotRunning,
+                controller.admitMicrophonePcm(pcm, 0, 480, 240, metadata()).error,
+            )
+        } finally {
+            release.countDown()
+            producer.join(2000)
+        }
+        assertTrue(closed.await(2, TimeUnit.SECONDS))
+        assertEquals(1, backend.destroyCalls)
+    }
+
     @Test
     fun preparePrimeAndStart() {
         val backend = FakePlaybackBackend()
@@ -27,6 +109,10 @@ class NativeOboeAudioPlaybackControllerTest {
         assertEquals(AudioPlaybackError.None, controller.prepare(config()).error)
         assertEquals(AudioPlaybackState.Prepared, controller.snapshot().state)
         assertEquals(AudioPlaybackError.PlaybackNotPrimed, controller.start().error)
+        assertEquals(
+            AudioPlaybackError.NotRunning,
+            controller.admitMicrophonePcm(directPcm(), 0, 480, 240, metadata()).error,
+        )
 
         val pcm = directPcm()
         assertEquals(
@@ -98,7 +184,7 @@ class NativeOboeAudioPlaybackControllerTest {
     fun presentationTimestampAndStopRestartClose() {
         val backend = FakePlaybackBackend()
         val controller = NativeOboeAudioPlaybackController(backend)
-        assertEquals(AudioPlaybackError.None, controller.prepare(config()).error)
+        assertEquals(AudioPlaybackError.None, controller.prepare(config(source = AudioCaptureSource.SystemAudio)).error)
         val pcm = directPcm()
         assertEquals(AudioPlaybackError.None, controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata()).error)
         assertEquals(AudioPlaybackError.None, controller.start().error)
@@ -120,6 +206,26 @@ class NativeOboeAudioPlaybackControllerTest {
         controller.close()
         controller.close()
         assertEquals(1, backend.destroyCalls)
+    }
+
+    @Test
+    fun stopRetainsFinalCallbackEvidenceWithoutAnotherPcmSubmission() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        controller.prepare(config())
+        val pcm = directPcm()
+        controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata())
+        controller.start()
+        backend.finalUnderrunTimeNs = 55_000L
+
+        val stopped = controller.stop()
+
+        assertEquals(AudioPlaybackError.None, stopped.error)
+        assertEquals(AudioPlaybackState.Prepared, stopped.snapshot.state)
+        assertEquals(55_000L, stopped.snapshot.lastUnderrunTimeNs)
+        assertEquals(208, stopped.snapshot.lastUnderrunMissingFrames)
+        assertEquals(1L, stopped.snapshot.underrunCallbacks)
+        assertEquals(1, backend.submitCalls)
     }
 
     @Test
@@ -159,8 +265,91 @@ class NativeOboeAudioPlaybackControllerTest {
         assertEquals(DecodedAudioFrameKind.PacketLossConcealment, backend.lastMetadata?.frameKind)
     }
 
-    private fun config(sampleRateHz: Int = 48000): AudioPlaybackConfig = AudioPlaybackConfig(
-        source = AudioCaptureSource.MicrophoneAudio,
+    @Test
+    fun microphoneSubmitAndSnapshotNeverInvokeSdkObservation() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        controller.prepare(config())
+        val before = backend.snapshotCalls
+        val pcm = directPcm()
+        controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata())
+        controller.snapshot()
+        assertEquals(before, backend.snapshotCalls)
+        assertEquals(0, backend.xrunCalls)
+        assertEquals(AudioPlaybackError.PresentationTimestampUnavailable, controller.queryPresentationTimestamp().error)
+        assertEquals(
+            AudioPlaybackError.PresentationTimestampUnavailable,
+            controller.querySourcePresentationAnchor().error,
+        )
+        controller.close()
+    }
+
+    @Test
+    fun stalledSdkObserverCannotBlockMicrophoneAdmissionOrFreeItsHandle() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        controller.prepare(config())
+        val pcm = directPcm()
+        controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata())
+        controller.start()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val admitted = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        backend.sampleXrun = {
+            entered.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            7
+        }
+        val observer = Thread { controller.sampleMicrophoneDiagnostics() }
+        observer.start()
+        try {
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            Thread {
+                controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata())
+                admitted.countDown()
+            }.start()
+            assertTrue(admitted.await(1, TimeUnit.SECONDS))
+            Thread {
+                controller.close()
+                closed.countDown()
+            }.start()
+            assertTrue(!closed.await(100, TimeUnit.MILLISECONDS))
+            assertEquals(0, backend.destroyCalls)
+        } finally {
+            release.countDown()
+            observer.join(2000)
+        }
+        assertTrue(closed.await(2, TimeUnit.SECONDS))
+        assertEquals(1, backend.destroyCalls)
+        controller.sampleMicrophoneDiagnostics()
+        assertEquals(1, backend.xrunCalls)
+    }
+
+    @Test
+    fun microphoneObserverPreservesNativeRejectionsUnderrunsAndXruns() {
+        val backend = FakePlaybackBackend()
+        val controller = NativeOboeAudioPlaybackController(backend)
+        controller.prepare(config())
+        val pcm = directPcm()
+        controller.submitPcm(pcm, 0, pcm.capacity(), 240, metadata())
+        controller.start()
+        backend.finalUnderrunTimeNs = 123L
+        backend.sampleXrun = { 3 }
+        controller.sampleMicrophoneDiagnostics()
+        val snapshot = controller.snapshot()
+        assertEquals(1L, snapshot.underrunCallbacks)
+        assertEquals(3, snapshot.xRunCount)
+        backend.submitError = AudioPlaybackError.PlaybackRingFull
+        assertEquals(AudioPlaybackError.PlaybackRingFull, controller.submitPcm(pcm, 0, 480, 240, metadata()).error)
+        controller.close()
+    }
+
+    private fun config(
+        sampleRateHz: Int = 48000,
+        source: AudioCaptureSource = AudioCaptureSource.MicrophoneAudio,
+    ): AudioPlaybackConfig = AudioPlaybackConfig(
+        source = source,
         configGeneration = 1,
         sampleRateHz = sampleRateHz,
         channelCount = 1,
@@ -188,6 +377,12 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
     var destroyCalls = 0
     var submitError = AudioPlaybackError.None
     var lastMetadata: DecodedPcmMetadata? = null
+    var finalUnderrunTimeNs = 0L
+    var snapshotCalls = 0
+    var xrunCalls = 0
+    var sampleXrun: () -> Int = { -1 }
+    var beforeSubmit: () -> Unit = {}
+    var beforeSnapshot: () -> Unit = {}
     private var submittedFrames = 0L
     private var running = false
 
@@ -208,6 +403,7 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
         frameCount: Int,
         metadata: DecodedPcmMetadata,
     ): AudioPlaybackError {
+        beforeSubmit()
         submitCalls += 1
         lastMetadata = metadata
         if (submitError != AudioPlaybackError.None) return submitError
@@ -258,7 +454,16 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
             latencyUs = 4200,
         )
 
-    override fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot = snapshot(config(), state)
+    override fun snapshot(handle: Long, state: AudioPlaybackState): AudioPlaybackSnapshot {
+        beforeSnapshot()
+        snapshotCalls++
+        return snapshot(config(), state)
+    }
+
+    override fun sampleXRunCount(handle: Long): Int {
+        xrunCalls++
+        return sampleXrun()
+    }
 
     override fun destroy(handle: Long): AudioPlaybackError {
         destroyCalls += 1
@@ -293,6 +498,9 @@ private class FakePlaybackBackend : OboeAudioPlaybackBackend {
             ringCapacityFrames = config.framesPerCodecFrame * config.ringCapacityCodecFrames,
             ringOccupancyFrames = submittedFrames.toInt(),
             pcmFramesSubmitted = submittedFrames,
+            lastUnderrunTimeNs = finalUnderrunTimeNs,
+            lastUnderrunMissingFrames = if (finalUnderrunTimeNs == 0L) 0 else 208,
+            underrunCallbacks = if (finalUnderrunTimeNs == 0L) 0 else 1,
             lastError = AudioPlaybackError.None,
         )
 }

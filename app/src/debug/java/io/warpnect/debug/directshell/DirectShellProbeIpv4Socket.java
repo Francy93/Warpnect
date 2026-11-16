@@ -25,6 +25,7 @@ final class DirectShellProbeIpv4Socket implements AutoCloseable {
 
     private final FileDescriptor descriptor;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private volatile boolean microphoneWrites;
     private final DataInputStream input;
     private final DataOutputStream output;
 
@@ -83,6 +84,16 @@ final class DirectShellProbeIpv4Socket implements AutoCloseable {
         return output;
     }
 
+    /** Pipelined 5 ms microphone records must not wait for an unrelated delayed TCP ACK. */
+    void enableMicrophoneWrites() throws IOException {
+        try {
+            Os.setsockoptInt(descriptor, OsConstants.IPPROTO_TCP, OsConstants.TCP_NODELAY, 1);
+            microphoneWrites = true;
+        } catch (ErrnoException failure) {
+            throw asIOException("microphone_tcp_nodelay_unavailable", failure);
+        }
+    }
+
     /**
      * Waits for the next complete control request to begin without consuming any bytes.
      *
@@ -120,6 +131,10 @@ final class DirectShellProbeIpv4Socket implements AutoCloseable {
     @Override
     public void close() throws IOException {
         if (!closed.compareAndSet(false, true)) return;
+        if (microphoneWrites) {
+            // Closing an fd on another thread does not reliably wake its poll; shutdown does.
+            try { Os.shutdown(descriptor, OsConstants.SHUT_RDWR); } catch (ErrnoException ignored) { }
+        }
         try {
             Os.close(descriptor);
         } catch (ErrnoException exception) {

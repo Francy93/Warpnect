@@ -61,6 +61,9 @@ import io.warpnect.audio.transport.AudioTransportSnapshot
 import io.warpnect.audio.transport.AudioTransportState
 import io.warpnect.audio.transport.AudioTransportSubmitResult
 import java.nio.ByteBuffer
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,6 +71,70 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioSessionControllerTest {
+    @Test fun slowSnapshotOwnsTheSessionMonitorAndBlocksDecodeOnTheReceiverThread() = runBlocking {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val waiting = CountDownLatch(1)
+        val playback = FakePlayback(onSnapshot = {
+            if (Thread.currentThread().name == "snapshot-owner") {
+                entered.countDown()
+                check(release.await(2, TimeUnit.SECONDS))
+            }
+        })
+        val runtime = FakeReceiverRuntime()
+        val decoder = FakeDecoder()
+        val trace = object : AudioPathTrace {
+            override fun waiting(stage: AudioPathStage) {
+                if (stage == AudioPathStage.SessionFrame) waiting.countDown()
+            }
+            override fun acquired(stage: AudioPathStage) = Unit
+            override fun finished() = Unit
+        }
+        val session = DefaultAudioReceiverSessionController(runtime, { decoder }, { playback }, pathTrace = trace)
+        session.start(receiverConfig())
+        runtime.emitConfig(streamConfig())
+        val sample = FutureTask { session.snapshot() }
+        val owner = Thread(sample, "snapshot-owner")
+        val delivery = FutureTask { runtime.emitFrame(frame(position = 0)) }
+        val receiver = Thread(delivery, "receiver-caller")
+        try {
+            owner.start()
+            assertTrue(entered.await(1, TimeUnit.SECONDS))
+            receiver.start()
+            assertTrue(waiting.await(1, TimeUnit.SECONDS))
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+            while (receiver.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.yield()
+            }
+            assertEquals(Thread.State.BLOCKED, receiver.state)
+            assertTrue(owner.isAlive && !sample.isDone)
+            assertTrue(decoder.decodedPositions.isEmpty())
+        } finally {
+            release.countDown()
+            owner.join(2000)
+            receiver.join(2000)
+        }
+        sample.get(1, TimeUnit.SECONDS)
+        delivery.get(1, TimeUnit.SECONDS)
+        assertEquals(listOf(0L), decoder.decodedPositions)
+        session.close()
+    }
+
+    @Test fun stoppingQuiescesOutputBeforeWaitingForIngressAndRejectsLatePcm() = runBlocking {
+        val playback = FakePlayback(allowEmptyStart = true)
+        val runtime = FakeReceiverRuntime(onStop = {
+            assertEquals(AudioPlaybackState.Prepared, playback.snapshot().state)
+        })
+        val session = DefaultAudioReceiverSessionController(runtime, { FakeDecoder() }, { playback })
+        session.start(receiverConfig().copy(playbackWarmStart = true))
+        runtime.emitConfig(streamConfig())
+        session.stop()
+        val calls = playback.submitCalls
+        runtime.emitFrame(frame(position = 0))
+        assertEquals(calls, playback.submitCalls)
+        assertTrue(runtime.releasedSlots.contains(0))
+    }
+
     @Test fun systemOutputClockWarmsBeforePcmWithoutBypassingAnExplicitGate() = runBlocking {
         val original = receiverConfig()
         val config = original.copy(
@@ -708,7 +775,7 @@ private class FakeTransport(
     }
 }
 
-private class FakeReceiverRuntime : AudioReceiverRuntimeController {
+private class FakeReceiverRuntime(private val onStop: () -> Unit = {}) : AudioReceiverRuntimeController {
     private var listener: AudioReceiverRuntimeListener? = null
     val releasedSlots = mutableListOf<Int>()
     private val buffers = mutableMapOf<Int, ByteBuffer>()
@@ -737,6 +804,7 @@ private class FakeReceiverRuntime : AudioReceiverRuntimeController {
     }
 
     override fun stop(): AudioReceiverRuntimeResult {
+        onStop()
         state = AudioReceiverRuntimeState.Stopped
         return AudioReceiverRuntimeResult(AudioTransportError.None, snapshot())
     }
@@ -875,6 +943,7 @@ private class FakeDecoder(
 private class FakePlayback(
     private val submitError: AudioPlaybackError = AudioPlaybackError.None,
     private val allowEmptyStart: Boolean = false,
+    private val onSnapshot: () -> Unit = {},
 ) : AudioPlaybackController {
     var prepareCalls = 0
     var submitCalls = 0
@@ -925,20 +994,23 @@ private class FakePlayback(
         return AudioPlaybackResult(AudioPlaybackError.None, snapshot())
     }
 
-    override fun snapshot(): AudioPlaybackSnapshot = AudioPlaybackSnapshot(
-        state = state,
-        source = config?.source,
-        configGeneration = config?.configGeneration ?: 0L,
-        requestedSampleRateHz = config?.sampleRateHz ?: 0,
-        actualSampleRateHz = config?.sampleRateHz ?: 0,
-        requestedChannelCount = config?.channelCount ?: 0,
-        actualChannelCount = config?.channelCount ?: 0,
-        frameDurationUs = config?.frameDurationUs ?: 0,
-        framesPerCodecFrame = config?.framesPerCodecFrame ?: 0,
-        pcmFramesSubmitted = acceptedSubmitCalls * 240L,
-        pcmFramesConsumed = consumedFrames,
-        ringOccupancyFrames = acceptedSubmitCalls * 240,
-    )
+    override fun snapshot(): AudioPlaybackSnapshot {
+        onSnapshot()
+        return AudioPlaybackSnapshot(
+            state = state,
+            source = config?.source,
+            configGeneration = config?.configGeneration ?: 0L,
+            requestedSampleRateHz = config?.sampleRateHz ?: 0,
+            actualSampleRateHz = config?.sampleRateHz ?: 0,
+            requestedChannelCount = config?.channelCount ?: 0,
+            actualChannelCount = config?.channelCount ?: 0,
+            frameDurationUs = config?.frameDurationUs ?: 0,
+            framesPerCodecFrame = config?.framesPerCodecFrame ?: 0,
+            pcmFramesSubmitted = acceptedSubmitCalls * 240L,
+            pcmFramesConsumed = consumedFrames,
+            ringOccupancyFrames = acceptedSubmitCalls * 240,
+        )
+    }
 
     override fun queryPresentationTimestamp(): AudioPresentationTimestampResult =
         AudioPresentationTimestampResult(AudioPlaybackError.PresentationTimestampUnavailable)

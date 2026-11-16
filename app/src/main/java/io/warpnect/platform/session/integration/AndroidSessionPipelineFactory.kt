@@ -224,6 +224,7 @@ data class AndroidAudioReceiverPipeline(
     val config: AudioReceiverSessionConfig,
     val telemetrySources: List<AutoCloseable> = emptyList(),
     val onStop: () -> Unit = {},
+    val onClosing: () -> Unit = {},
 )
 
 data class AndroidInputSenderPipeline(
@@ -822,6 +823,7 @@ private class AudioReceiverComponent(
         runBlocking { pipeline.controller.stop() }
         pipeline.onStop()
     }
+    override fun onSessionClosing() = pipeline.onClosing()
     override fun close() {
         runtimeSampler.close()
         pipeline.controller.close()

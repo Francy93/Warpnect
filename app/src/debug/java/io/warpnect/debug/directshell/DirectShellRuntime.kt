@@ -430,11 +430,16 @@ internal class DirectShellRuntime(context: Context) : PrivilegedRuntime, Privile
         return registerLease(lease)
     }
 
-    private fun acquireMicrophoneLease(): Pair<DirectShellRemoteMicrophoneSource, AutoCloseable>? {
+    private fun acquireMicrophoneLease(): Pair<RemoteMicrophonePcmDestination, AutoCloseable>? {
         val role = DirectShellSelfBootstrapContract.ServerRole.PcmSharedRing
         val launched = takeFeatureServer(role) ?: return null
         val source = runCatching {
-            DirectShellRemoteMicrophoneSource(launched.launch.port, launched.launch.generation, launched.launch.secret)
+            AppOwnedRemoteMicrophoneSource(
+                applicationContext,
+                launched.launch.port,
+                launched.launch.generation,
+                launched.launch.secret,
+            )
         }.getOrNull()
         val result = runCatching { source?.prepare() }.getOrNull() ?: "API_UNAVAILABLE"
         Log.i(TAG, "REMOTE_MIC_CAPABILITY generation=${launched.launch.generation} result=$result uid_rules=NONE")

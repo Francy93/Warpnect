@@ -8,6 +8,7 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Build;
+import android.os.Debug;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.SharedMemory;
@@ -92,7 +93,15 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         private volatile FileDescriptor listenerDescriptor;
         private Thread idleWatchdog;
         private volatile DirectShellRemoteMicrophonePolicy microphone;
+        private volatile DirectShellMicrophoneFeedPump microphonePump;
         private int slowMicrophoneFeedSamples;
+        private int microphoneFeedRequests;
+        private final DirectShellRemoteMicrophonePolicy.FeedTiming microphoneFeedTiming =
+                new DirectShellRemoteMicrophonePolicy.FeedTiming();
+        private final DirectShellProbeProtocol.WriteTiming microphoneResponseTiming =
+                new DirectShellProbeProtocol.WriteTiming();
+        private final String[] microphoneTimingSamples = new String[68];
+        private int microphoneTimingSampleCount;
 
         ProbeServer(ServerArguments arguments) {
             this.arguments = arguments;
@@ -143,12 +152,16 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                 DataOutputStream output = client.output();
                 while (running.get()) {
                     DirectShellProbeProtocol.Request request;
+                    long requestStartedNs = System.nanoTime();
+                    long requestStartedCpuNs = Debug.threadCpuTimeNanos();
                     try {
                         request = DirectShellProbeProtocol.readRequest(input, arguments.secret);
                     } catch (DirectShellProbeProtocol.ProtocolException exception) {
                         log("AUTH result=" + exception.kind.name() + " endpoint=" + endpoint());
                         return;
                     }
+                    long readFinishedNs = System.nanoTime();
+                    long readFinishedCpuNs = Debug.threadCpuTimeNanos();
                     if (!order.accept(request.requestId)) {
                         writeResponse(
                                 output,
@@ -161,7 +174,8 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                         continue;
                     }
                     lastAuthenticatedActivityMillis.set(SystemClock.elapsedRealtime());
-                    if (request.command != DirectShellProbeProtocol.Command.MICROPHONE_FEED) {
+                    if (request.command != DirectShellProbeProtocol.Command.MICROPHONE_FEED &&
+                            request.command != DirectShellProbeProtocol.Command.MICROPHONE_APP_STATE) {
                         log("AUTH result=SUCCESS request_id=" + request.requestId);
                     }
                     if (request.command == DirectShellProbeProtocol.Command.HOST_OWNER_ATTACH) {
@@ -171,7 +185,28 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                                 " generation=" + arguments.generationId);
                         return;
                     }
-                    if (dispatch(request, output)) {
+                    if (request.command == DirectShellProbeProtocol.Command.MICROPHONE_START && microphone != null) {
+                        try (DirectShellMicrophoneResultChannel results = DirectShellMicrophoneResultChannel.sender(
+                                request.payload, arguments.secret, arguments.generationId)) {
+                            DirectShellRemoteMicrophonePolicy owned = microphone;
+                            DirectShellRemoteMicrophonePolicy.Result activated = owned.activate(arguments.generationId);
+                            if (activated != DirectShellRemoteMicrophonePolicy.Result.SUPPORTED) {
+                                writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, activated.name());
+                                return;
+                            }
+                            DirectShellMicrophoneFeedPump pump = new DirectShellMicrophoneFeedPump(client,
+                                    arguments.secret, arguments.generationId, owned, results);
+                            microphonePump = pump;
+                            pump.setDiagnostics(WarpnectPrivilegedPcmSharedRingProbeServer::log);
+                            // PCM and results have distinct kernel sockets; results never grant credits.
+                            pump.startDestination();
+                            writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, "SUPPORTED");
+                            pump.run(order);
+                            return;
+                        } finally { Arrays.fill(request.payload, (byte) 0); }
+                    }
+                    if (dispatch(request, output, requestStartedNs, readFinishedNs,
+                            cpuDelta(requestStartedCpuNs, readFinishedCpuNs))) {
                         requestShutdown("authenticated_shutdown");
                         return;
                     }
@@ -194,10 +229,27 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
             }
         }
 
-        private boolean dispatch(DirectShellProbeProtocol.Request request, DataOutputStream output)
+        private boolean dispatch(DirectShellProbeProtocol.Request request, DataOutputStream output,
+                long requestStartedNs, long readFinishedNs, long readCpuNs)
                 throws IOException {
             DirectShellPcmRingProducer.Operation operation;
             switch (request.command) {
+                case MICROPHONE_APP_PREPARE:
+                    closeMicrophone();
+                    if (!ownerLease.attached()) {
+                        writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.BAD_STATE,
+                                "OWNER_REQUIRED");
+                        return false;
+                    }
+                    microphone = new DirectShellRemoteMicrophonePolicy(arguments.generationId, new int[]{1, 7, 5});
+                    DirectShellRemoteMicrophonePolicy.Result appPrepared = microphone.prepareAppWriter();
+                    writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK, appPrepared.name());
+                    log(microphone.diagnostics() + ";writer=APP_CALLBACK;helper_pcm_writer=NONE");
+                    return false;
+                case MICROPHONE_APP_STATE:
+                    writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK,
+                            microphone == null ? "UNAVAILABLE" : microphone.appWriterState());
+                    return false;
                 case MICROPHONE_PREPARE:
                     closeMicrophone();
                     if (!ownerLease.attached()) {
@@ -212,26 +264,62 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
                     log(microphone.diagnostics());
                     return false;
                 case MICROPHONE_START:
+                    DirectShellRemoteMicrophonePolicy.Result activated = microphone == null ? null :
+                            microphone.activate(arguments.generationId);
                     writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK,
-                            microphone == null ? "NOT_PREPARED" :
-                            microphone.activate(arguments.generationId).name());
+                            activated == null ? "NOT_PREPARED" : activated.name());
                     return false;
                 case MICROPHONE_FEED:
                     try {
+                        long decodeStartedNs = System.nanoTime();
                         DirectShellMicrophoneFrame frame = DirectShellMicrophoneFrame.decode(request.payload,
                                 arguments.generationId);
                         long feedStartedNs = System.nanoTime();
+                        long feedStartedCpuNs = Debug.threadCpuTimeNanos();
+                        DirectShellRemoteMicrophonePolicy.FeedTiming timing = microphoneFeedTiming;
                         int written = microphone == null ? -1 : microphone.feed(arguments.generationId,
-                                frame.samples, frame.samples.length, frame.enqueuedNs);
-                        long feedNs = System.nanoTime() - feedStartedNs;
-                        if (feedNs >= 5_000_000L && slowMicrophoneFeedSamples++ < 16) {
-                            log("REMOTE_MIC_FEED_TIMING request_id=" + request.requestId + ";" +
-                                    "elapsed_ns=" + feedNs + ";result=" + written);
-                        }
-                        writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.OK,
-                                Integer.toString(written));
+                                frame.samples, frame.samples.length, frame.enqueuedNs, timing);
+                        long feedFinishedNs = System.nanoTime();
+                        long feedFinishedCpuNs = Debug.threadCpuTimeNanos();
+                        long responseStartedNs = System.nanoTime();
+                        long responseStartedCpuNs = Debug.threadCpuTimeNanos();
+                        DirectShellProbeProtocol.writeResponse(output, request.requestId,
+                                DirectShellProbeProtocol.Status.OK, bytes(Integer.toString(written)),
+                                arguments.secret, microphoneResponseTiming);
+                        long responseFinishedNs = System.nanoTime();
+                        long responseFinishedCpuNs = Debug.threadCpuTimeNanos();
                         Arrays.fill(frame.samples, (short) 0);
                         Arrays.fill(request.payload, (byte) 0);
+                        long feedNs = feedFinishedNs - feedStartedNs;
+                        long readNs = readFinishedNs - requestStartedNs;
+                        long responseNs = responseFinishedNs - responseStartedNs;
+                        long processingNs = responseFinishedNs - readFinishedNs;
+                        if (microphoneFeedRequests++ < 4 ||
+                                ((processingNs >= 20_000_000L || feedNs >= 5_000_000L || responseNs >= 20_000_000L) &&
+                                slowMicrophoneFeedSamples++ < 64)) {
+                            microphoneTimingSamples[microphoneTimingSampleCount++] =
+                                    "REMOTE_MIC_FEED_TIMING request_id=" + request.requestId + ";" +
+                                    "generation=" + arguments.generationId + ";elapsed_ns=" + feedNs +
+                                    ";result=" + written + ";request_started_ns=" + requestStartedNs +
+                                    ";read_finished_ns=" + readFinishedNs + ";feed_started_ns=" + feedStartedNs +
+                                    ";feed_finished_ns=" + feedFinishedNs + ";response_finished_ns=" + responseFinishedNs +
+                                    ";response_started_ns=" + responseStartedNs + ";processing_ns=" + processingNs +
+                                    ";read_wait_auth_ns=" + readNs + ";read_thread_cpu_ns=" + readCpuNs +
+                                    ";decode_ns=" + (feedStartedNs - decodeStartedNs) +
+                                    ";feed_thread_cpu_ns=" + cpuDelta(feedStartedCpuNs, feedFinishedCpuNs) +
+                                    ";response_send_ns=" + responseNs +
+                                    ";response_thread_cpu_ns=" + cpuDelta(responseStartedCpuNs, responseFinishedCpuNs) +
+                                    ";feed_begin_ns=" + timing.beginNs + ";feed_lock_acquired_ns=" + timing.lockAcquiredNs +
+                                    ";getter_started_ns=" + timing.getterStartedNs + ";getter_finished_ns=" + timing.getterFinishedNs +
+                                    ";write_started_ns=" + timing.writeStartedNs + ";write_finished_ns=" + timing.writeFinishedNs +
+                                    ";policy_finished_ns=" + timing.finishedNs + ";consumer_active=" + timing.consumerActive +
+                                    ";consumer_since_ns=" + timing.consumerSinceNs +
+                                    ";response_body_finished_ns=" + microphoneResponseTiming.bodyFinishedNs +
+                                    ";response_auth_finished_ns=" + microphoneResponseTiming.authenticationFinishedNs +
+                                    ";stream_write_started_ns=" + microphoneResponseTiming.streamWriteStartedNs +
+                                    ";stream_write_finished_ns=" + microphoneResponseTiming.streamWriteFinishedNs +
+                                    ";boot_minus_mono_ns=" + (SystemClock.elapsedRealtimeNanos() - System.nanoTime());
+                        }
                     } catch (IllegalArgumentException invalid) {
                         writeResponse(output, request.requestId, DirectShellProbeProtocol.Status.BAD_STATE,
                                 invalid.getMessage());
@@ -302,6 +390,10 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
             }
         }
 
+        private static long cpuDelta(long before, long after) {
+            return before >= 0 && after >= before ? after - before : -1;
+        }
+
         private boolean writeOperation(
                 DataOutputStream output,
                 DirectShellProbeProtocol.Request request,
@@ -369,9 +461,20 @@ public final class WarpnectPrivilegedPcmSharedRingProbeServer {
         }
 
         private void closeMicrophone() {
+            DirectShellMicrophoneFeedPump pump = microphonePump;
+            microphonePump = null;
+            if (pump != null) pump.close();
             DirectShellRemoteMicrophonePolicy current = microphone;
             microphone = null;
             if (current != null) current.close();
+            // Flush bounded numeric samples only after feed has ended, not on the live PCM thread.
+            for (int i = 0; i < microphoneTimingSampleCount; i++) {
+                log(microphoneTimingSamples[i]);
+                microphoneTimingSamples[i] = null;
+            }
+            microphoneTimingSampleCount = 0;
+            microphoneFeedRequests = 0;
+            slowMicrophoneFeedSamples = 0;
         }
 
         private void releaseEndpoint() {

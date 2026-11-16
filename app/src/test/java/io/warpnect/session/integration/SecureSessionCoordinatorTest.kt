@@ -33,6 +33,7 @@ import io.warpnect.session.handshake.SessionHandshakeAttemptId
 import io.warpnect.session.identity.IdentityFingerprint
 import io.warpnect.session.identity.ImmutableBytes
 import io.warpnect.session.lifecycle.DisconnectReason
+import io.warpnect.session.lifecycle.SessionLifecycleState
 import io.warpnect.session.pairing.PairingAttemptId
 import io.warpnect.session.pairing.PairingEngineState
 import io.warpnect.session.pairing.PairingVerificationPrompt
@@ -305,6 +306,81 @@ class SecureSessionCoordinatorTest {
     }
 
     @Test
+    fun fatalReconnectFailureClosesClientPipelineAndCannotAffectNextAttempt() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events)
+        val lifecycleFactory = RecordingLifecycleFactory(events)
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Client,
+            driver,
+            RecordingPipelineFactory(events),
+            lifecycleFactory,
+        )
+        assertEquals(SecureSessionIntegrationError.None, coordinator.connect(request()).error)
+        val first = requireNotNull(lifecycleFactory.lastListener)
+        val lifecycle = requireNotNull(lifecycleFactory.last)
+        val failFirst = driver.lifecycleFailureCallback()
+        first.onRecovering()
+
+        failFirst()
+
+        assertEquals(SecureSessionCoordinatorState.Failed, coordinator.snapshot.value.state)
+        assertEquals(SecureSessionIntegrationError.LifecycleStartFailed, coordinator.snapshot.value.lastError)
+        assertTrue(coordinator.snapshot.value.runningChannels.isEmpty())
+        assertEquals(0, coordinator.snapshot.value.activeRuntimeCount)
+        assertTrue(events.containsAll(listOf("stop:video-source", "stop:video-processor")))
+        assertEquals(1, lifecycle.fatalDisconnects)
+        assertEquals(1, lifecycle.closes)
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Failed, coordinator.snapshot.value.state)
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.cancelDiscovery().error)
+        assertEquals(SecureSessionIntegrationError.None, coordinator.connect(request()).error)
+        failFirst()
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        assertEquals(SecureSessionIntegrationError.None, coordinator.snapshot.value.lastError)
+        coordinator.close()
+    }
+
+    @Test
+    fun closureNotificationDoesNotMaskFatalClientFailureAsGracefulClose() {
+        assertTrue(shouldPublishSessionClosure(SessionRole.Client, SessionLifecycleState.Closed))
+        assertFalse(shouldPublishSessionClosure(SessionRole.Client, SessionLifecycleState.Failed))
+        assertFalse(shouldPublishSessionClosure(SessionRole.Client, SessionLifecycleState.Disconnecting))
+        assertTrue(shouldPublishSessionClosure(SessionRole.Host, SessionLifecycleState.Failed))
+    }
+
+    @Test
+    fun remoteSessionCloseReturnsClientToIdleAndCannotCloseItsNextAttempt() {
+        val events = mutableListOf<String>()
+        val driver = TestPhaseDriver(events)
+        val lifecycleFactory = RecordingLifecycleFactory(events)
+        val coordinator = SecureSessionCoordinator(
+            SessionRole.Client,
+            driver,
+            RecordingPipelineFactory(events),
+            lifecycleFactory,
+        )
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.connect(request()).error)
+        val first = requireNotNull(lifecycleFactory.lastListener)
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Idle, coordinator.snapshot.value.state)
+        assertTrue(coordinator.snapshot.value.runningChannels.isEmpty())
+        assertTrue(events.contains("stop:video-processor"))
+
+        assertEquals(SecureSessionIntegrationError.None, coordinator.connect(request()).error)
+        val second = requireNotNull(lifecycleFactory.lastListener)
+        first.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Running, coordinator.snapshot.value.state)
+        second.onClosed()
+        assertEquals(SecureSessionCoordinatorState.Idle, coordinator.snapshot.value.state)
+        assertTrue(coordinator.snapshot.value.runningChannels.isEmpty())
+    }
+
+    @Test
     fun hostPreparedBootstrapDoesNotStartPipelineOnTheSetupCallbackThread() {
         val events = mutableListOf<String>()
         val dispatcher = QueuedDispatcher()
@@ -458,6 +534,16 @@ class SecureSessionCoordinatorTest {
         var hostPairingRejections = 0
         var hostPrompt: PairingVerificationPrompt? = null
         private var listener: SecureSessionPhaseListener? = null
+
+        fun lifecycleFailureCallback(): () -> Unit {
+            val current = requireNotNull(listener)
+            return {
+                current.onFailed(
+                    SecureSessionIntegrationStage.Lifecycle,
+                    SecureSessionIntegrationError.LifecycleStartFailed,
+                )
+            }
+        }
 
         override fun startDiscovery(role: SessionRole): SecureSessionIntegrationError {
             events += "discovery"

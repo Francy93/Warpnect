@@ -131,7 +131,7 @@ and socket buffers were not changed in any experiment here.
 | --- | --- | --- | --- | --- |
 | X700_EEA Tablet | Z1382023HGM1895372 | 13 /33 | Aocwei/X700_EEA/X700_EEA:13/TP1A.220624.014/2023264:user/release-keys | Global MIC Host; ordinary consumer and restoration |
 | SM-G960F S9 | 23eaec0f12047ece | 10 /29 | samsung/starltexx/starlte:10/QP1A.190711.020/G960FXXUHFVG4:user/release-keys | Primary physical microphone Client; SystemAudio Client |
-| SM-A415F A41 | R58N52B32JJ | 12 /31 | samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys | Comparison microphone Client; bounded SystemAudio Host |
+| SM-A415F A41 | TESTUNIT002 | 12 /31 | samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys | Comparison microphone Client; bounded SystemAudio Host |
 | SM-G935F S7 | 9886734e4937395657 | 8.0.0 /26 | samsung/hero2ltexx/hero2lte:8.0.0/R16NW/G935FXXU8EVH2:user/release-keys | Identified only; no new microphone capability probe |
 
 S22 was not required or tested in this resumed attempt. Hardware actions use

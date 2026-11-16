@@ -19,6 +19,27 @@ public final class DirectShellProbeProtocolTest {
     private static final byte[] SECRET = sequence(0x20);
     private static final byte[] OTHER_SECRET = sequence(0x40);
 
+    @Test public void appWriterPolicyCommandsRemainAuthenticatedAndOrderedNotPcm() throws Exception {
+        for (DirectShellProbeProtocol.Command command : new DirectShellProbeProtocol.Command[]{
+                DirectShellProbeProtocol.Command.MICROPHONE_APP_PREPARE,
+                DirectShellProbeProtocol.Command.MICROPHONE_APP_STATE}) {
+            byte[] encoded = encodeRequest(101, command, new byte[0]);
+            DirectShellProbeProtocol.Request decoded = DirectShellProbeProtocol.readRequest(
+                    new DataInputStream(new ByteArrayInputStream(encoded)), SECRET);
+            assertEquals(command, decoded.command);
+            assertEquals(0, decoded.payload.length);
+            DirectShellProbeProtocol.RequestOrder order = new DirectShellProbeProtocol.RequestOrder();
+            assertTrue(order.accept(decoded.requestId));
+            assertFalse(order.accept(decoded.requestId));
+            try {
+                DirectShellProbeProtocol.readRequest(new DataInputStream(new ByteArrayInputStream(encoded)), OTHER_SECRET);
+                fail("Expected unauthenticated policy rejection");
+            } catch (DirectShellProbeProtocol.ProtocolException rejected) {
+                assertEquals(DirectShellProbeProtocol.ProtocolException.Kind.UNAUTHENTICATED, rejected.kind);
+            }
+        }
+    }
+
     @Test
     public void authenticatedRequestRoundTripsWithBoundedPayload() throws Exception {
         byte[] encoded = encodeRequest(41L, DirectShellProbeProtocol.Command.PING, "hello".getBytes(StandardCharsets.UTF_8));
@@ -49,6 +70,36 @@ public final class DirectShellProbeProtocolTest {
         assertEquals(42L, request.requestId);
         assertEquals(DirectShellProbeProtocol.Command.AUDIO_SAMPLE, request.command);
         assertArrayEquals("duration_ms=1500".getBytes(StandardCharsets.UTF_8), request.payload);
+    }
+
+    @Test
+    public void microphoneControlWritesOneCompleteAuthenticatedEnvelope() throws Exception {
+        byte[] payload = new byte[500];
+        Arrays.fill(payload, (byte) 0x23);
+        final int[] writes = {0};
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream() {
+            @Override public synchronized void write(byte[] buffer, int offset, int length) {
+                writes[0]++;
+                super.write(buffer, offset, length);
+            }
+        };
+
+        DirectShellProbeProtocol.writeRequest(new DataOutputStream(bytes), 93L,
+                DirectShellProbeProtocol.Command.MICROPHONE_FEED, payload, SECRET);
+
+        assertEquals(1, writes[0]);
+        DirectShellProbeProtocol.Request request = DirectShellProbeProtocol.readRequest(
+                new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())), SECRET);
+        assertEquals(93L, request.requestId);
+        assertEquals(DirectShellProbeProtocol.Command.MICROPHONE_FEED, request.command);
+        assertArrayEquals(payload, request.payload);
+        try {
+            DirectShellProbeProtocol.readRequest(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())),
+                    OTHER_SECRET);
+            fail("Expected microphone authentication rejection");
+        } catch (DirectShellProbeProtocol.ProtocolException rejected) {
+            assertEquals(DirectShellProbeProtocol.ProtocolException.Kind.UNAUTHENTICATED, rejected.kind);
+        }
     }
 
     @Test

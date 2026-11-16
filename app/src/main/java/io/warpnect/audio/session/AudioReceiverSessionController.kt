@@ -39,6 +39,7 @@ class DefaultAudioReceiverSessionController(
     private val playbackControllerFactory: () -> AudioPlaybackController,
     private val playbackStartGate: AudioPlaybackStartGate? = null,
     private val monotonicClockNs: () -> Long = System::nanoTime,
+    private val pathTrace: AudioPathTrace? = null,
 ) : AudioReceiverSessionController {
     private val lock = Any()
 
@@ -118,6 +119,8 @@ class DefaultAudioReceiverSessionController(
             return@synchronized AudioSessionControlResult.Success
         }
         state = AudioSessionState.Stopping
+        // Joining ingress may wait for a bounded socket poll; no output clock should starve meanwhile.
+        playbackController?.runCatching { stop() }
         receiverRuntimeController.stop()
         releasePipelineLocked()
         activeStreamConfig = null
@@ -145,7 +148,11 @@ class DefaultAudioReceiverSessionController(
         }
     }
 
-    override fun snapshot(): AudioReceiverSessionSnapshot = synchronized(lock) {
+    override fun snapshot(): AudioReceiverSessionSnapshot = tracedAudioMonitor(
+        pathTrace,
+        AudioPathStage.SessionSnapshot,
+        lock,
+    ) {
         snapshotLocked()
     }
 
@@ -202,10 +209,14 @@ class DefaultAudioReceiverSessionController(
         preparePipelineLocked(config)
     }
 
-    private fun onAudioFrameReady(frame: AudioReceiverFrameReady) = synchronized(lock) {
+    private fun onAudioFrameReady(frame: AudioReceiverFrameReady) = tracedAudioMonitor(
+        pathTrace,
+        AudioPathStage.SessionFrame,
+        lock,
+    ) {
         if (state == AudioSessionState.Closed || state == AudioSessionState.Idle) {
             receiverRuntimeController.releaseReadySlot(frame.slotIndex)
-            return@synchronized
+            return@tracedAudioMonitor
         }
         try {
             handleAudioFrameLocked(frame)

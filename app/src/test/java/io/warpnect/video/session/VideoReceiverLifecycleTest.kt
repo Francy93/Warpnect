@@ -22,6 +22,7 @@ import io.warpnect.video.render.VideoRenderError
 import io.warpnect.video.render.VideoRenderPolicy
 import io.warpnect.video.render.VideoRenderSnapshot
 import io.warpnect.video.render.VideoRenderTarget
+import io.warpnect.video.transport.VideoReceiverAccessUnitReady
 import io.warpnect.video.transport.VideoReceiverRuntimeConfig
 import io.warpnect.video.transport.VideoReceiverRuntimeController
 import io.warpnect.video.transport.VideoReceiverRuntimeEvent
@@ -43,6 +44,124 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VideoReceiverLifecycleTest {
+    @Test
+    fun reopenedSurfaceCapacityFailureIsExplicitAndDuplicateConfigDoesNotHideIt() = runTest {
+        val runtime = Runtime()
+        val decoder = Decoder().apply { ready.complete(Unit) }
+        val session = DefaultVideoReceiverSessionController(
+            runtime,
+            decoder,
+            Renderer(target(1)),
+            scope = backgroundScope,
+        )
+        session.start(config())
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        runtime.listener.onAccessUnitReady(keyframe())
+        session.onRenderTargetDestroyed(1)
+        runCurrent()
+        session.onRenderTargetAvailable(target(2))
+        runCurrent()
+        runtime.listener.onAccessUnitReady(keyframe())
+        assertEquals(VideoSessionState.Streaming, session.snapshot().state)
+        assertEquals(2, decoder.starts)
+
+        runtime.listener.onRuntimeError(VideoTransportError.ReassemblyWindowFull)
+        val notifiedBeforeError = decoder.notifications
+        runtime.listener.onAccessUnitReady(keyframe())
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        assertEquals(VideoSessionState.Error, session.snapshot().state)
+        assertEquals(VideoSessionError.ReceiverFailed, session.snapshot().lastError.error)
+        assertEquals(VideoTransportError.ReassemblyWindowFull, session.snapshot().lastError.transportError)
+        assertEquals(notifiedBeforeError, decoder.notifications)
+        assertEquals(2, decoder.starts)
+
+        runtime.listener.onDiscontinuity(VideoTransportError.RecoveryDeadlineExceeded)
+        assertEquals(VideoSessionState.WaitingForKeyFrame, session.snapshot().state)
+        runtime.listener.onAccessUnitReady(keyframe())
+        assertEquals(VideoSessionState.Streaming, session.snapshot().state)
+        assertEquals(notifiedBeforeError + 1, decoder.notifications)
+    }
+
+    @Test
+    fun capacityErrorWhileSurfaceIsAbsentDoesNotSilentlyRestartOnReopen() = runTest {
+        val runtime = Runtime()
+        val decoder = Decoder().apply { ready.complete(Unit) }
+        val session = DefaultVideoReceiverSessionController(
+            runtime,
+            decoder,
+            Renderer(target(1)),
+            scope = backgroundScope,
+        )
+        session.start(config())
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        session.onRenderTargetDestroyed(1)
+        runCurrent()
+        runtime.listener.onRuntimeError(VideoTransportError.ReassemblyWindowFull)
+        session.onRenderTargetAvailable(target(2))
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        assertEquals(VideoSessionState.Error, session.snapshot().state)
+        assertEquals(1, decoder.starts)
+        session.stop()
+        assertEquals(VideoSessionState.Idle, session.snapshot().state)
+    }
+
+    @Test
+    fun lateOldSurfaceDestructionCannotStealDecoderDuringDiscontinuityRecovery() = runTest {
+        val runtime = Runtime()
+        val decoder = Decoder().apply { ready.complete(Unit) }
+        val second = target(2)
+        val session = DefaultVideoReceiverSessionController(
+            runtime,
+            decoder,
+            Renderer(target(1)),
+            scope = backgroundScope,
+        )
+        session.start(config())
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        session.onRenderTargetDestroyed(1)
+        runCurrent()
+        session.onRenderTargetAvailable(second)
+        runCurrent()
+        runtime.listener.onDiscontinuity(VideoTransportError.RecoveryDeadlineExceeded)
+        val stops = decoder.stops
+        session.onRenderTargetDestroyed(1)
+        runCurrent()
+        runtime.listener.onAccessUnitReady(keyframe())
+        assertEquals(stops, decoder.stops)
+        assertEquals(second.surface, decoder.lastSurface)
+        assertEquals(VideoSessionState.Streaming, session.snapshot().state)
+    }
+
+    @Test
+    fun disconnectDuringReopenWithCapacityErrorCannotStartObsoletePreparation() = runTest {
+        val runtime = Runtime()
+        val decoder = Decoder()
+        val session = DefaultVideoReceiverSessionController(
+            runtime,
+            decoder,
+            Renderer(target(1)),
+            scope = backgroundScope,
+        )
+        session.start(config())
+        runtime.listener.onStreamConfig(streamConfig())
+        runCurrent()
+        session.onRenderTargetDestroyed(1)
+        session.onRenderTargetAvailable(target(2))
+        runtime.listener.onRuntimeError(VideoTransportError.ReassemblyWindowFull)
+        val stopping = async { session.stop() }
+        runCurrent()
+        decoder.ready.complete(Unit)
+        runCurrent()
+        stopping.await()
+        assertEquals(0, decoder.starts)
+        assertEquals(VideoSessionState.Idle, session.snapshot().state)
+    }
+
     @Test
     fun repeatedSurfaceCallbacksCannotPrepareTheDecoderConcurrently() = runTest {
         val target = target(1)
@@ -154,6 +273,8 @@ class VideoReceiverLifecycleTest {
 
     private fun streamConfig() = VideoReceiverStreamConfig(1, 640, 360, 1, listOf(byteArrayOf(1)))
 
+    private fun keyframe() = VideoReceiverAccessUnitReady(1, 2, 1000, true)
+
     private fun config() = VideoReceiverSessionConfig(
         VideoReceiverRuntimeConfig(
             localPort = 0,
@@ -194,6 +315,8 @@ class VideoReceiverLifecycleTest {
         val ready = CompletableDeferred<Unit>()
         var prepares = 0
         var starts = 0
+        var notifications = 0
+        var stops = 0
         var lastSurface: Surface? = null
         override fun queryCapabilities(config: VideoDecoderConfig): VideoDecoderCapabilities = error("Not used")
         override suspend fun prepare(
@@ -211,9 +334,14 @@ class VideoReceiverLifecycleTest {
             starts++
             return VideoDecoderStartResult(VideoDecoderError.None, snapshot())
         }
-        override fun notifyInputAvailable() = Unit
+        override fun notifyInputAvailable() {
+            notifications++
+        }
         override suspend fun signalEndOfStream() = VideoDecoderControlResult(VideoDecoderError.None, snapshot())
-        override suspend fun stop() = VideoDecoderStopResult(VideoDecoderError.None, snapshot())
+        override suspend fun stop(): VideoDecoderStopResult {
+            stops++
+            return VideoDecoderStopResult(VideoDecoderError.None, snapshot())
+        }
         override fun snapshot() = VideoDecoderSnapshot()
         override fun close() = Unit
     }

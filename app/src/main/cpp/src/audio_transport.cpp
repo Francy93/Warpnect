@@ -9,6 +9,9 @@
 #include <algorithm>
 #include <android/log.h>
 #include "monotonic_time.h"
+#include "internal/audio_wire_timing_debug.h"
+#include "internal/system_audio_flight_debug.h"
+using namespace warpnect::audio::diagnostic;
 #endif
 
 namespace warpnect::scl {
@@ -46,6 +49,10 @@ AudioTransportSender::AudioTransportSender(AudioTransportSenderConfig config,
     : config_(config), workspace_(workspace), packetizer_(workspace.datagram_scratch) {
     snapshot_.payload_type = config_.payload_type;
     snapshot_.next_audio_sequence = config_.initial_audio_sequence;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (config_.payload_type == PayloadType::SystemAudio && config_.protector != nullptr)
+        debug_flight_ = SystemAudioFlightDebug::current();
+#endif
 }
 
 AudioTransportSender::~AudioTransportSender() noexcept {
@@ -69,6 +76,10 @@ AudioTransportStatus AudioTransportSender::rebind_prebound_socket(
     }
     config_.remote_endpoint = remote_endpoint;
     config_.local_port = local.endpoint.port;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    debug_wire_timing_.reset();
+    debug_wire_attempted_ = false;
+#endif
     socket_ = std::move(socket);
     if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->socket_rebind();
     return status(AudioTransportError::None);
@@ -240,6 +251,9 @@ AudioTransportSnapshot AudioTransportSender::snapshot() const noexcept {
 }
 
 void AudioTransportSender::close() noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    debug_wire_timing_.reset();
+#endif
     socket_.close();
     snapshot_.opened = false;
     snapshot_.closed = true;
@@ -248,6 +262,12 @@ void AudioTransportSender::close() noexcept {
 AudioTransportStatus
 AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) noexcept {
 #if defined(__ANDROID__) && !defined(NDEBUG)
+    if (!debug_wire_attempted_ && config_.protector != nullptr &&
+        (config_.payload_type == PayloadType::MicrophoneAudio ||
+                                  config_.payload_type == PayloadType::SystemAudio)) {
+        debug_wire_attempted_ = true;
+        debug_wire_timing_ = AudioWireTimingDebug::create(socket_.native_handle_for_diagnostics(), true);
+    }
     const auto protect_start_ns = monotonic_time_now_us().value * 1000ULL;
 #endif
     std::span<const std::byte> wire = datagram;
@@ -262,10 +282,23 @@ AudioTransportSender::send_audio_datagram(std::span<const std::byte> datagram) n
     }
 #if defined(__ANDROID__) && !defined(NDEBUG)
     const auto send_start_ns = monotonic_time_now_us().value * 1000ULL;
+    const auto send_real_ns = debug_wire_timing_ ? AudioWireTimingDebug::now(CLOCK_REALTIME) : 0;
 #endif
     const UdpSendResult sent = socket_.send_to(wire, config_.remote_endpoint);
 #if defined(__ANDROID__) && !defined(NDEBUG)
     const auto sent_ns = monotonic_time_now_us().value * 1000ULL;
+    if (debug_flight_) {
+        const auto decoded = decode_packet_header(datagram);
+        debug_flight_->emit(FlightLane::Wire, {.begin=protect_start_ns, .end=sent_ns,
+            .aux=send_start_ns, .kind=FlightKind::Send,
+            .sequence=decoded.ok() ? decoded.header.sequence_number : UINT32_MAX,
+            .frames=static_cast<std::uint32_t>(wire.size()), .code=sent.ok() ? 0U : 1U});
+    }
+    if (debug_wire_timing_) {
+        const auto decoded = decode_packet_header(datagram);
+        debug_wire_timing_->send(wire, decoded.ok() ? decoded.header.sequence_number : 0,
+            send_start_ns, sent_ns, send_real_ns, sent.ok());
+    }
 #endif
     if (!sent.ok()) {
         const AudioTransportError mapped = map_udp_send_error(sent.status.error);

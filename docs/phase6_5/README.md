@@ -1,5 +1,43 @@
 # Phase 6.5 - Privileged Runtime Evolution
 
+## 2026-10-25 First-Full Video Observation
+
+[The first-full diagnostic](VideoReassemblyFirstFullDiagnostic.md) adds a
+bounded, opt-in DEBUG metadata snapshot without changing allocation/recovery.
+The prior deterministic tests/docs are locally checkpointed atf0c6d87. Device
+execution is separately gated: this is software observation, not a root-cause
+fix, hardware-quality promotion or Phase7 implementation.
+Source142e467 passes1159 JVM,27/27 native Debug/Release, integrated builds/lint
+and three-ABI Release exclusion. **VIDEO_FIRST_FULL_DIAGNOSTIC_SOFTWARE_VALIDATED**
+does not close the historical incomplete-AU cause or authorize device execution.
+
+## 2026-10-25 Video HOME/REOPEN Replay
+
+[The isolated replay](VideoHomeReopenDeterministicReplay.md) reproduces the
+eight-slot/ready0 signature with real protected native input and separately
+tests Session/Surface error and recovery transitions. It does not identify the
+historical incomplete group or justify a production fix. No device campaign,
+window/security/audio change or commit; hardware acceptance remains PARTIAL.
+
+## 2026-10-25 G5 Diagnostic Consolidation
+
+[G5 receipt](DirectShellDiagnosticConsolidation.md) records bounded passive
+DEBUG diagnostics, local checkpoints99f0bfc/f8cf491, software gates, exclusions,
+Release boundaries and lint/security disposition. G1-G5 is software-ready for
+controlled integration on the isolated branch, not newly hardware validated or
+production-ready. No device installation, provider work, Phase7 S0, fault mode,
+buffer/default change or merge occurred; the original research tree is preserved.
+
+## 2026-10-25 Isolated Functional Consolidation
+
+[G1-G4 receipt](DirectShellFunctionalConsolidation.md) records the dedicated
+consolidation branch, logical commits, software gates and preservation checks.
+This is a source projection, not a merge, new hardware campaign, release-default
+promotion or Phase6.5 exit. Dated quality entries below retain their historical
+APK/pair scope; independent audio/Video/timestamp debts remain open. The original
+dirty research worktree and Phase7 R2 planning are preserved separately. Static
+RFC-006I planning is already implemented, not a new RFC to begin here.
+
 ## Current Status
 
 The [SystemAudio quality closure](SystemAudioQualityRootCause.md) is

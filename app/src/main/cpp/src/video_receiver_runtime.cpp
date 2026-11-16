@@ -19,6 +19,15 @@
 #include "sequence_number.h"
 #include "video_resync_control.h"
 
+#if !defined(NDEBUG)
+#define WARPNECT_VIDEO_RELEASE(slot, reason) do { \
+    debug_slot_release(slot, diagnostics::VideoReleaseReason::reason); \
+    reset_slot(slot); \
+} while (false)
+#else
+#define WARPNECT_VIDEO_RELEASE(slot, reason) reset_slot(slot)
+#endif
+
 namespace warpnect::scl {
 namespace {
 
@@ -375,27 +384,27 @@ VideoReceiverRuntime::fill_decoder_input(std::span<std::byte> destination) noexc
         ReceiverSlot& slot = slots_[*slot_index];
         const ReassembledPayloadResult payload = slot.reassembly->result();
         if (!payload.ok()) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
             continue;
         }
         const VideoAccessUnitDecodeResult parsed =
             decode_video_access_unit(payload.payload.payload, payload.payload.group.timestamp_us);
         if (!parsed.ok()) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
             remember(parsed.error);
             return VideoReceiverFillResult{.error = parsed.error};
         }
         const VideoAccessUnitView& au = parsed.access_unit;
         if (snapshot_.active_config_generation != 0 &&
             au.config_generation != snapshot_.active_config_generation) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, Generation);
             mark_discontinuity(VideoError::InvalidConfigGeneration,
                                VideoResyncReason::Discontinuity);
             continue;
         }
         if (snapshot_.awaiting_keyframe && !au.is_key_frame) {
             ++snapshot_.non_keyframes_dropped_awaiting_keyframe;
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, KeyframeGate);
             continue;
         }
         if (destination.size() < au.encoded_bytes.size()) {
@@ -427,7 +436,7 @@ VideoReceiverRuntime::fill_decoder_input(std::span<std::byte> destination) noexc
         ++snapshot_.access_units_delivered;
         snapshot_.last_presentation_time_us = au.presentation_time_us;
         snapshot_.last_frame_id = au.frame_id;
-        reset_slot(slot);
+        WARPNECT_VIDEO_RELEASE(slot, Delivered);
         remember(VideoError::None);
         return result;
     }
@@ -454,7 +463,7 @@ VideoReceiverRuntime::activate_config_generation(std::uint32_t generation) noexc
         const VideoAccessUnitDecodeResult parsed =
             decode_video_access_unit(payload.payload.payload, payload.payload.group.timestamp_us);
         if (parsed.ok() && parsed.access_unit.config_generation != generation) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, Generation);
         }
     }
     ready_head_ = 0;
@@ -527,7 +536,7 @@ void VideoReceiverRuntime::close() noexcept {
     ready_head_ = 0;
     ready_count_ = 0;
     for (ReceiverSlot& slot : slots_) {
-        reset_slot(slot);
+        WARPNECT_VIDEO_RELEASE(slot, Close);
     }
 }
 
@@ -670,6 +679,15 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
     ++snapshot_.video_datagrams_received;
     const LossObservationResult observed =
         loss_detector_.observe(packet.header.sequence_number, now_us);
+#if !defined(NDEBUG)
+    if (first_full_ != nullptr && !first_full_->frozen()) {
+        auto kind = diagnostics::VideoIngressKind::Fragment;
+        if (observed.kind == LossObservationKind::Duplicate) kind = diagnostics::VideoIngressKind::InnerDuplicate;
+        if (observed.kind == LossObservationKind::TooOld) kind = diagnostics::VideoIngressKind::InnerTooOld;
+        first_full_->packet(kind, packet.header, now_us, 0xffff,
+                            static_cast<std::uint32_t>(observed.error), from_fec_recovery);
+    }
+#endif
     if (!observed.ok()) {
         if (observed.error == RecoveryError::WindowCapacityExceeded) {
             // The bounded NACK history cannot recover this gap; resume from authenticated input.
@@ -692,6 +710,9 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
 
     ReceiverSlot* slot = find_or_allocate_slot(packet.header, now_us);
     if (slot == nullptr) {
+#if !defined(NDEBUG)
+        capture_first_full(packet.header, now_us, from_fec_recovery);
+#endif
 #if defined(__ANDROID__) && !defined(NDEBUG)
         static std::atomic<unsigned> pressure_observations{0};
         unsigned count = pressure_observations.load(std::memory_order_relaxed);
@@ -721,6 +742,10 @@ VideoStatus VideoReceiverRuntime::process_video_packet(const PacketView& packet,
     }
 
     const ReassemblyResult accepted = slot->reassembly->accept(packet);
+#if !defined(NDEBUG)
+    if (first_full_ != nullptr && accepted.ok())
+        first_full_->accepted(static_cast<std::size_t>(slot - slots_.data()), packet.header);
+#endif
     const VideoError mapped = map_fragment_error(accepted.error);
     if (mapped != VideoError::None) {
         remember(mapped);
@@ -868,7 +893,7 @@ VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot,
         return status(VideoError::MalformedVideoPayload);
     }
     if (payload.payload.payload.size() < kVideoMessageHeaderWireSize) {
-        reset_slot(slot);
+        WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
         return status(VideoError::MalformedVideoPayload);
     }
     const auto message_type = static_cast<VideoMessageType>(
@@ -877,18 +902,18 @@ VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot,
         const VideoStreamConfigDecodeResult config =
             decode_video_stream_config(payload.payload.payload);
         if (!config.ok()) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
             return status(config.error);
         }
         const VideoStatus stored = store_stream_config(config.config);
-        reset_slot(slot);
+        WARPNECT_VIDEO_RELEASE(slot, Configuration);
         return stored;
     }
     if (message_type == VideoMessageType::AccessUnit) {
         const VideoAccessUnitDecodeResult access_unit =
             decode_video_access_unit(payload.payload.payload, payload.payload.group.timestamp_us);
         if (!access_unit.ok()) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
             return status(access_unit.error);
         }
         slot.complete_access_unit = true;
@@ -899,9 +924,15 @@ VideoStatus VideoReceiverRuntime::accept_complete_slot(ReceiverSlot& slot,
                                                            snapshot_.last_reassembly_latency_us);
         }
         ++snapshot_.access_units_completed;
+#if !defined(NDEBUG)
+        if (first_full_ != nullptr)
+            first_full_->completed(static_cast<std::size_t>(&slot - slots_.data()),
+                access_unit.access_unit.frame_id, access_unit.access_unit.config_generation,
+                access_unit.access_unit.is_key_frame, now_us);
+#endif
         return status(VideoError::None);
     }
-    reset_slot(slot);
+    WARPNECT_VIDEO_RELEASE(slot, InvalidPayload);
     return status(VideoError::UnsupportedVideoMessageType);
 }
 
@@ -946,6 +977,10 @@ VideoReceiverRuntime::find_or_allocate_slot(const PacketHeader& header,
             slot.completed_at_us = 0;
             slot.queued = false;
             slot.complete_access_unit = false;
+#if !defined(NDEBUG)
+            if (first_full_ != nullptr)
+                first_full_->allocated(static_cast<std::size_t>(&slot - slots_.data()), header, now_us);
+#endif
             update_occupancy_high_water();
             return &slot;
         }
@@ -955,9 +990,13 @@ VideoReceiverRuntime::find_or_allocate_slot(const PacketHeader& header,
         const auto oldest = pop_ready_slot();
         if (oldest.has_value()) {
             ReceiverSlot& slot = slots_[*oldest];
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, UnconfiguredEviction);
             ++snapshot_.stale_frames_released;
             slot.started_at_us = now_us;
+#if !defined(NDEBUG)
+            if (first_full_ != nullptr)
+                first_full_->allocated(static_cast<std::size_t>(&slot - slots_.data()), header, now_us);
+#endif
             return &slot;
         }
     }
@@ -1141,6 +1180,9 @@ VideoReceiverRuntime::send_session_control_payload(std::span<const std::byte> pa
 }
 
 void VideoReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcept {
+#if !defined(NDEBUG)
+    if (first_full_ != nullptr) first_full_->expiry_scan(now_us);
+#endif
     const std::uint64_t deadline_us = recovery_deadline_us(config_);
     if (deadline_us == 0) {
         return;
@@ -1152,7 +1194,7 @@ void VideoReceiverRuntime::expire_reassembly_slots(std::uint64_t now_us) noexcep
         }
         if (now_us >= slot.started_at_us &&
             now_us - slot.started_at_us >= deadline_us) {
-            reset_slot(slot);
+            WARPNECT_VIDEO_RELEASE(slot, Expired);
             expired = true;
             ++snapshot_.reassembly_timeouts;
             if (config_.runtime_network_telemetry != nullptr) config_.runtime_network_telemetry->reassembly_timeout();
@@ -1187,4 +1229,39 @@ void VideoReceiverRuntime::remember(VideoError error) noexcept {
     snapshot_.last_error = error;
 }
 
+#if !defined(NDEBUG)
+bool VideoReceiverRuntime::set_first_full_diagnostic(diagnostics::VideoFirstFullDiagnostic* diagnostic) noexcept {
+    if (diagnostic != nullptr && (first_full_ != nullptr || slots_.size() > 8 || ready_ring_.size() > 8)) return false;
+    first_full_ = diagnostic;
+    return true;
+}
+
+void VideoReceiverRuntime::debug_slot_release(ReceiverSlot& slot, diagnostics::VideoReleaseReason reason) noexcept {
+    if (first_full_ != nullptr && !first_full_->frozen() && slot.reassembly->is_started())
+        first_full_->release(static_cast<std::size_t>(&slot - slots_.data()), reason, monotonic_time_now_us().value);
+}
+
+void VideoReceiverRuntime::capture_first_full(const PacketHeader& packet, std::uint64_t now_us, bool fec) noexcept {
+    if (first_full_ == nullptr || first_full_->frozen()) return;
+    first_full_->packet(diagnostics::VideoIngressKind::AllocationFailure, packet, now_us, 0xffff, 0, fec);
+    if (!first_full_->begin_capture({.captured_us = now_us,
+            .recovery_deadline_us = recovery_deadline_us(config_), .timeouts = snapshot_.reassembly_timeouts,
+            .discontinuities = snapshot_.discontinuities, .full_count = snapshot_.reassembly_window_full + 1,
+            .active_codec_generation = snapshot_.active_config_generation,
+            .latest_codec_generation = snapshot_.latest_config_generation,
+            .slot_count = static_cast<std::uint32_t>(slots_.size()),
+            .ready_count = static_cast<std::uint32_t>(ready_count_),
+            .awaiting_keyframe = snapshot_.awaiting_keyframe ? 1U : 0U,
+            .pending_event = static_cast<std::uint32_t>(pending_event_.type)})) return;
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+        const auto& slot = slots_[i];
+        if (slot.reassembly->is_started())
+            first_full_->capture_slot(i, slot.reassembly->group(), slot.started_at_us,
+                slot.reassembly->received_fragment_count(), slot.complete_access_unit, slot.queued,
+                slot.bitmap_storage);
+    }
+}
+#endif
+
 } // namespace warpnect::scl
+#undef WARPNECT_VIDEO_RELEASE

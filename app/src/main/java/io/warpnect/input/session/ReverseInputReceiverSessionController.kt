@@ -81,12 +81,13 @@ class ReverseInputReceiverSessionController(
 
     fun requestEmergencyReset(): ReverseInputReceiverSessionResult {
         if (snapshot.state != ReverseInputSessionState.Running) {
-            return result(ReverseInputSessionError.ReceiverFailure)
+            return ReverseInputReceiverSessionResult(ReverseInputSessionError.ReceiverFailure, snapshot)
         }
         emergencyResetRequested.set(true)
         receiverRuntime.wake()
         snapshot = snapshot.copy(emergencyResetRequests = snapshot.emergencyResetRequests + 1L)
-        return result(ReverseInputSessionError.None)
+        // This acknowledges enqueue, not completion. A privileged snapshot RPC must not delay close.
+        return ReverseInputReceiverSessionResult(ReverseInputSessionError.None, snapshot)
     }
 
     fun stop(): ReverseInputReceiverSessionResult {

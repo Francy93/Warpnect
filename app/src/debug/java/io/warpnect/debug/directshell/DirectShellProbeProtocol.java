@@ -93,7 +93,9 @@ final class DirectShellProbeProtocol {
         MICROPHONE_PREPARE(100),
         MICROPHONE_START(101),
         MICROPHONE_FEED(102),
-        MICROPHONE_STOP(103);
+        MICROPHONE_STOP(103),
+        MICROPHONE_APP_PREPARE(104),
+        MICROPHONE_APP_STATE(105);
 
         final int code;
 
@@ -181,6 +183,18 @@ final class DirectShellProbeProtocol {
         writeEnvelope(output, TYPE_RESPONSE, requestId, status.code, payload, secret);
     }
 
+    static void writeResponse(DataOutputStream output, long requestId, Status status,
+            byte[] payload, byte[] secret, WriteTiming timing) throws IOException {
+        writeEnvelope(output, TYPE_RESPONSE, requestId, status.code, payload, secret, timing);
+    }
+
+    static final class WriteTiming {
+        long bodyFinishedNs;
+        long authenticationFinishedNs;
+        long streamWriteStartedNs;
+        long streamWriteFinishedNs;
+    }
+
     static Response readResponse(DataInputStream input, byte[] secret) throws IOException, ProtocolException {
         Envelope envelope = readEnvelope(input, secret);
         if (envelope.type != TYPE_RESPONSE) throw ProtocolException.malformed("expected_response");
@@ -202,11 +216,20 @@ final class DirectShellProbeProtocol {
             byte[] payload,
             byte[] secret
     ) throws IOException {
+        writeEnvelope(output, type, requestId, code, payload, secret, null);
+    }
+
+    private static void writeEnvelope(DataOutputStream output, byte type, long requestId,
+            int code, byte[] payload, byte[] secret, WriteTiming timing) throws IOException {
         byte[] authenticated = authenticatedBody(type, requestId, code, payload);
+        if (timing != null) timing.bodyFinishedNs = System.nanoTime();
         byte[] mac = mac(requireSecret(secret), authenticated);
+        if (timing != null) timing.authenticationFinishedNs = System.nanoTime();
         byte[] frame = java.nio.ByteBuffer.allocate(4 + authenticated.length + mac.length)
                 .putInt(authenticated.length + mac.length).put(authenticated).put(mac).array();
+        if (timing != null) timing.streamWriteStartedNs = System.nanoTime();
         output.write(frame);
+        if (timing != null) timing.streamWriteFinishedNs = System.nanoTime();
         output.flush();
     }
 

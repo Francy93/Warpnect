@@ -584,7 +584,7 @@ class SecureSessionCoordinator(
                     state = if (localRole == SessionRole.Host) {
                         SecureSessionCoordinatorState.Discovering
                     } else {
-                        SecureSessionCoordinatorState.Closed
+                        SecureSessionCoordinatorState.Idle
                     }
                     lastStage = SecureSessionIntegrationStage.Lifecycle
                     lastError = SecureSessionIntegrationError.None
@@ -610,8 +610,17 @@ class SecureSessionCoordinator(
 
     private fun fail(token: Long, stage: SecureSessionIntegrationStage, error: SecureSessionIntegrationError) {
         emitDebug(SessionStartupDebugEventKind.Failed, error)
-        synchronized(lock) {
+        val failedRuntimes = synchronized(lock) {
             if (token != 0L && !isCurrentLocked(token)) return
+            val owned = if (localRole == SessionRole.Client) {
+                ++currentToken
+                listOfNotNull(runtime, reconnectingRuntime).distinct().also {
+                    runtime = null
+                    reconnectingRuntime = null
+                }
+            } else {
+                emptyList()
+            }
             lastStage = stage
             lastError = error
             pairingVerificationPrompt = null
@@ -621,7 +630,9 @@ class SecureSessionCoordinator(
                 SecureSessionCoordinatorState.Failed
             }
             publishLocked()
+            owned
         }
+        failedRuntimes.forEach { it.close(DisconnectReason.FatalError) }
         if (stage == SecureSessionIntegrationStage.Discovery) {
             phaseDriver.stopDiscovery()
         } else if (localRole == SessionRole.Client) {

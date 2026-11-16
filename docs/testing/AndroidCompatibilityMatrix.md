@@ -1,5 +1,21 @@
 # Android Compatibility Matrix
 
+## 2026-10-25 Isolated G1-G4 Candidate
+
+[Consolidation receipt](../phase6_5/DirectShellFunctionalConsolidation.md) separates
+new source/build verification from historical device evidence. No package is
+installed in this task; no existing row gains a new hardware PASS.
+
+| Optional DirectShell global microphone | Evidence retained / remaining boundary |
+| --- | --- |
+| Tablet/API33 |Historical S9->Tablet MIC r835 OPEN/REOPEN evidence; new isolated APK regression PENDING, new-path VOICE_COMMUNICATION/CAMCORDER transitions not transferred |
+| A41/API31 |Historical MODIFY_AUDIO_ROUTING permission boundary remains; no alternate-provider rescue |
+| S7/API26 |Legacy policy adapter exists; historical MODIFY_AUDIO_ROUTING denial remains; ordinary capture does not establish global injection or a Complete Host |
+
+The app-owned writer is API31-gated. No model allowlist, partial normal Host,
+release-default promotion, universal Android qualification or new root privilege
+is introduced. Current failure/quality debts remain in the linked receipt.
+
 ## 2026-10-04 SystemAudio Exact-Pair Quality Closure
 
 [Current causal report](../phase6_5/SystemAudioQualityRootCause.md): exact

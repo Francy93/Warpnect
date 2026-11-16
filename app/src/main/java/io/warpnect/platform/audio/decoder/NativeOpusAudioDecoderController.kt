@@ -11,14 +11,19 @@ import io.warpnect.audio.decoder.DecodedAudioFormat
 import io.warpnect.audio.decoder.DecodedPcmAudioSink
 import io.warpnect.audio.decoder.EncodedAudioFrameMetadata
 import io.warpnect.audio.decoder.MissingAudioFrameMetadata
+import io.warpnect.audio.session.AudioPathStage
+import io.warpnect.audio.session.AudioPathTrace
+import io.warpnect.audio.session.tracedAudioMonitor
 import io.warpnect.telemetry.AudioReceiverTelemetry
 import java.nio.ByteBuffer
 
 class NativeOpusAudioDecoderController internal constructor(
     private val backend: OpusAudioDecoderBackend,
     private val telemetry: AudioReceiverTelemetry? = null,
+    private val pathTrace: AudioPathTrace? = null,
 ) : AudioDecoderController {
-    constructor(telemetry: AudioReceiverTelemetry? = null) : this(NativeOpusAudioDecoderBackend, telemetry)
+    constructor(telemetry: AudioReceiverTelemetry? = null, pathTrace: AudioPathTrace? = null) :
+        this(NativeOpusAudioDecoderBackend, telemetry, pathTrace)
 
     private val lock = Any()
     private var state = AudioDecoderState.Stopped
@@ -124,14 +129,14 @@ class NativeOpusAudioDecoderController internal constructor(
         offset: Int,
         sizeBytes: Int,
         metadata: EncodedAudioFrameMetadata,
-    ): AudioDecoderResult = synchronized(lock) {
-        val currentSink = sink ?: return@synchronized resultLocked(AudioDecoderError.NotPrepared)
-        val currentOutput = outputBuffer ?: return@synchronized resultLocked(AudioDecoderError.NotPrepared)
+    ): AudioDecoderResult = tracedAudioMonitor(pathTrace, AudioPathStage.DecoderFrame, lock) {
+        val currentSink = sink ?: return@tracedAudioMonitor resultLocked(AudioDecoderError.NotPrepared)
+        val currentOutput = outputBuffer ?: return@tracedAudioMonitor resultLocked(AudioDecoderError.NotPrepared)
         val rangeError = validateDecodeInput(buffer, offset, sizeBytes, metadata)
         if (rangeError != AudioDecoderError.None) {
             recordNonFatalOrFatal(rangeError)
             currentSink.onDecoderError(rangeError)
-            return@synchronized resultLocked(rangeError)
+            return@tracedAudioMonitor resultLocked(rangeError)
         }
         val sampledLatency = (metadata.firstFramePosition and 7L) == 0L
         val decodeStartedNs = if (sampledLatency) System.nanoTime() else 0L
@@ -160,7 +165,7 @@ class NativeOpusAudioDecoderController internal constructor(
         if (decoded.error != AudioDecoderError.None) {
             recordNonFatalOrFatal(decoded.error, decoded.nativeError)
             currentSink.onDecoderError(decoded.error)
-            return@synchronized resultLocked(decoded.error)
+            return@tracedAudioMonitor resultLocked(decoded.error)
         }
         try {
             currentSink.onPcmFrame(
@@ -179,7 +184,7 @@ class NativeOpusAudioDecoderController internal constructor(
         } catch (_: RuntimeException) {
             localSinkFailures += 1
             failLocked(AudioDecoderError.OutputSinkFailure)
-            return@synchronized resultLocked(AudioDecoderError.OutputSinkFailure)
+            return@tracedAudioMonitor resultLocked(AudioDecoderError.OutputSinkFailure)
         }
         resultLocked(AudioDecoderError.None)
     }

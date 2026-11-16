@@ -39,6 +39,38 @@ import org.junit.Test
 
 class ReverseInputReceiverSessionControllerTest {
     @Test
+    fun emergencyResetAcknowledgesEnqueueWithoutPrivilegedSnapshotRoundTrip() = runBlocking {
+        val runtime = FakeRuntime(mutableListOf())
+        val mapper = FakeMapper(mutableListOf())
+        val injection = FakeInjection(mutableListOf())
+        val session = ReverseInputReceiverSessionController(runtime, mapper, injection)
+        assertTrue(session.start(config()).isSuccess)
+        injection.forbidSnapshot = true
+        try {
+            val accepted = session.requestEmergencyReset()
+            assertTrue(accepted.isSuccess)
+            assertEquals(1L, accepted.snapshot.emergencyResetRequests)
+            assertTrue(mapper.resetObserved.await(1, TimeUnit.SECONDS))
+        } finally {
+            injection.forbidSnapshot = false
+            session.close()
+        }
+    }
+
+    @Test
+    fun inactiveEmergencyResetDoesNotProbePrivilegedService() {
+        val injection = FakeInjection(mutableListOf()).apply { forbidSnapshot = true }
+        val session = ReverseInputReceiverSessionController(
+            FakeRuntime(mutableListOf()),
+            FakeMapper(mutableListOf()),
+            injection,
+        )
+        assertEquals(ReverseInputSessionError.ReceiverFailure, session.requestEmergencyReset().error)
+        injection.forbidSnapshot = false
+        session.close()
+    }
+
+    @Test
     fun startsInjectionBeforeReceiverAndResetsOnlyAfterReceiveStops() = runBlocking {
         val trace = mutableListOf<String>()
         val runtime = FakeRuntime(trace)
@@ -167,6 +199,7 @@ class ReverseInputReceiverSessionControllerTest {
     private class FakeInjection(
         private val trace: MutableList<String>,
     ) : InputInjectionController {
+        var forbidSnapshot = false
         override suspend fun queryCapabilities(): InputInjectionCapabilities = InputInjectionCapabilities()
 
         override suspend fun requestPermission(): InputInjectionPermissionResult =
@@ -201,7 +234,10 @@ class ReverseInputReceiverSessionControllerTest {
             return result(InputInjectionServiceResult.ResetComplete)
         }
 
-        override fun snapshot(): InputInjectionSnapshot = InputInjectionSnapshot()
+        override fun snapshot(): InputInjectionSnapshot {
+            check(!forbidSnapshot) { "Unexpected privileged snapshot on emergency-reset caller" }
+            return InputInjectionSnapshot()
+        }
 
         override fun close() = Unit
 

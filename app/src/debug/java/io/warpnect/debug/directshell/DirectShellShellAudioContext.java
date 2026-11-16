@@ -17,27 +17,22 @@ import java.lang.reflect.Method;
  *
  * <p>This intentionally does not create an Application or pretend to be Warpnect. The wrapper
  * represents the actual app_process caller: UID 2000 and the installed {@code com.android.shell}
- * package. It is only used by the DEBUG REMOTE_SUBMIX feasibility probe.</p>
+ * package. API31 attribution is isolated so legacy framework callers never load it.</p>
  */
-@TargetApi(Build.VERSION_CODES.S)
-final class DirectShellShellAudioContext extends ContextWrapper {
+class DirectShellShellAudioContext extends ContextWrapper {
     static final String SHELL_PACKAGE_NAME = "com.android.shell";
 
     private static Context cachedSystemContext;
     private static boolean preparedThreadLooper;
 
-    private final AttributionSource attributionSource;
-
     private DirectShellShellAudioContext(Context systemContext) {
         super(systemContext);
-        attributionSource = new AttributionSource.Builder(Process.myUid())
-                .setPackageName(SHELL_PACKAGE_NAME)
-                .build();
     }
 
     static Result create() {
-        if (DirectShellRuntimeApi.sdkInt() < Build.VERSION_CODES.S) {
-            return Result.failure("API_LT_31_CONTEXT_UNSUPPORTED");
+        int sdk = DirectShellRuntimeApi.sdkInt();
+        if (MicrophonePolicyApi.adapterForSdk(sdk) == MicrophonePolicyApi.Adapter.UNSUPPORTED) {
+            return Result.failure("API_LT_26_CONTEXT_UNSUPPORTED");
         }
         if (Process.myUid() != Process.SHELL_UID) {
             return Result.failure("IDENTITY_UNAVAILABLE_NOT_SHELL_UID");
@@ -52,10 +47,9 @@ final class DirectShellShellAudioContext extends ContextWrapper {
             if (applicationInfo.uid != Process.SHELL_UID) {
                 return Result.failure("IDENTITY_UNAVAILABLE_PACKAGE_UID_MISMATCH");
             }
-            DirectShellShellAudioContext context = new DirectShellShellAudioContext(systemContext);
-            AttributionSource attribution = context.getAttributionSource();
-            if (attribution.getUid() != Process.SHELL_UID ||
-                    !SHELL_PACKAGE_NAME.equals(attribution.getPackageName())) {
+            DirectShellShellAudioContext context = MicrophonePolicyApi.adapterForSdk(sdk) == MicrophonePolicyApi.Adapter.ATTRIBUTED ?
+                    new AttributedContext(systemContext) : new DirectShellShellAudioContext(systemContext);
+            if (!context.hasValidIdentity()) {
                 return Result.failure("IDENTITY_UNAVAILABLE_ATTRIBUTION_MISMATCH");
             }
             return Result.available(
@@ -84,9 +78,34 @@ final class DirectShellShellAudioContext extends ContextWrapper {
         return SHELL_PACKAGE_NAME;
     }
 
-    @Override
-    public AttributionSource getAttributionSource() {
-        return attributionSource;
+    boolean hasValidIdentity() { return true; }
+
+    String attributionPayload() { return "attribution_strategy=LEGACY_UID_PACKAGE\n"; }
+
+    @TargetApi(Build.VERSION_CODES.S)
+    private static final class AttributedContext extends DirectShellShellAudioContext {
+        private final AttributionSource attributionSource;
+
+        AttributedContext(Context systemContext) {
+            super(systemContext);
+            attributionSource = new AttributionSource.Builder(Process.myUid())
+                    .setPackageName(SHELL_PACKAGE_NAME)
+                    .build();
+        }
+
+        @Override public AttributionSource getAttributionSource() {
+            return attributionSource;
+        }
+
+        @Override boolean hasValidIdentity() {
+            return attributionSource.getUid() == Process.SHELL_UID &&
+                    SHELL_PACKAGE_NAME.equals(attributionSource.getPackageName());
+        }
+
+        @Override String attributionPayload() {
+            return "attribution_uid=" + attributionSource.getUid() + '\n' +
+                    "attribution_package=" + safe(attributionSource.getPackageName()) + '\n';
+        }
     }
 
     private static synchronized Context systemContext() throws Exception {
@@ -175,15 +194,16 @@ final class DirectShellShellAudioContext extends ContextWrapper {
                         "context_classification=" + classification + '\n' +
                         "context_detail=" + detail;
             }
-            AttributionSource attribution = context.getAttributionSource();
             return "context_strategy=ACTIVITY_THREAD_SYSTEM_MAIN" +
                     (threadLooperPrepared ? "_WITH_THREAD_LOOPER" : "_EXISTING_THREAD_LOOPER") + '\n' +
+                    "context_adapter=" + MicrophonePolicyApi.adapterForSdk(DirectShellRuntimeApi.sdkInt()) + '\n' +
                     "context_classification=" + classification + '\n' +
                     "base_system_package=" + safe(basePackageName) + '\n' +
                     "package_name=" + context.getPackageName() + '\n' +
                     "op_package_name=" + context.getOpPackageName() + '\n' +
-                    "attribution_uid=" + attribution.getUid() + '\n' +
-                    "attribution_package=" + safe(attribution.getPackageName()) + '\n' +
+                    "caller_uid=" + Process.myUid() + '\n' +
+                    "caller_package=" + context.getPackageName() + '\n' +
+                    context.attributionPayload() +
                     "shell_package_uid=" + shellPackageUid;
         }
     }

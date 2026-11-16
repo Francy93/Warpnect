@@ -8,6 +8,38 @@ import org.junit.Test
 
 class MicrophoneReceiverPriorityTest {
     @Test
+    fun microphoneCanSelectUrgentSchedulingWithoutCallingSystemPolicy() {
+        var urgentCalls = 0
+        assertTrue(
+            applyAudioReceiverPriority(
+                AudioCaptureSource.MicrophoneAudio,
+                { error("system_policy_must_not_run") },
+                {
+                    urgentCalls++
+                    true
+                },
+            ),
+        )
+        assertEquals(1, urgentCalls)
+    }
+
+    @Test
+    fun systemAudioCannotAcquireMicrophoneUrgentScheduling() {
+        var regularCalls = 0
+        assertTrue(
+            applyAudioReceiverPriority(
+                AudioCaptureSource.SystemAudio,
+                {
+                    regularCalls++
+                    true
+                },
+                { error("microphone_policy_must_not_run") },
+            ),
+        )
+        assertEquals(1, regularCalls)
+    }
+
+    @Test
     fun microphonePriorityIsAppliedOnTheCallingWorkerOnly() {
         var appliedThread: Thread? = null
         var applied = false

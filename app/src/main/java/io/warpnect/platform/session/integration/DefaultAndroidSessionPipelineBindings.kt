@@ -265,10 +265,18 @@ class DefaultAndroidSessionPipelineBindings(
             val playback = NativeOboeAudioPlaybackController(playbackTelemetry)
             microphoneInput?.wrap(playback) ?: playback
         }
+        val pathTrace = if (BuildConfig.DEBUG && source == AudioCaptureSource.SystemAudio &&
+            receiver.hasAttachedFlightRecorder()
+        ) {
+            io.warpnect.platform.audio.AndroidAudioPathTrace
+        } else {
+            null
+        }
         val controller = DefaultAudioReceiverSessionController(
             receiverRuntimeController = receiver,
-            decoderControllerFactory = { NativeOpusAudioDecoderController(telemetry) },
+            decoderControllerFactory = { NativeOpusAudioDecoderController(telemetry, pathTrace) },
             playbackControllerFactory = playbackFactory,
+            pathTrace = pathTrace,
         )
         return AndroidAudioReceiverPipeline(
             controller = controller,
@@ -281,6 +289,7 @@ class DefaultAndroidSessionPipelineBindings(
                 mode.frameDurationUs,
             ),
             onStop = { microphoneInput?.close() },
+            onClosing = { microphoneInput?.stopAcceptingPcm() },
         )
     }
 

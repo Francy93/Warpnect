@@ -10,6 +10,7 @@ fun interface DebugMicrophoneInjectionOverride {
 
 interface DebugMicrophoneInjectionSession : AutoCloseable {
     fun wrap(diagnosticPlayback: AudioPlaybackController): AudioPlaybackController
+    fun stopAcceptingPcm() = Unit
 }
 
 object DebugMicrophoneInjectionOverrideRegistry {

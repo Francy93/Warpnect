@@ -244,6 +244,8 @@ internal object NativeBridge {
     @JvmStatic
     private external fun nativeAudioPlaybackSnapshot(handle: Long): LongArray
 
+    private external fun nativeAudioPlaybackXRunCount(handle: Long): Int
+
     @JvmStatic
     private external fun nativeAudioPlaybackAttachTelemetry(handle: Long, sourceId: Long): Int
 
@@ -506,6 +508,9 @@ internal object NativeBridge {
 
     @JvmStatic
     private external fun nativeAudioReceiverPump(handle: Long, timeoutUs: Long): LongArray
+
+    @JvmStatic
+    private external fun nativeAudioReceiverFlightEnabled(handle: Long): Boolean
 
     @JvmStatic
     private external fun nativeAudioReceiverReadyBuffer(handle: Long, slotIndex: Int): ByteBuffer?
@@ -941,6 +946,8 @@ internal object NativeBridge {
 
     fun audioPlaybackSnapshot(handle: Long): LongArray = nativeAudioPlaybackSnapshot(handle)
 
+    fun audioPlaybackXRunCount(handle: Long): Int = nativeAudioPlaybackXRunCount(handle)
+
     fun audioPlaybackAttachTelemetry(handle: Long, sourceId: Long): Int =
         nativeAudioPlaybackAttachTelemetry(handle, sourceId)
 
@@ -1297,6 +1304,9 @@ internal object NativeBridge {
     ): Int = nativeAudioReceiverRebind(handle, remoteAddress, remotePort, localPort, preparedEndpointHandle)
 
     fun audioReceiverPump(handle: Long, timeoutUs: Long): LongArray = nativeAudioReceiverPump(handle, timeoutUs)
+
+    fun audioReceiverFlightEnabled(handle: Long): Boolean =
+        BuildConfig.DEBUG && nativeAudioReceiverFlightEnabled(handle)
 
     fun audioReceiverReadyBuffer(handle: Long, slotIndex: Int): ByteBuffer? =
         nativeAudioReceiverReadyBuffer(handle, slotIndex)

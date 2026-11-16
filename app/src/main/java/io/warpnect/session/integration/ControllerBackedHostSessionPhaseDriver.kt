@@ -4,6 +4,7 @@ import io.warpnect.session.SessionId
 import io.warpnect.session.SessionRole
 import io.warpnect.session.capability.CapabilityNegotiationController
 import io.warpnect.session.capability.CapabilityNegotiationError
+import io.warpnect.session.capability.CapabilityNegotiationProtocol
 import io.warpnect.session.capability.HostCapabilityPolicy
 import io.warpnect.session.capability.NegotiatedSessionBootstrap
 import io.warpnect.session.capability.SecureSessionCapabilityBootstrap
@@ -288,6 +289,14 @@ class ControllerBackedHostSessionPhaseDriver(
             failFlight(bootstrap.sessionId, SecureSessionIntegrationStage.Setup, registration.toHostIntegrationError())
             return
         }
+        val capability = synchronized(lock) { sessions[bootstrap.sessionId]?.capability }
+        if (capability != null) {
+            installHostSetupPayloadListener(
+                bootstrap.secureSessionControl,
+                { payload -> capability.receive(bootstrap.sessionId, payload) },
+                { payload -> setup.receive(bootstrap.sessionId, payload) },
+            )
+        }
         val replaced = synchronized(lock) {
             val flight = sessions[bootstrap.sessionId] ?: return@synchronized false
             flight.setup = setup
@@ -339,7 +348,7 @@ class ControllerBackedHostSessionPhaseDriver(
     ) : AutoCloseable {
         fun detachForLifecycle() {
             // The prepared bootstrap owns the secure control/protection resources. The completed
-            // WNSN controller is no longer needed once it has transferred that bootstrap.
+            // Prepared control retains the bounded completed reply, not this WNSN controller.
             setup?.close()
             setup = null
             capability.close()
@@ -351,6 +360,22 @@ class ControllerBackedHostSessionPhaseDriver(
             transport.close()
             secure.protection.close()
             secure.admissionReservation?.close()
+        }
+    }
+}
+
+internal fun installHostSetupPayloadListener(
+    transport: SecureSessionControlTransport,
+    capabilityPayload: (ByteArray) -> Unit,
+    setupPayload: (ByteArray) -> Unit,
+) {
+    // The completed WNCP cache must still receive authenticated retries while WNSN starts.
+    val magic = CapabilityNegotiationProtocol.MAGIC
+    transport.setPayloadListener { payload ->
+        if (payload.size >= magic.size && magic.indices.all { payload[it] == magic[it] }) {
+            capabilityPayload(payload)
+        } else {
+            setupPayload(payload)
         }
     }
 }

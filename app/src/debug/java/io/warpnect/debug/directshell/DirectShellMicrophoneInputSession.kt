@@ -10,11 +10,21 @@ internal class DirectShellMicrophoneInputSession(
     private val lease: AutoCloseable,
 ) : DebugMicrophoneInjectionSession {
     private val closed = AtomicBoolean(false)
+    private val accepting = AtomicBoolean(true)
 
     override fun wrap(diagnosticPlayback: AudioPlaybackController): AudioPlaybackController =
-        DirectShellMicrophonePlayback(diagnosticPlayback) { if (closed.get()) null else input }
+        DirectShellMicrophonePlayback(AsyncMicrophoneDiagnosticPlayback(diagnosticPlayback)) {
+            if (closed.get() || !accepting.get()) null else input
+        }
+
+    override fun stopAcceptingPcm() {
+        accepting.set(false)
+    }
 
     override fun close() {
-        if (closed.compareAndSet(false, true)) lease.close()
+        if (closed.compareAndSet(false, true)) {
+            stopAcceptingPcm()
+            lease.close()
+        }
     }
 }

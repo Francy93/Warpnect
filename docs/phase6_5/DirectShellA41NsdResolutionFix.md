@@ -14,7 +14,7 @@ The repaired result is
 
 The A41 retained a valid Wireless Debugging pairing, had `adbd` and `mdnsd`
 running, and published a usable local TLS-connect endpoint. Desktop observation
-showed `adb-R58N52B32JJ-1jXjic` at `192.168.1.36:40075`. Warpnect nevertheless
+showed `adb-TESTUNIT002-TST001` at `192.168.1.36:40075`. Warpnect nevertheless
 failed before `app_process` launch after finding several `_adb-tls-connect`
 services and receiving NSD resolve error `3`.
 
@@ -57,7 +57,7 @@ for a normal re-pair rather than guessing among local ADB services.
 ## Hardware Evidence
 
 On the A41, a new user-authorized pairing recorded
-`adb-R58N52B32JJ-1jXjic`; pairing used port `40235` and the connection service
+`adb-TESTUNIT002-TST001`; pairing used port `40235` and the connection service
 resolved to port `40075`. Warpnect then completed local ADB, artifact validation,
 `app_process`, shell UID/GID `2000`, authenticated HMAC control, and shutdown.
 A normal Host admission subsequently selected:

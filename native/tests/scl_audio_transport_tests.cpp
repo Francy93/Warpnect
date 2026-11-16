@@ -2,6 +2,7 @@
 #include "audio_packetizer.h"
 #include "audio_protocol.h"
 #include "audio_transport.h"
+#include "audio_wire_timing_samples.h"
 #include "fragmentation.h"
 #include "packet_codec.h"
 #include "reassembly.h"
@@ -629,7 +630,34 @@ void test_generation_helpers() {
                  1U, "audio generation wraps and skips zero");
 }
 
+void test_bounded_wire_timing_identity() {
+    std::array<warpnect::scl::AudioWireTimingSample, 2> storage{};
+    warpnect::scl::AudioWireTimingSamples probe(storage);
+    const std::array<std::byte, 2> wire{std::byte{1}, std::byte{2}};
+    auto other = wire;
+    other[1] = std::byte{3};
+    expect(probe.fingerprint(wire) == probe.fingerprint(wire), "identical protected bytes correlate");
+    expect(probe.fingerprint(wire) != probe.fingerprint(other), "different protected bytes distinguish");
+    expect(probe.append({.sequence = 9}), "first observation admitted");
+    expect(probe.append({.sequence = 10}), "second observation admitted");
+    expect(!probe.append({.sequence = 11}), "diagnostic storage stays bounded without overwrite");
+    expect_equal(probe.overflow(), 1ULL, "diagnostic overflow remains visible");
+    expect(probe.attach_tx(1, 1, 500, 1000), "out-of-order TX ID maps to second datagram");
+    expect(probe.attach_tx(0, 1, 400, 1001), "first datagram maps independently of arrival order");
+    expect(probe.attach_tx(1, 0, 600, 1002), "driver stage kept separate from scheduler stage");
+    expect_equal(storage[1].software_ns, 500ULL, "TX scheduler identity is exact");
+    expect_equal(storage[1].tx_software_ns, 600ULL, "driver timestamp does not replace scheduler");
+    expect(!probe.attach_tx(2, 1, 700, 1003), "unknown ID rejected not guessed");
+    expect(!probe.attach_tx(0, 2, 700, 1003), "unknown stage rejected");
+    expect(!probe.attach_tx(0, 1, 0, 1003), "unavailable timestamp rejected");
+    probe.authenticate_last(123);
+    expect(storage[1].authenticated && storage[1].sequence == 123, "receive identity only marked after authentication");
+    probe.invalidate_tx_mapping();
+    expect(!probe.attach_tx(0, 1, 800, 1004), "send failure invalidates ID mapping rather than shifting identity");
+}
+
 int run_all_tests() {
+    test_bounded_wire_timing_identity();
     test_common_header_golden();
     test_stream_config_golden_and_decode();
     test_audio_frame_golden_and_round_trip();

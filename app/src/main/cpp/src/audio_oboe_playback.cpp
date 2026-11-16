@@ -8,9 +8,20 @@
 #include <limits>
 #include <utility>
 
+#ifndef NDEBUG
+#include <android/log.h>
+#include "internal/microphone_ring_timing_debug.h"
+#include "internal/system_audio_flight_debug.h"
+using namespace warpnect::audio::diagnostic;
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+
 #include "oboe/Oboe.h"
 #include "audio_playback_priming.h"
 #include "audio_playback_capacity_wait.h"
+#include "audio_playback_clock_startup.h"
+#include "audio_playback_callback_handoff.h"
 
 namespace warpnect::audio::android {
 namespace {
@@ -122,8 +133,13 @@ class OboeAudioPlayback::DataCallback final : public oboe::AudioStreamDataCallba
 public:
     DataCallback(std::shared_ptr<PcmPlaybackRing> ring, std::uint8_t channel_count,
                  std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source,
-                 std::uint32_t prime_frames)
-        : ring_(std::move(ring)), channel_count_(channel_count), priming_(prime_frames),
+                 std::uint32_t prime_frames, std::uint32_t priming_clock_sample_rate
+#ifndef NDEBUG
+                 , AudioCaptureSource source, std::uint32_t generation
+#endif
+                 )
+        : ring_(std::move(ring)), channel_count_(channel_count),
+          priming_(prime_frames, priming_clock_sample_rate),
           observe_times_(
 #if defined(__ANDROID__) && !defined(NDEBUG)
               true
@@ -131,6 +147,12 @@ public:
               prime_frames > 0
 #endif
           ) {
+#ifndef NDEBUG
+        if (source == AudioCaptureSource::MicrophoneAudio && prime_frames > 0)
+            ring_timing_ = MicrophoneRingTimingDebug::create();
+        if (source == AudioCaptureSource::SystemAudio) flight_ = SystemAudioFlightDebug::current();
+        flight_generation_ = generation;
+#endif
         set_telemetry_source(std::move(telemetry_source));
     }
 
@@ -159,7 +181,15 @@ public:
         }
         const auto safe_frames = static_cast<std::uint32_t>(num_frames);
         callback_count_.fetch_add(1, std::memory_order_relaxed);
+#ifndef NDEBUG
+        if (callback_tid_.load(std::memory_order_relaxed) == 0) {
+            callback_tid_.store(static_cast<std::uint32_t>(syscall(SYS_gettid)), std::memory_order_relaxed);
+        }
+#endif
         const auto callback_ns = observe_times_ ? OboeAudioPlayback::monotonic_now_ns() : 0;
+#ifndef NDEBUG
+        if (flight_) flight_callback_cpu_begin_ = SystemAudioFlightDebug::now(CLOCK_THREAD_CPUTIME_ID);
+#endif
         const auto previous_ns = previous_callback_ns_.exchange(callback_ns, std::memory_order_relaxed);
         if (previous_ns != 0 && callback_ns >= previous_ns) {
             const auto gap_ns = callback_ns - previous_ns;
@@ -174,14 +204,19 @@ public:
         auto* const bytes = static_cast<std::byte*>(audio_data);
         const std::uint64_t output_start =
             output_frame_cursor_.fetch_add(safe_frames, std::memory_order_acq_rel);
-        if (reprime_requested_.exchange(false, std::memory_order_acq_rel)) {
+        const bool reprime = reprime_requested_.exchange(false, std::memory_order_acq_rel);
+        if (reprime) {
             priming_.source_discontinuity();
         }
-        if (!priming_.ready(ring_->occupancy_frames())) {
+        const auto before = ring_->occupancy_frames();
+        if (!priming_.ready(before, callback_ns, ring_->oldest_submit_time_ns_for_consumer(), safe_frames)) {
             std::fill_n(static_cast<std::int16_t*>(audio_data),
                         static_cast<std::size_t>(safe_frames) * channel_count_, std::int16_t{0});
             priming_callbacks_.fetch_add(1, std::memory_order_relaxed);
             priming_frames_.fetch_add(safe_frames, std::memory_order_relaxed);
+#ifndef NDEBUG
+            if (ring_timing_enabled()) observe_callback(callback_ns, output_start, safe_frames, before, 0, reprime, false, true);
+#endif
             return oboe::DataCallbackResult::Continue;
         }
         const auto consume_ns = callback_ns;
@@ -198,10 +233,17 @@ public:
         if (delivered_samples_ != nullptr) delivered_samples_->add(consumed.pcm_frames_copied);
         if (consumed.underrun && underruns_ != nullptr) underruns_->increment();
         if (ring_fill_ != nullptr) ring_fill_->set(static_cast<std::int64_t>(ring_->occupancy_frames()));
+#ifndef NDEBUG
+        if (ring_timing_enabled()) observe_callback(callback_ns, output_start, safe_frames, before,
+            static_cast<int>(consumed.pcm_frames_copied), reprime, consumed.underrun);
+#endif
         return oboe::DataCallbackResult::Continue;
     }
 
     void reset_output_cursor() noexcept {
+#ifndef NDEBUG
+        flight_previous_callback_ = 0;
+#endif
         output_frame_cursor_.store(0, std::memory_order_release);
         priming_.reset();
         reprime_requested_.store(false, std::memory_order_relaxed);
@@ -211,6 +253,7 @@ public:
         last_underrun_missing_frames_.store(0, std::memory_order_relaxed);
         callback_count_.store(0, std::memory_order_relaxed);
         previous_callback_ns_.store(0, std::memory_order_relaxed);
+        callback_tid_.store(0, std::memory_order_relaxed);
         max_callback_gap_ns_.store(0, std::memory_order_relaxed);
         ring_low_water_mark_.store(UINT32_MAX, std::memory_order_relaxed);
     }
@@ -226,12 +269,93 @@ public:
     std::uint64_t callback_count() const noexcept { return callback_count_.load(std::memory_order_relaxed); }
     std::uint64_t callback_frames() const noexcept { return output_frame_cursor_.load(std::memory_order_relaxed); }
     std::uint64_t max_callback_gap_ns() const noexcept { return max_callback_gap_ns_.load(std::memory_order_relaxed); }
+    std::uint64_t previous_callback_ns() const noexcept { return previous_callback_ns_.load(std::memory_order_relaxed); }
+    std::uint32_t callback_tid() const noexcept { return callback_tid_.load(std::memory_order_relaxed); }
     std::uint32_t ring_low_water_mark() const noexcept {
         const auto value = ring_low_water_mark_.load(std::memory_order_relaxed);
         return value == UINT32_MAX ? 0 : value;
     }
-
+#ifndef NDEBUG
+    bool ring_timing_enabled() const noexcept { return ring_timing_ != nullptr || flight_ != nullptr; }
+    bool flight_enabled() const noexcept { return flight_ != nullptr; }
+    void finish_ring_timing() noexcept { if (ring_timing_) ring_timing_->finish(); }
+    void flight_lifecycle(std::uint32_t code) noexcept {
+        if (flight_) flight_->lifecycle(code, flight_generation_);
+    }
+    void observe_admission(std::uint64_t begin, std::uint32_t before, std::uint32_t frames,
+        const DecodedPcmPlaybackMetadata& metadata, const PcmPlaybackRingSubmitResult& result) noexcept {
+        if (flight_) {
+            const auto end = SystemAudioFlightDebug::now();
+            flight_->emit(FlightLane::Admission, {.begin=begin, .end=end,
+                .position=metadata.first_frame_position, .kind=FlightKind::Admission,
+                .generation=metadata.config_generation, .frames=frames, .before=before,
+                .after=result.occupancy_frames, .code=static_cast<std::uint32_t>(result.error)});
+            if (result.error == AudioPlaybackError::PlaybackRingFull && flight_->active_phase())
+                flight_->trigger(FlightTrigger::Rejected, end);
+        }
+        if (!ring_timing_) return;
+        const auto counters = ring_->snapshot();
+        ring_timing_->submit({begin, MicrophoneRingTimingDebug::now(), metadata.first_frame_position,
+            counters.pcm_frames_submitted, counters.pcm_frames_consumed, frames, before,
+            result.occupancy_frames, static_cast<std::uint32_t>(callback_count()),
+            static_cast<std::uint32_t>(priming_callbacks()), static_cast<int>(result.error), metadata.discontinuity_before},
+            result.error == AudioPlaybackError::PlaybackRingFull);
+    }
+    void observe_xrun(std::uint64_t begin, std::uint64_t sdk_end,
+                      bool supported, std::int32_t count, std::uint32_t state) noexcept {
+        if (!flight_) return;
+        const auto end = SystemAudioFlightDebug::now();
+        flight_->emit(FlightLane::Observer, {.begin=begin, .end=end,
+            .position=flight_previous_xrun_time_, .aux=sdk_end,
+            .counter=static_cast<std::uint64_t>(std::max(0, count)),
+            .kind=FlightKind::Xrun, .generation=flight_generation_, .before=state,
+            .code=supported ? 0U : 1U});
+        if (supported && count > flight_previous_xrun_ && !flight_->stopping())
+            flight_->trigger(FlightTrigger::Xrun, end);
+        flight_previous_xrun_ = count;
+        flight_previous_xrun_time_ = end;
+        flight_->observe_trigger();
+    }
+#endif
 private:
+#ifndef NDEBUG
+    void observe_callback(std::uint64_t begin, std::uint64_t position, std::uint32_t frames,
+                          std::uint32_t before, int copied, bool reprime,
+                          bool underrun = false, bool priming = false) noexcept {
+        if (flight_) {
+            const auto cpu_end = SystemAudioFlightDebug::now(CLOCK_THREAD_CPUTIME_ID);
+            const bool cpu_valid = flight_callback_cpu_begin_ && cpu_end >= flight_callback_cpu_begin_ &&
+                cpu_end - flight_callback_cpu_begin_ < UINT32_MAX;
+            const auto end = SystemAudioFlightDebug::now();
+            if (!priming && copied > 0) flight_->active(begin);
+            flight_->emit(FlightLane::Callback, {.begin=begin, .end=end, .position=position,
+                .aux=flight_previous_callback_, .counter=static_cast<std::uint64_t>(std::max(0, copied)),
+                .kind=FlightKind::Callback, .generation=flight_generation_,
+                .sequence=cpu_valid ? static_cast<std::uint32_t>(cpu_end - flight_callback_cpu_begin_) : UINT32_MAX,
+                .frames=frames, .before=before, .after=ring_->occupancy_frames(),
+                .code=(priming ? 1U : 0U) | (underrun ? 2U : 0U) | (reprime ? 4U : 0U) | (cpu_valid ? 8U : 0U)});
+            if (!flight_->stopping()) {
+                if (underrun) flight_->trigger(FlightTrigger::Underrun, end);
+                if ((flight_previous_callback_ && begin > flight_previous_callback_ &&
+                     begin - flight_previous_callback_ > 6'000'000ULL) || end - begin > 6'000'000ULL)
+                    flight_->trigger(FlightTrigger::CallbackGap, begin);
+            }
+            flight_previous_callback_ = begin;
+        }
+        if (!ring_timing_) return;
+        const auto counters = ring_->snapshot();
+        ring_timing_->callback({begin, MicrophoneRingTimingDebug::now(), position,
+            counters.pcm_frames_submitted, counters.pcm_frames_consumed, frames, before,
+            counters.ring_occupancy_frames, static_cast<std::uint32_t>(callback_count()),
+            static_cast<std::uint32_t>(priming_callbacks()), copied, reprime});
+    }
+    std::unique_ptr<MicrophoneRingTimingDebug> ring_timing_;
+    std::shared_ptr<SystemAudioFlightDebug> flight_;
+    std::uint32_t flight_generation_ = 0;
+    std::uint64_t flight_previous_callback_ = 0, flight_previous_xrun_time_ = 0;
+    std::uint64_t flight_callback_cpu_begin_ = 0;
+    std::int32_t flight_previous_xrun_ = 0;
+#endif
     std::shared_ptr<PcmPlaybackRing> ring_{};
     std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> telemetry_source_{};
     scl::runtime_telemetry::RuntimeTelemetryCounterU64* callbacks_ = nullptr;
@@ -250,6 +374,7 @@ private:
     std::atomic<std::uint32_t> last_underrun_missing_frames_{0};
     std::atomic<std::uint64_t> callback_count_{0};
     std::atomic<std::uint64_t> previous_callback_ns_{0};
+    std::atomic<std::uint32_t> callback_tid_{0};
     std::atomic<std::uint64_t> max_callback_gap_ns_{0};
     std::atomic<std::uint32_t> ring_low_water_mark_{UINT32_MAX};
 };
@@ -336,7 +461,12 @@ AudioPlaybackError OboeAudioPlayback::prepare() {
     }
 
     data_callback_ = std::make_shared<DataCallback>(ring_, config_.channel_count, telemetry_source_,
-        config_.start_threshold_codec_frames * config_.frames_per_codec_frame);
+        config_.start_threshold_codec_frames * config_.frames_per_codec_frame,
+        is_microphone() ? config_.sample_rate_hz : 0
+#ifndef NDEBUG
+        , config_.source, config_.config_generation
+#endif
+        );
     error_callback_ = std::make_shared<ErrorCallback>();
     const AudioPlaybackError stream_error = open_stream();
     if (stream_error != AudioPlaybackError::None) {
@@ -429,7 +559,42 @@ AudioPlaybackError OboeAudioPlayback::start() {
     // A warm clock emits priming silence; the callback alone owns PCM-ready admission.
     data_callback_->reset_output_cursor();
     ring_->invalidate_source_timeline();
-    const oboe::Result result = stream_->requestStart();
+    // Microphone readiness is published by the SDK owner, not by the receiver.
+    // A successful asynchronous request is still STARTING, not a running clock.
+    const auto started_ns = monotonic_now_ns();
+#ifndef NDEBUG
+    data_callback_->flight_lifecycle(1);
+#endif
+    const auto initial_read = is_microphone() ? stream_->getFramesRead() : 0;
+    oboe::Result result = is_microphone()
+        ? stream_->start(100 * oboe::kNanosPerMillisecond)
+        : stream_->requestStart();
+    if (is_microphone() && result == oboe::Result::OK) {
+        // SDK initialization owner only: no PCM is retained while the clock warms.
+        AudioPlaybackClockStartup startup(initial_read,
+            monotonic_now_ns() + 250 * oboe::kNanosPerMillisecond);
+        for (;;) {
+            const auto state = startup.observe(stream_->getFramesRead(), monotonic_now_ns());
+            if (state == AudioPlaybackClockStartup::State::Ready) break;
+            if (state == AudioPlaybackClockStartup::State::TimedOut ||
+                stream_->getState() != oboe::StreamState::Started) {
+                result = oboe::Result::ErrorTimeout;
+                break;
+            }
+            const timespec pause{.tv_sec = 0, .tv_nsec = 1'000'000};
+            nanosleep(&pause, nullptr);
+        }
+    }
+#ifndef NDEBUG
+    if (is_microphone()) {
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+            "MIC_NATIVE_CLOCK_START begin_ns=%llu end_ns=%llu state=%d callbacks=%llu error=%d read_before=%lld read_after=%lld",
+            static_cast<unsigned long long>(started_ns),
+            static_cast<unsigned long long>(monotonic_now_ns()), static_cast<int>(stream_->getState()),
+            static_cast<unsigned long long>(data_callback_->callback_count()), static_cast<int>(result),
+            static_cast<long long>(initial_read), static_cast<long long>(stream_->getFramesRead()));
+    }
+#endif
     if (result != oboe::Result::OK) {
         record_error(AudioPlaybackError::StreamStartFailed);
         return AudioPlaybackError::StreamStartFailed;
@@ -450,6 +615,9 @@ AudioPlaybackError OboeAudioPlayback::stop() {
     if (!running_) {
         return AudioPlaybackError::NotRunning;
     }
+#ifndef NDEBUG
+    data_callback_->flight_lifecycle(2);
+#endif
     const oboe::Result result = stream_->stop(100 * oboe::kNanosPerMillisecond);
     if (result != oboe::Result::OK && result != oboe::Result::ErrorInvalidState) {
         record_error(AudioPlaybackError::StreamStopFailed);
@@ -478,18 +646,69 @@ AudioPlaybackError OboeAudioPlayback::submit_pcm(
         record_error(AudioPlaybackError::ConfigGenerationMismatch);
         return AudioPlaybackError::ConfigGenerationMismatch;
     }
+#ifndef NDEBUG
+    const auto admit_begin = data_callback_->ring_timing_enabled() ? monotonic_now_ns() : 0;
+    const auto admit_before = data_callback_->ring_timing_enabled() ? ring_->occupancy_frames() : 0;
+#endif
     if (running_) {
-        const AudioPlaybackCapacityWait admission(monotonic_now_ns(), snapshot_.frames_per_burst,
-            config_.sample_rate_hz, config_.source == AudioCaptureSource::SystemAudio ? frame_count : 0,
-            true, config_.source == AudioCaptureSource::SystemAudio);
+        const bool microphone = config_.source == AudioCaptureSource::MicrophoneAudio;
+        const auto begin = monotonic_now_ns();
+        // Microphone diagnostics have an independent owner: report ring pressure
+        // instead of serializing fresh admission behind output wakeups.
+        // System's block-rounded deadline needs one burst for measured callback jitter.
+        const AudioPlaybackCapacityWait admission(begin,
+            microphone ? snapshot_.actual_buffer_frames : snapshot_.frames_per_burst,
+            config_.sample_rate_hz, microphone ? 0 : frame_count, !microphone, !microphone);
+        bool waited = false;
         while (const auto wait_ns = admission.next_wait_ns(ring_->occupancy_frames(),
                    ring_->capacity_frames(), frame_count, monotonic_now_ns())) {
+            waited = true;
             const timespec pause{.tv_sec = 0, .tv_nsec = static_cast<long>(wait_ns)};
             nanosleep(&pause, nullptr);
         }
+#ifndef NDEBUG
+        static std::atomic<unsigned> wait_reports{0};
+        if (microphone && waited && wait_reports.fetch_add(1) < 16) {
+            __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+                "MIC_DEBUG_CAPACITY_WAIT begin_ns=%llu end_ns=%llu position=%llu occupancy=%u capacity=%u",
+                static_cast<unsigned long long>(begin), static_cast<unsigned long long>(monotonic_now_ns()),
+                static_cast<unsigned long long>(metadata.first_frame_position), ring_->occupancy_frames(),
+                ring_->capacity_frames());
+        }
+#else
+        (void)waited;
+#endif
     }
     const auto submitted = ring_->submit(pcm, frame_count, metadata, monotonic_now_ns());
+#ifndef NDEBUG
+    if (admit_begin) data_callback_->observe_admission(admit_begin, admit_before, frame_count, metadata, submitted);
+#endif
     if (submitted.error != AudioPlaybackError::None) {
+#ifndef NDEBUG
+        if (config_.source == AudioCaptureSource::MicrophoneAudio &&
+            submitted.error == AudioPlaybackError::PlaybackRingFull &&
+            ring_->snapshot().pcm_frames_rejected <= 8U * config_.frames_per_codec_frame) {
+            const auto state = ring_->snapshot();
+            const auto now = monotonic_now_ns();
+            const auto previous = data_callback_->previous_callback_ns();
+            __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+                "MIC_DEBUG_RING_FULL local_ns=%llu position=%llu occupancy=%u capacity=%u "
+                "written=%llu consumed=%llu callbacks=%llu callback_frames=%llu "
+                "previous_callback_ns=%llu callback_age_ns=%llu max_callback_gap_ns=%llu "
+                "output_burst_frames=%u output_buffer_frames=%u",
+                static_cast<unsigned long long>(now),
+                static_cast<unsigned long long>(metadata.first_frame_position),
+                submitted.occupancy_frames, ring_->capacity_frames(),
+                static_cast<unsigned long long>(state.pcm_frames_submitted),
+                static_cast<unsigned long long>(state.pcm_frames_consumed),
+                static_cast<unsigned long long>(data_callback_->callback_count()),
+                static_cast<unsigned long long>(data_callback_->callback_frames()),
+                static_cast<unsigned long long>(previous),
+                static_cast<unsigned long long>(previous != 0 && now >= previous ? now - previous : 0),
+                static_cast<unsigned long long>(data_callback_->max_callback_gap_ns()),
+                snapshot_.frames_per_burst, snapshot_.actual_buffer_frames);
+        }
+#endif
         record_error(submitted.error);
         return submitted.error;
     }
@@ -609,9 +828,81 @@ AudioSourcePresentationAnchor OboeAudioPlayback::query_source_presentation_ancho
     };
 }
 
+AudioPlaybackError OboeAudioPlayback::admit_microphone_pcm(
+    std::span<const std::byte> pcm, std::uint32_t frame_count,
+    const DecodedPcmPlaybackMetadata& metadata) noexcept {
+    if (!is_microphone()) return AudioPlaybackError::InvalidConfiguration;
+    if (closed_) return AudioPlaybackError::Closed;
+    if (!prepared_ || !ring_) return AudioPlaybackError::NotPrepared;
+#ifndef NDEBUG
+    const auto admit_begin = data_callback_->ring_timing_enabled() ? monotonic_now_ns() : 0;
+    const auto admit_before = data_callback_->ring_timing_enabled() ? ring_->occupancy_frames() : 0;
+#endif
+    const bool valid_pcm = metadata.config_generation == config_.config_generation &&
+        frame_count > 0 && frame_count <= config_.frames_per_codec_frame &&
+        pcm.size() == static_cast<std::size_t>(frame_count) * config_.channel_count * sizeof(std::int16_t);
+    if (valid_pcm && !ring_->has_available_slot() && data_callback_) {
+        const auto previous_callback = data_callback_->previous_callback_ns();
+        const auto begin = monotonic_now_ns();
+        const AudioPlaybackCallbackHandoff handoff(begin, previous_callback);
+#ifndef NDEBUG
+        bool rechecked = false;
+#endif
+        // No sleep/SDK call/PCM copy: callback releases the existing SPSC slot.
+        while (!ring_->has_available_slot() && handoff.may_recheck(monotonic_now_ns())) {
+#ifndef NDEBUG
+            rechecked = true;
+#endif
+        }
+#ifndef NDEBUG
+        if (rechecked) {
+            const auto elapsed = monotonic_now_ns() - begin;
+            ++microphone_handoff_count_;
+            microphone_handoff_total_ns_ += elapsed;
+            microphone_handoff_max_ns_ = std::max(microphone_handoff_max_ns_, elapsed);
+            if (!ring_->has_available_slot()) ++microphone_handoff_timeouts_;
+        }
+#endif
+    }
+    const auto result = ring_->submit(pcm, frame_count, metadata, monotonic_now_ns());
+#ifndef NDEBUG
+    if (admit_begin) data_callback_->observe_admission(admit_begin, admit_before, frame_count, metadata, result);
+    auto& full_reports = data_callback_->callback_count() <= 2
+        ? microphone_startup_full_reports_ : microphone_full_reports_;
+    if (result.error == AudioPlaybackError::PlaybackRingFull && full_reports++ < 16) {
+        const auto now = monotonic_now_ns();
+        const auto counters = ring_->snapshot();
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+            "MIC_NATIVE_ADMISSION_FULL ns=%llu position=%llu occupancy=%u capacity=%u "
+            "submitted=%llu consumed=%llu rejected=%llu callback_tid=%u callback_ns=%llu "
+            "callback_gap_max_ns=%llu callback_count=%llu priming_callbacks=%llu",
+            static_cast<unsigned long long>(now),
+            static_cast<unsigned long long>(metadata.first_frame_position),
+            result.occupancy_frames, counters.ring_capacity_frames,
+            static_cast<unsigned long long>(counters.pcm_frames_submitted),
+            static_cast<unsigned long long>(counters.pcm_frames_consumed),
+            static_cast<unsigned long long>(counters.pcm_frames_rejected),
+            data_callback_ ? data_callback_->callback_tid() : 0,
+            static_cast<unsigned long long>(data_callback_ ? data_callback_->previous_callback_ns() : 0),
+            static_cast<unsigned long long>(data_callback_ ? data_callback_->max_callback_gap_ns() : 0),
+            static_cast<unsigned long long>(data_callback_ ? data_callback_->callback_count() : 0),
+            static_cast<unsigned long long>(data_callback_ ? data_callback_->priming_callbacks() : 0));
+    }
+#endif
+    if (result.error == AudioPlaybackError::None && metadata.discontinuity_before &&
+        metadata.frame_kind == DecodedAudioFrameKind::Normal && data_callback_) {
+        data_callback_->request_source_discontinuity();
+    }
+    return result.error;
+}
+
 OboeAudioPlaybackSnapshot OboeAudioPlayback::snapshot() {
-    refresh_stream_snapshot();
-    refresh_xrun_count();
+    // Microphone counter reads never call the Android SDK. Its observer samples
+    // xruns separately without holding the ingress mutex.
+    if (config_.source == AudioCaptureSource::SystemAudio) {
+        refresh_stream_snapshot();
+        refresh_xrun_count();
+    }
     if (ring_) {
         const auto ring_snapshot = ring_->snapshot();
         snapshot_.ring_capacity_frames = ring_snapshot.ring_capacity_frames;
@@ -668,6 +959,9 @@ void OboeAudioPlayback::close() noexcept {
     if (closed_) {
         return;
     }
+#ifndef NDEBUG
+    if (data_callback_) data_callback_->flight_lifecycle(3);
+#endif
     if (stream_) {
         if (running_) {
             stream_->stop(100 * oboe::kNanosPerMillisecond);
@@ -675,6 +969,17 @@ void OboeAudioPlayback::close() noexcept {
         stream_->close();
         stream_.reset();
     }
+#ifndef NDEBUG
+    if (data_callback_) data_callback_->finish_ring_timing();
+    if (is_microphone()) {
+        __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
+            "MIC_CALLBACK_HANDOFF_RELEASE count=%llu total_ns=%llu max_ns=%llu timeouts=%llu",
+            static_cast<unsigned long long>(microphone_handoff_count_),
+            static_cast<unsigned long long>(microphone_handoff_total_ns_),
+            static_cast<unsigned long long>(microphone_handoff_max_ns_),
+            static_cast<unsigned long long>(microphone_handoff_timeouts_));
+    }
+#endif
     if (ring_) {
         ring_->close();
         ring_.reset();
@@ -721,7 +1026,17 @@ void OboeAudioPlayback::refresh_xrun_count() {
     if (!stream_) {
         return;
     }
+#ifndef NDEBUG
+    const auto begin = data_callback_ && data_callback_->flight_enabled() ? SystemAudioFlightDebug::now() : 0;
+#endif
     const auto xrun = stream_->getXRunCount();
+#ifndef NDEBUG
+    if (begin) {
+        const auto sdk_end = SystemAudioFlightDebug::now();
+        data_callback_->observe_xrun(begin, sdk_end, stream_->isXRunCountSupported() && bool(xrun),
+            xrun ? xrun.value() : -1, static_cast<std::uint32_t>(stream_->getState()));
+    }
+#endif
     if (xrun) {
         snapshot_.xrun_count = xrun.value();
     }

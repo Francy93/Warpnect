@@ -105,6 +105,7 @@ class SessionPipelineRuntime(
 
     override fun onSessionClosing() = synchronized(lock) {
         if (state != SessionPipelineState.Closed) {
+            started.toList().forEach(SessionPipelineComponent::onSessionClosing)
             started.filter { it.phase == SessionPipelineStartPhase.PhysicalSource }
                 .asReversed()
                 .forEach {

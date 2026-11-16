@@ -1190,6 +1190,18 @@ class SessionSetupController(
         cancelTimers(setup)
         val selection = requireNotNull(setup.pathSelection)
         val now = now()
+        val control = completed[setup.key]?.let { cached ->
+            CompletedSetupControlTransport(
+                cached.transport,
+                setup.key.setupId,
+                cached.profileHash.copyOf(),
+                cached.endpointOfferHash.copyOf(),
+                cached.proposalHash.copyOf(),
+                cached.commitBytes,
+                cached.expiresAtMs,
+                clock,
+            )
+        } ?: setup.binding.bootstrap.secureSessionControl
         val prepared = PreparedSessionBootstrap(
             setup.binding.bootstrap.sessionId,
             setup.binding.bootstrap.generation,
@@ -1202,7 +1214,7 @@ class SessionSetupController(
             selection.active,
             selection.standby,
             setup.preparedChannels.toList(),
-            setup.binding.bootstrap.secureSessionControl,
+            control,
             setup.binding.bootstrap.protection,
             setup.binding.bootstrap.admissionReservation,
             now,

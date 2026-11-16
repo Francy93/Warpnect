@@ -10,6 +10,7 @@ final class DirectShellMicrophoneFrame {
     static final int DROP_NO_CONSUMER = -1001;
     static final int DROP_STALE = -1002;
     static final int DROP_CONSUMER_TRANSITION = -1003;
+    static final int DROP_CAPACITY = -1004;
     final short[] samples;
     final long enqueuedNs;
 

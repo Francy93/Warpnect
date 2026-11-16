@@ -52,7 +52,7 @@ gateway MAC `6c:99:61:16:23:67`. All addresses have prefix /24.
 | --- | --- | --- | --- | --- |
 | S9 / API29 | 23eaec0f12047ece | 192.168.1.4 | 46:af:fe:01:ec:e9 | 89 / 602 |
 | Tablet / API33 | Z1382023HGM1895372 | 192.168.1.57 | 5e:42:d8:d0:6d:ad | 3 / 105 before rejoin |
-| A41 / API31 | R58N52B32JJ | 192.168.1.36 | 9a:da:f5:2b:f8:d2 | 5 / 100 |
+| A41 / API31 | TESTUNIT002 | 192.168.1.36 | 9a:da:f5:2b:f8:d2 | 5 / 100 |
 
 Direct routes use wlan0 and the correct source addresses. Neighbour tables
 show the expected peer MACs: no duplicate-IP/wrong-neighbour evidence was

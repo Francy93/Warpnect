@@ -18,6 +18,9 @@
 #include "video_resync_control.h"
 #include "video_result.h"
 #include "video_transport.h"
+#if !defined(NDEBUG)
+#include "video_first_full_diagnostic.h"
+#endif
 
 namespace warpnect::scl {
 
@@ -149,6 +152,9 @@ class VideoReceiverRuntime final {
     [[nodiscard]] VideoReceiverSnapshot snapshot() const noexcept;
     [[nodiscard]] VideoStreamConfigView latest_stream_config() const noexcept;
     [[nodiscard]] std::span<const std::byte> latest_csd_entry(std::size_t index) const noexcept;
+#if !defined(NDEBUG)
+    [[nodiscard]] bool set_first_full_diagnostic(diagnostics::VideoFirstFullDiagnostic* diagnostic) noexcept;
+#endif
 
   private:
     struct ReceiverSlot final {
@@ -201,6 +207,11 @@ class VideoReceiverRuntime final {
     void mark_discontinuity(VideoError error, VideoResyncReason reason) noexcept;
     void reset_slot(ReceiverSlot& slot) noexcept;
     void remember(VideoError error) noexcept;
+#if !defined(NDEBUG)
+    void capture_first_full(const PacketHeader& packet, std::uint64_t now_us, bool from_fec) noexcept;
+    void debug_slot_release(ReceiverSlot& slot, diagnostics::VideoReleaseReason reason) noexcept;
+    diagnostics::VideoFirstFullDiagnostic* first_full_ = nullptr; // Non-owning; handle serializes every user.
+#endif
 
     VideoReceiverConfig config_{};
     UdpSocket socket_{};
