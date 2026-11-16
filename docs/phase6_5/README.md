@@ -1,5 +1,68 @@
 # Phase 6.5 - Privileged Runtime Evolution
 
+## 2026-10-27 Android Pairing Storage Adapter
+
+[Implementation and evidence](DirectShellPairingAndroidStorageAdapter.md): isolated
+uncommitted successor to P1 checkpoints7f3e39f/856bca7 and the preserved P2 storage
+candidate. Public Android private-filesystem and existing-key-only Keystore AEAD
+adapters are unwired. Final199 focused/1383 full JVM evidence and40 replay scope
+are in the receipt; API26 descriptor operations fail closed.26 new
+instrumentation methods compile, NOT executed. Platform qualification pending,
+P2_PARTIAL_BLOCKED; no Release onboarding, real pairing, device access or Phase7
+implementation. This entry supersedes older next-task wording, not acceptance.
+
+## 2026-10-27 Pairing Reservation Model
+
+[Model implementation and evidence](DirectShellPairingReservationModel.md): the
+authorized P1 reservation/receipt increment is pure/unwired, IMPLEMENTED/SOFTWARE
+TESTED:96 focused/1280 full JVM,40 replay and required build/lint/isolation PASS.
+It does not integrate real P2, activate Release setup, access Android devices or
+complete Phase6.5. Current source/test counts, failed experiments, source/artifact
+hashes and preservation are kept in that receipt rather than inferred from P2.
+
+## 2026-10-26 Release Pairing Architecture Review
+
+[Current handoff](CURRENT_HANDOFF.md) records local DEBUG UI checkpoints
+f7dd2cf/2a6528d, exact software scope and preserved hardware debt.
+[Release onboarding architecture](DirectShellReleasePairingArchitecture.md)
+is proposed only: no backend/dependency/manifest activation occurred. Pairing
+ownership, cancellable I/O, credential commit and the separate Release runtime
+bundle must be reviewed; no automatic Host publication follows pairing.
+The [bounded implementation prompt](DirectShellReleasePairingImplementationPrompt.md)
+has now been executed for pure unwired P1 only; see its
+[owner/contracts receipt](DirectShellPairingEnrollmentOwner.md). No backend,
+Release setup action or runtime registration is activated. Phase6.5 is not
+complete and Phase7 R2 is unchanged.
+
+## 2026-10-26 Explicit Host Pairing Setup UI
+
+[RFC-006J UI follow-up](DirectShellHostPairingSetup.md) records the isolated
+G1-G5-based normal Host pairing action, DEBUG-only setup adapter, launch/result
+ownership, source/test checkpointf7dd2cf, software checks and pending hardware acceptance. Release without a
+supported adapter does not expose the action. No automatic Host retry, provider
+change, media fix or Phase7 work is included. Frozen/report/research worktrees
+and device-restoration evidence remain separate and preserved; the new UI does
+not close G1-G5 partial hardware acceptance or historical media debt.
+
+## 2026-10-25 G5 Diagnostic Consolidation
+
+[G5 receipt](DirectShellDiagnosticConsolidation.md) records bounded passive
+DEBUG diagnostics, local checkpoints99f0bfc/f8cf491, software gates, exclusions,
+Release boundaries and lint/security disposition. G1-G5 is software-ready for
+controlled integration on the isolated branch, not newly hardware validated or
+production-ready. No device installation, provider work, Phase7 S0, fault mode,
+buffer/default change or merge occurred; the original research tree is preserved.
+
+## 2026-10-25 Isolated Functional Consolidation
+
+[G1-G4 receipt](DirectShellFunctionalConsolidation.md) records the dedicated
+consolidation branch, logical commits, software gates and preservation checks.
+This is a source projection, not a merge, new hardware campaign, release-default
+promotion or Phase6.5 exit. Dated quality entries below retain their historical
+APK/pair scope; independent audio/Video/timestamp debts remain open. The original
+dirty research worktree and Phase7 R2 planning are preserved separately. Static
+RFC-006I planning is already implemented, not a new RFC to begin here.
+
 ## Current Status
 
 The [SystemAudio quality closure](SystemAudioQualityRootCause.md) is

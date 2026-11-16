@@ -24,7 +24,7 @@ remain preserved. No reset, clean, discard, stash, rebase, merge or push.
 | --- | --- | --- | --- | --- |
 | X700_EEA | Z1382023HGM1895372 | 13/33 | Aocwei/X700_EEA/X700_EEA:13/TP1A.220624.014/2023264:user/release-keys | Primary DirectShell Host/input consumer |
 | SM-G960F | 23eaec0f12047ece | 10/29 | samsung/starltexx/starlte:10/QP1A.190711.020/G960FXXUHFVG4:user/release-keys | Physical microphone Client |
-| SM-A415F | R58N52B32JJ | 12/31 | samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys | Capability control, not substitute acceptance |
+| SM-A415F | TESTUNIT002 | 12/31 | samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys | Capability control, not substitute acceptance |
 | SM-G935F | 9886734e4937395657 | 8.0.0/26 | samsung/hero2ltexx/hero2lte:8.0.0/R16NW/G935FXXU8EVH2:user/release-keys | Context/permission probe |
 
 S22 is not used. Exact serials are used for every action. No Root command,

@@ -36,6 +36,9 @@ class UdpSocket final {
     [[nodiscard]] bool is_open() const noexcept;
 
     void enable_receive_timestamps_for_diagnostics() noexcept;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    int native_handle_for_diagnostics() const noexcept { return static_cast<int>(socket_handle_); }
+#endif
 
     void close() noexcept;
 

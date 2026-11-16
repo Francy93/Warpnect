@@ -3,7 +3,18 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <queries>
+        <intent>
+            <action android:name="android.settings.APPLICATION_DEVELOPMENT_SETTINGS" />
+        </intent>
+    </queries>
+
     <application>
+        <!-- Explicit instrumentation only: same UID, independent process, fixed synthetic namespace. -->
+        <service
+            android:name=".debug.storage.PairingStorageFixtureService"
+            android:exported="false"
+            android:process=":pairing_storage_fixture" />
         <!-- Lab-only fixed controller. Ordinary applications cannot invoke it. -->
         <receiver
             android:name=".debug.directshell.DirectRootLabReceiver"
@@ -46,7 +57,7 @@
         <!-- DEBUG-only user-consented Wireless Debugging / self-ADB bootstrap feasibility UI. -->
         <activity
             android:name=".debug.directshell.DirectShellSelfBootstrapProbeActivity"
-            android:exported="true"
+            android:exported="false"
             android:launchMode="singleTop" />
         <service
             android:name=".debug.directshell.DirectShellSelfBootstrapPairingService"

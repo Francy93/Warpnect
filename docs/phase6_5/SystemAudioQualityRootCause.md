@@ -21,7 +21,7 @@ outputs were preserved. The operator authorized archiving/removing only the
 empty September 30 index lock; its metadata and identical backup are outside
 the repository.
 
-Primary pair: A41 `R58N52B32JJ`, API31 Host, to S9
+Primary pair: A41 `TESTUNIT002`, API31 Host, to S9
 `23eaec0f12047ece`, API29 Client. Initial peer pings were 3/3 in each
 direction. A41 Wireless Debugging was already enabled; it was not toggled.
 No Root, provider migration, hidden fallback, or router change was used.

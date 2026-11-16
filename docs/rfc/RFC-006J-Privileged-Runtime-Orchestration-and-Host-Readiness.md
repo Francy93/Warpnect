@@ -62,6 +62,12 @@ runtime discovery
 * The A41 NSD repair proves that runtime state can change independently of a
   capability implementation. A valid pairing and local daemon were present;
   the prior failure was client-side endpoint selection.
+* The [r1702 Debug smoke](../phase6_5/DirectShellDebugPairingR1702.md) completed
+  Host-UI Wireless Debugging pairing, GUID-bound NSD/TLS reconnect and helper
+  HMAC/shutdown on the A41/API31 without starting Host or a Session. This is
+  evidence for that Debug path, not Android synthetic P1/P2 or Release
+  qualification. `P2_PARTIAL_BLOCKED` and the accepted authority contracts
+  are unchanged.
 * Existing capability evidence is useful but cannot by itself prove that a
   volatile runtime, authorization, network endpoint, or provider process is
   usable now.

@@ -190,6 +190,16 @@ VideoStatus VideoTransportSender::submit_stream_config(std::uint16_t width, std:
     cached_height_ = height;
     snapshot_.current_config_generation = next_generation;
     ++snapshot_.configs_submitted;
+    if (pending_config_resync_ && !cached_csd_.empty()) {
+        const VideoStatus resent = resend_current_stream_config();
+        if (!resent.ok()) {
+            remember(VideoError::ResyncRequestFailed);
+            return status(snapshot_.last_error);
+        }
+        pending_config_resync_ = false;
+        ++snapshot_.stream_config_resends;
+        ++snapshot_.keyframe_requests_received;
+    }
     remember(VideoError::None);
     return status(VideoError::None);
 }
@@ -377,6 +387,8 @@ VideoTransportSender::handle_video_resync_request(const VideoResyncRequest& requ
     if (snapshot_.current_config_generation == 0 || cached_csd_.empty() || cached_width_ == 0 ||
         cached_height_ == 0) {
         ++snapshot_.resync_requests_without_config;
+        // Coalesce the existing request until codec readiness; never retain request payloads.
+        if (request.reason == VideoResyncReason::NeedConfiguration) pending_config_resync_ = true;
         remember(VideoError::None);
         return status(VideoError::None);
     }
@@ -428,6 +440,7 @@ VideoTransportSnapshot VideoTransportSender::snapshot() const noexcept {
 
 void VideoTransportSender::close() noexcept {
     socket_.close();
+    pending_config_resync_ = false;
     snapshot_.opened = false;
     snapshot_.closed = true;
 }

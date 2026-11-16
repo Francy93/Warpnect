@@ -1,6 +1,7 @@
 #include <jni.h>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <chrono>
@@ -12,11 +13,19 @@
 #include <span>
 #include <string_view>
 #include <vector>
+#if defined(__ANDROID__)
+#include <cerrno>
+#include <sys/resource.h>
+#include <time.h>
+#endif
 #if defined(__ANDROID__) && !defined(NDEBUG)
 #include <android/log.h>
+#include "internal/system_audio_flight_debug.h"
+using namespace warpnect::audio::diagnostic;
 #endif
 
 #include <mbedtls/platform_util.h>
+#include <oboe/Oboe.h>
 
 #include "audio_oboe_playback.h"
 #include "audio_opus_decoder.h"
@@ -34,6 +43,7 @@
 #include "runtime_telemetry.h"
 #include "runtime_network_telemetry.h"
 #include "session_protection.h"
+#include "scoped_thread_priority_floor.h"
 #include "udp_endpoint.h"
 #include "udp_socket.h"
 #include "video_receiver_runtime.h"
@@ -242,11 +252,17 @@ struct NativeVideoReceiverHandle final {
 struct NativeAudioEncoderHandle final {
     std::mutex lock{};
     std::unique_ptr<OpusAudioEncoder> encoder{};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::shared_ptr<SystemAudioFlightDebug> flight;
+#endif
 };
 
 struct NativeAudioDecoderHandle final {
     std::mutex lock{};
     std::unique_ptr<OpusAudioDecoder> decoder{};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::shared_ptr<SystemAudioFlightDebug> flight;
+#endif
 };
 
 struct NativeAudioPlaybackHandle final {
@@ -301,6 +317,9 @@ struct NativeAudioReceiverHandle final {
     std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry> network_telemetry{};
     std::unique_ptr<AudioReceiverRuntime> runtime{};
     std::vector<jobject> ready_slot_views{};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::shared_ptr<SystemAudioFlightDebug> flight;
+#endif
 };
 
 struct NativePreparedUdpEndpointHandle final {
@@ -320,6 +339,10 @@ struct NativePreparedSecureChannelHandle final {
 struct NativeSessionProtectionState final {
     std::mutex lock{};
     std::unique_ptr<SessionProtectionRuntime> runtime{};
+    std::atomic<unsigned> microphone_receivers{0};
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    std::shared_ptr<SystemAudioFlightDebug> flight;
+#endif
 };
 
 struct NativeSessionProtectionHandle final {
@@ -391,11 +414,38 @@ struct LiveTransportRebind final {
     };
 }
 
+#if defined(__ANDROID__)
+bool read_current_thread_priority(int& value) noexcept {
+    errno = 0;
+    value = getpriority(PRIO_PROCESS, 0);
+    return errno == 0;
+}
+int set_current_thread_priority(int value) noexcept {
+    return setpriority(PRIO_PROCESS, 0, value) == 0 ? 0 : errno;
+}
+void protection_priority_failure(int value, int error) noexcept {
+#if !defined(NDEBUG)
+    static std::atomic<unsigned> reports{0};
+    if (reports.fetch_add(1) < 8) {
+        __android_log_print(ANDROID_LOG_WARN, "WarpnectAudioDiagnostics",
+            "PROTECTION_PRIORITY_FAILURE wanted=%d errno=%d", value, error);
+    }
+#else
+    (void)value; (void)error;
+#endif
+}
+#endif
+
 class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProtector {
   public:
     NativeSessionDatagramProtector(std::shared_ptr<NativeSessionProtectionState> state,
-                                   const ProtectionScope scope) noexcept
-        : state_(std::move(state)), scope_(scope) {}
+                                   const ProtectionScope scope, bool microphone_receiver = false) noexcept
+        : state_(std::move(state)), scope_(scope), microphone_receiver_(microphone_receiver) {
+        if (microphone_receiver_) state_->microphone_receivers.fetch_add(1);
+    }
+    ~NativeSessionDatagramProtector() override {
+        if (microphone_receiver_) state_->microphone_receivers.fetch_sub(1);
+    }
 
     void set_runtime_network_telemetry(warpnect::scl::RuntimeNetworkTelemetry* telemetry) noexcept {
         telemetry_ = telemetry;
@@ -414,6 +464,10 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
     [[nodiscard]] warpnect::scl::DatagramProtectionResult protect(
         const std::span<const std::byte> inner,
         const std::span<std::byte> output) noexcept override {
+#if defined(__ANDROID__)
+        warpnect::scl::ScopedThreadPriorityFloor priority(state_->microphone_receivers.load() != 0,
+            -19, read_current_thread_priority, set_current_thread_priority, protection_priority_failure);
+#endif
         std::lock_guard guard(state_->lock);
         if (state_->runtime == nullptr) {
             return {.error = warpnect::scl::DatagramProtectionError::Failed};
@@ -432,11 +486,25 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
         const std::span<const std::byte> secure,
         const std::span<std::byte> output,
         const std::uint64_t now_us) noexcept override {
+#if defined(__ANDROID__)
+        warpnect::scl::ScopedThreadPriorityFloor priority(state_->microphone_receivers.load() != 0,
+            -19, read_current_thread_priority, set_current_thread_priority, protection_priority_failure);
+#endif
         std::lock_guard guard(state_->lock);
         if (state_->runtime == nullptr) {
             return {.error = warpnect::scl::DatagramProtectionError::Failed};
         }
-        const auto result = state_->runtime->unprotect(source, secure, output, now_us);
+        auto protection_now_us = now_us;
+#if defined(__ANDROID__)
+        // SessionControl/lifecycle use BOOTTIME; keep media deadlines in their original clock.
+        timespec elapsed{};
+        if (clock_gettime(CLOCK_BOOTTIME, &elapsed) != 0 || elapsed.tv_sec < 0) {
+            return {.error = warpnect::scl::DatagramProtectionError::Failed};
+        }
+        protection_now_us = static_cast<std::uint64_t>(elapsed.tv_sec) * 1'000'000ULL +
+                            static_cast<std::uint64_t>(elapsed.tv_nsec) / 1'000ULL;
+#endif
+        const auto result = state_->runtime->unprotect(source, secure, output, protection_now_us);
 #if defined(__ANDROID__) && !defined(NDEBUG)
         if (!result.ok() && debug_rejection_reports_++ < 16) {
             __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
@@ -488,6 +556,7 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
 
     std::shared_ptr<NativeSessionProtectionState> state_{};
     ProtectionScope scope_{};
+    bool microphone_receiver_ = false;
     warpnect::scl::RuntimeNetworkTelemetry* telemetry_ = nullptr;
 #if defined(__ANDROID__) && !defined(NDEBUG)
     std::uint32_t debug_rejection_reports_ = 0;
@@ -495,7 +564,7 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
 };
 
 [[nodiscard]] std::unique_ptr<warpnect::scl::DatagramProtector> make_channel_protector(
-    const jlong protection_handle, const jlong channel_id) {
+    const jlong protection_handle, const jlong channel_id, bool microphone_receiver = false) {
     if (protection_handle == 0 && channel_id == 0) return nullptr;
     if (protection_handle == 0 || channel_id <= 0 ||
         channel_id > static_cast<jlong>(std::numeric_limits<std::uint32_t>::max())) {
@@ -508,7 +577,7 @@ class NativeSessionDatagramProtector final : public warpnect::scl::DatagramProte
         if (handle->state->runtime == nullptr) return nullptr;
     }
     return std::make_unique<NativeSessionDatagramProtector>(
-        handle->state, ProtectionScope::channel(static_cast<std::uint32_t>(channel_id)));
+        handle->state, ProtectionScope::channel(static_cast<std::uint32_t>(channel_id)), microphone_receiver);
 }
 
 [[nodiscard]] std::shared_ptr<warpnect::scl::RuntimeNetworkTelemetry>
@@ -1034,6 +1103,11 @@ create_audio_transport_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeAudioTransportHandle>();
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (payload_type == PayloadType::SystemAudio && protection_handle != 0) {
+        if (auto flight = SystemAudioFlightDebug::current()) flight->channel(static_cast<std::uint32_t>(channel_id));
+    }
+#endif
     handle->protector = make_channel_protector(protection_handle, channel_id);
     if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     handle->config = AudioTransportSenderConfig{
@@ -1377,7 +1451,14 @@ create_audio_receiver_handle(JNIEnv* env,
     }
 
     auto handle = std::make_unique<NativeAudioReceiverHandle>();
-    handle->protector = make_channel_protector(protection_handle, channel_id);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (payload_type == PayloadType::SystemAudio && protection_handle != 0) {
+        handle->flight = SystemAudioFlightDebug::current();
+        if (handle->flight) handle->flight->channel(static_cast<std::uint32_t>(channel_id));
+    }
+#endif
+    handle->protector = make_channel_protector(protection_handle, channel_id,
+        payload_type == warpnect::scl::PayloadType::MicrophoneAudio);
     if ((protection_handle != 0 || channel_id != 0) && handle->protector == nullptr) return nullptr;
     auto runtime = std::make_unique<AudioReceiverRuntime>(
         AudioReceiverConfig{
@@ -1455,6 +1536,9 @@ create_audio_encoder_handle(jint source,
         return nullptr;
     }
     auto handle = std::make_unique<NativeAudioEncoderHandle>();
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (source == static_cast<jint>(AudioCaptureSource::SystemAudio)) handle->flight = SystemAudioFlightDebug::current();
+#endif
     auto encoder = std::make_unique<OpusAudioEncoder>(
         OpusAudioEncoderConfig{
             .codec = AudioCodec::Opus,
@@ -1488,6 +1572,17 @@ create_audio_decoder_handle(jint source,
         return nullptr;
     }
     auto handle = std::make_unique<NativeAudioDecoderHandle>();
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (source == static_cast<jint>(AudioCaptureSource::SystemAudio)) {
+        handle->flight = SystemAudioFlightDebug::current();
+        if (handle->flight) {
+            const auto time = SystemAudioFlightDebug::now();
+            handle->flight->emit(FlightLane::Observer, {.begin=time, .end=time,
+                .kind=FlightKind::DecoderCreated, .generation=static_cast<std::uint32_t>(config_generation)});
+            if (handle->flight->active_phase()) handle->flight->trigger(FlightTrigger::DecoderReset, time);
+        }
+    }
+#endif
     auto decoder = std::make_unique<OpusAudioDecoder>(
         OpusAudioDecoderConfig{
             .codec = AudioCodec::Opus,
@@ -1835,6 +1930,12 @@ Java_io_warpnect_NativeBridge_nativeSessionProtectionCreate(
             if (!initialized.ok()) {
                 values[1] = session_protection_error_code(initialized.error);
             } else {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+                std::uint64_t session_tag = 14695981039346656037ULL;
+                for (const auto b : sid) session_tag = (session_tag ^ std::to_integer<std::uint8_t>(b)) * 1099511628211ULL;
+                handle->state->flight = SystemAudioFlightDebug::create(
+                    static_cast<std::uint32_t>(session_generation), session_tag);
+#endif
                 UdpEndpoint endpoint{};
                 endpoint.address.version = remote_address.size() == 4 ? IpVersion::V4 : IpVersion::V6;
                 for (std::size_t index = 0; index < remote_address.size(); ++index) {
@@ -2348,10 +2449,7 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSubmitPcm(
     if (span.error != AudioPlaybackError::None) {
         return audio_playback_error_code(span.error);
     }
-    std::lock_guard guard(native_handle->lock);
-    const AudioPlaybackError error = native_handle->playback->submit_pcm(
-        span.bytes, static_cast<std::uint32_t>(frame_count),
-        DecodedPcmPlaybackMetadata{
+    const DecodedPcmPlaybackMetadata metadata{
             .config_generation = static_cast<std::uint32_t>(config_generation),
             .first_frame_position = static_cast<std::uint64_t>(first_frame_position),
             .capture_time_us = static_cast<std::uint64_t>(capture_time_us),
@@ -2360,7 +2458,16 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSubmitPcm(
             .discontinuity_before = discontinuity_before == JNI_TRUE,
             .frame_kind =
                 static_cast<DecodedAudioFrameKind>(static_cast<std::uint8_t>(frame_kind)),
-        });
+        };
+    if (native_handle->playback->is_microphone()) {
+        // Kotlin pins the raw handle against stop/destroy. Observation uses only
+        // atomic ring counters and cannot block this single-producer admission.
+        return audio_playback_error_code(native_handle->playback->admit_microphone_pcm(
+            span.bytes, static_cast<std::uint32_t>(frame_count), metadata));
+    }
+    std::lock_guard guard(native_handle->lock);
+    const AudioPlaybackError error = native_handle->playback->submit_pcm(
+        span.bytes, static_cast<std::uint32_t>(frame_count), metadata);
     return audio_playback_error_code(error);
 }
 
@@ -2446,6 +2553,24 @@ Java_io_warpnect_NativeBridge_nativeAudioPlaybackSourcePresentationAnchor(JNIEnv
         env->SetLongArrayRegion(array, 0, kNativeAudioPlaybackSourceAnchorValues, values);
     }
     return array;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioPlaybackXRunCount(JNIEnv* /* env */,
+                                                         jclass /* clazz */,
+                                                         jlong handle) {
+    auto* native_handle = audio_playback_handle_from(handle);
+    if (native_handle == nullptr) return -1;
+    std::shared_ptr<oboe::AudioStream> stream;
+    {
+        std::lock_guard guard(native_handle->lock);
+        if (native_handle->playback) stream = native_handle->playback->observation_stream();
+    }
+    // The Kotlin lifecycle read lease pins the handle until this call returns.
+    // Only the shared stream is touched outside the ingress lock.
+    if (!stream) return -1;
+    const auto result = stream->getXRunCount();
+    return result ? result.value() : -1;
 }
 
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -2614,7 +2739,13 @@ Java_io_warpnect_NativeBridge_nativeAudioDecoderDecode(
         if (span.error != AudioDecoderError::None) {
             values[0] = audio_decoder_error_code(span.error);
         } else {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+            const auto flight_begin = native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+#endif
             std::lock_guard guard(native_handle->lock);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+            const auto flight_locked = native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+#endif
             const auto result = native_handle->decoder->decode(
                 span.bytes,
                 EncodedAudioFrameMetadata{
@@ -2626,6 +2757,13 @@ Java_io_warpnect_NativeBridge_nativeAudioDecoderDecode(
                             static_cast<std::uint8_t>(timestamp_quality)),
                     .discontinuity_before = discontinuity_before == JNI_TRUE,
                 });
+#if defined(__ANDROID__) && !defined(NDEBUG)
+            if (native_handle->flight) native_handle->flight->emit(FlightLane::Codec,
+                {.begin=flight_begin, .end=SystemAudioFlightDebug::now(),
+                 .position=static_cast<std::uint64_t>(first_frame_position), .aux=flight_locked,
+                 .kind=FlightKind::Decode, .generation=static_cast<std::uint32_t>(config_generation),
+                 .frames=result.frame_count, .code=static_cast<std::uint32_t>(result.error)});
+#endif
             values[0] = audio_decoder_error_code(result.error);
             values[1] = static_cast<jlong>(result.native_error);
             values[2] = static_cast<jlong>(result.frame_kind);
@@ -2836,11 +2974,21 @@ Java_io_warpnect_NativeBridge_nativeAudioEncoderSubmitPcm(
             values[0] = audio_error_code(span.error);
             values[1] = static_cast<jlong>(AudioEncoderSubmitStatus::Failure);
         } else {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+            const auto flight_begin = native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+#endif
             std::lock_guard guard(native_handle->lock);
             const auto result = native_handle->encoder->submit_pcm(
                 span.bytes, static_cast<std::uint64_t>(first_frame_position),
                 static_cast<std::uint64_t>(capture_time_ns),
                 static_cast<AudioTimestampQuality>(static_cast<std::uint8_t>(timestamp_quality)));
+#if defined(__ANDROID__) && !defined(NDEBUG)
+            if (native_handle->flight) native_handle->flight->emit(FlightLane::Codec,
+                {.begin=flight_begin, .end=SystemAudioFlightDebug::now(),
+                 .position=static_cast<std::uint64_t>(first_frame_position),
+                 .kind=FlightKind::Encode, .frames=static_cast<std::uint32_t>(result.consumed_bytes),
+                 .code=static_cast<std::uint32_t>(result.error)});
+#endif
             values[0] = audio_error_code(result.error);
             values[1] = static_cast<jlong>(result.status);
             values[2] = static_cast<jlong>(result.native_error);
@@ -3788,6 +3936,9 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverPump(JNIEnv* env,
                                                       jlong timeout_us) {
     jlong values[kNativeAudioReceiverEventValues]{};
     NativeAudioReceiverHandle* native_handle = audio_receiver_handle_from(handle);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto flight_begin = native_handle && native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+#endif
     if (native_handle == nullptr || native_handle->runtime == nullptr || timeout_us < 0) {
         values[0] = static_cast<jlong>(AudioReceiverEventType::TransportError);
         values[1] = audio_transport_error_code(AudioTransportError::InvalidHandle);
@@ -3829,8 +3980,27 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverPump(JNIEnv* env,
     if (array != nullptr) {
         env->SetLongArrayRegion(array, 0, kNativeAudioReceiverEventValues, values);
     }
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (native_handle && native_handle->flight &&
+        (values[0] == static_cast<jlong>(AudioReceiverEventType::AudioFrameReady) ||
+         values[0] == static_cast<jlong>(AudioReceiverEventType::StreamConfigReady))) {
+        native_handle->flight->emit(FlightLane::Wire, {.begin=flight_begin,
+            .end=SystemAudioFlightDebug::now(), .position=static_cast<std::uint64_t>(values[10]),
+            .aux=static_cast<std::uint64_t>(values[16]), .counter=static_cast<std::uint64_t>(values[17]),
+            .kind=FlightKind::Dispatch, .generation=static_cast<std::uint32_t>(values[2]),
+            .sequence=static_cast<std::uint32_t>(values[14]), .code=static_cast<std::uint32_t>(values[0])});
+    }
+#endif
     return array;
 }
+
+#if defined(__ANDROID__) && !defined(NDEBUG)
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_warpnect_NativeBridge_nativeAudioReceiverFlightEnabled(JNIEnv*, jclass, jlong handle) {
+    const auto* owner = audio_receiver_handle_from(handle);
+    return owner && owner->flight ? JNI_TRUE : JNI_FALSE;
+}
+#endif
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_io_warpnect_NativeBridge_nativeAudioReceiverReadyBuffer(JNIEnv* env,
@@ -3842,11 +4012,25 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverReadyBuffer(JNIEnv* env,
         return nullptr;
     }
     const auto index = static_cast<std::size_t>(slot_index);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto begin = native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+#endif
     std::lock_guard guard(native_handle->lock);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto acquired = begin ? SystemAudioFlightDebug::now() : 0;
+#endif
     if (index >= native_handle->ready_slot_views.size()) {
         return nullptr;
     }
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    auto result = env->NewLocalRef(native_handle->ready_slot_views[index]);
+    if (begin) native_handle->flight->emit(FlightLane::Admission,
+        {.begin=begin, .end=SystemAudioFlightDebug::now(), .aux=acquired,
+         .kind=FlightKind::ReadyBuffer, .code=static_cast<std::uint32_t>(slot_index)});
+    return result;
+#else
     return env->NewLocalRef(native_handle->ready_slot_views[index]);
+#endif
 }
 
 extern "C" JNIEXPORT jint JNICALL
@@ -3870,11 +4054,18 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverSnapshot(JNIEnv* env,
                                                           jlong handle) {
     jlong values[kNativeAudioReceiverSnapshotValues]{};
     NativeAudioReceiverHandle* native_handle = audio_receiver_handle_from(handle);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto begin = native_handle && native_handle->flight ? SystemAudioFlightDebug::now() : 0;
+    std::uint64_t acquired = 0;
+#endif
     if (native_handle == nullptr || native_handle->runtime == nullptr) {
         values[25] = audio_transport_error_code(AudioTransportError::InvalidHandle);
         values[2] = 1;
     } else {
         std::lock_guard guard(native_handle->lock);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+        if (begin) acquired = SystemAudioFlightDebug::now();
+#endif
         const auto snapshot = native_handle->runtime->snapshot();
         values[0] = static_cast<jlong>(static_cast<std::uint8_t>(snapshot.payload_type));
         values[1] = snapshot.opened ? 1 : 0;
@@ -3907,6 +4098,12 @@ Java_io_warpnect_NativeBridge_nativeAudioReceiverSnapshot(JNIEnv* env,
     if (array != nullptr) {
         env->SetLongArrayRegion(array, 0, kNativeAudioReceiverSnapshotValues, values);
     }
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (begin) native_handle->flight->emit(FlightLane::Observer,
+        {.begin=begin, .end=SystemAudioFlightDebug::now(),
+         .position=static_cast<std::uint64_t>(values[23]), .aux=acquired,
+         .kind=FlightKind::ReceiverSnapshot, .generation=static_cast<std::uint32_t>(values[3])});
+#endif
     return array;
 }
 

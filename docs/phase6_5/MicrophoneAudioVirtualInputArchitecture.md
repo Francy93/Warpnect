@@ -149,7 +149,7 @@ that a system-wide microphone input was implemented in Phase 3.
 
 | Device | Build / scope | Observation |
 | --- | --- | --- |
-| A41 SM-A415F, Android 12/API31, `R58N52B32JJ` | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` | Shell UID2000 lacks `MODIFY_AUDIO_ROUTING`; empty policy registration returns -1. DirectShell input-policy prerequisite unavailable on this exact build |
+| A41 SM-A415F, Android 12/API31, `TESTUNIT002` | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` | Shell UID2000 lacks `MODIFY_AUDIO_ROUTING`; empty policy registration returns -1. DirectShell input-policy prerequisite unavailable on this exact build |
 | S22 SM-S901B, Android 16/API36, `R3CTB0MLRMF` | `samsung/r0sxeea/r0s:16/BP2A.250605.031.A3/S901BXXSOGZH3:user/release-keys` | Shell has routing permission. Registered UID-scoped injection reaches a normal-process AudioRecord consumer; not a product remote-mic qualification |
 | Tablet X700_EEA/API33 | Not connected in this campaign | NOT TESTED. Earlier playback and liveness evidence is preserved, not extended |
 | S9 SM-G960F, Android 10/API29, `23eaec0f12047ece` | `samsung/starltexx/starlte:10/QP1A.190711.020/G960FXXUHFVG4:user/release-keys` | Physical microphone Client and SystemAudio Client. Modern DirectShell Host/bootstrap/context boundary unsupported; no virtual-input experiment |
@@ -554,14 +554,14 @@ No RFC-003 historical implementation-complete claim is erased.
 
 Local evidence, excluded from commits, is under `app/build/reports/`:
 
-- `virtual-mic-prerequisite-R58N52B32JJ.txt` and `-R3CTB0MLRMF.txt`.
+- `virtual-mic-prerequisite-TESTUNIT002.txt` and `-R3CTB0MLRMF.txt`.
 - `scoped-virtual-input-s22.txt`, native/service logs and first standard-consumer
   log/result: preserved attribution failure.
 - `scoped-virtual-input-s22-2.txt`, `standard-mic-consumer-s22-2.log` and result:
   corrected scoped framework experiment.
-- `mic-route-baseline-R58N52B32JJ.log`, `-23eaec0f12047ece.log` and A41
+- `mic-route-baseline-TESTUNIT002.log`, `-23eaec0f12047ece.log` and A41
   AudioFlinger dump: exploratory route/quality failure.
-- `mic-final-R58N52B32JJ.log`, `-23eaec0f12047ece.log`: three counted final
+- `mic-final-TESTUNIT002.log`, `-23eaec0f12047ece.log`: three counted final
   microphone Sessions and the separate SystemAudio control.
 - `virtual-mic-final-gates.log` and standard Gradle/native test output.
 

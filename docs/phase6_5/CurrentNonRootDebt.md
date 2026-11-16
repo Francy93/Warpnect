@@ -1,5 +1,72 @@
 # Current Phase 6.5 Non-Root Debt (2026-10-04)
 
+## 2026-10-27 Android Storage Qualification Debt
+
+[Android adapter receipt](DirectShellPairingAndroidStorageAdapter.md): host software
+tests now cover opaque AES handles, platform policy/failure modeling and the
+preserved real host storage tests (final1383 full/199 focused cohort).26 Android methods are
+compiled only. Actual Android directory sync, inode/lease behavior, independent
+process exclusion, Keystore policy/non-exportability and cleanup require a
+separately authorized synthetic-fixture run. No hardware-backed or power-loss
+claim. Production key provisioning, endpoint/NSD/real PAKE cancellation, explicit
+reconciliation and Release runtime remain open; P2_PARTIAL_BLOCKED. No new
+permission, root/provider change, media workaround or Phase7 implementation.
+
+## 2026-10-27 Pairing Reservation Model Scope
+
+The [approved pure P1 amendment](DirectShellPairingReservationModel.md) is
+IMPLEMENTED/SOFTWARE TESTED, not an active backend:96 focused/1280 full JVM PASS.
+R is a one-shot authorization reservation, not publication or durable trust.
+Stop after R must not claim rollback; unknown
+outcomes/retained identity block replacement work. Real P2 storage/cancellation,
+trust binding, Android adapters and Release activation remain unresolved gates.
+The current model/source cohort is separate from dirty P2 and hardware evidence.
+No root/Shizuku, media, buffer, security/Session, recovery or Phase7 change.
+
+## 2026-10-26 Pairing Setup Scope
+
+The [DEBUG normal-Host pairing entry](DirectShellHostPairingSetup.md) is
+implemented/software tested and locally checkpointed (f7dd2cf/2a6528d), not
+hardware qualified. Release's unavailable adapter remains truthful. The
+[production architecture review](DirectShellReleasePairingArchitecture.md)
+identifies missing cancellable enrollment/atomic credentials and a distinct
+Release runtime/helper/feature-adapter bundle; a successful pair cannot replace
+COMPLETE qualification/freeze. The existing DEBUG store is encrypted, not a
+plaintext-key finding; current libadb manager timeout/close does not prove a
+bounded pair operation. These are Release promotion gates, not a demonstrated
+regression to accepted DEBUG UI behavior.
+
+The pure unwired [P1 owner/contracts](DirectShellPairingEnrollmentOwner.md) is
+implemented with fake-backed software tests, not actual pairing or a new
+provider. See [handoff](CURRENT_HANDOFF.md). Real bounded libadb cancellation,
+atomic credentials/identity and the Release runtime bundle remain unimplemented
+promotion gates. No device access, trust replacement or backend activation
+occurred. G1-G5 hardware PARTIAL, independent audio/Video/timestamp failures,
+Root/Shizuku qualification and Phase7 R2 remain unchanged and separate.
+
+## 2026-10-25 G5 Software Scope
+
+The [G5 receipt](DirectShellDiagnosticConsolidation.md) consolidates only safe,
+opt-in DEBUG observations and offline guards above the frozen G1-G4 baseline.
+1155 JVM,26+26 native and integrated Android/Release gates pass. Debug lint has
+134 warnings (132 historical plus2 cross-method trace findings); Release has42,
+with no errors or suppressions. Software-ready integration does not close
+hardware/preset/API/release-default qualification, enabled-observer timing cost,
+existing DEBUG trust/export/reflection debt or any audio/Video/timestamp failure.
+Original experiments/evidence, accepted RFC-006I/J and Phase7 R2 remain unchanged;
+no fallback, recovery, migration or S0 implementation is introduced.
+
+## 2026-10-25 Consolidation Scope
+
+The [isolated G1-G4 receipt](DirectShellFunctionalConsolidation.md) supersedes
+the old assumption that HEAD alone reproduces the selected microphone source,
+but only on its dedicated consolidation branch. It does not close integrated
+hardware/preset/API/release qualification. SystemAudio RX/AAudio/dispatch,
+Video HOME/REOPEN/EADDRINUSE and same-quality S9 microphone timestamp failures
+remain open. API26 legacy policy adaptation exists; tested API26/API31 routing
+authority denials remain truthful. No provider recovery, new qualification,
+Phase7 actuator/S0 implementation or release-default availability is inferred.
+
 This is the current debt index, not a rewrite of historical experiment reports.
 Evidence order: repository/runtime, current Phase 6.5 reports and compatibility
 matrix, accepted RFC-006I/J, then older reports/checklists. Implementation,

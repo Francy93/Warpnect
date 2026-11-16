@@ -145,6 +145,35 @@ class SessionPipelineRuntimeTest {
         assertFalse(runtime.snapshot().state == SessionPipelineState.Running)
     }
 
+    @Test
+    fun closingQuiescesSinksBeforeSourcesAndRetainsFinalResourceOwnership() {
+        val events = mutableListOf<String>()
+        val receiver = component(
+            "audio",
+            SessionPipelineStartPhase.InboundTransport,
+            setOf(SessionChannelKind.SystemAudio),
+            events,
+        )
+        val source = component(
+            "input",
+            SessionPipelineStartPhase.PhysicalSource,
+            setOf(SessionChannelKind.Input),
+            events,
+        )
+        val runtime = SessionPipelineRuntime(
+            bootstrap(SessionChannelKind.SystemAudio, SessionChannelKind.Input),
+            listOf(receiver, source),
+        )
+        assertEquals(SecureSessionIntegrationError.None, runtime.start())
+        events.clear()
+        runtime.onSessionClosing()
+        assertEquals(listOf("closing:audio", "closing:input", "stop:input"), events)
+        assertEquals(listOf("audio"), runtime.snapshot().startedComponents.filter { it.started }.map { it.name })
+        runtime.stop()
+        assertEquals("stop:audio", events.last())
+        runtime.close()
+    }
+
     private fun component(
         name: String,
         phase: SessionPipelineStartPhase,
@@ -167,6 +196,10 @@ class SessionPipelineRuntimeTest {
 
         override fun onSessionSuspended() {
             events += "suspended:$name"
+        }
+
+        override fun onSessionClosing() {
+            events += "closing:$name"
         }
 
         override fun onInputSafetyReset() {

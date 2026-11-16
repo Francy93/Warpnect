@@ -1,5 +1,471 @@
 # Future Roadmap
 
+## 2026-11-12 RFC-006J Debug Pairing on A41/API31
+
+[r1702 hardware evidence and Debug consolidation](phase6_5/DirectShellDebugPairingR1702.md):
+one real Host-UI pairing, NSD-bound TLS reconnect, and helper HMAC/shutdown
+passed with verified cleanup. The normal Debug build excludes the diagnostic
+A41 gate and temporary package. No Release or Android synthetic fixture
+runtime qualification follows. **P2_PARTIAL_BLOCKED**; retain existing
+checkpoints and historical negatives. Next: separately authorized AF02
+preflight and AF08 on an isolated physical A41/API30. Emulator/R0b suspended.
+
+## 2026-11-03 RFC-006J API30 Fixture Independent Checkpoint Review (r1634)
+
+[Review and fresh evidence](phase6_5/DirectShellPairingAndroidApi30CompositionFixture.md#2026-11-03-independent-software-checkpoint-review-r1634).
+Six-source admitted cohort unchanged;independent authority/Keystore/native/bridge/
+drain/AF01-AF24 source review passed with disclosed runtime and negative-test limits.
+Fresh JVM1606/1606 in198 suites,focused422/422 in18,replay40/40;build/lint/AAR and
+isolation PASS. Corrected producer61 controls plus8 guards PASS.69 Android methods
+compiled,zero executed;CTest not executed. Final admission7037 checks PASS. Source
+checkpoint2981d6626f28a71f1671eafce10aa67ee2a90e5d;documentation SHA and final
+two-commit verification are external in FinalCheckpointReport.md. The resulting
+P2_ANDROID_API30_SYNTHETIC_FIXTURE_CHECKPOINT_VERIFIED label is software only,
+conditional on that postverification,not Android qualification.
+Retain P2_OWNER_DRAIN_HANDOFF_CHECKPOINT_VERIFIED and prior P1/P2 checkpoints,
+P2_WINDOWS_LEASE_FAILURE_UNATTRIBUTED,all historical negatives and P2_PARTIAL_BLOCKED.
+Next recommendation only:separately authorized disposable exact-API30 fixture with
+identity/isolation/owned cleanup preflight,including inherited DEBUG initializer.
+No device,adbd,production provisioning,Host/Session,Release,P3-P5 or Phase7 work here.
+
+## 2026-11-03 RFC-006J API30 Fixture Software Admission (r1633)
+
+[Admission and unchanged source](phase6_5/DirectShellPairingAndroidApi30CompositionFixture.md#2026-11-03-guard-producer-correction-and-software-admission-r1633):
+external PowerShell producer corrected with strict boolean/name checks,not cosmetic
+null replacement.61 controls PASS,real8/8 compiled checks;original consumer unchanged
+passes6232 checks in one attempt. Original malformed producer/receipt/negative kept.
+
+No application/test/build/dependency/native/protocol edit. Source5092B52E...D606C4348
+and all artifacts unchanged. REUSED verified r1632 software:1606/198 full,422/18
+focused,40 replay,build/lint126/34,AAR/isolation;not fresh executions.69 Android
+methods compiled,zero executed. No Git checkpoint,Android runtime or hardware
+qualification. Three factual docs updated after admission;changes uncommitted.
+
+Retain prior owner-drain/P1/P2 software checkpoints;P2_PARTIAL_BLOCKED,Phase6.5
+incomplete.33 protected locations preserved with disclosed missing-Git/metadata-only
+limits. Historical Windows/SDK/Release-unit/lint/media/hardware/R2 negatives remain.
+Recommend only separately authorized disposable exactAPI30 runtime preflight and
+fixture execution with explicit identity/UID/alias/root/transport/rollback scope.
+No device/emulator/ADB/USB/NSD,real adbd,production D-P1-D-P4,Host/Session/Release,
+Root/Shizuku,media/SCL,P3-P5 or Phase7 action. Production owner/clock/identity,
+Network/NSD,real adbd/write/suspend-connect,API/OEM/device and Release remain open.
+
+## 2026-11-03 RFC-006J API30 Fixture: Test-Only Boundary Corrected
+
+[Correction and preserved history](phase6_5/DirectShellPairingAndroidApi30CompositionFixture.md#2026-11-03-test-only-api-correction-and-software-acceptance-r1632):
+whole DEBUG peer bridge now RestrictTo(TESTS),with no suppression or library patch.
+Only annotation/import change from r1631;all five other candidate sources and
+existing AF/C/H methods unchanged. New cohort5092B52E...D606C4348;old failed cohort
+and127-warning XML remain preserved. No new formal checkpoint or completed
+acceptance:one final admission stopped on malformed fixture-compiled.json.
+External C:/wg-pairing-fixture-boundary-r1632-20261103/ preserves the first negative.
+
+Fresh1606/198 full,422/18 focused JVM,40 replay PASS;69 Android methods/5 suites
+compiled,zero executed. Builds/ktlint/lints/reproduction PASS;unchanged semantic
+warning comparator126/34,no additions. Previously interrupted classpath/compiled/
+DEX/helper/handoff/fixture-isolation gates completed. Nine explicit API-boundary
+checks PASS. Separate eight-check compiled-fixture producer is not qualified:
+two null labels and improperly grouped PowerShell conjunctions. No relaxed
+consumer,producer correction or repeated admission. Application source unchanged
+after the negative;this is an external verification defect,not an Android failure.
+Prior P1/P2 checkpoints retained;overall P2_PARTIAL_BLOCKED,Phase6.5 incomplete.
+
+All changes uncommitted;no Android/device/emulator/ADB/USB/real pairing,production
+provisioning,Host/Session/Release activation or unrelated work. Historical Windows
+failure UNATTRIBUTED,Release-unit/lint/SDK/hardware/media/R2 limitations unchanged.
+Next recommendation only:separately authorize the minimal external producer
+correction with negative controls and a separately identified receipt/admission.
+Then,only with separate authorization,disposable exactAPI30 runtime preflight.
+D-P1-D-P4,Android owner/clock,
+Network/NSD,real adbd,write/suspend/connect,API/OEM/device and Release remain open.
+
+## 2026-11-02 RFC-006J API30 Fixture: Compiled, Software Acceptance Blocked
+
+[Report](phase6_5/DirectShellPairingAndroidApi30CompositionFixture.md): Gate A/B
+source review PASS for an isolated instrumentation owner,not production lifecycle.
+Existing P1/Android FS/test AES/native publisher/owned TLS-PAKE/drain are connected
+without core/storage/protocol changes.69 Android methods compile,zero execute;
+24 new AF scenarios. Final1606/198 full and422/18 focused JVM,40 replay and Gradle
+build/ktlint/lint tasks PASS. Four host bridge methods added; prior C/H unchanged.
+
+Final software aggregate STOPPED_FIRST_FAILURE on new DEBUG VisibleForTests
+warning at DebugSyntheticPairingPeerAuth.java:20. No suppression or post-stop
+source correction; remaining classpath/fixture-specific compiled/DEX checks not
+run. Six source/build/test plus three docs uncommitted; no checkpoint earned.
+Parent656fcef retained; protected observable Nov2 state preserved with preexisting
+missing-Git metadata explicitly disclosed. AF15 timing correction and superseded
+intermediate evidence are separate; no Android runtime/power-loss claim.
+
+Recommend only a narrowly authorized test-only visibility review/correction,new
+source freeze and software gates before any separately authorized exactAPI30
+runtime fixture campaign. No production D-P1-D-P4,real adbd,Host/Session/Release,
+Root/Shizuku,media,P3-P5 or Phase7 work. Prior owner-drain/synthetic/P1/libadb/Windows
+software checkpoints retained; Windows failure UNATTRIBUTED. P2_PARTIAL_BLOCKED;
+Phase6.5 and historical hardware/media/Release-unit/SDK/lint limitations remain.
+
+## 2026-10-30 RFC-006J Owner Drain Local Checkpoint (r1630)
+
+[Checkpoint evidence](phase6_5/DirectShellPairingDrainHandoff.md#2026-10-30-independent-checkpoint-resumption-r1630):
+P2_OWNER_DRAIN_HANDOFF_CHECKPOINT_VERIFIED, conditional on the final external
+committed-blob/cleanliness proof. Source checkpoint
+08c6f1c3034de1545286cdc802e3731eaac10d98 plus its direct three-document child
+on codex/phase6-5-pairing-owner-drain-checkpoint from eabc12225f34e6a3c26dbce84fbfe6ddb36b3dff.
+Full documentation SHA is external under
+C:/wg-pairing-drain-checkpoint-resume-r1630/. Exactly two source/test paths and
+three docs; no production correction, new feature, push or merge.
+
+The explicitly approved external admission correction validates PASS,integer
+count132 and an actual132-element checks array. All other predicates unchanged;
+15 schema controls and the sole corrected admission4966 checks PASS. Original
+r1629 failed script/exit1/negative remain preserved, not retroactively PASS.
+Source cohort EDC7150F...9E88A79 unchanged;31 protected worktrees,371 sealed r1629
+files and2455 earlier sealed files verified.8230 provenance/schema checks PASS.
+
+Prior r1629 results REUSED after hash/command/XML/artifact verification,not rerun:
+1602/197 full JVM,418/17 focused,40/40 media;0 failures/errors/skips; builds,lints,
+AAR reproduction and source/compiled/DEX/manifest/native guards PASS.45 Android
+methods compiled,0 executed; no CTest. Historical Windows UNATTRIBUTED,strict
+lint/Release-unit,r1628/r1629 verifier negatives,CXX5304,USB/native-layout and
+hardware/media limitations remain. No Android/runtime/power-loss qualification.
+
+Overall P2_PARTIAL_BLOCKED; Phase6.5 remains open. Retain implementation and
+earlier P1/synthetic/libadb/Windows software statuses. Recommend only a separately
+authorized disposable exact-API30 synthetic fixture using current private FS,
+Keystore test AES/native no-replace/test RSA/P1+owner drain, with clock/timer/
+lifecycle gate first. No D-P1-D-P4 production provisioning,real adbd,NSD,normal
+Host/Session registration,Release onboarding,Root/Shizuku,media,P3-P5 or Phase7.
+No future increment or Android/emulator/device/ADB execution in this checkpoint.
+
+## 2026-10-30 RFC-006J Owner Drain Handoff (r1628)
+
+[Approved D-O1/D-O2 implementation](phase6_5/DirectShellPairingDrainHandoff.md):
+P2_OWNER_DRAIN_HANDOFF_IMPLEMENTED_SOFTWARE_TESTED. Unregistered DEBUG wrapper
+around the unchanged real synthetic delegate;one lazy same-owner observer is
+independent infrastructure,not an attempt-owned worker falsely marked drained.
+Original ticket/work/deadlines and observed R/P/S/D/F remain. One bounded close
+observation,no retry/rearm;actual worker/store uncertainty retains the fence.
+No new authority,normal registration,production key or existing core change.
+
+Fresh18 new methods,418/17 focused,one1602/197 full JVM and40 media PASS;
+required builds,ktlint/lints,AAR reproduction and source/compiled/DEX/dependency/
+native guards PASS. A final lexical verifier initially confused `.scheduler`
+with a schedule call; original negative retained,only verifier corrected with
+positive/negative controls,53 final assertions PASS. No full-test rerun or
+application-source correction. Historical Windows/lint/Release-unit negatives
+and fresh SDK XML diagnostic are recorded,not suppressed or reattributed.
+
+Parent eabc122/source3547a51c;new isolated owner-drain-handoff branch. Exactly
+two new source/test files plus three docs remain uncommitted,index empty.
+30 protected worktrees,2072 sealed receipts and Phase7 R2 preserved.
+45 Android methods compiled,0 executed;no CTest or Android/device/adbd evidence.
+Host directory sync is modeled; Release setup unavailable,minSdk26/API30+
+Wireless Debugging policy unchanged. Overall P2_PARTIAL_BLOCKED;Phase6.5 open.
+
+Next only: independent review and separately authorized local checkpoint of
+this exact bounded candidate. Android owner/clock/timer/fixture wiring,
+D-P1-D-P4 production provisioning/recovery,Network/NSD binding,real adbd/API/OEM
+qualification and Release onboarding remain separate. No automatic P3-P5,
+Root/Shizuku,Host/Session,media/SCL or Phase7 work.
+
+## 2026-10-29 RFC-006J Synthetic Checkpoint Review (r1626)
+
+[Independent review](phase6_5/DirectShellPairingSyntheticComposition.md#2026-10-29-independent-review-and-checkpoint-r1626)
+PASS within host-localhost scope. Exact r1625 five-source candidate preserved;
+no new implementation or accepted contract change. Fresh400/16 focused JVM,
+1584/196 single full JVM and40/40 replay PASS; builds,lints,AAR reproduction,
+actual DEX/classpath/manifest,P1/storage/native ABI guards PASS. Two local commits
+form the gated checkpoint: source3547a51ca2cf75af7e4c1259f6d428f44185aaef plus its
+direct three-document child. P2_SYNTHETIC_COMPOSITION_CHECKPOINT_VERIFIED requires
+the final external blob/cleanliness/preservation receipt under
+C:/wg-pairing-synthetic-checkpoint-r1626/.271 pre-commit admission checks PASS;
+no push,merge or new source correction. Full documentation SHA recorded externally.
+28 prior worktrees and1682 sealed receipts protected; original candidate untouched.
+
+Recovery revalidation,original deadline,actual protocol evidence,normal R/P/S and
+owner-observed physical D/F reviewed. Positive directory S modeled; no Android
+automatic lifecycle dispatcher,production enrollment or Host/Session authority.
+Next,only after checkpoint: a separately authorized Android composition-boundary
+review/isolated fixture plan using existing storage/Keystore/native publisher and
+observed P1 ports. No automatic real adbd,production alias,NSD or Release work.
+Overall P2_PARTIAL_BLOCKED; Phase6.5 and historical media/hardware debts remain.
+45 Android methods compiled,0 executed; no native CTest. Strict historical lint,
+Release-unit compilation and unattributed Windows failure remain preserved.
+
+## 2026-10-29 RFC-006J P2 Synthetic Composition
+
+[C01-C26 implementation](phase6_5/DirectShellPairingSyntheticComposition.md):
+P2_SYNTHETIC_COMPOSITION_IMPLEMENTED_SOFTWARE_TESTED on localhost/Windows.
+Real P1/observed D1-D7,recovery admission,encrypted host storage,owned socket,
+authentic pinned TLS/PAKE and existing R/P/S/D/F cooperate. Directory-sync
+acknowledgement is modeled,not Android/power-loss proof. Actual owner-side
+worker/socket/lease/channel drain is distinguished from semantic eligibility;
+unknown P/S or unresolved resources cannot create success or new authority.
+
+Fresh1584/196 full JVM,400/16 focused,31 composition methods,40 replay,required
+build/lint/reproduction and source/compiled/DEX/manifest/native guards PASS.
+45 Android methods compiled,0 executed; no CTest or new hardware qualification.
+Only additive read-only recovery revalidation and original-budget worker wait
+support the inert DEBUG adapter; P1,old methods,formats,libadb,providers,media,
+SDK and Release availability remain unchanged. Five source/test plus three docs
+are uncommitted at688f13bd on the isolated composition-integration branch.
+
+27 other worktrees,1270 sealed receipts and Phase7 R2 preserved. Historical
+Windows refusal remains UNATTRIBUTED; strict lint/Release-unit limitations and
+G1-G5/media debt are not closed. Next: independent review and separately
+authorized checkpoint,not automatic real pairing or Android/Release promotion.
+Actual adbd,Android transport/key/transaction,NSD binding,OEM/API/device and
+Release gates remain open. Overall P2_PARTIAL_BLOCKED; Phase6.5 incomplete.
+No push/merge,device/ADB/USB/NSD,Host activation,Root/Shizuku,P3-P5 or Phase7 work.
+Earlier entries retain historical scope,not current composition status.
+
+## 2026-10-29 RFC-006J P1 Observation/Drain Checkpoint
+
+[Final P1 review/checkpoint](phase6_5/DirectShellPairingProtocolObservation.md):
+P1_ATTESTATION_DRAIN_CHECKPOINT_VERIFIED,local software only. Source checkpoint
+5c951ecda3693981918ad8c128c02de76d679f9f contains four reviewed paths; its direct
+three-document child and clean/blob proofs are recorded externally under
+C:/wg-pairing-observation-checkpoint-r1624/. D1-D7 review PASS; no source/test
+correction,policy expansion or inherited-test change in consolidation.
+
+Fresh1553/195 full JVM,369/15 focused,40 replay,builds/lint/reproduction and
+source/compiled/DEX/manifest/native isolation PASS. No new lint finding; strict
+historical warning differences and Release-unit compile limitation remain.
+45 Android methods compiled,0 executed; no CTest or new Android/hardware claim.
+Known P/S,attested physical D and semantic eligibility remain independent;
+model tests do not prove actual joint socket/storage drain.26 other worktrees,
+927 sealed receipts,master/upstream and Phase7 R2 preserved. Windows refusal
+remains P2_WINDOWS_LEASE_FAILURE_UNATTRIBUTED,not a fixed OS mechanism.
+
+P2_SYNTHETIC_COMPOSITION_NOT_STARTED. Recommend a separate C01-C26 localhost
+increment from this checkpoint with exact identity binding,existing recovery
+admission,explicitly modeled host directory sync,authentic owned protocol and
+observed joint drain. Do not execute automatically. Overall P2_PARTIAL_BLOCKED;
+real adbd/Android transport,key/transaction,NSD endpoint,OEM/API/device and
+Release qualification remain open. G1-G5 hardware PARTIAL,media debts OPEN,
+Phase6.5 incomplete. No push/merge,device,Host,Root/Shizuku or Phase7 work.
+Earlier notes below retain historical scope,not current uncommitted status.
+
+## 2026-10-29 RFC-006J P1 Attestation And Drain Amendment
+
+[Bounded implementation](phase6_5/DirectShellPairingProtocolObservation.md):
+approved D1-D7 implemented/software-tested as an optional exact-ticket observer
+path,not a new coordinator or production backend. Verification and POSSIBLE
+effects coexist without a trust upgrade; semantic reconciliation remains
+separate from resource D and P/S. Legacy behavior and budgets are preserved.
+Fresh1553/195 full,369/15 focused JVM,40 replay,builds/lint/reproduction and
+applicable isolation guards PASS.45 Android methods compile,0 execute; no CTest
+or new hardware qualification. Four source/test paths plus three docs are
+uncommitted atbd8a4ed on the isolated protocol-observation branch.
+
+Review/checkpoint the narrow P1 delta before a separate C01-C26 synthetic
+composition. That end-to-end integration is NOT IMPLEMENTED; overall
+P2_PARTIAL_BLOCKED remains,with real adbd/Android transport,key,endpoint/OEM and
+Release gates open.25 other worktrees preserved. No Root/Shizuku,media,Phase7,
+accepted-RFC or Phase6.5 completion change; older checkpoint notes remain history.
+
+## 2026-10-28 Amended Patched libadb Software Checkpoint
+
+[RFC-006J checkpoint receipt](phase6_5/DirectShellPairingPatchedLibadbIntegration.md#2026-10-28-amended-candidate-local-checkpoint):
+P2_PATCHED_LIBADB_CHECKPOINT_VERIFIED, source9576fdca42b9c0b709ddd2af51464f3464324fd9
+plus its direct seven-document child. Exactly19 source/build/test/tool paths,
+no new production delta beyond the frozen implementation; approved Windows
+crash-safety versus release-qualified recovery tests retained. Fresh1510 full,
+326 focused JVM,40 replay, builds/lint/reproduction and applicable guards PASS.
+45 Android methods compiled,0 executed.23 protected other worktrees preserved.
+
+Retain P2_ADB_PROTOCOL_ADAPTER_IMPLEMENTED_SOFTWARE_TESTED and
+P2_WINDOWS_LEASE_TEST_CONTRACT_IMPLEMENTED_SOFTWARE_TESTED in Windows host scope.
+P2_WINDOWS_LEASE_FAILURE_UNATTRIBUTED remains: immediate post-crash availability
+was superseded by approval, not root-caused. Overall P2_PARTIAL_BLOCKED.
+Next is separately authorized synthetic joint P1/storage/transport composition,
+NOT STARTED. Real adbd, Android transport/key/NSD/OEM qualification and Release
+onboarding remain open. No device, Host, P3-P5 or Phase7 work. Phase7 R2 remains
+PROPOSED; G1-G5 hardware PARTIAL and historical media debts OPEN. Phase6.5 is open.
+
+## 2026-10-28 Windows Lease Test Contract Amendment
+
+[RFC-006J P2 test-only successor](phase6_5/DirectShellWindowsLeaseTestContractImplementation.md):
+P2_WINDOWS_LEASE_TEST_CONTRACT_IMPLEMENTED_SOFTWARE_TESTED. Explicitly approved
+split: real forced-death safety accepts only authenticated committed recovery
+or strictly unavailable BUSY after all retained-data/parent-cleanup checks;
+separate explicit child lock/channel-release acknowledgement requires committed
+recovery, never BUSY. No production storage or transport change.
+
+Fresh211 focused and one full unfiltered/noninstrumented1510/1510 JVM run PASS,
+193 suites (+3 methods),0 failures/errors/skips; ktlint/isolation/integrity PASS.
+Historical Windows failure remains P2_WINDOWS_LEASE_FAILURE_UNATTRIBUTED. The
+old immediate post-crash availability assertion is superseded, not reproduced
+or explained.22 protected worktrees and frozen candidate/evidence preserved.
+
+Review the uncommitted two-test/three-document delta before separately approved
+checkpoint work. P2_PATCHED_LIBADB_CHECKPOINT_VERIFIED is NOT YET EARNED;
+synthetic P1/P2 composition NOT STARTED. No automatic pairing, devices, Release,
+P3-P5 or Phase7 advancement. Overall P2_PARTIAL_BLOCKED, Phase7 R2 PROPOSED,
+G1-G5 hardware PARTIAL, existing media debts OPEN; Phase6.5 is not complete.
+
+## 2026-10-28 Owned-Socket Pairing Protocol Software Boundary
+
+[RFC-006J P2 implementation](phase6_5/DirectShellPairingPatchedLibadbIntegration.md):
+P2_LIBADB_PATCH_PACKAGING_VERIFIED and
+P2_ADB_PROTOCOL_ADAPTER_IMPLEMENTED_SOFTWARE_TESTED for Windows/JDK21 localhost.
+The explicit DEBUG patch retains libadb3.4.0 and unrelated ADB behavior; authentic
+TLS/PAKE runs over the operation-owned socket with the original P1 deadline.
+1507 full/323 focused JVM (+35),40 replay and applicable build/lint/isolation/
+reproduction gates PASS.45 instrumentation methods compile, none execute here.
+No Android transport/blocked TLS-write qualification or real adbd trust claim.
+
+Overall P2_PARTIAL_BLOCKED. Review/checkpoint the17-source/six-document cohort,
+then separately authorize synthetic joint P1/storage/transport composition with
+pre-PAKE durability and physical drain, not real pairing or Release onboarding.
+No new commit, device access, provider/Session/media change or P3-P5 work.
+19 protected worktrees, G1-G5 hardware PARTIAL, existing media debts OPEN and
+Phase7 R2 PROPOSED remain unchanged. Phase6.5 is not complete.
+
+## 2026-10-28 Transport Frozen, Protocol Packaging Decision Required
+
+[RFC-006J P2 protocol adapter review](phase6_5/DirectShellPairingProtocolAdapter.md):
+P2_TRANSPORT_CANCELLATION_CHECKPOINT_VERIFIED at c5577c776300d99d2b69a00b99584295b0f06184
+(source) / be6beb9453b09f44340233ffbd3eca2577ef1c97 (docs). Fresh1472 full/288 focused
+JVM,40 replay and scoped isolation PASS; no Android transport qualification.
+P2_ADB_PROTOCOL_ADAPTER_DESIGN_REVIEW_REQUIRED: a narrow owned-connected-socket
+context extension needs explicitly reviewed DEBUG dependency/class packaging,
+validated peer evidence and the unchanged authoritative P1 deadline. The current
+AAR cannot accept that socket; a test JVM overlay is not APK integration.
+
+No Task B source/build/dependency change. Next is that bounded design decision,
+not a broad library fork, copied crypto, real pairing or Release activation.
+Overall P2_PARTIAL_BLOCKED.18 protected worktrees, Phase7 R2 PROPOSED, G1-G5
+hardware PARTIAL and historical media debts remain unchanged; Phase6.5 is open.
+
+## 2026-10-28 Localhost Transport Lifecycle Increment
+
+The [reassessed continuation](phase6_5/DirectShellPairingTransportCancellation.md)
+records P2_TRANSPORT_CANCELLATION_IMPLEMENTED_SOFTWARE_TESTED for the inert DEBUG/
+host-loopback component only:33 new tests,1472/288 JVM,40 replay and required
+software/isolation gates PASS. The prior refusal was overly broad, not a product
+or Android defect. Partial sources/negative receipts are preserved; five app/build
+and four documentation paths stay uncommitted atffe1d1b. No backend wiring,
+credential publication, device/ADB-server activity or Release onboarding.
+
+Overall P2_PARTIAL_BLOCKED. Protocol adapter, exact P1 deadline handoff, real
+endpoint/identity/Android transport qualification and credential lifecycle remain
+open. Review/checkpoint the component before a narrowly scoped adapter review;
+no silent library fork, real pairing or P3-P5. P1/storage/media/SDK/provider/RFC
+contracts and17 protected worktrees remain unchanged. G1-G5 hardware PARTIAL,
+historical media debts OPEN and Phase7 R2 PROPOSED remain separate. Phase6.5 is
+not complete. Older sections below are retained historical receipts.
+
+## 2026-10-28 Multiprocess Checkpoint, No Transport Acceptance
+
+[Checkpoint/stop receipt](phase6_5/DirectShellPairingTransportCancellation.md):
+5f1fe26 source/tests andffe1d1b documentation freeze the verified multiprocess
+candidate; its worktree is clean. The isolated transport increment remains
+incomplete/uncommitted, with zero new transport tests executed. It was stopped
+at an assistance safety boundary, not a new architectural blocker or validated
+failure mechanism. No backend, Release, P3-P5 or Phase7 advancement is claimed.
+Use the clean checkpoint, not the incomplete branch, for the tested baseline.
+17 protected worktrees and existing negative evidence are preserved. Overall
+P2_PARTIAL_BLOCKED; G1-G5 hardware PARTIAL and historical media debts unchanged.
+
+## 2026-10-28 Independent Android Storage Ownership
+
+[RFC-006J multiprocess receipt](phase6_5/DirectShellPairingMultiprocessStorageValidation.md):
+native publisher checkpointed locally at4378f06/5d262e4; separate DEBUG-only fixture
+is IMPLEMENTED/SOFTWARE TESTED and VALIDATED on the exact API30 AOSP x86_64 image
+only.45/45 actual methods cover independent same-UID processes plus all34 prior
+storage/native/lifecycle cases;1439/255 JVM,40 replay, build/lint/isolation PASS.
+P1, production storage/native/media and unavailable Release setup are unchanged.
+Task B remains uncommitted;16 protected worktrees and Phase7 R2 preserved. Cleanup
+and retained harness failures/USB preflight incident are explicit in the report.
+Overall P2_PARTIAL_BLOCKED. Android ARM/OEM/power-loss and real transport/NSD/
+identity/cancellation/key-lifecycle qualification remain open. Next bounded task
+is review/authorized checkpoint of this fixture, not automatic backend/P3-P5.
+G1-G5 hardware stays PARTIAL; historical media debts stay OPEN. Phase6.5 is not
+complete; no Phase7 implementation or migration is authorized by these results.
+
+## 2026-10-27 Native Credential Publication Component
+
+[RFC-006J native publication/storage integration](phase6_5/DirectShellPairingNativePublicationIntegration.md)
+is IMPLEMENTED/SOFTWARE TESTED and VALIDATED only on the named disposable
+API30 AOSP x86_64 fixture:34/34 platform methods,1435/251 JVM and required gates
+PASS. Public API30 renameat2 replaces Android's denied hard-link path without
+changing encrypted v2 records, P1 policy or global minSdk26. Successful P consumes
+pending; S, cleanup and physical D stay independent. No Release setup or real
+backend is activated. Overall P2_PARTIAL_BLOCKED; cross-process Android/OEM/ARM/
+power-loss and remaining transport/identity/key lifecycle gates are still open.
+Next proposed bounded work is review/checkpoint then separately authorized
+same-UID process-exclusion qualification. No P3-P5, media or Phase7 implementation.
+
+## 2026-10-27 Android Pairing Storage Increment
+
+[P2 Android storage/key adapter](phase6_5/DirectShellPairingAndroidStorageAdapter.md)
+continues verified P1 checkpoints7f3e39f/856bca7 with a selective, uncommitted
+storage source closure, not the old dirty research cohort. Final1383 full/199 focused
+JVM receipts and40 offline tests are recorded there;26 new platform methods
+compile, not run. API26 descriptor operations fail closed (public CLOEXEC needs27).
+Public Android fsync/no-replace/exclusion and non-exportable key-handle code are
+unwired; Android runtime qualification and explicit production key provisioning
+remain pending. P2_PARTIAL_BLOCKED, Release unavailable, no P3-P5/device/Phase7
+implementation. Final gates and next bounded qualification scope are in the
+receipt. Historical sections below retain their original evidence scopes.
+
+## 2026-10-27 Pure Pairing Reservation Model
+
+The user-approved [P1 reservation/receipt amendment](phase6_5/DirectShellPairingReservationModel.md)
+is IMPLEMENTED/SOFTWARE TESTED on isolated `codex/phase6-5-pairing-commit-reservation`, from
+P1 checkpoint73c0b6e. It removes the publication closure, models explicit
+uncertainty/retention and keeps physical drain independent. It activates no
+backend, Release setup or runtime. Separate uncommitted P2 remains PARTIAL_BLOCKED;
+actual namespace CAS/sync, pre-PAKE recovery persistence, Android adapters and real
+I/O cancellation/trust binding still require their own implementation/gates.
+Final96 focused/1280 full JVM,40 replay, build/lint/isolation gates PASS; no
+hardware or Release qualification. No P3-P5, Root/Shizuku, media, provider
+migration or Phase7 change is authorized.
+
+## 2026-10-26 DirectShell Pairing Checkpoints And Release Plan
+
+[DEBUG pairing UI](phase6_5/DirectShellHostPairingSetup.md) is locally
+checkpointed atf7dd2cf with its software receipt at2a6528d. Its13 code/test/
+resource paths match the1184-JVM verified cohort; hardware remains NOT EXECUTED.
+[Current handoff](phase6_5/CURRENT_HANDOFF.md) and
+[Release architecture](phase6_5/DirectShellReleasePairingArchitecture.md)
+separate already implemented RFC-006I/J orchestration from missing production
+enrollment AND Release DirectShell runtime/helper/gateway activation.
+
+The pure unwired P1 pairing owner/contracts are now IMPLEMENTED on isolated
+`codex/phase6-5-pairing-enrollment-owner`, not backend activation; see the
+[P1 verification receipt](phase6_5/DirectShellPairingEnrollmentOwner.md).
+The [authorized local P1 checkpoint](phase6_5/DirectShellPairingP1Checkpoint.md)
+preserves that exact source cohort at1271765, with separate documentation.
+Its [bounded prompt](phase6_5/DirectShellReleasePairingImplementationPrompt.md)
+was executed for P1 only. Existing libadb pair cancellation/timeout and trust/
+credential lifecycle require review before Release promotion. No DEBUG probe,
+dependency, automatic Host enable, Root/Shizuku behavior or provider ranking is
+promoted. G1-G5 hardware remains PARTIAL, historical media debts remain OPEN,
+Video observer stays isolated and Phase7 R2/S0 state is unchanged. Phase6.5 is
+not complete; no main-development merge or push occurred.
+
+## 2026-10-25 G5 Software Receipt
+
+The [G5 diagnostic receipt](phase6_5/DirectShellDiagnosticConsolidation.md)
+records isolated local checkpoints99f0bfc/f8cf491 and integrated software gates:
+1155 JVM,26/26 native Debug and Release, Android Debug/Release builds and lint.
+New runtime observations are DEBUG-only, explicit opt-in and default OFF;
+output24ms/fault/Phase7 tools are excluded. The selected G1-G5 branch is ready
+for controlled source integration, not a merge, hardware qualification or release
+promotion. Original dirty evidence and frozen G1-G4 remain intact. RFC-006I/J,
+Phase7 R2/S0 state and the independent audio/Video/timestamp debts are unchanged.
+
+## 2026-10-25 G1-G4 Consolidation Receipt
+
+The [isolated functional baseline](phase6_5/DirectShellFunctionalConsolidation.md)
+records local logical checkpoints and software verification, not a development
+branch merge or fresh hardware/release qualification. RFC-006I static planning
+already exists; no planner/provider/recovery work is begun. Outstanding audio,
+Video, timestamp and full Android regression debt remains explicit. Phase7 R2
+and its separate S0/prototype plan are preserved unchanged in the original dirty
+worktree; no future optimization is imported into this source projection.
+
 Baseline: Architecture Version 1.0, Protocol Version 1, Native ABI Version 1.
 
 This roadmap is architectural context. Phase 1 core networking and Phase 2 core video implementation are complete.

@@ -3,6 +3,9 @@
 #include <algorithm>
 #if defined(__ANDROID__) && !defined(NDEBUG)
 #include <android/log.h>
+#include "internal/audio_wire_timing_debug.h"
+#include "internal/system_audio_flight_debug.h"
+using namespace warpnect::audio::diagnostic;
 #endif
 
 #include "datagram_limits.h"
@@ -85,6 +88,10 @@ AudioReceiverRuntime::AudioReceiverRuntime(AudioReceiverConfig config)
     }
 
     snapshot_.payload_type = config_.payload_type;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (config_.payload_type == PayloadType::SystemAudio && config_.protector != nullptr)
+        debug_flight_ = SystemAudioFlightDebug::current();
+#endif
 }
 
 AudioReceiverRuntime::~AudioReceiverRuntime() noexcept {
@@ -107,6 +114,10 @@ AudioTransportStatus AudioReceiverRuntime::rebind_prebound_socket(
     }
     config_.local_endpoint = local.endpoint;
     config_.remote_endpoint = remote_endpoint;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    debug_wire_timing_.reset();
+    debug_wire_attempted_ = false;
+#endif
     socket_ = std::move(socket);
     socket_.enable_receive_timestamps_for_diagnostics();
     diagnostic_timing_ = {};
@@ -232,6 +243,10 @@ AudioTransportStatus AudioReceiverRuntime::accept_datagram(std::span<const std::
     diagnostic_timing_.packet_sequence = decoded.packet.header.sequence_number;
 #if defined(__ANDROID__) && !defined(NDEBUG)
     diagnostic_timing_.authenticated_monotonic_ns = monotonic_time_now_us().value * 1000U;
+    if (debug_flight_) debug_flight_->emit(FlightLane::Wire,
+        {.begin=diagnostic_timing_.receive_monotonic_ns,
+         .end=diagnostic_timing_.authenticated_monotonic_ns, .kind=FlightKind::Authenticated,
+         .sequence=diagnostic_timing_.packet_sequence});
 #endif
     return process_packet(decoded.packet, source, now_us);
 }
@@ -298,6 +313,9 @@ AudioReceiverSnapshot AudioReceiverRuntime::snapshot() const noexcept {
 }
 
 void AudioReceiverRuntime::close() noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    debug_wire_timing_.reset();
+#endif
     socket_.close();
     snapshot_.opened = false;
     snapshot_.closed = true;
@@ -358,15 +376,36 @@ AudioReceiverEvent AudioReceiverRuntime::make_event(AudioReceiverEventType type,
 }
 
 AudioTransportStatus AudioReceiverRuntime::receive_one(std::uint64_t timeout_us) noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto flight_wait = debug_flight_ ? SystemAudioFlightDebug::now() : 0;
+#endif
     const UdpReadinessResult ready = socket_.wait_readable(timeout_us);
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (debug_flight_) debug_flight_->emit(FlightLane::Wire,
+        {.begin=flight_wait, .end=SystemAudioFlightDebug::now(), .kind=FlightKind::Readiness,
+         .code=ready.readable ? 1U : 0U});
+#endif
     if (!ready.ok()) {
         return status(map_udp_error(ready.status.error));
     }
     if (!ready.readable) {
         return status(AudioTransportError::Timeout);
     }
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    const auto flight_read = debug_flight_ ? SystemAudioFlightDebug::now() : 0;
+#endif
     const UdpReceiveResult received = socket_.receive_from(
         std::span<std::byte>(datagram_buffer_.data(), datagram_buffer_.size()));
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (debug_flight_) {
+        const auto real = SystemAudioFlightDebug::now(CLOCK_REALTIME);
+        const auto end = SystemAudioFlightDebug::now();
+        debug_flight_->emit(FlightLane::Wire, {.begin=flight_read, .end=end,
+            .position=real, .aux=received.receive_realtime_ns, .counter=received.socket_age_ns,
+            .kind=FlightKind::Receive, .frames=static_cast<std::uint32_t>(received.bytes_received),
+            .code=received.ok() ? 0U : 1U});
+    }
+#endif
     if (!received.ok()) {
         if (received.status.error != UdpError::WouldBlock && config_.runtime_network_telemetry != nullptr) {
             config_.runtime_network_telemetry->udp_receive_error();
@@ -378,9 +417,17 @@ AudioTransportStatus AudioReceiverRuntime::receive_one(std::uint64_t timeout_us)
         std::span<const std::byte>(datagram_buffer_.data(), received.bytes_received);
     diagnostic_timing_ = {};
 #if defined(__ANDROID__) && !defined(NDEBUG)
+    if (!debug_wire_attempted_ && config_.protector != nullptr &&
+        (config_.payload_type == PayloadType::MicrophoneAudio ||
+                                  config_.payload_type == PayloadType::SystemAudio)) {
+        debug_wire_attempted_ = true;
+        debug_wire_timing_ = AudioWireTimingDebug::create(socket_.native_handle_for_diagnostics(), false);
+    }
     diagnostic_timing_.receive_realtime_ns = received.receive_realtime_ns;
     diagnostic_timing_.receive_monotonic_ns = monotonic_time_now_us().value * 1000U;
     diagnostic_timing_.socket_age_ns = received.socket_age_ns;
+    if (debug_wire_timing_) debug_wire_timing_->receive(datagram,
+        diagnostic_timing_.receive_monotonic_ns, received.receive_realtime_ns, received.socket_age_ns);
     if (debug_previous_kernel_ns_ != 0 && received.receive_realtime_ns > debug_previous_kernel_ns_ &&
         received.receive_realtime_ns - debug_previous_kernel_ns_ >= 50000000ULL && debug_gap_reports_++ < 16) {
         __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
@@ -406,6 +453,7 @@ AudioTransportStatus AudioReceiverRuntime::process_packet(const PacketView& pack
 
     ++snapshot_.datagrams_received;
 #if defined(__ANDROID__) && !defined(NDEBUG)
+    if (debug_wire_timing_) debug_wire_timing_->authenticate(packet.header.sequence_number);
     if (debug_have_sequence_ && packet.header.sequence_number != debug_previous_sequence_ + 1U &&
         debug_gap_reports_++ < 16) {
         __android_log_print(ANDROID_LOG_INFO, "WarpnectAudioDiagnostics",
@@ -428,6 +476,20 @@ AudioTransportStatus AudioReceiverRuntime::process_packet(const PacketView& pack
 
 AudioTransportStatus AudioReceiverRuntime::process_audio_packet(const PacketView& packet,
                                                                 std::uint64_t now_us) noexcept {
+#if defined(__ANDROID__) && !defined(NDEBUG)
+    if (debug_flight_ && packet.header.total_slices == 1U &&
+        packet.payload.size() > kAudioMessageTypeOffset &&
+        static_cast<std::uint8_t>(packet.payload[kAudioMessageTypeOffset]) ==
+            static_cast<std::uint8_t>(AudioMessageType::AudioFrame)) {
+        const auto now = diagnostic_timing_.receive_monotonic_ns;
+        if (diagnostic_timing_.receive_realtime_ns && diagnostic_timing_.socket_age_ns > 20'000'000ULL &&
+            debug_flight_->active_phase()) debug_flight_->trigger(FlightTrigger::SocketAge, now);
+        if (debug_previous_media_ns_ && now > debug_previous_media_ns_ &&
+            now - debug_previous_media_ns_ > 40'000'000ULL && debug_flight_->active_phase())
+            debug_flight_->trigger(FlightTrigger::ReceiveGap, now);
+        debug_previous_media_ns_ = now;
+    }
+#endif
     ++snapshot_.audio_datagrams_received;
     if (packet.header.total_slices == 1U) {
         return accept_complete_payload(packet.payload, packet.header.timestamp_us, now_us);

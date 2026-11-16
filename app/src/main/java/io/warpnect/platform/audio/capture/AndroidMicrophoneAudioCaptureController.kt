@@ -218,7 +218,14 @@ class AndroidMicrophoneAudioCaptureController(
     }
 
     private fun captureLoop() {
-        AndroidAudioThreadPriority.applyCapturePriority()
+        val priorityApplied = AndroidAudioThreadPriority.applyMicrophoneCapturePriority()
+        if (BuildConfig.DEBUG) {
+            Log.i(
+                MICROPHONE_LOG_TAG,
+                "MIC_CAPTURE_WORKER priority_applied=$priorityApplied " +
+                    "nice=${android.os.Process.getThreadPriority(android.os.Process.myTid())}",
+            )
+        }
         var bufferIndex = 0
         val localRecord = audioRecord ?: return
         val localFormat = format ?: return

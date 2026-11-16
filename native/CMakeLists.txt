@@ -335,6 +335,26 @@ target_include_directories(
 )
 target_link_libraries(scl_diagnostic_event_benchmarks PRIVATE scl_native_core)
 
+add_executable(microphone_destination_queue_tests tests/microphone_destination_queue_tests.cpp)
+configure_native_target(microphone_destination_queue_tests)
+target_include_directories(microphone_destination_queue_tests PRIVATE "${SCL_CPP_ROOT}/include")
+
+add_executable(scoped_thread_priority_floor_tests tests/scoped_thread_priority_floor_tests.cpp)
+configure_native_target(scoped_thread_priority_floor_tests)
+target_include_directories(scoped_thread_priority_floor_tests PRIVATE "${SCL_CPP_ROOT}/include")
+
+add_test(NAME microphone_destination_queue_tests COMMAND microphone_destination_queue_tests)
+add_test(NAME scoped_thread_priority_floor_tests COMMAND scoped_thread_priority_floor_tests)
+add_executable(protection_timing_probe_tests tests/protection_timing_probe_tests.cpp)
+configure_native_target(protection_timing_probe_tests)
+target_include_directories(protection_timing_probe_tests PRIVATE "${SCL_CPP_ROOT}/include")
+add_test(NAME protection_timing_probe_tests COMMAND protection_timing_probe_tests)
+
+add_executable(audio_causal_flight_recorder_tests tests/audio_causal_flight_recorder_tests.cpp)
+configure_native_target(audio_causal_flight_recorder_tests)
+target_include_directories(audio_causal_flight_recorder_tests PRIVATE "${SCL_CPP_ROOT}/include")
+target_link_libraries(audio_causal_flight_recorder_tests PRIVATE scl_native_core)
+add_test(NAME audio_causal_flight_recorder_tests COMMAND audio_causal_flight_recorder_tests)
 add_test(NAME scl_header_compile_test COMMAND scl_header_compile_test)
 add_test(NAME scl_packet_tests COMMAND scl_packet_tests)
 add_test(NAME scl_udp_tests COMMAND scl_udp_tests)

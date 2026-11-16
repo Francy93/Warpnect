@@ -13,9 +13,15 @@
 #include "reassembly.h"
 #include "udp_socket.h"
 
+#if defined(__ANDROID__) && !defined(NDEBUG)
+namespace warpnect::audio::diagnostic { class SystemAudioFlightDebug; }
+#endif
 namespace warpnect::scl {
 
 class RuntimeNetworkTelemetry;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+class AudioWireTimingDebug;
+#endif
 
 enum class AudioReceiverEventType : std::uint8_t {
     None = 0,
@@ -163,6 +169,10 @@ class AudioReceiverRuntime final {
     AudioReceiverConfig config_{};
     AudioReceiverEvent diagnostic_timing_{};
 #if defined(__ANDROID__) && !defined(NDEBUG)
+    std::unique_ptr<AudioWireTimingDebug> debug_wire_timing_;
+    std::shared_ptr<warpnect::audio::diagnostic::SystemAudioFlightDebug> debug_flight_;
+    std::uint64_t debug_previous_media_ns_ = 0;
+    bool debug_wire_attempted_ = false;
     std::uint64_t debug_previous_kernel_ns_ = 0;
     std::uint32_t debug_previous_sequence_ = 0;
     std::uint32_t debug_gap_reports_ = 0;

@@ -11,16 +11,27 @@ import java.util.concurrent.atomic.AtomicLong
 internal interface RemoteMicrophonePcmDestination {
     fun start(): Boolean
     fun submit(buffer: ByteBuffer, offset: Int, frames: Int)
+    fun submitTimed(buffer: ByteBuffer, offset: Int, frames: Int, firstFramePosition: Long, admittedNs: Long) =
+        submit(buffer, offset, frames)
 }
 
-/** Session-local PCM handoff over the existing authenticated, purpose-specific feature channel. */
+/** PCM sending and result authentication have separate, Session-owned progress. */
 internal class DirectShellRemoteMicrophoneSource(
     port: Int,
     private val generation: Long,
     secret: ByteArray,
 ) : AutoCloseable, RemoteMicrophonePcmDestination {
     private val client = DirectShellPcmRingProbeClient.connectLoopback(port, secret)
+    private val resultChannel =
+        try {
+            DirectShellMicrophoneResultChannel.receiver(secret, generation)
+        } catch (failure: Exception) {
+            client.close()
+            throw failure
+        }
     private val queue = RemoteMicrophonePcmQueue(16)
+    private val admissionLock = Any()
+    private val resultLock = Any()
     private val running = AtomicBoolean(false)
     private val closed = AtomicBoolean(false)
     private val submitted = AtomicLong()
@@ -29,191 +40,200 @@ internal class DirectShellRemoteMicrophoneSource(
     private val hwm = AtomicLong()
     private val absentDropped = AtomicLong()
     private val staleDropped = AtomicLong()
+    private val senderExpired = AtomicLong()
     private val transitionDropped = AtomicLong()
-    private val rejectionSamples = AtomicLong()
+    private val destinationCapacityDropped = AtomicLong()
+    private val cancelled = AtomicLong()
+    private val calls = AtomicLong()
+    private val results = AtomicLong()
+    private val zeroWrites = AtomicLong()
+    private val partialWrites = AtomicLong()
+    private val maxSubmitLockWaitNs = AtomicLong()
+    private val maxResultLockHoldNs = AtomicLong()
 
-    @Volatile private var lastFeedResult = Int.MIN_VALUE
-
-    @Volatile private var lastFeedAtNs = 0L
-
-    private var maxAgeNs = 0L
+    private val sentFrames = AtomicLong()
+    private var lastTotals: DirectShellMicrophoneFeedTotals.Snapshot? = null
+    private var maxSnapshotGapNs = 0L
     private var maxDequeueAgeNs = 0L
     private val dequeueAgeBins = LongArray(9)
-    private var calls = 0L
-    private var zeroWrites = 0L
-    private var maxCallUs = 0L
-    private var slowCallSamples = 0
+    private var nextRequestId = 0L
     private var worker: Thread? = null
+    private var reader: Thread? = null
 
     fun prepare(): String = client.call(DirectShellProbeProtocol.Command.MICROPHONE_PREPARE).payload
 
     override fun start(): Boolean {
         if (running.get()) return true
-        if (closed.get() || client.call(DirectShellProbeProtocol.Command.MICROPHONE_START).payload != "SUPPORTED") {
+        if (closed.get()) return false
+        val prepared = client.call(
+            DirectShellProbeProtocol.Command.MICROPHONE_START,
+            resultChannel.attachment(),
+        )
+        if (prepared.payload != "SUPPORTED") {
             return false
         }
+        nextRequestId = client.beginMicrophoneStream()
         if (!running.compareAndSet(false, true)) return true
-        worker = Thread(::drain, "DirectShellRemoteMicPcm").also { it.start() }
+        reader = Thread(::readResults, "DirectShellRemoteMicResults").also { it.start() }
+        worker = Thread(::send, "DirectShellRemoteMicPcm").also { it.start() }
         return true
     }
 
     override fun submit(buffer: ByteBuffer, offset: Int, frames: Int) {
-        if (!running.get() || closed.get() || frames !in 1..960) return
-        val payload = ByteArray(HEADER_BYTES + frames * 2)
-        val target = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
-        target.putLong(generation).putInt(frames).putLong(System.nanoTime())
-        val input = buffer.duplicate().apply {
-            position(offset)
-            limit(offset + frames * 2)
-        }
-        target.put(input)
-        if (queue.offer(payload, System.nanoTime())) {
-            submitted.addAndGet(frames.toLong())
-            hwm.accumulateAndGet(queue.size.toLong(), ::maxOf)
-        } else {
-            rejected.addAndGet(frames.toLong())
-            if (rejectionSamples.getAndIncrement() < 8) {
-                Log.i(
-                    TAG,
-                    "REMOTE_MIC_QUEUE_REJECT generation=$generation local_ns=${System.nanoTime()} " +
-                        "frames=$frames queue_size=${queue.size} last_feed_result=$lastFeedResult " +
-                        "last_feed_at_ns=$lastFeedAtNs",
-                )
+        val started = System.nanoTime()
+        synchronized(admissionLock) {
+            maxSubmitLockWaitNs.accumulateAndGet(System.nanoTime() - started, ::maxOf)
+            if (!running.get() || closed.get() || frames !in 1..960) return
+            val payload = ByteArray(HEADER_BYTES + frames * 2)
+            val target = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+            target.putLong(generation).putInt(frames).putLong(started)
+            target.put(
+                buffer.duplicate().apply {
+                    position(offset)
+                    limit(offset + frames * 2)
+                },
+            )
+            if (queue.offer(payload, System.nanoTime())) {
+                submitted.addAndGet(frames.toLong())
+                hwm.accumulateAndGet(queue.size.toLong(), ::maxOf)
+            } else {
+                rejected.addAndGet(frames.toLong())
+                payload.fill(0)
             }
-            payload.fill(0)
         }
     }
 
-    private fun drain() {
+    private fun send() {
         var nextSample = System.nanoTime() + 5_000_000_000L
         try {
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
             while (running.get()) {
                 val payload = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
-                val dequeuedAge = System.nanoTime() -
-                    ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN).getLong(12)
-                maxDequeueAgeNs = maxOf(maxDequeueAgeNs, dequeuedAge)
-                val ageBin = DEQUEUE_AGE_LIMITS_NS.indexOfFirst { dequeuedAge < it }
-                dequeueAgeBins[if (ageBin < 0) dequeueAgeBins.lastIndex else ageBin]++
+                val frames = (payload.size - HEADER_BYTES) / 2
+                var accounted = false
                 try {
-                    var remaining = payload
-                    while (running.get()) {
-                        val before = System.nanoTime()
-                        val enqueued = ByteBuffer.wrap(remaining).order(ByteOrder.LITTLE_ENDIAN).getLong(12)
-                        val frames = (remaining.size - HEADER_BYTES) / 2
-                        val age = before - enqueued
-                        if (!DirectShellMicrophoneFrame.isFresh(enqueued, before)) {
-                            staleDropped.addAndGet(frames.toLong())
-                            break
-                        }
-                        val response = client.call(DirectShellProbeProtocol.Command.MICROPHONE_FEED, remaining)
-                        val callNs = System.nanoTime() - before
-                        maxCallUs = maxOf(maxCallUs, callNs / 1_000)
-                        if (callNs >= 20_000_000L && slowCallSamples++ < 16) {
-                            Log.i(
-                                TAG,
-                                "REMOTE_MIC_CALL_TIMING generation=$generation request_id=${response.requestId} " +
-                                    "elapsed_ns=$callNs queue=${queue.size} pcm_age_ns=$age",
-                            )
-                        }
-                        calls++
-                        val count = response.payload.toIntOrNull() ?: error("invalid_feed_response")
-                        check(
-                            response.status == DirectShellProbeProtocol.Status.OK &&
-                                (
-                                    count in 0..frames || count == DROP_NO_CONSUMER || count == DROP_STALE ||
-                                        count == DROP_CONSUMER_TRANSITION
-                                    ),
-                        )
-                        lastFeedResult = count
-                        lastFeedAtNs = System.nanoTime()
-                        if (count == DROP_NO_CONSUMER) absentDropped.addAndGet(frames.toLong())
-                        if (count == DROP_STALE) staleDropped.addAndGet(frames.toLong())
-                        if (count == DROP_CONSUMER_TRANSITION) transitionDropped.addAndGet(frames.toLong())
-                        if (count >= 0) {
-                            maxAgeNs = maxOf(maxAgeNs, age)
-                            written.addAndGet(count.toLong())
-                        }
-                        if (count == 0) zeroWrites++
-                        if (System.nanoTime() >= nextSample) {
-                            Log.i(
-                                TAG,
-                                "REMOTE_MIC_PROGRESS generation=$generation submitted=${submitted.get()} " +
-                                    "written=${written.get()} queue_rejected=${rejected.get()} " +
-                                    "queue_size=${queue.size} queue_hwm=${hwm.get()} " +
-                                    "no_consumer_dropped=${absentDropped.get()} " +
-                                    "stale_dropped=${staleDropped.get() + queue.expiredFrames} " +
-                                    "admission_expired=${queue.expiredFrames} " +
-                                    "transition_dropped=${transitionDropped.get()} " +
-                                    "max_pcm_age_ns=$maxAgeNs " +
-                                    "max_dequeue_age_ns=$maxDequeueAgeNs " +
-                                    "dequeue_age_bins_lt1_3_5_10_20_30_40_80_else_ms=" +
-                                    "${dequeueAgeBins.joinToString(",")} " +
-                                    "calls=$calls zero_writes=$zeroWrites max_call_us=$maxCallUs",
-                            )
-                            nextSample = System.nanoTime() + 5_000_000_000L
-                        }
-                        if (count < 0) break
-                        if (count == frames) break
-                        if (count == 0) {
-                            Thread.sleep(1)
-                        } else {
-                            val tail = ByteArray(HEADER_BYTES + (frames - count) * 2)
-                            ByteBuffer.wrap(tail).order(ByteOrder.LITTLE_ENDIAN)
-                                .putLong(generation).putInt(frames - count).putLong(enqueued)
-                                .put(remaining, HEADER_BYTES + count * 2, tail.size - HEADER_BYTES)
-                            if (remaining !== payload) remaining.fill(0)
-                            remaining = tail
-                        }
+                    val enqueued = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN).getLong(12)
+                    val age = System.nanoTime() - enqueued
+                    maxDequeueAgeNs = maxOf(maxDequeueAgeNs, age)
+                    val bin = DEQUEUE_AGE_LIMITS_NS.indexOfFirst { age < it }
+                    dequeueAgeBins[if (bin < 0) dequeueAgeBins.lastIndex else bin]++
+                    if (DirectShellMicrophoneFrame.isFresh(enqueued, System.nanoTime()) && running.get()) {
+                        // Publish accounting before sending; a fast signed result cannot outrun it.
+                        sentFrames.addAndGet(frames.toLong())
+                        calls.incrementAndGet()
+                        accounted = true
+                        client.sendMicrophone(nextRequestId++, payload)
+                    } else if (running.get()) {
+                        senderExpired.addAndGet(frames.toLong())
+                        accounted = true
+                    } else {
+                        cancelled.addAndGet(frames.toLong())
+                        accounted = true
                     }
-                    if (remaining !== payload) remaining.fill(0)
+                    if (System.nanoTime() >= nextSample) {
+                        Log.i(TAG, "REMOTE_MIC_PROGRESS ${metrics()}")
+                        nextSample = System.nanoTime() + 5_000_000_000L
+                    }
+                } catch (failure: Exception) {
+                    if (!accounted) cancelled.addAndGet(frames.toLong())
+                    throw failure
                 } finally {
                     payload.fill(0)
                 }
             }
         } catch (failure: Exception) {
-            if (running.get()) {
-                Log.w(
-                    TAG,
-                    "REMOTE_MIC_FAILURE generation=$generation type=${failure.javaClass.simpleName}",
-                )
+            fail(failure)
+        }
+    }
+
+    private fun readResults() {
+        try {
+            var previous = 0L
+            var lastResultNs = System.nanoTime()
+            while (running.get()) {
+                val response = resultChannel.read(previous)
+                synchronized(resultLock) {
+                    val lockStarted = System.nanoTime()
+                    if (closed.get() || !running.get()) return
+                    val totals = DirectShellMicrophoneFeedTotals.decode(
+                        response.payload,
+                        lastTotals,
+                        calls.get(),
+                        sentFrames.get(),
+                    )
+                    check(response.requestId == totals.completed()) { "snapshot_identity_mismatch" }
+                    lastTotals = totals
+                    previous = totals.completed()
+                    written.set(totals.values[1])
+                    absentDropped.set(totals.values[2])
+                    staleDropped.set(totals.values[3])
+                    transitionDropped.set(totals.values[4])
+                    destinationCapacityDropped.set(totals.values[5])
+                    zeroWrites.set(totals.values[7])
+                    partialWrites.set(totals.values[8])
+                    results.set(totals.completed())
+                    val now = System.nanoTime()
+                    maxSnapshotGapNs = maxOf(maxSnapshotGapNs, now - lastResultNs)
+                    lastResultNs = now
+                    maxResultLockHoldNs.accumulateAndGet(System.nanoTime() - lockStarted, ::maxOf)
+                }
             }
-        } finally {
-            running.set(false)
+        } catch (failure: Exception) {
+            fail(failure)
+        }
+    }
+
+    private fun fail(failure: Exception) {
+        if (running.compareAndSet(true, false)) {
+            Log.w(TAG, "REMOTE_MIC_FAILURE generation=$generation type=${failure.javaClass.simpleName}")
             runCatching { client.close() }
-            clearQueue()
+            resultChannel.close()
         }
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        running.set(false)
+        synchronized(admissionLock) {
+            running.set(false)
+        }
         runCatching { client.close() }
+        resultChannel.close()
         worker?.interrupt()
+        reader?.interrupt()
         worker?.join(2_000)
-        clearQueue()
-        Log.i(
-            TAG,
-            "REMOTE_MIC_RELEASE generation=$generation submitted=${submitted.get()} written=${written.get()} " +
-                "queue_rejected=${rejected.get()} queue_hwm=${hwm.get()} " +
-                "no_consumer_dropped=${absentDropped.get()} " +
-                "stale_dropped=${staleDropped.get() + queue.expiredFrames} " +
-                "admission_expired=${queue.expiredFrames} " +
-                "transition_dropped=${transitionDropped.get()} " +
-                "max_pcm_age_ns=$maxAgeNs max_dequeue_age_ns=$maxDequeueAgeNs " +
-                "dequeue_age_bins_lt1_3_5_10_20_30_40_80_else_ms=${dequeueAgeBins.joinToString(",")} uid_rules=NONE",
-        )
+        reader?.join(2_000)
+        while (true) {
+            val payload = queue.poll() ?: break
+            cancelled.addAndGet(((payload.size - HEADER_BYTES) / 2).toLong())
+            payload.fill(0)
+        }
+        Log.i(TAG, "REMOTE_MIC_RELEASE ${metrics()} uid_rules=NONE")
     }
 
-    private fun clearQueue() {
-        while (true) (queue.poll() ?: break).fill(0)
-    }
+    private fun metrics() = "generation=$generation submitted=${submitted.get()} written=${written.get()} " +
+        "queue_rejected=${rejected.get()} queue_size=${queue.size} queue_hwm=${hwm.get()} " +
+        "no_consumer_dropped=${absentDropped.get()} " +
+        "stale_dropped=${staleDropped.get() + senderExpired.get() + queue.expiredFrames} " +
+        "sender_expired=${senderExpired.get()} " +
+        "admission_expired=${queue.expiredFrames} transition_dropped=${transitionDropped.get()} " +
+        "destination_capacity_dropped=${destinationCapacityDropped.get()} " +
+        "cancelled_unresolved=${cancelled.get() + unconfirmedFrames()} " +
+        "max_pcm_age_budget_ns=${DirectShellMicrophoneFrame.MAX_AGE_NS} " +
+        "max_dequeue_age_ns=$maxDequeueAgeNs " +
+        "dequeue_age_bins_lt1_3_5_10_20_30_40_80_else_ms=${dequeueAgeBins.joinToString(",")} " +
+        "calls=${calls.get()} results=${results.get()} sent_frames=${sentFrames.get()} result_mailbox_slots=1 " +
+        "result_transport=SESSION_LOOPBACK_UDP " +
+        "zero_writes=${zeroWrites.get()} partial_writes=${partialWrites.get()} max_snapshot_gap_ns=$maxSnapshotGapNs " +
+        "max_submit_lock_wait_ns=${maxSubmitLockWaitNs.get()} max_result_lock_hold_ns=${maxResultLockHoldNs.get()}"
+
+    private fun unconfirmedFrames() = maxOf(
+        0L,
+        sentFrames.get() - written.get() - absentDropped.get() - staleDropped.get() -
+            transitionDropped.get() - destinationCapacityDropped.get(),
+    )
 
     private companion object {
         const val HEADER_BYTES = DirectShellMicrophoneFrame.HEADER_BYTES
-        const val DROP_NO_CONSUMER = DirectShellMicrophoneFrame.DROP_NO_CONSUMER
-        const val DROP_STALE = DirectShellMicrophoneFrame.DROP_STALE
-        const val DROP_CONSUMER_TRANSITION = DirectShellMicrophoneFrame.DROP_CONSUMER_TRANSITION
         const val TAG = "WarpnectRemoteMic"
         val DEQUEUE_AGE_LIMITS_NS = longArrayOf(1, 3, 5, 10, 20, 30, 40, 80).map { it * 1_000_000L }
     }

@@ -144,6 +144,7 @@ class VideoTransportSender final : private DatagramSink {
     std::uint16_t cached_width_ = 0;
     std::uint16_t cached_height_ = 0;
     std::uint64_t last_resync_request_us_ = 0;
+    bool pending_config_resync_ = false;
     std::uint32_t fec_block_base_sequence_ = 0;
     std::uint16_t datagrams_emitted_in_message_ = 0;
 };

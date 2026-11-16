@@ -79,4 +79,30 @@ public class DirectShellMicrophoneFrameTest {
         assertFalse(DirectShellRemoteMicrophonePolicy.mayMaintainSilence(true, false));
         assertFalse(DirectShellRemoteMicrophonePolicy.mayMaintainSilence(true, true));
     }
+
+    @Test public void ownedDrainAloneDoesNotOpenRealPcmConsumerWindow() {
+        assertFalse(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "mix:1", false,
+                "mix:1", 100, 100));
+    }
+
+    @Test public void ordinaryConsumerOnSameRouteIsNotExcludedWithOwnedDrainActive() {
+        assertTrue(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "mix:1", false,
+                "mix:1", 101, 100));
+    }
+
+    @Test public void absentDrainNeverExcludesAnOrdinarySession() {
+        assertTrue(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "mix:1", false,
+                "mix:1", 101, 0));
+        assertTrue(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "mix:1", false,
+                "mix:1", 0, 0));
+    }
+
+    @Test public void ordinaryConsumerStillRequiresExactGenerationRouteAndUnsilencedCapture() {
+        assertFalse(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "old:mix", false,
+                "new:mix", 101, 100));
+        assertFalse(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(15, "mix:1", false,
+                "mix:1", 101, 100));
+        assertFalse(DirectShellRemoteMicrophonePolicy.matchesExternalConsumer(25, "mix:1", true,
+                "mix:1", 101, 100));
+    }
 }

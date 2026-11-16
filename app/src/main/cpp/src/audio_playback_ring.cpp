@@ -163,7 +163,7 @@ PcmPlaybackRingSubmitResult PcmPlaybackRing::submit(
     const std::uint32_t tail = tail_.load(std::memory_order_relaxed);
     Slot& slot = slots_[tail];
     std::memcpy(slot.pcm.data(), pcm.data(), expected_bytes);
-    slot.frame_count = frame_count;
+    slot.frame_count.store(frame_count, std::memory_order_relaxed);
     slot.metadata = metadata;
     slot.submit_time_ns = submit_time_ns;
 
@@ -218,9 +218,10 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
 
         const std::uint32_t head = head_.load(std::memory_order_relaxed);
         Slot& slot = slots_[head];
+        const auto slot_frames = slot.frame_count.load(std::memory_order_relaxed);
         const std::uint32_t read_offset =
             active_read_offset_frames_.load(std::memory_order_relaxed);
-        if (read_offset >= slot.frame_count) {
+        if (read_offset >= slot_frames) {
             active_read_offset_frames_.store(0, std::memory_order_release);
             head_.store((head + 1U) % config_.ring_capacity_codec_frames,
                         std::memory_order_release);
@@ -241,11 +242,11 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
                 const std::uint64_t residence = consume_time_ns - slot.submit_time_ns;
                 snapshot_.residence_samples += 1;
                 snapshot_.last_residence_ns = residence;
-                snapshot_.max_residence_ns = std::max(snapshot_.max_residence_ns, residence);
+                snapshot_.max_residence_ns = std::max(snapshot_.max_residence_ns.load(std::memory_order_relaxed), residence);
             }
         }
 
-        const std::uint32_t available = slot.frame_count - read_offset;
+        const std::uint32_t available = slot_frames - read_offset;
         const std::uint32_t to_copy = std::min(available, frames_remaining);
         if (read_offset == 0 && to_copy > 0) {
             publish_source_anchor(slot, read_offset, output_start_frame_position + output_frame_offset);
@@ -265,7 +266,7 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
         snapshot_.pcm_frames_consumed += to_copy;
 
         const std::uint32_t new_read_offset = read_offset + to_copy;
-        if (new_read_offset >= slot.frame_count) {
+        if (new_read_offset >= slot_frames) {
             active_read_offset_frames_.store(0, std::memory_order_release);
             head_.store((head + 1U) % config_.ring_capacity_codec_frames,
                         std::memory_order_release);
@@ -296,6 +297,11 @@ PcmPlaybackRingConsumeResult PcmPlaybackRing::consume(std::span<std::byte> outpu
 
 std::uint32_t PcmPlaybackRing::capacity_frames() const noexcept {
     return config_.frames_per_codec_frame * config_.ring_capacity_codec_frames;
+}
+
+std::uint64_t PcmPlaybackRing::oldest_submit_time_ns_for_consumer() const noexcept {
+    if (!prepared_ || closed_ || queued_slots_.load(std::memory_order_acquire) == 0) return 0;
+    return slots_[head_.load(std::memory_order_relaxed)].submit_time_ns;
 }
 
 std::uint32_t PcmPlaybackRing::occupancy_frames() const noexcept {
@@ -345,7 +351,32 @@ void PcmPlaybackRing::invalidate_source_timeline() noexcept {
 }
 
 PcmPlaybackRingSnapshot PcmPlaybackRing::snapshot() const noexcept {
-    PcmPlaybackRingSnapshot snapshot = snapshot_;
+    PcmPlaybackRingSnapshot snapshot{};
+    snapshot.source = snapshot_.source.load(std::memory_order_relaxed);
+    snapshot.config_generation = snapshot_.config_generation.load(std::memory_order_relaxed);
+    snapshot.sample_rate_hz = snapshot_.sample_rate_hz.load(std::memory_order_relaxed);
+    snapshot.channel_count = snapshot_.channel_count.load(std::memory_order_relaxed);
+    snapshot.frames_per_codec_frame = snapshot_.frames_per_codec_frame.load(std::memory_order_relaxed);
+    snapshot.ring_capacity_frames = snapshot_.ring_capacity_frames.load(std::memory_order_relaxed);
+    snapshot.ring_occupancy_frames = snapshot_.ring_occupancy_frames.load(std::memory_order_relaxed);
+    snapshot.ring_high_water_mark = snapshot_.ring_high_water_mark.load(std::memory_order_relaxed);
+    snapshot.pcm_frames_submitted = snapshot_.pcm_frames_submitted.load(std::memory_order_relaxed);
+    snapshot.pcm_frames_consumed = snapshot_.pcm_frames_consumed.load(std::memory_order_relaxed);
+    snapshot.pcm_frames_rejected = snapshot_.pcm_frames_rejected.load(std::memory_order_relaxed);
+    snapshot.underrun_callbacks = snapshot_.underrun_callbacks.load(std::memory_order_relaxed);
+    snapshot.underrun_frames = snapshot_.underrun_frames.load(std::memory_order_relaxed);
+    snapshot.silence_frames_inserted = snapshot_.silence_frames_inserted.load(std::memory_order_relaxed);
+    snapshot.normal_frames = snapshot_.normal_frames.load(std::memory_order_relaxed);
+    snapshot.plc_frames = snapshot_.plc_frames.load(std::memory_order_relaxed);
+    snapshot.discontinuity_frames = snapshot_.discontinuity_frames.load(std::memory_order_relaxed);
+    snapshot.last_source_frame_position = snapshot_.last_source_frame_position.load(std::memory_order_relaxed);
+    snapshot.last_capture_time_us = snapshot_.last_capture_time_us.load(std::memory_order_relaxed);
+    snapshot.residence_samples = snapshot_.residence_samples.load(std::memory_order_relaxed);
+    snapshot.last_residence_ns = snapshot_.last_residence_ns.load(std::memory_order_relaxed);
+    snapshot.max_residence_ns = snapshot_.max_residence_ns.load(std::memory_order_relaxed);
+    snapshot.last_error = snapshot_.last_error.load(std::memory_order_relaxed);
+    snapshot.prepared = snapshot_.prepared.load(std::memory_order_relaxed);
+    snapshot.closed = snapshot_.closed.load(std::memory_order_relaxed);
     snapshot.ring_capacity_frames = capacity_frames();
     snapshot.ring_occupancy_frames = occupancy_frames();
     snapshot.prepared = prepared_;
@@ -364,10 +395,11 @@ std::uint32_t PcmPlaybackRing::queued_frames_relaxed() const noexcept {
         active_read_offset_frames_.load(std::memory_order_acquire);
     for (std::uint32_t i = 0; i < queued_slots; ++i) {
         const Slot& slot = slots_[index];
-        if (i == 0 && read_offset < slot.frame_count) {
-            frames += slot.frame_count - read_offset;
+        const auto slot_frames = slot.frame_count.load(std::memory_order_relaxed);
+        if (i == 0 && read_offset < slot_frames) {
+            frames += slot_frames - read_offset;
         } else if (i != 0) {
-            frames += slot.frame_count;
+            frames += slot_frames;
         }
         index = (index + 1U) % config_.ring_capacity_codec_frames;
     }
@@ -397,7 +429,7 @@ void PcmPlaybackRing::publish_source_anchor(const Slot& slot,
 }
 
 void PcmPlaybackRing::update_high_water(std::uint32_t occupancy_frames) noexcept {
-    snapshot_.ring_high_water_mark = std::max(snapshot_.ring_high_water_mark, occupancy_frames);
+    snapshot_.ring_high_water_mark = std::max(snapshot_.ring_high_water_mark.load(std::memory_order_relaxed), occupancy_frames);
 }
 
 void PcmPlaybackRing::record_error(AudioPlaybackError error) noexcept {

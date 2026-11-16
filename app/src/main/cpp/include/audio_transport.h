@@ -9,9 +9,16 @@
 #include "datagram_protection.h"
 #include "udp_socket.h"
 
+#if defined(__ANDROID__) && !defined(NDEBUG)
+#include <memory>
+namespace warpnect::audio::diagnostic { class SystemAudioFlightDebug; }
+#endif
 namespace warpnect::scl {
 
 class RuntimeNetworkTelemetry;
+#if defined(__ANDROID__) && !defined(NDEBUG)
+class AudioWireTimingDebug;
+#endif
 
 struct AudioTransportSenderConfig final {
     UdpEndpoint remote_endpoint{};
@@ -103,6 +110,9 @@ class AudioTransportSender final : private AudioDatagramSink {
     std::uint32_t cached_frame_duration_us_ = 0;
     std::uint32_t cached_lookahead_samples_ = 0;
 #if defined(__ANDROID__) && !defined(NDEBUG)
+    std::unique_ptr<AudioWireTimingDebug> debug_wire_timing_;
+    std::shared_ptr<warpnect::audio::diagnostic::SystemAudioFlightDebug> debug_flight_;
+    bool debug_wire_attempted_ = false;
     void observe_debug_send(std::uint32_t sequence, std::uint64_t protect_start_ns,
                             std::uint64_t send_start_ns, std::uint64_t sent_ns) noexcept;
     std::uint64_t debug_window_start_ns_ = 0;

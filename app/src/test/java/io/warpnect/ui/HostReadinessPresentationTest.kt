@@ -8,6 +8,8 @@ import io.warpnect.platform.privileged.planning.PrivilegedCapabilityMatrix
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanResult
 import io.warpnect.platform.privileged.planning.PrivilegedCapabilityPlanner
 import io.warpnect.platform.privileged.planning.PrivilegedProvider
+import io.warpnect.platform.privileged.readiness.HostPairingSetupAttempt
+import io.warpnect.platform.privileged.readiness.HostPairingSetupPhase
 import io.warpnect.platform.privileged.readiness.HostReadinessEvidenceSource
 import io.warpnect.platform.privileged.readiness.HostReadinessPhase
 import io.warpnect.platform.privileged.readiness.HostReadinessPlanCommitState
@@ -18,6 +20,7 @@ import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeAvailability
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeAvailabilityState
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeFailureReason
 import io.warpnect.platform.privileged.readiness.PrivilegedRuntimeStateSnapshot
+import io.warpnect.platform.privileged.readiness.pairingRequiredUiState
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeKind
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeSnapshot
 import io.warpnect.platform.privileged.runtime.PrivilegedRuntimeState
@@ -28,6 +31,61 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HostReadinessPresentationTest {
+    @Test
+    fun `pairing action requires available adapter`() {
+        val state = pairingRequiredUiState()
+        assertNull(hostReadinessPresentation(state)?.pairingSetupGeneration)
+        assertEquals(1L, hostReadinessPresentation(state, true)?.pairingSetupGeneration)
+    }
+
+    @Test
+    fun `hidden passive pairing does not open dialog`() {
+        assertNull(hostReadinessPresentation(pairingRequiredUiState().copy(hostActionVisible = false), true))
+    }
+
+    @Test
+    fun `unrelated reasons never offer setup even with adapter`() {
+        val unrelated = PrivilegedRuntimeFailureReason.entries - PrivilegedRuntimeFailureReason.ADB_PAIRING_REQUIRED
+        unrelated.forEach {
+            assertNull(hostReadinessPresentation(pairingRequiredUiState(reason = it), true)?.pairingSetupGeneration)
+        }
+    }
+
+    @Test
+    fun `in-flight and completed attempts remove action but preserve dismissal`() {
+        HostPairingSetupPhase.entries.forEach {
+            val presentation =
+                requireNotNull(
+                    hostReadinessPresentation(pairingRequiredUiState(), true, HostPairingSetupAttempt(1, it)),
+                )
+            assertTrue(presentation.dismissible)
+            assertNull(presentation.pairingSetupGeneration)
+        }
+    }
+
+    @Test
+    fun `new generation can offer action after previous attempt returned`() {
+        assertEquals(
+            2L,
+            hostReadinessPresentation(
+                pairingRequiredUiState(2),
+                true,
+                HostPairingSetupAttempt(1, HostPairingSetupPhase.RETURNED),
+            )?.pairingSetupGeneration,
+        )
+    }
+
+    @Test
+    fun `new generation cannot overlap pending old Activity`() {
+        assertNull(
+            hostReadinessPresentation(
+                pairingRequiredUiState(2),
+                true,
+                HostPairingSetupAttempt(1, HostPairingSetupPhase.OPEN),
+            )?.pairingSetupGeneration,
+        )
+    }
+
     @Test
     fun `checking shows truthful non-dismissible preparation copy`() {
         val presentation = requireNotNull(

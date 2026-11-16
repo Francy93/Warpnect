@@ -2,6 +2,7 @@ package io.warpnect.debug.directshell
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -13,6 +14,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import io.warpnect.HostPairingSetupLaunchExtras
+import io.warpnect.R
 
 /**
  * DEBUG-only setup screen for same-device Wireless Debugging.
@@ -23,11 +26,27 @@ import android.widget.TextView
  */
 class DirectShellSelfBootstrapProbeActivity : Activity() {
     private lateinit var status: TextView
+    private var permissionGate = PairingSetupPermissionGate()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        permissionGate = PairingSetupPermissionGate(savedInstanceState?.getBoolean("permissionsRequested") ?: false)
         setContentView(createContent())
         preparePairingNotification()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("permissionsRequested", permissionGate.requestIssued)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) {
+            authorization()?.let { grant ->
+                runCatching { DirectShellPairingAuthorization.forApp(this).dismiss(grant) }
+            }
+        }
+        super.onDestroy()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -38,9 +57,8 @@ class DirectShellSelfBootstrapProbeActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // singleTop reuses this setup surface after a completed attempt; refresh its action
-        // notification instead of leaving the previous result notification without controls.
-        preparePairingNotification()
+        // A new Host setup Intent carries its own authorization; lifecycle callbacks cannot mint one.
+        preparePairingNotification(explicitRetry = true)
     }
 
     private fun createContent(): ScrollView = ScrollView(this).apply {
@@ -59,15 +77,21 @@ class DirectShellSelfBootstrapProbeActivity : Activity() {
             Button(this@DirectShellSelfBootstrapProbeActivity).apply {
                 text = "Apri opzioni sviluppatore"
                 setOnClickListener {
-                    preparePairingNotification()
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                    preparePairingNotification(explicitRetry = true)
+                    try {
+                        startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                    } catch (_: ActivityNotFoundException) {
+                        status.setText(R.string.directshell_pairing_settings_unavailable)
+                    } catch (_: SecurityException) {
+                        status.setText(R.string.directshell_pairing_settings_denied)
+                    }
                 }
             },
         )
         content.addView(
             Button(this@DirectShellSelfBootstrapProbeActivity).apply {
                 text = "Mostra notifica pairing"
-                setOnClickListener { preparePairingNotification() }
+                setOnClickListener { preparePairingNotification(explicitRetry = true) }
             },
         )
         content.addView(
@@ -83,20 +107,41 @@ class DirectShellSelfBootstrapProbeActivity : Activity() {
         addView(content, LinearLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
     }
 
-    private fun preparePairingNotification() {
+    private fun preparePairingNotification(explicitRetry: Boolean = false) {
         val missing = requiredRuntimePermissions().filter {
             checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isNotEmpty()) {
-            status.text = "È richiesta l'autorizzazione per mostrare la notifica e cercare Wireless Debugging."
-            requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
+        when (permissionGate.action(missing.isNotEmpty(), explicitRetry)) {
+            PairingSetupPermissionAction.REQUEST_PERMISSIONS -> {
+                status.text = "È richiesta l'autorizzazione per mostrare la notifica e cercare Wireless Debugging."
+                requestPermissions(missing.toTypedArray(), REQUEST_PERMISSIONS)
+                return
+            }
+            PairingSetupPermissionAction.DENIED -> {
+                status.setText(R.string.directshell_pairing_permissions_denied)
+                return
+            }
+            PairingSetupPermissionAction.SHOW_NOTIFICATION -> Unit
+        }
+        val grant = authorization()
+        if (grant == null || !runCatching { DirectShellPairingAuthorization.forApp(this).present(grant) }.getOrDefault(false)) {
+            status.text = "Autorizzazione assente, scaduta o gia usata. Riapri la configurazione da Host."
             return
         }
-        DirectShellSelfBootstrapNotification.showWaiting(this)
+        DirectShellSelfBootstrapNotification.showWaiting(this, grant.token)
         status.text = "Notifica pronta. Nelle Opzioni sviluppatore apri Wireless debugging > " +
             "Pair device with pairing code, poi inserisci il codice nella notifica Warpnect."
         Log.i(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=READY result=PAIRING_NOTIFICATION_READY")
     }
+
+    private fun authorization(): DirectShellPairingAuthorization.Grant? =
+        intent.getStringExtra(HostPairingSetupLaunchExtras.TOKEN)?.let { token ->
+            DirectShellPairingAuthorization.Grant(
+                token,
+                intent.getIntExtra(HostPairingSetupLaunchExtras.BOOT, -1),
+                intent.getLongExtra(HostPairingSetupLaunchExtras.ISSUED_AT, -1),
+            )
+        }
 
     private fun runInputSmoke() {
         status.text = "Avvio smoke Input DirectShell con l'autorizzazione Wireless Debugging esistente..."

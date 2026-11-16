@@ -1,0 +1,246 @@
+diff --git a/tools/libadb-pairing/upstream/PairingConnectionCtx.java b/tools/libadb-pairing/patched/PairingConnectionCtx.java
+index 099c5db..b96a1a4 100644
+--- a/tools/libadb-pairing/upstream/PairingConnectionCtx.java
++++ b/tools/libadb-pairing/patched/PairingConnectionCtx.java
+@@ -15,6 +15,7 @@ import java.io.DataInputStream;
+ import java.io.DataOutputStream;
+ import java.io.IOException;
+ import java.net.Socket;
++import java.net.InetSocketAddress;
+ import java.nio.ByteBuffer;
+ import java.nio.ByteOrder;
+ import java.security.InvalidKeyException;
+@@ -22,6 +23,7 @@ import java.security.KeyManagementException;
+ import java.security.NoSuchAlgorithmException;
+ import java.security.PrivateKey;
+ import java.security.SecureRandom;
++import java.security.MessageDigest;
+ import java.security.cert.Certificate;
+ import java.security.cert.CertificateEncodingException;
+ import java.security.interfaces.RSAPublicKey;
+@@ -76,6 +78,13 @@ public final class PairingConnectionCtx implements Closeable {
+     private DataOutputStream mOutputStream;
+     private PairingAuthCtx mPairingAuthCtx;
+     private State mState = State.Ready;
++    // Warpnect opt-in path only: the worker borrows a connected socket, never owns cancellation.
++    private Socket mBorrowedSocket;
++    private InetSocketAddress mEndpoint;
++    private Runnable mCheckpoint;
++    private TlsClientProtocol mTlsProtocol;
++    private AdbTlsClient mTlsClient;
++    private AuthenticatedPeerInfo mAuthenticatedPeerInfo;
+ 
+     public PairingConnectionCtx(@NonNull String host, int port, @NonNull byte[] pswd, @NonNull KeyPair keyPair,
+                                 @NonNull String deviceName)
+@@ -128,6 +137,53 @@ public final class PairingConnectionCtx implements Closeable {
+         }
+     }
+ 
++    /** Additive DEBUG extension. Same caller/worker; no connect, retry, timeout or socket replacement. */
++    public AuthenticatedPeerInfo startConnected(Socket socket, InetSocketAddress endpoint, Runnable checkpoint)
++            throws IOException {
++        if (mState != State.Ready || mBorrowedSocket != null || socket == null || endpoint == null
++                || endpoint.isUnresolved() || !socket.isConnected() || socket.isClosed()
++                || socket.isInputShutdown() || socket.isOutputShutdown()
++                || !endpoint.equals(socket.getRemoteSocketAddress()) || checkpoint == null) {
++            throw new IOException("pairing_connected_socket_invalid");
++        }
++        mBorrowedSocket = socket;
++        mEndpoint = endpoint;
++        mCheckpoint = checkpoint;
++        try {
++            checkpoint();
++            start();
++            if (mAuthenticatedPeerInfo == null) throw new IOException("pairing_peer_unconfirmed");
++            return mAuthenticatedPeerInfo;
++        } catch (Exception ignored) {
++            // No raw library/peer exception can cross the opt-in boundary.
++            throw new IOException("pairing_protocol_failed");
++        }
++    }
++
++    private void checkpoint() {
++        if (mCheckpoint != null) mCheckpoint.run();
++    }
++
++    /** Opaque protocol evidence, not an Android trust/storage/Host grant. Arrays are defensive copies. */
++    public static final class AuthenticatedPeerInfo {
++        private final byte[] guid;
++        private final byte[] remoteCertificate;
++        private final byte[] localCertificate;
++        private final InetSocketAddress endpoint;
++
++        private AuthenticatedPeerInfo(byte[] guid, byte[] remote, byte[] local, InetSocketAddress endpoint) {
++            this.guid = guid.clone();
++            this.remoteCertificate = remote.clone();
++            this.localCertificate = local.clone();
++            this.endpoint = endpoint;
++        }
++        public byte[] getDeviceGuid() { return guid.clone(); }
++        public byte[] getRemoteCertificateSha256() { return remoteCertificate.clone(); }
++        public byte[] getLocalCertificateSha256() { return localCertificate.clone(); }
++        public InetSocketAddress getEndpoint() { return endpoint; }
++        @Override public String toString() { return "AuthenticatedPeerInfo(redacted, protocol-only)"; }
++    }
++
+     private void notifyResult() {
+         mState = State.Stopped;
+     }
+@@ -137,7 +193,8 @@ public final class PairingConnectionCtx implements Closeable {
+             // The server role is unused; only the low-level client is implemented (see AdbTlsClient).
+             throw new IOException("Server role is not supported.");
+         }
+-        Socket socket = new Socket(mHost, mPort);
++        checkpoint();
++        Socket socket = mBorrowedSocket == null ? new Socket(mHost, mPort) : mBorrowedSocket;
+         socket.setTcpNoDelay(true);
+ 
+         // BouncyCastle's JSSE (SSLSocket) clears the TLS 1.3 exporter secret before application code can run, so we
+@@ -148,7 +205,11 @@ public final class PairingConnectionCtx implements Closeable {
+         BcTlsCrypto crypto = new BcTlsCrypto(new SecureRandom());
+         TlsClientProtocol protocol = new TlsClientProtocol(socket.getInputStream(), socket.getOutputStream());
+         AdbTlsClient client = new AdbTlsClient(crypto, mKeyPair);
++        mTlsProtocol = protocol;
++        mTlsClient = client;
++        checkpoint();
+         protocol.connect(client);
++        checkpoint();
+         Log.d(TAG, "Handshake succeeded.");
+ 
+         mInputStream = new DataInputStream(protocol.getInputStream());
+@@ -164,7 +225,15 @@ public final class PairingConnectionCtx implements Closeable {
+         System.arraycopy(mPswd, 0, passwordBytes, 0, mPswd.length);
+         System.arraycopy(keyMaterial, 0, passwordBytes, mPswd.length, keyMaterial.length);
+ 
+-        PairingAuthCtx pairingAuthCtx = PairingAuthCtx.createAlice(passwordBytes);
++        PairingAuthCtx pairingAuthCtx;
++        try {
++            pairingAuthCtx = PairingAuthCtx.createAlice(passwordBytes);
++        } finally {
++            if (mBorrowedSocket != null) {
++                Arrays.fill(passwordBytes, (byte) 0);
++                Arrays.fill(keyMaterial, (byte) 0);
++            }
++        }
+         if (pairingAuthCtx == null) {
+             throw new IOException("Unable to create PairingAuthCtx.");
+         }
+@@ -176,14 +245,19 @@ public final class PairingConnectionCtx implements Closeable {
+                 .order(ByteOrder.BIG_ENDIAN);
+         header.writeTo(buffer);
+ 
++        checkpoint();
+         mOutputStream.write(buffer.array());
++        checkpoint();
+         mOutputStream.write(payload);
++        checkpoint();
+     }
+ 
+     @Nullable
+     private PairingPacketHeader readHeader() throws IOException {
+         byte[] bytes = new byte[PairingPacketHeader.PAIRING_PACKET_HEADER_SIZE];
++        checkpoint();
+         mInputStream.readFully(bytes);
++        checkpoint();
+         ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN);
+         return PairingPacketHeader.readFrom(buffer);
+     }
+@@ -214,7 +288,9 @@ public final class PairingConnectionCtx implements Closeable {
+ 
+         // Read the SPAKE2 msg payload and initialize the cipher for encrypting the PeerInfo and certificate.
+         byte[] theirMsg = new byte[theirHeader.payloadSize];
++        checkpoint();
+         mInputStream.readFully(theirMsg);
++        checkpoint();
+ 
+         try {
+             return mPairingAuthCtx.initCipher(theirMsg);
+@@ -246,7 +322,9 @@ public final class PairingConnectionCtx implements Closeable {
+ 
+         // Read in the encrypted peer certificate
+         byte[] theirMsg = new byte[theirHeader.payloadSize];
++        checkpoint();
+         mInputStream.readFully(theirMsg);
++        checkpoint();
+ 
+         // Try to decrypt the certificate
+         byte[] decryptedMsg = mPairingAuthCtx.decrypt(theirMsg);
+@@ -262,12 +340,33 @@ public final class PairingConnectionCtx implements Closeable {
+         }
+ 
+         PeerInfo theirPeerInfo = PeerInfo.readFrom(ByteBuffer.wrap(decryptedMsg));
+-        Log.d(TAG, theirPeerInfo.toString());
++        if (mBorrowedSocket != null) {
++            try {
++                // AOSP PeerInfo.data is an opaque NUL-terminated GUID, not a fixed UUID/255-char schema.
++                int end = 0;
++                while (end < theirPeerInfo.data.length && theirPeerInfo.data[end] != 0) end++;
++                if (theirPeerInfo.type != 1 || end == 0 || end == theirPeerInfo.data.length
++                        || mTlsClient.remoteCertificate == null) throw new IOException("pairing_peer_invalid");
++                mAuthenticatedPeerInfo = new AuthenticatedPeerInfo(Arrays.copyOf(theirPeerInfo.data, end),
++                        mTlsClient.remoteCertificate, MessageDigest.getInstance("SHA-256")
++                        .digest(mKeyPair.getCertificate().getEncoded()), mEndpoint);
++            } catch (java.security.GeneralSecurityException ignored) {
++                throw new IOException("pairing_identity_invalid");
++            } finally {
++                Arrays.fill(theirPeerInfo.data, (byte) 0);
++                Arrays.fill(decryptedMsg, (byte) 0);
++            }
++        }
++        // Raw peer-info logging is removed in both paths; legacy wire/API behavior is unchanged.
+         return true;
+     }
+ 
+     @Override
+     public void close() {
++        if (mBorrowedSocket != null) {
++            releaseConnected();
++            return;
++        }
+         Arrays.fill(mPswd, (byte) 0);
+         try {
+             if (mInputStream != null) mInputStream.close();
+@@ -282,12 +381,27 @@ public final class PairingConnectionCtx implements Closeable {
+         }
+     }
+ 
++    /** Called only by the protocol worker, after the transport owner closes its raw socket. */
++    public boolean releaseConnected() {
++        Arrays.fill(mPswd, (byte) 0);
++        if (mPairingAuthCtx != null) mPairingAuthCtx.destroy();
++        if (mTlsProtocol != null) {
++            try { mTlsProtocol.close(); } catch (IOException ignored) { }
++            if (!mTlsProtocol.isClosed()) return false;
++        }
++        mInputStream = null;
++        mOutputStream = null;
++        mCheckpoint = null;
++        return mPairingAuthCtx == null || mPairingAuthCtx.isDestroyed();
++    }
++
+     // A minimal TLS 1.3 client for ADB pairing: it presents the local key pair's self-signed certificate, accepts
+     // any server certificate, and exports the keying material from notifyHandshakeComplete() (the only point at
+     // which BouncyCastle keeps the TLS 1.3 exporter secret alive).
+     private static class AdbTlsClient extends DefaultTlsClient {
+         private final KeyPair mKeyPair;
+         private byte[] mKeyingMaterial;
++        private byte[] remoteCertificate;
+ 
+         AdbTlsClient(@NonNull BcTlsCrypto crypto, @NonNull KeyPair keyPair) {
+             super(crypto);
+@@ -309,8 +423,14 @@ public final class PairingConnectionCtx implements Closeable {
+         public TlsAuthentication getAuthentication() {
+             return new TlsAuthentication() {
+                 @Override
+-                public void notifyServerCertificate(TlsServerCertificate serverCertificate) {
++                public void notifyServerCertificate(TlsServerCertificate serverCertificate) throws IOException {
+                     // Accept any certificate; the connection is authenticated out-of-band via SPAKE2.
++                    try {
++                        remoteCertificate = MessageDigest.getInstance("SHA-256").digest(
++                                serverCertificate.getCertificate().getCertificateAt(0).getEncoded());
++                    } catch (java.security.GeneralSecurityException ignored) {
++                        throw new IOException("pairing_certificate_invalid");
++                    }
+                 }
+ 
+                 @Override

@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
+import java.nio.charset.CharacterCodingException
 import java.nio.charset.StandardCharsets
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
@@ -41,26 +42,22 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
     private val preferences = applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val random = SecureRandom()
 
-    fun loadOrCreate(): Material = load() ?: create().also(::save)
+    fun loadOrCreate(): Material {
+        val records = preferences.all
+        if (!records.hasStoredIdentity()) return create().also(::save)
+        return try {
+            load(records)
+        } catch (_: Exception) {
+            throw unreadableIdentity()
+        }
+    }
 
     /**
      * The ADB Wi-Fi GUID is mDNS service metadata, not a shell credential. It is nevertheless
      * kept alongside the paired key under the same app-private encryption key so a later bootstrap
      * resolves only the service the user explicitly paired with.
      */
-    fun trustedConnectionServiceName(): String? {
-        val encrypted = preferences.getString(PREF_TRUSTED_CONNECTION_SERVICE_NAME, null) ?: return null
-        val bytes = runCatching { decrypt(encrypted) }.getOrNull() ?: return null
-        return try {
-            DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName(
-                String(bytes, StandardCharsets.UTF_8),
-            )
-        } catch (_: IllegalArgumentException) {
-            null
-        } finally {
-            bytes.fill(0)
-        }
-    }
+    fun trustedConnectionServiceName(): String = readTrustedConnectionServiceName(preferences.all, ::decrypt)
 
     fun rememberTrustedConnectionServiceName(serviceName: String) {
         val normalized = DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName(serviceName)
@@ -68,7 +65,7 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         try {
             check(
                 preferences.edit()
-                    .putString(PREF_TRUSTED_CONNECTION_SERVICE_NAME, encrypt(bytes))
+                    .putString(PREF_TRUSTED_CONNECTION_SERVICE_NAME, encrypt(bytes, encryptionKey(createIfMissing = false)))
                     .commit(),
             ) { "trusted_adb_service_name_persist_failed" }
         } finally {
@@ -86,22 +83,25 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         }
     }
 
-    private fun load(): Material? {
-        val encryptedPrivateKey = preferences.getString(PREF_PRIVATE_KEY, null) ?: return null
-        val encryptedCertificate = preferences.getString(PREF_CERTIFICATE, null) ?: return null
+    private fun load(records: Map<String, *>): Material {
+        val encryptedPrivateKey = checkNotNull(records[PREF_PRIVATE_KEY] as? String) { "stored_adb_identity_incomplete" }
+        val encryptedCertificate = checkNotNull(records[PREF_CERTIFICATE] as? String) { "stored_adb_identity_incomplete" }
         val privateKeyBytes = decrypt(encryptedPrivateKey)
-        val certificateBytes = decrypt(encryptedCertificate)
         return try {
             val privateKey = KeyFactory.getInstance("RSA")
                 .generatePrivate(PKCS8EncodedKeySpec(privateKeyBytes))
-            val certificate = CertificateFactory.getInstance("X.509")
-                .generateCertificate(ByteArrayInputStream(certificateBytes)) as X509Certificate
-            certificate.checkValidity()
-            certificate.verify(certificate.publicKey)
-            Material(privateKey, certificate)
+            val certificateBytes = decrypt(encryptedCertificate)
+            try {
+                val certificate = CertificateFactory.getInstance("X.509")
+                    .generateCertificate(ByteArrayInputStream(certificateBytes)) as X509Certificate
+                certificate.checkValidity()
+                certificate.verify(certificate.publicKey)
+                Material(privateKey, certificate)
+            } finally {
+                certificateBytes.fill(0)
+            }
         } finally {
             privateKeyBytes.fill(0)
-            certificateBytes.fill(0)
         }
     }
 
@@ -130,9 +130,10 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
             ?: throw IllegalStateException("software_adb_private_key_not_exportable")
         val certificateBytes = material.certificate.encoded
         try {
+            val key = encryptionKey(createIfMissing = true)
             preferences.edit()
-                .putString(PREF_PRIVATE_KEY, encrypt(privateKeyBytes))
-                .putString(PREF_CERTIFICATE, encrypt(certificateBytes))
+                .putString(PREF_PRIVATE_KEY, encrypt(privateKeyBytes, key))
+                .putString(PREF_CERTIFICATE, encrypt(certificateBytes, key))
                 .apply()
         } finally {
             privateKeyBytes.fill(0)
@@ -140,10 +141,11 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         }
     }
 
-    private fun encryptionKey(): SecretKey {
+    private fun encryptionKey(createIfMissing: Boolean): SecretKey {
         val store = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
-        val existing = store.getKey(ENCRYPTION_KEY_ALIAS, null) as? SecretKey
-        if (existing != null) return existing
+        val existing = store.getKey(ENCRYPTION_KEY_ALIAS, null)
+        if (existing != null) return checkNotNull(existing as? SecretKey) { "stored_adb_identity_wrapping_key_invalid" }
+        check(createIfMissing) { "stored_adb_identity_wrapping_key_missing" }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE).apply {
             init(
                 KeyGenParameterSpec.Builder(
@@ -158,9 +160,9 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         }.generateKey()
     }
 
-    private fun encrypt(value: ByteArray): String {
+    private fun encrypt(value: ByteArray, key: SecretKey): String {
         val cipher = Cipher.getInstance(CIPHER)
-        cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
+        cipher.init(Cipher.ENCRYPT_MODE, key)
         val ciphertext = cipher.doFinal(value)
         return Base64.encodeToString(cipher.iv + ciphertext, Base64.NO_WRAP)
     }
@@ -176,7 +178,7 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         val ciphertext = combined.copyOfRange(GCM_IV_BYTES, combined.size)
         return try {
             Cipher.getInstance(CIPHER).apply {
-                init(Cipher.DECRYPT_MODE, encryptionKey(), GCMParameterSpec(GCM_TAG_BITS, iv))
+                init(Cipher.DECRYPT_MODE, encryptionKey(createIfMissing = false), GCMParameterSpec(GCM_TAG_BITS, iv))
             }.doFinal(ciphertext)
         } finally {
             combined.fill(0)
@@ -185,16 +187,54 @@ internal class DirectShellSelfAdbKeyStore(context: Context) {
         }
     }
 
-    private companion object {
-        const val PREFERENCES = "directshell_self_adb_probe"
-        const val PREF_PRIVATE_KEY = "private_key"
-        const val PREF_CERTIFICATE = "certificate"
-        const val PREF_TRUSTED_CONNECTION_SERVICE_NAME = "trusted_connection_service_name"
-        const val ANDROID_KEY_STORE = "AndroidKeyStore"
-        const val ENCRYPTION_KEY_ALIAS = "warpnect.directshell.selfadb.debug.v1"
-        const val CIPHER = "AES/GCM/NoPadding"
-        const val GCM_IV_BYTES = 12
-        const val GCM_TAG_BITS = 128
+    companion object {
+        internal fun readTrustedConnectionServiceName(
+            records: Map<String, *>,
+            decrypt: (String) -> ByteArray,
+        ): String {
+            if (!records.hasStoredIdentity()) {
+                throw DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
+                    DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_PAIRING_REQUIRED,
+                )
+            }
+            val encrypted = records[PREF_TRUSTED_CONNECTION_SERVICE_NAME] as? String
+            val privateKey = records[PREF_PRIVATE_KEY] as? String
+            val certificate = records[PREF_CERTIFICATE] as? String
+            if (encrypted.isNullOrBlank() || privateKey.isNullOrBlank() || certificate.isNullOrBlank()) {
+                throw unreadableIdentity()
+            }
+            val bytes = try {
+                decrypt(encrypted)
+            } catch (_: Exception) {
+                throw unreadableIdentity()
+            }
+            return try {
+                DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName(bytes.decodeToString(throwOnInvalidSequence = true))
+            } catch (_: CharacterCodingException) {
+                throw unreadableIdentity()
+            } catch (_: IllegalArgumentException) {
+                throw unreadableIdentity()
+            } finally {
+                bytes.fill(0)
+            }
+        }
+
+        private fun Map<String, *>.hasStoredIdentity(): Boolean =
+            containsKey(PREF_PRIVATE_KEY) || containsKey(PREF_CERTIFICATE) || containsKey(PREF_TRUSTED_CONNECTION_SERVICE_NAME)
+
+        private fun unreadableIdentity() = DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
+            DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_IDENTITY_REQUIRED,
+        )
+
+        private const val PREFERENCES = "directshell_self_adb_probe"
+        private const val PREF_PRIVATE_KEY = "private_key"
+        private const val PREF_CERTIFICATE = "certificate"
+        private const val PREF_TRUSTED_CONNECTION_SERVICE_NAME = "trusted_connection_service_name"
+        private const val ANDROID_KEY_STORE = "AndroidKeyStore"
+        private const val ENCRYPTION_KEY_ALIAS = "warpnect.directshell.selfadb.debug.v1"
+        private const val CIPHER = "AES/GCM/NoPadding"
+        private const val GCM_IV_BYTES = 12
+        private const val GCM_TAG_BITS = 128
         const val CERTIFICATE_VALIDITY_MILLIS = 365L * 24L * 60L * 60L * 1_000L
     }
 }

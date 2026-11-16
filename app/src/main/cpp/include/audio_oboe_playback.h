@@ -148,6 +148,13 @@ struct OboeAudioPlaybackSnapshot final {
 
 class OboeAudioPlayback final {
 public:
+    [[nodiscard]] bool is_microphone() const noexcept {
+        return config_.source == AudioCaptureSource::MicrophoneAudio;
+    }
+    // Single producer, pinned by the caller's lifecycle read lease. No SDK/mutex/wait.
+    [[nodiscard]] AudioPlaybackError admit_microphone_pcm(
+        std::span<const std::byte> pcm, std::uint32_t frame_count,
+        const DecodedPcmPlaybackMetadata& metadata) noexcept;
     explicit OboeAudioPlayback(OboeAudioPlaybackConfig config);
     ~OboeAudioPlayback();
 
@@ -163,6 +170,7 @@ public:
     [[nodiscard]] AudioPlaybackPresentationTimestamp query_presentation_timestamp();
     [[nodiscard]] AudioSourcePresentationAnchor query_source_presentation_anchor();
     [[nodiscard]] OboeAudioPlaybackSnapshot snapshot();
+    [[nodiscard]] std::shared_ptr<oboe::AudioStream> observation_stream() const { return stream_; }
     void set_telemetry_source(
         std::shared_ptr<scl::runtime_telemetry::RuntimeTelemetrySource> source) noexcept;
     void close() noexcept;
@@ -192,6 +200,14 @@ private:
     bool prepared_ = false;
     bool running_ = false;
     bool closed_ = false;
+    std::uint32_t microphone_full_reports_ = 0;
+    std::uint32_t microphone_startup_full_reports_ = 0;
+#ifndef NDEBUG
+    std::uint64_t microphone_handoff_count_ = 0;
+    std::uint64_t microphone_handoff_total_ns_ = 0;
+    std::uint64_t microphone_handoff_max_ns_ = 0;
+    std::uint64_t microphone_handoff_timeouts_ = 0;
+#endif
 };
 
 } // namespace warpnect::audio::android

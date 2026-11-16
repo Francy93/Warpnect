@@ -3,7 +3,9 @@ package io.warpnect.debug.directshell
 import android.app.RemoteInput
 import android.app.Service
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 
 /**
@@ -13,22 +15,32 @@ import android.util.Log
  * foregrounded; it exits after one bounded bootstrap attempt and retains no pairing code.
  */
 class DirectShellSelfBootstrapPairingService : Service() {
+    private val main = Handler(Looper.getMainLooper())
+    private var operation: DirectShellPairingAuthorization.Lease? = null
+    private var destroyed = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val pairingCode = when (intent?.action) {
-            DirectShellSelfBootstrapNotification.ACTION_SUBMIT_PAIRING_CODE ->
-                RemoteInput.getResultsFromIntent(intent)
-                    ?.getCharSequence(DirectShellSelfBootstrapNotification.EXTRA_PAIRING_CODE)
-                    ?.toString()
-                    ?.let(::normalizePairingCode)
-                    ?: return invalidPairingCode(startId)
-            DirectShellSelfBootstrapNotification.ACTION_RETRY_BOOTSTRAP -> null
-            else -> {
-                DirectShellSelfBootstrapNotification.showRetry(this, "Azione di pairing non valida.")
-                stopSelf(startId)
-                return START_NOT_STICKY
-            }
+        val submit = intent?.action == DirectShellSelfBootstrapNotification.ACTION_SUBMIT_PAIRING_CODE
+        val retry = intent?.action == DirectShellSelfBootstrapNotification.ACTION_RETRY_BOOTSTRAP
+        if (intent == null || (!submit && !retry)) return reject(startId)
+        val token = DirectShellSelfBootstrapNotification.authorizationToken(this, intent) ?: return reject(startId)
+        val authorization = DirectShellPairingAuthorization.forApp(this)
+        val lease = runCatching { authorization.claim(token) }.getOrNull() ?: return reject(startId)
+        operation = lease
+        Log.i(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=AUTHORIZATION result=CLAIMED")
+        val pairingCode = if (submit) {
+            RemoteInput.getResultsFromIntent(intent)
+                ?.getCharSequence(DirectShellSelfBootstrapNotification.EXTRA_PAIRING_CODE)
+                ?.toString()
+                ?.let(::normalizePairingCode)
+        } else {
+            null
+        }
+        if (submit && pairingCode == null) {
+            complete(authorization, lease, "FAIL_INVALID_PAIRING_CODE")
+            return START_NOT_STICKY
         }
         try {
             startForeground(
@@ -38,65 +50,62 @@ class DirectShellSelfBootstrapPairingService : Service() {
                     "Pairing e bootstrap DirectShell in corso.",
                 ),
             )
-        } catch (error: IllegalStateException) {
-            DirectShellSelfBootstrapNotification.showRetry(
-                this,
-                "FAIL_FOREGROUND_SERVICE_NOT_ALLOWED: ${error.javaClass.simpleName}",
-            )
-            Log.w(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=FOREGROUND_SERVICE result=DENIED", error)
-            stopSelf(startId)
-            return START_NOT_STICKY
-        } catch (error: SecurityException) {
-            DirectShellSelfBootstrapNotification.showRetry(
-                this,
-                "FAIL_FOREGROUND_SERVICE_PERMISSION: ${error.javaClass.simpleName}",
-            )
-            Log.w(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=FOREGROUND_SERVICE result=DENIED", error)
-            stopSelf(startId)
+        } catch (_: RuntimeException) {
+            complete(authorization, lease, "FAIL_FOREGROUND_SERVICE_DENIED")
             return START_NOT_STICKY
         }
-        Thread(
-            {
-                val controller = DirectShellSelfBootstrapController(this)
+        try {
+            Thread({
+                var result = "FAIL_BOOTSTRAP_WORKER"
                 try {
-                    val result = pairingCode?.let(controller::pairAndBootstrapDiscovered)
-                        ?: controller.bootstrapPreviouslyAuthorized()
-                    val text = "${result.classification}: ${result.detail}"
-                    if (result.successful) {
-                        DirectShellSelfBootstrapNotification.showResult(this, text)
-                    } else {
-                        DirectShellSelfBootstrapNotification.showRetry(this, text)
+                    result = DirectShellSelfBootstrapController(this).use { controller ->
+                        (pairingCode?.let(controller::pairAndBootstrapDiscovered)
+                            ?: controller.bootstrapPreviouslyAuthorized()).classification
                     }
-                    Log.i(
-                        TAG,
-                        "DIRECT_SHELL_SELF_BOOTSTRAP result=${result.classification} detail=${sanitize(result.detail)}",
-                    )
+                } catch (_: Exception) {
+                    // Do not emit provider exception text or pairing input from this boundary.
                 } finally {
-                    controller.close()
-                    stopForeground(STOP_FOREGROUND_DETACH)
-                    stopSelf(startId)
+                    val classification = result
+                    main.post { complete(authorization, lease, classification) }
                 }
-            },
-            "WarpnectDirectShellPairing",
-        ).start()
+            }, "WarpnectDirectShellPairing").start()
+        } catch (_: RuntimeException) {
+            complete(authorization, lease, "FAIL_BOOTSTRAP_WORKER_START")
+        }
         return START_NOT_STICKY
     }
 
-    private fun invalidPairingCode(startId: Int): Int {
-        DirectShellSelfBootstrapNotification.showRetry(this, "Codice di pairing non valido.")
-        stopSelf(startId)
+    private fun reject(startId: Int): Int {
+        Log.i(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP stage=AUTHORIZATION result=REJECTED")
+        if (operation == null) stopSelfResult(startId)
         return START_NOT_STICKY
+    }
+
+    private fun complete(
+        authorization: DirectShellPairingAuthorization,
+        lease: DirectShellPairingAuthorization.Lease,
+        classification: String,
+    ) {
+        if (!authorization.finish(lease) || destroyed || operation !== lease) return
+        operation = null
+        Log.i(TAG, "DIRECT_SHELL_SELF_BOOTSTRAP result=$classification")
+        try {
+            stopForeground(STOP_FOREGROUND_DETACH)
+            DirectShellSelfBootstrapNotification.showResult(this, classification)
+        } finally {
+            // Rejected deliveries may have a newer startId, but none can own this service.
+            stopSelf()
+        }
+    }
+
+    override fun onDestroy() {
+        destroyed = true
+        super.onDestroy()
     }
 
     private fun normalizePairingCode(value: String): String? = runCatching {
         DirectShellSelfBootstrapContract.pairingCode(value)
     }.getOrNull()
-
-    private fun sanitize(value: String): String = value
-        .replace('\n', ';')
-        .replace('\r', '_')
-        .replace('\u0000', '_')
-        .take(1_000)
 
     private companion object {
         const val TAG = "WarpnectDirectShellBootstrap"

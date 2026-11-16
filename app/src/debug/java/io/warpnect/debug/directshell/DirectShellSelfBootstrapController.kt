@@ -110,16 +110,12 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
         val pairingEndpoint = DirectShellSelfAdbEndpointDiscovery.discoverPairing(applicationContext)
         disconnectTransport()
         trace("PAIR")
-        ensureManager().pair(pairingEndpoint.host, pairingEndpoint.port, pairingCode)
-        keyStore.rememberTrustedConnectionServiceName(pairingEndpoint.serviceName)
-        Log.i(
-            TAG,
-            "DIRECT_SHELL_SELF_ADB_DISCOVERY event=trusted_service_recorded " +
-                "service=${pairingEndpoint.serviceName}",
-        )
+        val guid = ensureManager().pairAndReadDeviceGuid(pairingEndpoint, pairingCode)
+        keyStore.rememberTrustedConnectionServiceName(guid)
+        Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=authenticated_guid_recorded")
         disconnectTransport()
 
-        val connectionEndpoint = discoverAndConnectConnectionEndpoint("SELF_BOOTSTRAP")
+        val connectionEndpoint = discoverAndConnectConnectionEndpoint("SELF_BOOTSTRAP", pairingEndpoint.host)
         trace("SHELL_IDENTITY")
         inspectShellIdentity().requireSuccess()
         trace("ARTIFACT_VERIFY")
@@ -693,21 +689,20 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
      */
     private fun discoverAndConnectConnectionEndpoint(
         tracePrefix: String,
+        pairedHost: String? = null,
     ): DirectShellSelfAdbEndpointDiscovery.Endpoint {
         val trustedServiceName = traced("${tracePrefix}_TRUSTED_IDENTITY") {
             keyStore.trustedConnectionServiceName()
-                ?: throw DirectShellSelfAdbEndpointDiscovery.DiscoveryException(
-                    DirectShellSelfAdbEndpointDiscovery.Failure.CONNECTION_SERVICE_IDENTITY_REQUIRED,
-                )
         }
         val initial = traced("${tracePrefix}_DISCOVER_CONNECTION") {
             DirectShellSelfAdbEndpointDiscovery.discoverConnection(
                 context = applicationContext,
                 trustedServiceName = trustedServiceName,
+                requiredHost = pairedHost,
             )
         }
         try {
-            traced("${tracePrefix}_CONNECT") { connectEndpoint(initial.host, initial.port).requireSuccess() }
+            traced("${tracePrefix}_CONNECT") { connectDiscoveredEndpoint(initial) }
             return initial
         } catch (error: IOException) {
             if (!hasConnectionRefusedCause(error)) throw error
@@ -722,11 +717,17 @@ internal class DirectShellSelfBootstrapController(context: Context) : AutoClosea
                     context = applicationContext,
                     trustedServiceName = trustedServiceName,
                     excludedEndpoint = initial,
+                    requiredHost = pairedHost,
                 )
             }
-            traced("${tracePrefix}_RECONNECT") { connectEndpoint(replacement.host, replacement.port).requireSuccess() }
+            traced("${tracePrefix}_RECONNECT") { connectDiscoveredEndpoint(replacement) }
             return replacement
         }
+    }
+
+    private fun connectDiscoveredEndpoint(endpoint: DirectShellSelfAdbEndpointDiscovery.Endpoint) {
+        DirectShellSelfAdbEndpointDiscovery.requireCurrentLocalSocketAddress(endpoint)
+        connectEndpoint(endpoint.host, endpoint.port).requireSuccess()
     }
 
     private fun requireModernWirelessDebugging() {

@@ -140,6 +140,7 @@ import io.warpnect.session.integration.SessionControlDispatcher
 import io.warpnect.session.integration.SessionLifecycleControllerProvider
 import io.warpnect.session.integration.SessionPipelineRuntime
 import io.warpnect.session.integration.SessionStartupDebugObserver
+import io.warpnect.session.integration.shouldPublishSessionClosure
 import io.warpnect.session.lifecycle.LifecyclePathBinding
 import io.warpnect.session.lifecycle.SessionContinuityParticipant
 import io.warpnect.session.lifecycle.SessionLifecycleController
@@ -215,6 +216,10 @@ class AndroidSecureSessionComposition private constructor(
     private val hostPublication: HostAdmissionPublicationGate,
     private val debugMicrophoneAudioRequested: AtomicBoolean,
 ) : AutoCloseable {
+    internal val hostPairingSetup = io.warpnect.platform.privileged.readiness.HostPairingSetupController {
+        hostReadinessCoordinator.uiState.value
+    }
+
     internal val hostReadinessUiState: StateFlow<HostReadinessUiState>
         get() = hostReadinessCoordinator.uiState
 
@@ -267,6 +272,7 @@ class AndroidSecureSessionComposition private constructor(
     }
 
     override fun close() {
+        hostPairingSetup.close()
         hostReadinessObservation.close()
         reportExportController.close()
         hostReadinessCoordinator.close()
@@ -1140,7 +1146,8 @@ class AndroidSecureSessionComposition private constructor(
                         override fun onSessionSuspended() = listener.onRecovering()
 
                         override fun onSessionTerminated() {
-                            if (bootstrap.localRole == io.warpnect.session.SessionRole.Host) {
+                            val state = controllerReference.get()?.snapshot()?.state ?: return
+                            if (shouldPublishSessionClosure(bootstrap.localRole, state)) {
                                 controlDispatcher.dispatch { listener.onClosed() }
                             }
                         }

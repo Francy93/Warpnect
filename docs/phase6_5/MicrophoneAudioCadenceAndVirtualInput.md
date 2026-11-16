@@ -70,7 +70,7 @@ a validated checkpoint boundary.
 | Device / role | Serial | Build fingerprint |
 | --- | --- | --- |
 | Tablet X700_EEA, Android 13/API33, primary Host | Z1382023HGM1895372 | `Aocwei/X700_EEA/X700_EEA:13/TP1A.220624.014/2023264:user/release-keys` |
-| A41 SM-A415F, Android 12/API31, comparison Host/ordinary input consumer | R58N52B32JJ | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` |
+| A41 SM-A415F, Android 12/API31, comparison Host/ordinary input consumer | TESTUNIT002 | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` |
 | S9 SM-G960F, Android 10/API29, physical Client microphone | 23eaec0f12047ece | `samsung/starltexx/starlte:10/QP1A.190711.020/G960FXXUHFVG4:user/release-keys` |
 
 Tablet Wireless Debugging was initially OFF; the operator explicitly enabled

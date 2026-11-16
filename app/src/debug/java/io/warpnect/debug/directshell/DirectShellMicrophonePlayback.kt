@@ -1,5 +1,6 @@
 package io.warpnect.debug.directshell
 
+import android.util.Log
 import io.warpnect.audio.playback.AudioPlaybackConfig
 import io.warpnect.audio.playback.AudioPlaybackController
 import io.warpnect.audio.playback.AudioPlaybackError
@@ -14,9 +15,13 @@ internal class DirectShellMicrophonePlayback(
 ) : AudioPlaybackController by diagnostic {
     private var source: RemoteMicrophonePcmDestination? = null
     private var configGeneration: Long? = null
+    private var rejectionLogs = 0
+    private var slowDiagnosticLogs = 0
 
     override fun prepare(config: AudioPlaybackConfig): AudioPlaybackResult {
         release()
+        rejectionLogs = 0
+        slowDiagnosticLogs = 0
         val result = diagnostic.prepare(config)
         if (result.isSuccess && config.sampleRateHz == 48_000 && config.channelCount == 1) {
             source = currentInput()
@@ -44,13 +49,40 @@ internal class DirectShellMicrophonePlayback(
         frameCount: Int,
         metadata: DecodedPcmMetadata,
     ): AudioPlaybackResult {
-        val result = diagnostic.submitPcm(buffer, offset, sizeBytes, frameCount, metadata)
-        // Speaker diagnostics are not the Android input destination's admission boundary.
-        if ((result.isSuccess || result.error == AudioPlaybackError.PlaybackRingFull) &&
-            metadata.configGeneration == configGeneration && sizeBytes == frameCount * 2 &&
+        val admittedNs = System.nanoTime()
+        var inputOffered = false
+        // Input admission precedes potentially blocking speaker diagnostics; preserve this clock stamp.
+        if (metadata.configGeneration == configGeneration && frameCount in 1..960 &&
+            sizeBytes == frameCount * 2 && offset >= 0 && sizeBytes <= buffer.limit() - offset &&
             source === currentInput()
         ) {
-            source?.submit(buffer, offset, frameCount)
+            source?.let {
+                it.submitTimed(buffer, offset, frameCount, metadata.firstFramePosition, admittedNs)
+                inputOffered = true
+            }
+        }
+        val diagnosticBeginNs = System.nanoTime()
+        val result = diagnostic.submitPcm(buffer, offset, sizeBytes, frameCount, metadata)
+        val diagnosticEndNs = System.nanoTime()
+        if (diagnosticEndNs - diagnosticBeginNs >= 8_000_000 && slowDiagnosticLogs++ < 16) {
+            runCatching {
+                Log.i(
+                    "WarpnectAudioDiagnostics",
+                    "MIC_DEBUG_SUBMIT_STALL begin_ns=$diagnosticBeginNs end_ns=$diagnosticEndNs " +
+                        "input_elapsed_ns=${diagnosticBeginNs - admittedNs} " +
+                        "position=${metadata.firstFramePosition} frames=$frameCount error=${result.error}",
+                )
+            }
+        }
+        if (result.error == AudioPlaybackError.PlaybackRingFull && rejectionLogs++ < 8) {
+            runCatching {
+                Log.i(
+                    "WarpnectAudioDiagnostics",
+                    "MIC_DEBUG_REJECTION local_ns=${System.nanoTime()} generation=${metadata.configGeneration} " +
+                        "position=${metadata.firstFramePosition} frames=$frameCount " +
+                        "android_input_offered=$inputOffered",
+                )
+            }
         }
         return result
     }

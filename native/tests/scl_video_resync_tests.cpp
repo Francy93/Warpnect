@@ -367,11 +367,64 @@ void test_nack_cache_miss_keeps_video_resync_recoverable() {
                  "post-cache-miss VideoResync resends the stream config");
 }
 
+void test_early_config_request_is_serviced_once_when_config_becomes_available() {
+    UdpSocket receiver;
+    UdpEndpoint endpoint{};
+    if (!open_bound_receiver(receiver, endpoint)) return;
+    SenderStorage storage(256, 16);
+    VideoTransportSender sender(
+        VideoTransportSenderConfig{
+            .remote_endpoint = endpoint,
+            .max_wire_datagram_size = 256,
+            .retransmission_cache_slots = 16,
+            .resync_request_cooldown_us = 0,
+        }, storage.workspace());
+    expect(sender.open().ok(), "early-request sender opens");
+    const VideoResyncRequest request{.reason = VideoResyncReason::NeedConfiguration};
+    for (int index = 0; index < 20; ++index) {
+        expect(sender.handle_video_resync_request(request, 1000 + index).ok(),
+               "early configuration request is bounded");
+    }
+    expect_equal(sender.snapshot().stream_config_resends, 0ULL,
+                 "no nonexistent config is sent before codec readiness");
+    const std::array<std::byte, 2> csd{byte(0x67), byte(0x42)};
+    const std::array<CsdEntryView, 1> entries{CsdEntryView{.bytes = as_bytes(csd)}};
+    expect(sender.submit_stream_config(640, 360, entries).ok(), "first configuration becomes available");
+    expect_equal(sender.snapshot().stream_config_resends, 1ULL,
+                 "early requests coalesce into one current-config resend");
+    expect_equal(sender.snapshot().keyframe_requests_received, 1ULL,
+                 "existing keyframe event services the deferred request");
+    expect_equal(sender.snapshot().configs_submitted, 1ULL,
+                 "resend does not create another configuration generation");
+    std::array<std::byte, 512> buffer{};
+    const auto first = receive_until_ready(receiver, buffer);
+    expect(first.ok(), "initial config is sent normally");
+    const auto repeated = receive_until_ready(receiver, buffer);
+    expect(repeated.ok(), "deferred request produces a real second datagram");
+    if (repeated.ok()) {
+        const auto packet = warpnect::scl::decode_packet(
+            std::span<const std::byte>(buffer).first(repeated.bytes_received));
+        expect(packet.ok(), "deferred datagram has the ordinary packet contract");
+        if (packet.ok()) {
+            const auto decoded = warpnect::scl::decode_video_stream_config(packet.packet.payload);
+            expect(decoded.ok(), "deferred configuration payload decodes");
+            expect_equal(decoded.config.config_generation, 1U, "deferred config keeps generation");
+        }
+    }
+    expect(sender.submit_stream_config(640, 360, entries).ok(), "next configuration becomes available");
+    expect_equal(sender.snapshot().stream_config_resends, 1ULL,
+                 "serviced request does not leak into a later generation");
+    sender.close();
+    expect_equal(sender.submit_stream_config(640, 360, entries).error, VideoError::Closed,
+                 "closed owner cannot send any subsequent configuration");
+}
+
 int run_all_tests() {
     test_video_resync_golden_and_malformed();
     test_receiver_emits_video_resync_request();
     test_sender_handles_resync_with_config_resend_and_keyframe_event();
     test_nack_cache_miss_keeps_video_resync_recoverable();
+    test_early_config_request_is_serviced_once_when_config_becomes_available();
     return failures == 0 ? 0 : 1;
 }
 

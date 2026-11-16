@@ -12,6 +12,7 @@ import io.warpnect.session.discovery.DiscoverySnapshot
 import io.warpnect.session.handshake.ExpectedPeerConstraint
 import io.warpnect.session.lifecycle.DisconnectReason
 import io.warpnect.session.lifecycle.RecoverableSessionRecord
+import io.warpnect.session.lifecycle.SessionLifecycleState
 import io.warpnect.session.pairing.PairingVerificationPrompt
 import io.warpnect.session.setup.SessionSetupPreferences
 
@@ -164,6 +165,9 @@ interface SessionPipelineComponent : AutoCloseable {
     /** Real-time sources are stopped promptly while the lifecycle is suspended. */
     fun onSessionSuspended() = Unit
 
+    /** Quiesce real-time sinks before bounded control/resource teardown; final stop remains idempotent. */
+    fun onSessionClosing() = Unit
+
     /** A new generation owns fresh components; stale runtime objects are never resumed. */
     fun onSessionReconnected() = Unit
 
@@ -233,6 +237,9 @@ interface SessionLifecycleRuntimeListener {
 
     fun onClosed()
 }
+
+internal fun shouldPublishSessionClosure(role: SessionRole, state: SessionLifecycleState): Boolean =
+    role == SessionRole.Host || state == SessionLifecycleState.Closed
 
 /**
  * Adapter boundary for 005B-005G. Implementations delegate to the existing controllers rather

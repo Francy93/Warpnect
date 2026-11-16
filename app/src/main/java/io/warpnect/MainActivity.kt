@@ -1,8 +1,12 @@
 package io.warpnect
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
@@ -18,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -25,10 +30,18 @@ import io.warpnect.diagnostics.ui.DiagnosticsRuntimeSummary
 import io.warpnect.diagnostics.ui.DiagnosticsUiController
 import io.warpnect.platform.diagnostics.AndroidDiagnosticsUiClock
 import io.warpnect.platform.discovery.AndroidDiscoveryEnvironmentProvider
+import io.warpnect.platform.privileged.readiness.HostPairingSetupAdapter
+import io.warpnect.platform.privileged.readiness.HostPairingSetupLaunchResult
 import io.warpnect.session.SessionRole
 import io.warpnect.ui.DiagnosticsScreen
 import io.warpnect.ui.MainScreen
 import io.warpnect.ui.SecureSessionScreen
+
+internal object HostPairingSetupLaunchExtras {
+    const val TOKEN = "io.warpnect.host_pairing_setup.TOKEN"
+    const val BOOT = "io.warpnect.host_pairing_setup.BOOT"
+    const val ISSUED_AT = "io.warpnect.host_pairing_setup.ISSUED_AT"
+}
 
 class MainActivity : ComponentActivity() {
     private val composition: io.warpnect.platform.session.integration.AndroidSecureSessionComposition?
@@ -66,6 +79,47 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
     var discoveryPermissionNotice by remember { mutableStateOf<String?>(null) }
     var debugMicrophoneRequested by remember { mutableStateOf(false) }
     var microphonePermissionNotice by remember { mutableStateOf<String?>(null) }
+    var pairingSetupToken by rememberSaveable { mutableStateOf<String?>(null) }
+    val pairingSetupIntent = remember(context) { HostPairingSetupAdapter.createIntent(context) }
+    val pairingSetupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        pairingSetupToken?.let { token -> composition?.hostPairingSetup?.returned(token) }
+        pairingSetupToken = null
+    }
+
+    val onOpenHostPairingSetup: (Long) -> Unit = { generation ->
+        val boot = if (pairingSetupIntent != null) {
+            runCatching {
+                Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+            }.getOrDefault(-1)
+        } else {
+            -1
+        }
+        val issuedAt = SystemClock.elapsedRealtime()
+        composition?.hostPairingSetup?.request(
+            generation,
+            pairingSetupIntent != null && pairingSetupToken == null,
+        ) { token ->
+            pairingSetupToken = token
+            try {
+                pairingSetupLauncher.launch(
+                    Intent(requireNotNull(pairingSetupIntent))
+                        .putExtra(HostPairingSetupLaunchExtras.TOKEN, token)
+                        .putExtra(HostPairingSetupLaunchExtras.BOOT, boot)
+                        .putExtra(HostPairingSetupLaunchExtras.ISSUED_AT, issuedAt),
+                )
+                HostPairingSetupLaunchResult.STARTED
+            } catch (_: ActivityNotFoundException) {
+                pairingSetupToken = null
+                HostPairingSetupLaunchResult.UNAVAILABLE
+            } catch (_: SecurityException) {
+                pairingSetupToken = null
+                HostPairingSetupLaunchResult.PERMISSION_DENIED
+            } catch (_: IllegalStateException) {
+                pairingSetupToken = null
+                HostPairingSetupLaunchResult.UNAVAILABLE
+            }
+        }
+    }
 
     val microphonePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -163,6 +217,7 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                 val clientCapability by composition.uiResources.clientCapability.collectAsState()
                 val hostCapability by composition.uiResources.hostCapability.collectAsState()
                 val hostReadinessUiState by composition.hostReadinessUiState.collectAsState()
+                val hostPairingSetupAttempt by composition.hostPairingSetup.attempt.collectAsState()
                 SecureSessionScreen(
                     controller = composition.applicationController,
                     onEnableHost = { requestDiscoveryStart(SessionRole.Host) },
@@ -178,6 +233,9 @@ private fun WarpnectApp(composition: io.warpnect.platform.session.integration.An
                     hostCapability = hostCapability,
                     hostReadinessUiState = hostReadinessUiState,
                     onDismissHostReadiness = composition::dismissHostReadinessNotice,
+                    hostPairingSetupAvailable = pairingSetupIntent != null && pairingSetupToken == null,
+                    hostPairingSetupAttempt = hostPairingSetupAttempt,
+                    onOpenHostPairingSetup = onOpenHostPairingSetup,
                     onClientRenderSurfaceAttached = composition.uiResources::attachClientRenderSurface,
                     onClientRenderSurfaceDetached = composition.uiResources::clearClientRenderSurface,
                     onClientInputSurfaceAttached = composition.uiResources::attachClientInputSurface,

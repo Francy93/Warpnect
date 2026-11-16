@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "audio_opus_decoder.h"
@@ -143,7 +144,13 @@ public:
                                                            0) noexcept;
 
     [[nodiscard]] std::uint32_t occupancy_frames() const noexcept;
+    // Callback/consumer only: the SPSC head stays owned until consume releases it.
+    [[nodiscard]] std::uint64_t oldest_submit_time_ns_for_consumer() const noexcept;
     [[nodiscard]] std::uint32_t capacity_frames() const noexcept;
+    [[nodiscard]] bool has_available_slot() const noexcept {
+        return prepared_ && !closed_ &&
+            queued_slots_.load(std::memory_order_acquire) < config_.ring_capacity_codec_frames;
+    }
     [[nodiscard]] AudioSourcePlaybackAnchor latest_source_anchor() const noexcept;
     void invalidate_source_timeline() noexcept;
     [[nodiscard]] PcmPlaybackRingSnapshot snapshot() const noexcept;
@@ -152,8 +159,12 @@ public:
 
 private:
     struct Slot final {
+        Slot() = default;
+        Slot(Slot&& other) noexcept
+            : pcm(std::move(other.pcm)), frame_count(other.frame_count.load(std::memory_order_relaxed)),
+              metadata(other.metadata), submit_time_ns(other.submit_time_ns) {}
         std::vector<std::int16_t> pcm{};
-        std::uint32_t frame_count = 0;
+        std::atomic<std::uint32_t> frame_count{0};
         DecodedPcmPlaybackMetadata metadata{};
         std::uint64_t submit_time_ns = 0;
     };
@@ -183,7 +194,35 @@ private:
     std::atomic<bool> anchor_discontinuity_before_{false};
     std::atomic<std::uint8_t> anchor_frame_kind_{0};
 
-    PcmPlaybackRingSnapshot snapshot_{};
+    // Producer, callback and numeric observer own separate fields; observation
+    // must not add a mutex to the PCM data plane.
+    struct AtomicSnapshot final {
+        std::atomic<AudioCaptureSource> source{AudioCaptureSource::MicrophoneAudio};
+        std::atomic<std::uint32_t> config_generation{0};
+        std::atomic<std::uint32_t> sample_rate_hz{0};
+        std::atomic<std::uint8_t> channel_count{0};
+        std::atomic<std::uint32_t> frames_per_codec_frame{0};
+        std::atomic<std::uint32_t> ring_capacity_frames{0};
+        std::atomic<std::uint32_t> ring_occupancy_frames{0};
+        std::atomic<std::uint32_t> ring_high_water_mark{0};
+        std::atomic<std::uint64_t> pcm_frames_submitted{0};
+        std::atomic<std::uint64_t> pcm_frames_consumed{0};
+        std::atomic<std::uint64_t> pcm_frames_rejected{0};
+        std::atomic<std::uint64_t> underrun_callbacks{0};
+        std::atomic<std::uint64_t> underrun_frames{0};
+        std::atomic<std::uint64_t> silence_frames_inserted{0};
+        std::atomic<std::uint64_t> normal_frames{0};
+        std::atomic<std::uint64_t> plc_frames{0};
+        std::atomic<std::uint64_t> discontinuity_frames{0};
+        std::atomic<std::uint64_t> last_source_frame_position{0};
+        std::atomic<std::uint64_t> last_capture_time_us{0};
+        std::atomic<std::uint64_t> residence_samples{0};
+        std::atomic<std::uint64_t> last_residence_ns{0};
+        std::atomic<std::uint64_t> max_residence_ns{0};
+        std::atomic<AudioPlaybackError> last_error{AudioPlaybackError::None};
+        std::atomic<bool> prepared{false};
+        std::atomic<bool> closed{false};
+    } snapshot_{};
     bool prepared_ = false;
     bool closed_ = false;
 };

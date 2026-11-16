@@ -8,6 +8,7 @@ import io.warpnect.session.control.SecureSessionControlSendResult
 import io.warpnect.session.control.SecureSessionControlTransport
 import io.warpnect.session.handshake.AuthenticatedSessionAdmissionReservation
 import io.warpnect.session.handshake.HandshakeTransportEndpoint
+import io.warpnect.session.integration.installHostSetupPayloadListener
 import io.warpnect.session.security.ProtectionContextIds
 import io.warpnect.session.security.SessionProtectionContextResult
 import io.warpnect.session.security.SessionProtectionError
@@ -19,6 +20,62 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CapabilityNegotiationControllerTest {
+    @Test
+    fun lostHostCompleteCanBeRetriedAfterHostEntersSetupWithoutReadmission() {
+        val fixture = Fixture()
+        val setupPayloads = mutableListOf<ByteArray>()
+        fixture.hostTransport.dropNextType = CapabilityNegotiationMessageType.HostComplete
+        fixture.afterHostCompletion = {
+            installHostSetupPayloadListener(
+                fixture.hostTransport,
+                { payload -> fixture.host.receive(fixture.sessionId, payload) },
+                setupPayloads::add,
+            )
+        }
+        fixture.host.registerHost(fixture.hostBootstrap, fixture.hostTransport, HostCapabilityPolicy())
+        fixture.client.beginClient(fixture.clientBootstrap, fixture.clientTransport, request())
+        assertEquals(1, fixture.hostCompletions.size)
+        assertEquals(0, fixture.clientCompletions.size)
+        fixture.clock.nowMs = CapabilityNegotiationProtocol.RETRY_DELAYS_MS.first()
+        fixture.client.advance()
+        assertEquals(1, fixture.clientCompletions.size)
+        assertEquals(1, fixture.hostCompletions.size)
+        assertEquals(1, fixture.reservation.renewCount)
+        assertTrue(setupPayloads.isEmpty())
+        val setup = byteArrayOf('W'.code.toByte(), 'N'.code.toByte(), 'S'.code.toByte(), 'N'.code.toByte())
+        fixture.clientTransport.send(setup)
+        assertTrue(setup.contentEquals(setupPayloads.single()))
+    }
+
+    @Test
+    fun setupBoundaryPreservesConflictChecksForRetriedCapabilityConfirmation() {
+        val fixture = Fixture()
+        val setupPayloads = mutableListOf<ByteArray>()
+        fixture.hostTransport.dropNextType = CapabilityNegotiationMessageType.HostComplete
+        fixture.afterHostCompletion = {
+            installHostSetupPayloadListener(
+                fixture.hostTransport,
+                { payload -> fixture.host.receive(fixture.sessionId, payload) },
+                setupPayloads::add,
+            )
+        }
+        fixture.host.registerHost(fixture.hostBootstrap, fixture.hostTransport, HostCapabilityPolicy())
+        fixture.client.beginClient(fixture.clientBootstrap, fixture.clientTransport, request())
+        val original = requireNotNull(CapabilityNegotiationCodec.decode(fixture.clientTransport.sent.last()))
+            .message as CapabilityNegotiationMessage.ClientConfirm
+        val changedHash = original.profileHash.copyOf().apply { this[0] = (this[0].toInt() xor 1).toByte() }
+        val changed = requireNotNull(CapabilityNegotiationCodec.encode(original.copy(profileHash = changedHash)))
+        val responsesBefore = fixture.hostTransport.sent.size
+        fixture.clientTransport.send(changed)
+        assertEquals(CapabilityNegotiationError.NegotiationConflict, fixture.host.snapshot().lastError)
+        assertEquals(responsesBefore, fixture.hostTransport.sent.size)
+        assertEquals(1, fixture.reservation.renewCount)
+        assertTrue(setupPayloads.isEmpty())
+        fixture.host.close()
+        fixture.clientTransport.send(fixture.clientTransport.sent.first())
+        assertEquals(responsesBefore, fixture.hostTransport.sent.size)
+    }
+
     @Test
     fun protectedOfferSelectionConfirmCompleteProducesOneProfilePerSession() {
         val fixture = Fixture()
@@ -114,13 +171,17 @@ class CapabilityNegotiationControllerTest {
         val clientTransport = TestTransport()
         val hostCompletions = mutableListOf<NegotiatedSessionBootstrap>()
         val clientCompletions = mutableListOf<NegotiatedSessionBootstrap>()
+        var afterHostCompletion: ((NegotiatedSessionBootstrap) -> Unit)? = null
         val hostBootstrap = bootstrap(SessionRole.Host, SessionRole.Client, reservation)
         val clientBootstrap = bootstrap(SessionRole.Client, SessionRole.Host, null)
         val host = CapabilityNegotiationController(
             collector = LocalCapabilityCollector { role -> CapabilityNegotiationCodecTest.snapshot(role) },
             clock = clock,
             idGenerator = CapabilityNegotiationIdGenerator { CapabilityNegotiationCodecTest.id() },
-            onCompleted = hostCompletions::add,
+            onCompleted = { bootstrap ->
+                hostCompletions.add(bootstrap)
+                afterHostCompletion?.invoke(bootstrap)
+            },
         )
         val client = CapabilityNegotiationController(
             collector = LocalCapabilityCollector { role -> CapabilityNegotiationCodecTest.snapshot(role) },
@@ -157,6 +218,7 @@ class CapabilityNegotiationControllerTest {
         val sent = mutableListOf<ByteArray>()
         var peer: TestTransport? = null
         var deliver: Boolean = true
+        var dropNextType: CapabilityNegotiationMessageType? = null
         private var listener: ((ByteArray) -> Unit)? = null
 
         override fun setPayloadListener(listener: ((ByteArray) -> Unit)?) {
@@ -165,7 +227,12 @@ class CapabilityNegotiationControllerTest {
 
         override fun send(payload: ByteArray): SecureSessionControlSendResult {
             sent += payload.copyOf()
-            if (deliver) peer?.listener?.invoke(payload.copyOf())
+            val type = CapabilityNegotiationCodec.decode(payload)?.message?.header?.messageType
+            if (dropNextType != null && type == dropNextType) {
+                dropNextType = null
+            } else if (deliver) {
+                peer?.listener?.invoke(payload.copyOf())
+            }
             return SecureSessionControlSendResult(SessionProtectionError.None, payload.copyOf())
         }
 

@@ -21,13 +21,13 @@ class DirectShellSelfAdbEndpointDiscoveryTest {
             host = InetAddress.getByName("192.168.1.36"),
             port = 35_395,
             localAddresses = listOf(InetAddress.getByName("192.168.1.36")),
-            serviceName = "adb-R58N52B32JJ-1jXjic",
+            serviceName = "adb-TESTUNIT002-TST001",
         )
 
         requireNotNull(endpoint)
         assertEquals("192.168.1.36", endpoint.host)
         assertEquals(35_395, endpoint.port)
-        assertEquals("adb-R58N52B32JJ-1jXjic", endpoint.serviceName)
+        assertEquals("adb-TESTUNIT002-TST001", endpoint.serviceName)
     }
 
     @Test
@@ -48,7 +48,7 @@ class DirectShellSelfAdbEndpointDiscoveryTest {
             host = InetAddress.getByName("::ffff:192.168.1.36"),
             port = 35_395,
             localAddresses = listOf(InetAddress.getByName("192.168.1.36")),
-            serviceName = "adb-R58N52B32JJ-1jXjic",
+            serviceName = "adb-TESTUNIT002-TST001",
         )
 
         requireNotNull(endpoint)
@@ -60,14 +60,14 @@ class DirectShellSelfAdbEndpointDiscoveryTest {
         val stale = DirectShellSelfAdbEndpointDiscovery.Endpoint(
             "192.168.1.36",
             35_395,
-            "adb-R58N52B32JJ-1jXjic",
+            "adb-TESTUNIT002-TST001",
         )
 
         val endpoint = DirectShellSelfAdbEndpointDiscovery.selectLocalEndpoint(
             host = InetAddress.getByName("192.168.1.36"),
             port = 35_395,
             localAddresses = listOf(InetAddress.getByName("192.168.1.36")),
-            serviceName = "adb-R58N52B32JJ-1jXjic",
+            serviceName = "adb-TESTUNIT002-TST001",
             excludedEndpoint = stale,
         )
 
@@ -79,14 +79,14 @@ class DirectShellSelfAdbEndpointDiscoveryTest {
         val stale = DirectShellSelfAdbEndpointDiscovery.Endpoint(
             "192.168.1.36",
             35_395,
-            "adb-R58N52B32JJ-1jXjic",
+            "adb-TESTUNIT002-TST001",
         )
 
         val endpoint = DirectShellSelfAdbEndpointDiscovery.selectLocalEndpoint(
             host = InetAddress.getByName("192.168.1.36"),
             port = 37_125,
             localAddresses = listOf(InetAddress.getByName("192.168.1.36")),
-            serviceName = "adb-R58N52B32JJ-1jXjic",
+            serviceName = "adb-TESTUNIT002-TST001",
             excludedEndpoint = stale,
         )
 
@@ -97,14 +97,14 @@ class DirectShellSelfAdbEndpointDiscoveryTest {
     @Test
     fun retainsOnlyANonblankBoundedTrustedAdbServiceName() {
         assertEquals(
-            "adb-R58N52B32JJ-1jXjic",
-            DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName("adb-R58N52B32JJ-1jXjic"),
+            "adb-TESTUNIT002-TST001",
+            DirectShellSelfAdbEndpointDiscovery.requireTrustedServiceName("adb-TESTUNIT002-TST001"),
         )
     }
 
     @Test
     fun onlyResolvesTheServiceBoundToTheUserApprovedPairing() {
-        val trusted = "adb-R58N52B32JJ-1jXjic"
+        val trusted = "adb-TESTUNIT002-TST001"
 
         assertTrue(
             DirectShellSelfAdbEndpointDiscovery.matchesTrustedConnectionService(

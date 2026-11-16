@@ -1,11 +1,16 @@
 package io.warpnect.debug.directshell
 
 import android.content.Context
+import android.net.InetAddresses
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import io.warpnect.platform.discovery.AndroidDiscoveryMulticastLock
+import io.warpnect.session.discovery.DiscoveryError
 import java.io.IOException
+import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.util.ArrayDeque
 import java.util.Collections
@@ -25,10 +30,12 @@ internal object DirectShellSelfAdbEndpointDiscovery {
     enum class Failure {
         PAIRING_SERVICE_NOT_DISCOVERED,
         CONNECTION_SERVICE_NOT_DISCOVERED,
+        CONNECTION_SERVICE_PAIRING_REQUIRED,
         CONNECTION_SERVICE_IDENTITY_REQUIRED,
         CONNECTION_SERVICE_RESOLUTION_ALREADY_ACTIVE,
         DISCOVERY_START_FAILED,
         DISCOVERY_SECURITY_ERROR,
+        DISCOVERY_MULTICAST_UNAVAILABLE,
         DISCOVERY_INTERRUPTED,
     }
 
@@ -47,6 +54,7 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         context: Context,
         trustedServiceName: String,
         excludedEndpoint: Endpoint? = null,
+        requiredHost: String? = null,
     ): Endpoint = discover(
         context = context,
         serviceType = SERVICE_TYPE_TLS_CONNECT,
@@ -54,6 +62,7 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         timeoutMillis = CONNECTION_SERVICE_PUBLICATION_TIMEOUT_MILLIS,
         trustedServiceName = requireTrustedServiceName(trustedServiceName),
         excludedEndpoint = excludedEndpoint,
+        requiredHost = requiredHost,
     )
 
     @Suppress("DEPRECATION") // The executor overload is unavailable on the API31/API33 targets.
@@ -64,13 +73,14 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         timeoutMillis: Long,
         trustedServiceName: String? = null,
         excludedEndpoint: Endpoint? = null,
+        requiredHost: String? = null,
     ): Endpoint {
         val result = AtomicReference<Endpoint>()
         val terminalFailure = AtomicReference<Failure?>()
         val ready = CountDownLatch(1)
         val manager = context.applicationContext.getSystemService(NsdManager::class.java)
             ?: throw DiscoveryException(Failure.DISCOVERY_SECURITY_ERROR)
-        val discoveryStarted = AtomicBoolean(false)
+        val closed = AtomicBoolean(false)
         val resolver = SerialServiceResolver(
             manager = manager,
             result = result,
@@ -78,6 +88,8 @@ internal object DirectShellSelfAdbEndpointDiscovery {
             terminalFailure = terminalFailure,
             trustedServiceName = trustedServiceName,
             excludedEndpoint = excludedEndpoint,
+            expectedType = serviceType,
+            requiredHost = requiredHost,
         )
         val listener = object : NsdManager.DiscoveryListener {
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
@@ -87,17 +99,17 @@ internal object DirectShellSelfAdbEndpointDiscovery {
             }
 
             override fun onDiscoveryStarted(serviceType: String) {
-                discoveryStarted.set(true)
+                if (closed.get()) runCatching { manager.stopServiceDiscovery(this) }
                 Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=started type=$serviceType")
             }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=found ${serviceInfoSummary(serviceInfo)}")
+                Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=found query=$serviceType")
                 resolver.enqueue(serviceInfo)
             }
 
             override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=lost ${serviceInfoSummary(serviceInfo)}")
+                Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=lost query=$serviceType")
                 resolver.invalidate(serviceInfo)
             }
 
@@ -107,26 +119,86 @@ internal object DirectShellSelfAdbEndpointDiscovery {
 
             override fun onDiscoveryStopped(serviceType: String) = Unit
         }
-        try {
-            manager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
-            if (!ready.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
-                throw DiscoveryException(timeoutFailure)
-            }
-            terminalFailure.get()?.let { throw DiscoveryException(it) }
-        } catch (_: SecurityException) {
-            throw DiscoveryException(Failure.DISCOVERY_SECURITY_ERROR)
-        } catch (_: IllegalArgumentException) {
-            throw DiscoveryException(Failure.DISCOVERY_START_FAILED)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw DiscoveryException(Failure.DISCOVERY_INTERRUPTED)
-        } finally {
-            // API31 has no public stopServiceResolution(). Closing prevents a late callback from
-            // starting another queued resolve after this bounded caller has already completed.
-            resolver.close()
-            if (discoveryStarted.get()) runCatching { manager.stopServiceDiscovery(listener) }
+        val multicast = AndroidDiscoveryMulticastLock(context)
+        val release = AutoCloseable {
+            multicast.close()
+            Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=multicast_scope_closed")
         }
-        return result.get() ?: throw DiscoveryException(timeoutFailure)
+        return withDiscoveryMulticast(release, multicast::acquireForActiveNsd) {
+            Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=multicast_scope_ready")
+            try {
+                val started = System.nanoTime()
+                manager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+                val exactQuery = trustedServiceName?.takeIf { requiredHost != null }?.let { guid ->
+                    // Only a GUID from this pairing and the very same local address are eligible.
+                    {
+                        Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=exact_guid_query_requested")
+                        resolver.enqueue(
+                            NsdServiceInfo().apply {
+                                serviceName = guid
+                                this.serviceType = SERVICE_TYPE_TLS_CONNECT
+                            },
+                            exact = true,
+                        )
+                    }
+                }
+                if (!awaitDiscoveryWithinBudget(
+                        started, timeoutMillis, System::nanoTime, { ready.await(it, TimeUnit.NANOSECONDS) }, exactQuery,
+                    )
+                ) {
+                    Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=timeout query=$serviceType")
+                    throw DiscoveryException(timeoutFailure)
+                }
+                terminalFailure.get()?.let { throw DiscoveryException(it) }
+                requireDiscoveryResult(result.get(), timeoutFailure)
+            } catch (_: SecurityException) {
+                throw DiscoveryException(Failure.DISCOVERY_SECURITY_ERROR)
+            } catch (_: IllegalArgumentException) {
+                throw DiscoveryException(Failure.DISCOVERY_START_FAILED)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw DiscoveryException(Failure.DISCOVERY_INTERRUPTED)
+            } finally {
+                // API31 has no public stopServiceResolution(); fence its late callbacks locally.
+                closed.set(true)
+                resolver.close()
+                runCatching { manager.stopServiceDiscovery(listener) }
+            }
+        }
+    }
+
+    internal fun <T> withDiscoveryMulticast(
+        lease: AutoCloseable,
+        acquire: () -> DiscoveryError,
+        discover: () -> T,
+    ): T = lease.use {
+        val admission = try {
+            acquire()
+        } catch (_: SecurityException) {
+            DiscoveryError.LanPermissionDenied
+        }
+        when (admission) {
+            DiscoveryError.None -> discover()
+            DiscoveryError.LanPermissionDenied -> throw DiscoveryException(Failure.DISCOVERY_SECURITY_ERROR)
+            else -> throw DiscoveryException(Failure.DISCOVERY_MULTICAST_UNAVAILABLE)
+        }
+    }
+
+    internal fun awaitDiscoveryWithinBudget(
+        startedNanos: Long,
+        timeoutMillis: Long,
+        nowNanos: () -> Long,
+        await: (Long) -> Boolean,
+        exactQuery: (() -> Unit)?,
+    ): Boolean {
+        fun remaining(millis: Long) = TimeUnit.MILLISECONDS.toNanos(millis) - (nowNanos() - startedNanos)
+        val browseLimit = if (exactQuery == null) timeoutMillis else minOf(timeoutMillis, EXACT_BROWSE_HEAD_START_MILLIS)
+        val browseBudget = remaining(browseLimit)
+        if (browseBudget > 0 && await(browseBudget)) return true
+        if (exactQuery == null || remaining(timeoutMillis) <= 0) return false
+        exactQuery()
+        val remainingBudget = remaining(timeoutMillis)
+        return remainingBudget > 0 && await(remainingBudget)
     }
 
     /** Android's API31 NSD client permits one outstanding resolve operation at a time. */
@@ -138,6 +210,8 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         private val terminalFailure: AtomicReference<Failure?>,
         private val trustedServiceName: String?,
         private val excludedEndpoint: Endpoint?,
+        private val expectedType: String,
+        private val requiredHost: String?,
     ) {
         private val lock = Any()
         private val pending = ArrayDeque<Candidate>()
@@ -149,40 +223,38 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         private data class Candidate(
             val serviceInfo: NsdServiceInfo,
             val generation: Long,
+            val exact: Boolean,
         ) {
             val serviceName: String get() = requireNotNull(serviceInfo.serviceName)
+            val origin: String get() = if (exact) "exact_guid" else "browse"
         }
 
-        fun enqueue(serviceInfo: NsdServiceInfo) {
+        fun enqueue(serviceInfo: NsdServiceInfo, exact: Boolean = false) {
             val next = synchronized(lock) {
-                val serviceName = serviceInfo.serviceName ?: return@synchronized null
                 if (closed || result.get() != null || terminalFailure.get() != null) {
                     return@synchronized null
                 }
-                val trustedMatch = trustedServiceName?.let { trustedConnectionServiceMatch(serviceName, it) }
-                if (trustedServiceName != null && trustedMatch == null) {
-                    Log.i(
-                        TAG,
-                        "DIRECT_SHELL_SELF_ADB_DISCOVERY event=ignored service=$serviceName " +
-                            "reason=not_trusted_adb_service",
-                    )
+                val serviceName = serviceInfo.serviceName.orEmpty()
+                val rejection = discoveryIdentityRejection(expectedType, serviceInfo.serviceType, serviceName, trustedServiceName)
+                if (rejection != null) {
+                    Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=ignored reason=${rejection.name}")
                     return@synchronized null
                 }
+                val trustedMatch = trustedServiceName?.let { trustedConnectionServiceMatch(serviceName, it) }
                 if (trustedMatch == TrustedConnectionServiceMatch.DNS_SD_CONFLICT_ALIAS) {
                     Log.i(
                         TAG,
-                        "DIRECT_SHELL_SELF_ADB_DISCOVERY event=trusted_alias service=$serviceName " +
-                            "reason=dns_sd_conflict_suffix",
+                        "DIRECT_SHELL_SELF_ADB_DISCOVERY event=trusted_alias reason=dns_sd_conflict_suffix",
                     )
                 }
                 if (candidateGenerations.containsKey(serviceName)) {
                     Log.i(
                         TAG,
-                        "DIRECT_SHELL_SELF_ADB_DISCOVERY event=ignored service=$serviceName reason=duplicate",
+                        "DIRECT_SHELL_SELF_ADB_DISCOVERY event=ignored reason=duplicate",
                     )
                     return@synchronized null
                 }
-                val candidate = Candidate(serviceInfo, ++nextCandidateGeneration)
+                val candidate = Candidate(serviceInfo, ++nextCandidateGeneration, exact)
                 candidateGenerations[serviceName] = candidate.generation
                 pending.addLast(candidate)
                 nextLocked()
@@ -198,8 +270,7 @@ internal object DirectShellSelfAdbEndpointDiscovery {
                 pending.removeAll { it.serviceName == serviceName }
                 Log.i(
                     TAG,
-                    "DIRECT_SHELL_SELF_ADB_DISCOVERY event=invalidated service=$serviceName " +
-                        "active=${active?.serviceName == serviceName}",
+                    "DIRECT_SHELL_SELF_ADB_DISCOVERY event=invalidated active=${active?.serviceName == serviceName}",
                 )
             }
         }
@@ -208,11 +279,11 @@ internal object DirectShellSelfAdbEndpointDiscovery {
             val state = synchronized(lock) {
                 if (closed) return
                 closed = true
-                val activeService = active?.serviceName ?: "none"
+                val activeOrigin = active?.origin ?: "none"
                 val pendingCount = pending.size
                 pending.clear()
                 candidateGenerations.clear()
-                "active=$activeService pending=$pendingCount"
+                "active=$activeOrigin pending=$pendingCount"
             }
             Log.i(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolver_closed $state")
         }
@@ -221,7 +292,7 @@ internal object DirectShellSelfAdbEndpointDiscovery {
             Log.i(
                 TAG,
                 "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolve_requested " +
-                    "service=${candidate.serviceName} generation=${candidate.generation}",
+                    "origin=${candidate.origin} generation=${candidate.generation}",
             )
             try {
                 manager.resolveService(
@@ -231,15 +302,12 @@ internal object DirectShellSelfAdbEndpointDiscovery {
                             Log.w(
                                 TAG,
                                 "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolve_failed " +
-                                    "service=${failedServiceInfo.serviceName} error=$errorCode " +
-                                    "failure=${resolveFailureName(errorCode)} generation=${candidate.generation}",
+                                    "error=$errorCode " +
+                                    "failure=${resolveFailureName(errorCode)} origin=${candidate.origin} " +
+                                    "generation=${candidate.generation}",
                             )
                             if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) {
-                                terminalFailure.compareAndSet(
-                                    null,
-                                    Failure.CONNECTION_SERVICE_RESOLUTION_ALREADY_ACTIVE,
-                                )
-                                ready.countDown()
+                                fail(candidate, Failure.CONNECTION_SERVICE_RESOLUTION_ALREADY_ACTIVE)
                             }
                             complete(candidate)
                         }
@@ -249,59 +317,67 @@ internal object DirectShellSelfAdbEndpointDiscovery {
                                 Log.i(
                                     TAG,
                                     "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolved_ignored " +
-                                        "service=${resolvedServiceInfo.serviceName} " +
                                         "generation=${candidate.generation} reason=stale_or_closed",
                                 )
                                 complete(candidate)
                                 return
                             }
-                            val resolvedEndpoint = resolvedServiceInfo.host?.hostAddress?.let { host ->
-                                Endpoint(
-                                    host = host,
-                                    port = resolvedServiceInfo.port,
-                                    serviceName = resolvedServiceInfo.serviceName.orEmpty(),
-                                )
-                            }
-                            val endpoint = selectLocalEndpoint(
-                                host = resolvedServiceInfo.host,
-                                port = resolvedServiceInfo.port,
-                                localAddresses = localAddresses(),
-                                serviceName = resolvedServiceInfo.serviceName.orEmpty(),
-                                excludedEndpoint = excludedEndpoint,
+                            val name = resolvedServiceInfo.serviceName.orEmpty()
+                            val identityRejection = discoveryIdentityRejection(
+                                expectedType, resolvedServiceInfo.serviceType, name, trustedServiceName,
                             )
+                            var rejection = identityRejection
+                            val endpoint = if (identityRejection == null) {
+                                selectLocalEndpoint(
+                                    host = resolvedServiceInfo.host,
+                                    port = resolvedServiceInfo.port,
+                                    localAddresses = localAddresses(),
+                                    serviceName = name,
+                                    excludedEndpoint = excludedEndpoint,
+                                    requiredHost = requiredHost,
+                                    onRejected = { rejection = it },
+                                )
+                            } else {
+                                null
+                            }
                             Log.i(
                                 TAG,
-                                "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolved " +
-                                    "service=${resolvedServiceInfo.serviceName} " +
-                                    "host=${resolvedServiceInfo.host?.hostAddress ?: "none"} " +
-                                    "port=${resolvedServiceInfo.port} local=${endpoint != null} " +
-                                    "excluded=${resolvedEndpoint == excludedEndpoint}",
+                                "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolved origin=${candidate.origin} " +
+                                    "admitted=${endpoint != null} reason=${rejection?.name ?: "NONE"}",
                             )
-                            if (endpoint != null && result.compareAndSet(null, endpoint)) {
-                                ready.countDown()
-                            }
+                            if (endpoint != null) publish(candidate, endpoint)
                             complete(candidate)
                         }
                     },
                 )
-            } catch (error: IllegalArgumentException) {
+            } catch (_: IllegalArgumentException) {
                 Log.w(
                     TAG,
                     "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolve_rejected " +
-                        "service=${candidate.serviceName} generation=${candidate.generation}",
-                    error,
+                        "generation=${candidate.generation}",
                 )
                 complete(candidate)
-            } catch (error: SecurityException) {
-                terminalFailure.compareAndSet(null, Failure.DISCOVERY_SECURITY_ERROR)
-                Log.w(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolve_security_error", error)
-                ready.countDown()
+            } catch (_: SecurityException) {
+                fail(candidate, Failure.DISCOVERY_SECURITY_ERROR)
+                Log.w(TAG, "DIRECT_SHELL_SELF_ADB_DISCOVERY event=resolve_security_error")
                 complete(candidate)
             }
         }
 
         private fun isCurrent(candidate: Candidate): Boolean = synchronized(lock) {
             !closed && active == candidate && candidateGenerations[candidate.serviceName] == candidate.generation
+        }
+
+        private fun publish(candidate: Candidate, endpoint: Endpoint) = synchronized(lock) {
+            if (isCurrent(candidate) && terminalFailure.get() == null && result.compareAndSet(null, endpoint)) {
+                ready.countDown()
+            }
+        }
+
+        private fun fail(candidate: Candidate, failure: Failure) = synchronized(lock) {
+            if (isCurrent(candidate) && result.get() == null && terminalFailure.compareAndSet(null, failure)) {
+                ready.countDown()
+            }
         }
 
         private fun complete(candidate: Candidate) {
@@ -334,17 +410,68 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         localAddresses: Iterable<InetAddress>,
         serviceName: String,
         excludedEndpoint: Endpoint? = null,
+        requiredHost: String? = null,
+        onRejected: (DiscoveryRejection) -> Unit = {},
     ): Endpoint? {
-        if (host == null || port !in MIN_PORT..MAX_PORT) return null
+        fun reject(reason: DiscoveryRejection): Endpoint? {
+            onRejected(reason)
+            return null
+        }
+        if (host == null) return reject(DiscoveryRejection.MISSING_ADDRESS)
+        if (port !in MIN_PORT..MAX_PORT) return reject(DiscoveryRejection.INVALID_PORT)
         val hostKey = canonicalAddress(host)
-        if (hostKey !in localAddresses.map(::canonicalAddress).toSet()) return null
-        return Endpoint(host.hostAddress ?: return null, port, serviceName)
-            .takeUnless { candidate ->
-                excludedEndpoint?.let { excluded ->
-                    candidate.host == excluded.host && candidate.port == excluded.port
-                } == true
-            }
+        if (hostKey !in localAddresses.map(::canonicalAddress).toSet()) return reject(DiscoveryRejection.NONLOCAL_ADDRESS)
+        val address = host.hostAddress ?: return reject(DiscoveryRejection.MISSING_ADDRESS)
+        if (requiredHost != null && address != requiredHost) return reject(DiscoveryRejection.PAIRED_ADDRESS_MISMATCH)
+        if (excludedEndpoint?.host == address && excludedEndpoint.port == port) return reject(DiscoveryRejection.EXCLUDED_ENDPOINT)
+        return Endpoint(address, port, serviceName)
     }
+
+    internal fun requireCurrentLocalSocketAddress(endpoint: Endpoint): InetSocketAddress {
+        val address = try {
+            InetAddresses.parseNumericAddress(endpoint.host)
+        } catch (_: IllegalArgumentException) {
+            throw IOException("adb_endpoint_address_invalid")
+        }
+        if (selectLocalEndpoint(address, endpoint.port, localAddresses(), endpoint.serviceName) != endpoint) {
+            throw IOException("adb_endpoint_no_longer_local")
+        }
+        return InetSocketAddress(address, endpoint.port)
+    }
+
+    internal fun matchesDiscoveryIdentity(
+        expectedType: String,
+        observedType: String?,
+        serviceName: String,
+        trustedServiceName: String?,
+    ): Boolean = discoveryIdentityRejection(expectedType, observedType, serviceName, trustedServiceName) == null
+
+    internal enum class DiscoveryRejection {
+        TYPE_MISMATCH,
+        MISSING_NAME,
+        GUID_MISMATCH,
+        MISSING_ADDRESS,
+        INVALID_PORT,
+        NONLOCAL_ADDRESS,
+        PAIRED_ADDRESS_MISMATCH,
+        EXCLUDED_ENDPOINT,
+    }
+
+    internal fun discoveryIdentityRejection(
+        expectedType: String,
+        observedType: String?,
+        serviceName: String,
+        trustedServiceName: String?,
+    ): DiscoveryRejection? = when {
+        observedType?.trim('.') != expectedType.trim('.') -> DiscoveryRejection.TYPE_MISMATCH
+        serviceName.isEmpty() -> DiscoveryRejection.MISSING_NAME
+        trustedServiceName != null && !matchesTrustedConnectionService(serviceName, trustedServiceName) ->
+            DiscoveryRejection.GUID_MISMATCH
+        else -> null
+    }
+
+    internal fun requireDiscoveryResult(endpoint: Endpoint?, missing: Failure): Endpoint =
+        endpoint ?: throw DiscoveryException(missing)
 
     internal fun requireTrustedServiceName(serviceName: String): String {
         require(
@@ -367,7 +494,8 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         val trusted = requireTrustedServiceName(trustedServiceName)
         return when {
             foundServiceName == trusted -> TrustedConnectionServiceMatch.EXACT
-            foundServiceName.removePrefix(trusted).matches(DNS_SD_CONFLICT_SUFFIX) -> {
+            foundServiceName.startsWith(trusted) &&
+                foundServiceName.removePrefix(trusted).matches(DNS_SD_CONFLICT_SUFFIX) -> {
                 TrustedConnectionServiceMatch.DNS_SD_CONFLICT_ALIAS
             }
             else -> null
@@ -376,12 +504,6 @@ internal object DirectShellSelfAdbEndpointDiscovery {
 
     internal fun matchesTrustedConnectionService(foundServiceName: String, trustedServiceName: String): Boolean =
         trustedConnectionServiceMatch(foundServiceName, trustedServiceName) != null
-
-    private fun serviceInfoSummary(serviceInfo: NsdServiceInfo): String {
-        return "service=${serviceInfo.serviceName ?: "none"} type=${serviceInfo.serviceType ?: "none"} " +
-            "host=${serviceInfo.host?.hostAddress ?: "none"} port=${serviceInfo.port} " +
-            "network=unavailable_in_discovery_callback attributes=${serviceInfo.attributes.size}"
-    }
 
     internal fun resolveFailureName(errorCode: Int): String = when (errorCode) {
         NsdManager.FAILURE_ALREADY_ACTIVE -> "FAILURE_ALREADY_ACTIVE"
@@ -414,12 +536,14 @@ internal object DirectShellSelfAdbEndpointDiscovery {
         } else {
             bytes
         }
-        return canonicalBytes.joinToString(separator = ".") { byte -> (byte.toInt() and 0xff).toString() }
+        val key = canonicalBytes.joinToString(separator = ".") { byte -> (byte.toInt() and 0xff).toString() }
+        return if (address is Inet6Address && address.isLinkLocalAddress) "$key%${address.scopeId}" else key
     }
 
     // adbd starts TLS and publishes _adb-tls-connect asynchronously after Wireless Debugging is
     // enabled. This is a single bounded publication grace, not a retry loop.
     internal const val CONNECTION_SERVICE_PUBLICATION_TIMEOUT_MILLIS = 30_000L
+    private const val EXACT_BROWSE_HEAD_START_MILLIS = 2_000L
     internal const val PAIRING_DISCOVERY_TIMEOUT_MILLIS = 8_000L
     private const val SERVICE_TYPE_TLS_PAIRING = "_adb-tls-pairing._tcp"
     private const val SERVICE_TYPE_TLS_CONNECT = "_adb-tls-connect._tcp"

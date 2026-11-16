@@ -170,6 +170,74 @@ class SessionSetupControllerTest {
     }
 
     @Test
+    fun lostHostCommitStillRetriesAfterSetupOwnershipTransfersToLifecycle() {
+        val fixture = Fixture()
+        fixture.hostTransport.dropNext(SessionSetupMessageType.HostCommit)
+        fixture.start()
+        val prepared = fixture.hostCompletions.single()
+        fixture.host.close()
+        val lifecyclePayloads = mutableListOf<ByteArray>()
+        prepared.secureSessionControl.setPayloadListener(lifecyclePayloads::add)
+
+        fixture.clock.nowMs = SessionSetupProtocol.RETRY_DELAYS_MS.first()
+        fixture.client.advance()
+
+        assertEquals(1, fixture.clientCompletions.size)
+        assertEquals(1, fixture.hostCompletions.size)
+        assertEquals(1, fixture.reservation.renewCount)
+        assertTrue(lifecyclePayloads.isEmpty())
+        fixture.clientTransport.send(byteArrayOf(42))
+        assertTrue(lifecyclePayloads.single().contentEquals(byteArrayOf(42)))
+    }
+
+    @Test
+    fun transferredCommitReplyKeepsItsOriginalExpiry() {
+        val fixture = Fixture()
+        fixture.hostTransport.dropNext(SessionSetupMessageType.HostCommit)
+        fixture.start()
+        val prepared = fixture.hostCompletions.single()
+        val accept = fixture.clientTransport.sent.last().copyOf()
+        fixture.host.close()
+        prepared.secureSessionControl.setPayloadListener { error("Expired Setup must not enter lifecycle") }
+        val sent = fixture.hostTransport.sent.size
+
+        fixture.clock.nowMs = SessionSetupProtocol.COMPLETION_CACHE_RETENTION_MS
+        fixture.clientTransport.send(accept)
+
+        assertEquals(sent, fixture.hostTransport.sent.size)
+        assertEquals(0, fixture.clientCompletions.size)
+    }
+
+    @Test
+    fun transferredCommitRejectsOtherSetupOrChangedHashesAndStopsOnClose() {
+        val fixture = Fixture()
+        fixture.hostTransport.dropNext(SessionSetupMessageType.HostCommit)
+        fixture.start()
+        val prepared = fixture.hostCompletions.single()
+        val acceptBytes = fixture.clientTransport.sent.last().copyOf()
+        val accept = SessionSetupCodec.decode(acceptBytes)?.message as SessionSetupMessage.ClientConfigurationAccept
+        fixture.host.close()
+        prepared.secureSessionControl.setPayloadListener { error("Setup must not enter lifecycle") }
+        val sent = fixture.hostTransport.sent.size
+        fixture.clientTransport.send(
+            requireNotNull(
+                SessionSetupCodec.encode(
+                    accept.copy(header = accept.header.copy(setupId = SessionSetupId.requireValid(72u))),
+                ),
+            ),
+        )
+        fixture.clientTransport.send(
+            requireNotNull(SessionSetupCodec.encode(accept.copy(profileHash = ByteArray(32)))),
+        )
+        assertEquals(sent, fixture.hostTransport.sent.size)
+
+        prepared.close()
+        fixture.clientTransport.send(acceptBytes)
+        assertEquals(sent, fixture.hostTransport.sent.size)
+        assertEquals(0, fixture.clientCompletions.size)
+    }
+
+    @Test
     fun sameSetupIdWithChangedClientRequestFailsClosed() {
         val fixture = Fixture(hostToClientDelivery = false)
         fixture.start()

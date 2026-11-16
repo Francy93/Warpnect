@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 
 /** DEBUG-only RemoteInput notification so pairing code entry does not leave Android's settings UI. */
@@ -15,12 +16,8 @@ internal object DirectShellSelfBootstrapNotification {
     const val ACTION_RETRY_BOOTSTRAP = "io.warpnect.debug.directshell.RETRY_BOOTSTRAP"
     const val EXTRA_PAIRING_CODE = "pairing_code"
 
-    fun showWaiting(context: Context) {
-        notify(context, waitingNotification(context))
-    }
-
-    fun showProgress(context: Context, text: String) {
-        notify(context, foregroundNotification(context, text))
+    fun showWaiting(context: Context, token: String) {
+        notify(context, waitingNotification(context, token))
     }
 
     fun showResult(context: Context, text: String) {
@@ -31,22 +28,6 @@ internal object DirectShellSelfBootstrapNotification {
                 "Warpnect Wireless Debugging",
                 text,
                 ongoing = false,
-                withRemoteInput = false,
-                withRetry = false,
-            ),
-        )
-    }
-
-    fun showRetry(context: Context, text: String) {
-        notify(
-            context,
-            createNotification(
-                context,
-                "Warpnect Wireless Debugging",
-                text,
-                ongoing = false,
-                withRemoteInput = true,
-                withRetry = true,
             ),
         )
     }
@@ -56,19 +37,15 @@ internal object DirectShellSelfBootstrapNotification {
         "Warpnect Wireless Debugging",
         text,
         ongoing = true,
-        withRemoteInput = false,
-        withRetry = false,
     )
 
-    private fun waitingNotification(context: Context): Notification = createNotification(
+    private fun waitingNotification(context: Context, token: String): Notification = createNotification(
         context,
         "Warpnect Wireless Debugging",
         "Apri Pair device with pairing code nelle Opzioni sviluppatore, " +
             "poi inserisci qui il codice e tocca Invia codice.",
         ongoing = true,
-        withRemoteInput = true,
-        // A previously paired device can retry the bounded bootstrap without reopening pairing.
-        withRetry = true,
+        token = token,
     )
 
     private fun createNotification(
@@ -76,8 +53,7 @@ internal object DirectShellSelfBootstrapNotification {
         title: String,
         text: String,
         ongoing: Boolean,
-        withRemoteInput: Boolean,
-        withRetry: Boolean,
+        token: String? = null,
     ): Notification {
         val manager = context.getSystemService(NotificationManager::class.java)
         ensureChannel(manager)
@@ -89,8 +65,10 @@ internal object DirectShellSelfBootstrapNotification {
             .setOnlyAlertOnce(true)
             .setOngoing(ongoing)
             .setAutoCancel(!ongoing)
-        if (withRetry) builder.addAction(retryBootstrapAction(context))
-        if (withRemoteInput) builder.addAction(pairingAction(context))
+        if (token != null) {
+            builder.addAction(retryBootstrapAction(context, token))
+            builder.addAction(pairingAction(context, token))
+        }
         return builder.build()
     }
 
@@ -98,7 +76,7 @@ internal object DirectShellSelfBootstrapNotification {
         context.getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
     }
 
-    private fun pairingAction(context: Context): Notification.Action {
+    private fun pairingAction(context: Context, token: String): Notification.Action {
         val inputBuilder = RemoteInput.Builder(EXTRA_PAIRING_CODE)
             .setLabel("Codice di pairing a sei cifre")
             .setAllowFreeFormInput(true)
@@ -106,9 +84,8 @@ internal object DirectShellSelfBootstrapNotification {
             inputBuilder.setEditChoicesBeforeSending(RemoteInput.EDIT_CHOICES_BEFORE_SENDING_DISABLED)
         }
         val input = inputBuilder.build()
-        val intent = Intent(context, DirectShellSelfBootstrapPairingService::class.java)
-            .setAction(ACTION_SUBMIT_PAIRING_CODE)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) {
+        val intent = actionIntent(context, ACTION_SUBMIT_PAIRING_CODE, token)
+        val flags = PendingIntent.FLAG_ONE_SHOT or if (Build.VERSION.SDK_INT >= 31) {
             PendingIntent.FLAG_MUTABLE
         } else {
             0
@@ -121,13 +98,21 @@ internal object DirectShellSelfBootstrapNotification {
             .build()
     }
 
-    private fun retryBootstrapAction(context: Context): Notification.Action {
-        val intent = Intent(context, DirectShellSelfBootstrapPairingService::class.java)
-            .setAction(ACTION_RETRY_BOOTSTRAP)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    private fun retryBootstrapAction(context: Context, token: String): Notification.Action {
+        val intent = actionIntent(context, ACTION_RETRY_BOOTSTRAP, token)
+        val flags = PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getForegroundService(context, 1, intent, flags)
         return Notification.Action.Builder(null, "Riprova avvio", pendingIntent).build()
     }
+
+    private fun actionIntent(context: Context, action: String, token: String): Intent =
+        Intent(context, DirectShellSelfBootstrapPairingService::class.java)
+            .setAction(action)
+            .setData(Uri.Builder().scheme(AUTHORIZATION_SCHEME).authority(context.packageName).appendPath(token).build())
+
+    fun authorizationToken(context: Context, intent: Intent): String? = intent.data
+        ?.takeIf { it.scheme == AUTHORIZATION_SCHEME && it.authority == context.packageName }
+        ?.pathSegments?.singleOrNull()
 
     private fun ensureChannel(manager: NotificationManager) {
         manager.createNotificationChannel(
@@ -142,5 +127,6 @@ internal object DirectShellSelfBootstrapNotification {
     }
 
     private const val CHANNEL_ID = "warpnect_directshell_pairing_debug"
+    private const val AUTHORIZATION_SCHEME = "warpnect-pairing"
     const val NOTIFICATION_ID = 6_501
 }

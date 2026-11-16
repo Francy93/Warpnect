@@ -1,5 +1,6 @@
 package io.warpnect.platform.audio.transport
 
+import io.warpnect.BuildConfig
 import io.warpnect.NativeBridge
 import io.warpnect.audio.capture.AudioCaptureSource
 import io.warpnect.audio.capture.AudioTimestampQuality
@@ -72,6 +73,9 @@ class NativeSclAudioReceiverController(
 
     internal fun adoptedNativeHandleForTesting(): Long = nativeHandle
 
+    internal fun hasAttachedFlightRecorder(): Boolean =
+        BuildConfig.DEBUG && nativeHandle != 0L && NativeBridge.audioReceiverFlightEnabled(nativeHandle)
+
     override fun open(config: AudioReceiverRuntimeConfig): AudioReceiverRuntimeResult {
         if (nativeHandle != 0L) {
             currentConfig = config
@@ -124,7 +128,11 @@ class NativeSclAudioReceiverController(
         deliveryProbe = AudioCadenceDebugProbe.create("${currentConfig?.source}_protected_receive")
         timingProbe = AudioReceiveTimingDebugProbe.create()
         worker = Thread({
-            applyAudioReceiverPriority(currentConfig?.source, AndroidAudioThreadPriority::applyCapturePriority)
+            applyAudioReceiverPriority(
+                currentConfig?.source,
+                AndroidAudioThreadPriority::applyCapturePriority,
+                AndroidAudioThreadPriority::applyMicrophoneReceiverPriority,
+            )
             while (running) {
                 val event = pumpOnce(pumpTimeoutUs)
                 when (event.type) {
@@ -348,4 +356,14 @@ class NativeSclAudioReceiverController(
 }
 
 internal fun applyAudioReceiverPriority(source: AudioCaptureSource?, applyPriority: () -> Boolean): Boolean =
-    source != null && applyPriority()
+    applyAudioReceiverPriority(source, applyPriority, applyPriority)
+
+internal fun applyAudioReceiverPriority(
+    source: AudioCaptureSource?,
+    applyPriority: () -> Boolean,
+    applyMicrophonePriority: () -> Boolean,
+): Boolean = when (source) {
+    AudioCaptureSource.MicrophoneAudio -> applyMicrophonePriority()
+    AudioCaptureSource.SystemAudio -> applyPriority()
+    null -> false
+}

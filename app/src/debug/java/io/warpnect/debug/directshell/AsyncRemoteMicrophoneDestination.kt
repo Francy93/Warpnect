@@ -60,6 +60,12 @@ internal class AsyncRemoteMicrophoneDestination(
         Unit
     }
 
+    override fun submitTimed(buffer: ByteBuffer, offset: Int, frames: Int, firstFramePosition: Long, admittedNs: Long) =
+        synchronized(lock) {
+            if (!closed && active) source?.submitTimed(buffer, offset, frames, firstFramePosition, admittedNs)
+            Unit
+        }
+
     override fun close() {
         synchronized(lock) {
             if (closed) return

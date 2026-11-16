@@ -35,10 +35,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.warpnect.BuildConfig
 import io.warpnect.platform.discovery.AndroidDiscoveryDebugLog
 import io.warpnect.platform.input.capture.WarpnectInputCaptureView
+import io.warpnect.platform.privileged.readiness.HostPairingSetupAttempt
+import io.warpnect.platform.privileged.readiness.HostPairingSetupPhase
 import io.warpnect.platform.privileged.readiness.HostReadinessPhase
 import io.warpnect.platform.privileged.readiness.HostReadinessState
 import io.warpnect.platform.privileged.readiness.HostReadinessUiState
 import io.warpnect.platform.privileged.readiness.generationOrNull
+import io.warpnect.platform.privileged.readiness.hostPairingSetupGeneration
 import io.warpnect.platform.session.integration.DeviceRoleCapability
 import io.warpnect.platform.session.integration.hostReadinessFailureMessage
 import io.warpnect.platform.video.render.WarpnectVideoSurfaceView
@@ -69,6 +72,9 @@ internal fun SecureSessionScreen(
     hostCapability: DeviceRoleCapability,
     hostReadinessUiState: HostReadinessUiState,
     onDismissHostReadiness: () -> Unit,
+    hostPairingSetupAvailable: Boolean,
+    hostPairingSetupAttempt: HostPairingSetupAttempt?,
+    onOpenHostPairingSetup: (Long) -> Unit,
     onClientRenderSurfaceAttached: (WarpnectVideoSurfaceView) -> Unit,
     onClientRenderSurfaceDetached: (WarpnectVideoSurfaceView) -> Unit,
     onClientInputSurfaceAttached: (WarpnectInputCaptureView) -> Unit,
@@ -85,7 +91,8 @@ internal fun SecureSessionScreen(
     val clientVideoSurfaceVisible = shouldComposeClientVideoSurface(uiModel.activeRole, clientVideoRendererBound)
     val context = LocalContext.current
     val discoveryDebugLog = remember(context) { AndroidDiscoveryDebugLog(context) }
-    val hostPreparationPresentation = hostReadinessPresentation(hostReadinessUiState)
+    val hostPreparationPresentation =
+        hostReadinessPresentation(hostReadinessUiState, hostPairingSetupAvailable, hostPairingSetupAttempt)
 
     LaunchedEffect(uiModel.hostCount) {
         discoveryDebugLog.uiStateReceived(uiModel.hostCount)
@@ -108,6 +115,7 @@ internal fun SecureSessionScreen(
         HostReadinessDialog(
             presentation = presentation,
             onDismiss = onDismissHostReadiness,
+            onOpenPairingSetup = onOpenHostPairingSetup,
         )
     }
 
@@ -217,12 +225,17 @@ internal data class HostReadinessPresentation(
     val detail: String,
     val dismissible: Boolean,
     val autoDismiss: Boolean = false,
+    val pairingSetupGeneration: Long? = null,
 )
 
 /** Pure mapping from structured orchestration state to the minimal Host-preparation surface. */
-internal fun hostReadinessPresentation(state: HostReadinessUiState): HostReadinessPresentation? {
+internal fun hostReadinessPresentation(
+    state: HostReadinessUiState,
+    setupAdapterAvailable: Boolean = false,
+    setupAttempt: HostPairingSetupAttempt? = null,
+): HostReadinessPresentation? {
     if (!state.hostActionVisible) return null
-    return when (val readiness = state.readiness) {
+    val presentation = when (val readiness = state.readiness) {
         HostReadinessState.NotStarted,
         is HostReadinessState.Stale,
         -> null
@@ -268,10 +281,29 @@ internal fun hostReadinessPresentation(state: HostReadinessUiState): HostReadine
             dismissible = true,
         )
     }
+    val generation = hostPairingSetupGeneration(state) ?: return presentation
+    val attempt = setupAttempt?.takeIf { it.generation == generation }
+    val notice = when (attempt?.phase) {
+        HostPairingSetupPhase.OPEN -> "Wireless debugging setup is open."
+        HostPairingSetupPhase.RETURNED -> "Setup closed. Dismiss and select Enable Host to check readiness again."
+        HostPairingSetupPhase.UNAVAILABLE -> "Wireless debugging setup could not be opened."
+        HostPairingSetupPhase.PERMISSION_DENIED -> "Wireless debugging setup was not permitted."
+        null -> null
+    }
+    return presentation?.copy(
+        detail = notice ?: presentation.detail,
+        pairingSetupGeneration = generation.takeIf {
+            setupAdapterAvailable && attempt == null && setupAttempt?.phase != HostPairingSetupPhase.OPEN
+        },
+    )
 }
 
 @Composable
-private fun HostReadinessDialog(presentation: HostReadinessPresentation, onDismiss: () -> Unit) {
+private fun HostReadinessDialog(
+    presentation: HostReadinessPresentation,
+    onDismiss: () -> Unit,
+    onOpenPairingSetup: (Long) -> Unit,
+) {
     AlertDialog(
         onDismissRequest = {
             if (presentation.dismissible) onDismiss()
@@ -279,8 +311,17 @@ private fun HostReadinessDialog(presentation: HostReadinessPresentation, onDismi
         title = { Text(presentation.title) },
         text = { Text(presentation.detail) },
         confirmButton = {
-            if (presentation.dismissible) {
+            if (presentation.pairingSetupGeneration != null) {
+                Button(
+                    onClick = { onOpenPairingSetup(presentation.pairingSetupGeneration) },
+                ) { Text("Pair Wireless debugging") }
+            } else if (presentation.dismissible) {
                 Button(onClick = onDismiss) { Text("Dismiss") }
+            }
+        },
+        dismissButton = {
+            if (presentation.pairingSetupGeneration != null) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Dismiss") }
             }
         },
     )

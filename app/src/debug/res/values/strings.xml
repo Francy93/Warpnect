@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="directshell_pairing_settings_unavailable" translatable="false">Opzioni sviluppatore non disponibili.</string>
+    <string name="directshell_pairing_settings_denied" translatable="false">Accesso alle Opzioni sviluppatore non consentito.</string>
+    <string name="directshell_pairing_permissions_denied" translatable="false">Autorizzazione non concessa. Puoi riprovare con Mostra notifica pairing oppure tornare a Warpnect.</string>
+</resources>

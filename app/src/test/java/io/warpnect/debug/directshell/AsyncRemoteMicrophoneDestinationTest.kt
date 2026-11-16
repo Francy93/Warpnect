@@ -98,4 +98,32 @@ class AsyncRemoteMicrophoneDestinationTest {
         control.drain()
         assertTrue(control.isTerminated)
     }
+
+    @Test fun controlWrapperPreservesOriginalFramePositionAndAdmissionClock() {
+        val control = Control()
+        var observed: Pair<Long, Long>? = null
+        val input = object : RemoteMicrophonePcmDestination {
+            override fun start() = true
+            override fun submit(buffer: ByteBuffer, offset: Int, frames: Int) = error("untimed handoff")
+            override fun submitTimed(
+                buffer: ByteBuffer,
+                offset: Int,
+                frames: Int,
+                firstFramePosition: Long,
+                admittedNs: Long,
+            ) {
+                observed = firstFramePosition to admittedNs
+            }
+        }
+        val destination = AsyncRemoteMicrophoneDestination({ input to AutoCloseable {} }, control)
+        destination.start()
+        control.drain()
+        destination.submitTimed(ByteBuffer.allocate(480), 0, 240, 123_456, 7_000_000_000)
+        assertEquals(123_456L to 7_000_000_000L, observed)
+        destination.close()
+        observed = null
+        destination.submitTimed(ByteBuffer.allocate(480), 0, 240, 123_696, 7_005_000_000)
+        assertEquals(null, observed)
+        control.drain()
+    }
 }

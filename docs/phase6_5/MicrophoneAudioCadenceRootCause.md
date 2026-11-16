@@ -78,7 +78,7 @@ preserved. No current partial AudioPolicy work was checkpointed automatically.
 | --- | --- | --- |
 | Physical Client mic | S9 SM-G960F, Android10/API29, `23eaec0f12047ece` | `samsung/starltexx/starlte:10/QP1A.190711.020/G960FXXUHFVG4:user/release-keys` |
 | Primary DEBUG receiver | Aocwei X700_EEA, Android13/API33, `Z1382023HGM1895372` | `Aocwei/X700_EEA/X700_EEA:13/TP1A.220624.014/2023264:user/release-keys` |
-| Available control/acoustic source | A41 SM-A415F, Android12/API31, `R58N52B32JJ` | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` |
+| Available control/acoustic source | A41 SM-A415F, Android12/API31, `TESTUNIT002` | `samsung/a41xx/a41:12/SP1A.210812.016/A415FXXS8DXE2:user/release-keys` |
 
 S7 is connected but was not required; S22 is not a dependency. All ADB actions
 use explicit serials. No Root, unlock, flash, wipe or system change.
